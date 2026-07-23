@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "description": "Imported Update 1 food-effect assumptions used by the legacy low-chore food analysis.",
+  "source_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+  "confidence": "medium",
+  "provenance": {
+    "recipe_quantities": "Canonical RuptureOps source snapshot",
+    "effect_values": "Imported package source notes cite a maintained post-Update-1 community table plus independent item-page and MetaForge checks, but do not preserve per-value URLs.",
+    "import_source": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/artifacts/Food Strategy Analysis - Source Notes.md",
+    "warning": "Preserve these as explicit planning assumptions until each value receives first-party or in-game verification."
+  },
+  "effects": [
+    {"item_id": "polifruit", "calories": 11, "hydration": 0},
+    {"item_id": "hydrobulb", "calories": 0, "hydration": 15},
+    {"item_id": "prickler", "calories": 5, "hydration": 8},
+    {"item_id": "polisnack", "calories": 35, "hydration": 0},
+    {"item_id": "calorie-bar", "calories": 90, "hydration": 0},
+    {"item_id": "calorie-chew", "calories": 40, "hydration": 0},
+    {"item_id": "calorie-gel", "calories": 65, "hydration": 0},
+    {"item_id": "hydrolite", "calories": 0, "hydration": 55},
+    {"item_id": "aqua-bar", "calories": 0, "hydration": 50},
+    {"item_id": "aqua-chew", "calories": 0, "hydration": 100},
+    {"item_id": "aqua-gel", "calories": 0, "hydration": 75},
+    {"item_id": "figler", "calories": 15, "hydration": 20},
+    {"item_id": "nutri-bar", "calories": 20, "hydration": 30},
+    {"item_id": "nutri-chew", "calories": 30, "hydration": 40},
+    {"item_id": "nutri-gel", "calories": 40, "hydration": 50}
+  ]
+}

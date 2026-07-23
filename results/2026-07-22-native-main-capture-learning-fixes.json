@@ -1,0 +1,2809 @@
+{
+  "benchmark_version": "0.2",
+  "run_at": "2026-07-22T12:08:01-07:00",
+  "run_id": "20260722-main-capture-learning-fixes-v4",
+  "harness_sha256": "91c8ffe501e5f631e2c8f466fdec835f0f70b1c3dfa5521088f26ea3495b38db",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "f1a53849ef75edc3ee98c1fdd3899ad2033ee8781a86a01c28d9aa5ec38f6f03",
+  "manifest_sha256": "1add2880703d3ac5c40c9fc229fe043de9765a4073c7969a96a8c75391e9afe7",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+    "sha256": "b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2",
+    "artifact_tree_sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+    "documents": 73,
+    "chunks": 1563,
+    "characters": 1280331
+  },
+  "manifest": {
+    "benchmark_version": "0.2",
+    "name": "Straylight agent-work evaluation",
+    "corpus_root": "eval/corpus-v0.2",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "warmind-parser-learning",
+        "workload": "Warmind",
+        "capability": "learning_and_supersession",
+        "task": "Resume the D1 parser performance and autonomy work. Reconcile the older 10M Nyx tuning checkpoint with the later durable autonomy summary. Explain what the PVE34 result established, what later evidence changed the operating model, the integrity rules that remain non-negotiable, and the next safe experiment. Leave a concise durable checkpoint for the next agent.",
+        "claim_slots": {
+          "c1": "historical 10M tuning checkpoint",
+          "c2": "later autonomy evidence and supersession",
+          "c3": "non-negotiable integrity and recovery model",
+          "c4": "next safe work"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "PVE34",
+                  "34 PVE"
+                ]
+              },
+              {
+                "any": [
+                  "10M",
+                  "10,000,000",
+                  "10 million"
+                ]
+              },
+              {
+                "any": [
+                  "DB/write",
+                  "write path",
+                  "MySQL",
+                  "write coordination"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "1083.1",
+                  "1122.9",
+                  "over 1k",
+                  ">1k",
+                  "more than 1,000",
+                  "exceeded 1,000",
+                  "over 1,000",
+                  "more than 1k",
+                  "above 1k"
+                ]
+              },
+              {
+                "any": [
+                  "fully autonomous",
+                  "autonomous parsing",
+                  "autoscaler",
+                  "adaptive",
+                  "learned priors"
+                ]
+              },
+              {
+                "any": [
+                  "evidence, not identity",
+                  "not identity",
+                  "not identities",
+                  "not a fixed",
+                  "no magic worker",
+                  "no policy status",
+                  "not a policy",
+                  "fixed operating policy",
+                  "observations",
+                  "universal targets",
+                  "rather than identities",
+                  "global defaults"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "DB rows are truth",
+                  "DB truth",
+                  "database truth",
+                  "database rows are truth"
+                ]
+              },
+              {
+                "any": [
+                  "normal parser restart",
+                  "ordinary parser restart",
+                  "restart recovery",
+                  "restart from DB"
+                ]
+              },
+              {
+                "any": [
+                  "optimization state",
+                  "never correctness state",
+                  "not correctness state",
+                  "cannot define correctness",
+                  "no correctness path",
+                  "no rebuild/recompute correctness path",
+                  "parser-state correctness"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "longer alpha",
+                  "beta recovery",
+                  "delta",
+                  "gamma",
+                  "small reviewable commits"
+                ]
+              },
+              {
+                "any": [
+                  "host pressure",
+                  "decision loop",
+                  "validation gate",
+                  "integrity",
+                  "host/MySQL",
+                  "controller changes"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "112 is the fixed",
+          "PVE34 is the universal"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      {
+        "id": "star-rupture-rail-and-heat-plan",
+        "workload": "Star Rupture",
+        "capability": "quantitative_planning",
+        "task": "Design an Update 1 logistics plan for one Pure Ore Excavator v.2 and two Helium-3 Extractors, then check whether a level-0 Base Core can also host one Constructorizer and one Facturer. Show the throughput and heat arithmetic, use only currently available rails, and leave a safe layout decision.",
+        "claim_slots": {
+          "c1": "ore rail sizing",
+          "c2": "helium rail sizing",
+          "c3": "core heat arithmetic",
+          "c4": "safe layout decision"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "480/min",
+                  "480 items/min",
+                  "480 per minute"
+                ]
+              },
+              {
+                "any": [
+                  "Rail v.3",
+                  "v3 rail"
+                ]
+              },
+              {
+                "any": [
+                  "exactly",
+                  "saturates",
+                  "100%"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture logistics.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "240/min",
+                  "240 per minute"
+                ]
+              },
+              {
+                "any": [
+                  "480/min",
+                  "480 per minute"
+                ]
+              },
+              {
+                "any": [
+                  "one Rail v.3",
+                  "share a Rail v.3",
+                  "pair"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture logistics.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "500"
+                ]
+              },
+              {
+                "any": [
+                  "650"
+                ]
+              },
+              {
+                "any": [
+                  "1,150",
+                  "1150",
+                  "1,288",
+                  "1288"
+                ]
+              },
+              {
+                "any": [
+                  "1,000",
+                  "1000"
+                ]
+              },
+              {
+                "any": [
+                  "disables Fire Wave protection",
+                  "exceeds",
+                  "over capacity"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "distributed",
+                  "satellite",
+                  "outpost",
+                  "core upgrade"
+                ]
+              },
+              {
+                "any": [
+                  "rails conduct",
+                  "power grid",
+                  "backbone",
+                  "rail-connected",
+                  "trunk",
+                  "spurs"
+                ]
+              },
+              {
+                "any": [
+                  "v.1",
+                  "v.2",
+                  "v.3"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture logistics.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Rail v.4 is available",
+          "Rail v.5 is available"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      {
+        "id": "straylight-trust-handoff",
+        "workload": "Straylight",
+        "capability": "trust_aware_workspace_design",
+        "task": "Create a safe implementation checkpoint for connecting personal Straylight context to a work agent. State the physical trust boundary, allowed automated direction, prohibited return data, and the only allowed path for a work-generated recommendation to enter personal context. Preserve the distinction between a read interface and versioned workspace writes.",
+        "claim_slots": {
+          "c1": "physical trust boundary",
+          "c2": "allowed automated direction",
+          "c3": "prohibited return flow",
+          "c4": "human-reviewed return path and write model"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "physically separate"
+                ]
+              },
+              {
+                "any": [
+                  "personal",
+                  "work"
+                ]
+              },
+              {
+                "any": [
+                  "not namespace",
+                  "separate instance",
+                  "trust domain"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "personal to work",
+                  "personal -> work",
+                  "one-way"
+                ]
+              },
+              {
+                "any": [
+                  "signed",
+                  "encrypted"
+                ]
+              },
+              {
+                "any": [
+                  "snapshot",
+                  "delta",
+                  "importer"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "prompt",
+                  "query",
+                  "prompts",
+                  "queries"
+                ]
+              },
+              {
+                "any": [
+                  "outputs",
+                  "telemetry",
+                  "embeddings"
+                ]
+              },
+              {
+                "any": [
+                  "must never",
+                  "no flow back",
+                  "prohibited",
+                  "no work-generated",
+                  "cannot flow"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "human-reviewed",
+                  "human reviewed"
+                ]
+              },
+              {
+                "any": [
+                  "declassification"
+                ]
+              },
+              {
+                "any": [
+                  "versioned",
+                  "checkpoint",
+                  "revision"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Decisions.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "bidirectional sync",
+          "work telemetry returns"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "warmind-parser-learning": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Warmind",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMjAwY2U4MWMtYjI0YS00MjRlLTg5MjktYTA5MmU4ODU5YWNjIiwiY3JlZGVudGlhbF9pZCI6ImI0MzNlMGY2LTcyODAtNDg5Mi1iZTU3LTI1ZmZmODlmN2EzMiIsInNjb3BlX2lkIjoiMjYxMzljMDctMTM1Mi00MGVkLTlkNDktZjQxMWQwODVlMzVkIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhOGQ4ZTZjZjUwZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhYTJjZGYxYzg5YSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.74JhILkdlW-iHO_wJEDPpHdEVq760JbJQ7eUH23efzM",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f8b38d1ca7f6182e68aa2cdf1c89a",
+      "corpus_revision": "revision:019f8b38d1ca7f6182e68aa2cdf1c89a",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 12556.199,
+        "ready_elapsed_ms": 12556.199,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMjAwY2U4MWMtYjI0YS00MjRlLTg5MjktYTA5MmU4ODU5YWNjIiwiY3JlZGVudGlhbF9pZCI6ImI0MzNlMGY2LTcyODAtNDg5Mi1iZTU3LTI1ZmZmODlmN2EzMiIsInNjb3BlX2lkIjoiMjYxMzljMDctMTM1Mi00MGVkLTlkNDktZjQxMWQwODVlMzVkIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhOGQ4ZTZjZjUwZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhYTJjZGYxYzg5YSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.74JhILkdlW-iHO_wJEDPpHdEVq760JbJQ7eUH23efzM",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMjAwY2U4MWMtYjI0YS00MjRlLTg5MjktYTA5MmU4ODU5YWNjIiwiY3JlZGVudGlhbF9pZCI6ImI0MzNlMGY2LTcyODAtNDg5Mi1iZTU3LTI1ZmZmODlmN2EzMiIsInNjb3BlX2lkIjoiMjYxMzljMDctMTM1Mi00MGVkLTlkNDktZjQxMWQwODVlMzVkIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhOGQ4ZTZjZjUwZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhYTJjZGYxYzg5YSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.74JhILkdlW-iHO_wJEDPpHdEVq760JbJQ7eUH23efzM",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260722-main-capture-learning-fixes-v4/warmind-parser-learning",
+          "display_scope": "Warmind",
+          "access_mode": "read_write",
+          "user_id": "user:200ce81cb24a424e8929a092e8859acc",
+          "scope_id": "scope:26139c07135240ed9d49f411d085e35d",
+          "credential_id": "credential:b433e0f672804892be5725fff89f7a32",
+          "base_corpus_revision": "revision:019f8b38d1ca7f6182e68aa2cdf1c89a",
+          "corpus_revision": "revision:019f8b38d1ca7f6182e68aa2cdf1c89a",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMjAwY2U4MWMtYjI0YS00MjRlLTg5MjktYTA5MmU4ODU5YWNjIiwiY3JlZGVudGlhbF9pZCI6ImI0MzNlMGY2LTcyODAtNDg5Mi1iZTU3LTI1ZmZmODlmN2EzMiIsInNjb3BlX2lkIjoiMjYxMzljMDctMTM1Mi00MGVkLTlkNDktZjQxMWQwODVlMzVkIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhOGQ4ZTZjZjUwZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhYTJjZGYxYzg5YSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.74JhILkdlW-iHO_wJEDPpHdEVq760JbJQ7eUH23efzM",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMjAwY2U4MWMtYjI0YS00MjRlLTg5MjktYTA5MmU4ODU5YWNjIiwiY3JlZGVudGlhbF9pZCI6ImI0MzNlMGY2LTcyODAtNDg5Mi1iZTU3LTI1ZmZmODlmN2EzMiIsInNjb3BlX2lkIjoiMjYxMzljMDctMTM1Mi00MGVkLTlkNDktZjQxMWQwODVlMzVkIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhOGQ4ZTZjZjUwZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWQxY2EtN2Y2MS04MmU2LThhYTJjZGYxYzg5YSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.74JhILkdlW-iHO_wJEDPpHdEVq760JbJQ7eUH23efzM",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260722-main-capture-learning-fixes-v4/warmind-parser-learning",
+          "display_scope": "Warmind",
+          "access_mode": "read_write",
+          "user_id": "user:200ce81cb24a424e8929a092e8859acc",
+          "scope_id": "scope:26139c07135240ed9d49f411d085e35d",
+          "credential_id": "credential:b433e0f672804892be5725fff89f7a32",
+          "base_corpus_revision": "revision:019f8b38d1ca7f6182e68aa2cdf1c89a",
+          "corpus_revision": "revision:019f8b38d1ca7f6182e68aa2cdf1c89a",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "star-rupture-rail-and-heat-plan": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Star Rupture",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTk1M2JkYzAtNDNmMi00ZTYwLWJkYzQtOTk4NTRjOTE3MTJjIiwiY3JlZGVudGlhbF9pZCI6ImM2MjUxYTE0LWUxMGItNDhkOC05MDFmLWQ4MGFiNTVmYTIwNyIsInNjb3BlX2lkIjoiMzMxZWQyYjItZDRjMy00MGQwLWJhYTgtOWRlZWQxYzQxN2UzIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1MmE0YjUxNjNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1NDY5NTI3MzJjYSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.FhM8HRe5r3pTsC61LilsWs2DgxU92tG_6fq-VX55Gqs",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f8b38f6dd76c1ab1b6546952732ca",
+      "corpus_revision": "revision:019f8b38f6dd76c1ab1b6546952732ca",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 9486.269,
+        "ready_elapsed_ms": 9486.269,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTk1M2JkYzAtNDNmMi00ZTYwLWJkYzQtOTk4NTRjOTE3MTJjIiwiY3JlZGVudGlhbF9pZCI6ImM2MjUxYTE0LWUxMGItNDhkOC05MDFmLWQ4MGFiNTVmYTIwNyIsInNjb3BlX2lkIjoiMzMxZWQyYjItZDRjMy00MGQwLWJhYTgtOWRlZWQxYzQxN2UzIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1MmE0YjUxNjNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1NDY5NTI3MzJjYSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.FhM8HRe5r3pTsC61LilsWs2DgxU92tG_6fq-VX55Gqs",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTk1M2JkYzAtNDNmMi00ZTYwLWJkYzQtOTk4NTRjOTE3MTJjIiwiY3JlZGVudGlhbF9pZCI6ImM2MjUxYTE0LWUxMGItNDhkOC05MDFmLWQ4MGFiNTVmYTIwNyIsInNjb3BlX2lkIjoiMzMxZWQyYjItZDRjMy00MGQwLWJhYTgtOWRlZWQxYzQxN2UzIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1MmE0YjUxNjNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1NDY5NTI3MzJjYSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.FhM8HRe5r3pTsC61LilsWs2DgxU92tG_6fq-VX55Gqs",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260722-main-capture-learning-fixes-v4/star-rupture-rail-and-heat-plan",
+          "display_scope": "Star Rupture",
+          "access_mode": "read_write",
+          "user_id": "user:1953bdc043f24e60bdc499854c91712c",
+          "scope_id": "scope:331ed2b2d4c340d0baa89deed1c417e3",
+          "credential_id": "credential:c6251a14e10b48d8901fd80ab55fa207",
+          "base_corpus_revision": "revision:019f8b38f6dd76c1ab1b6546952732ca",
+          "corpus_revision": "revision:019f8b38f6dd76c1ab1b6546952732ca",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTk1M2JkYzAtNDNmMi00ZTYwLWJkYzQtOTk4NTRjOTE3MTJjIiwiY3JlZGVudGlhbF9pZCI6ImM2MjUxYTE0LWUxMGItNDhkOC05MDFmLWQ4MGFiNTVmYTIwNyIsInNjb3BlX2lkIjoiMzMxZWQyYjItZDRjMy00MGQwLWJhYTgtOWRlZWQxYzQxN2UzIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1MmE0YjUxNjNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1NDY5NTI3MzJjYSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.FhM8HRe5r3pTsC61LilsWs2DgxU92tG_6fq-VX55Gqs",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTk1M2JkYzAtNDNmMi00ZTYwLWJkYzQtOTk4NTRjOTE3MTJjIiwiY3JlZGVudGlhbF9pZCI6ImM2MjUxYTE0LWUxMGItNDhkOC05MDFmLWQ4MGFiNTVmYTIwNyIsInNjb3BlX2lkIjoiMzMxZWQyYjItZDRjMy00MGQwLWJhYTgtOWRlZWQxYzQxN2UzIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1MmE0YjUxNjNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM4LWY2ZGQtNzZjMS1hYjFiLTY1NDY5NTI3MzJjYSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.FhM8HRe5r3pTsC61LilsWs2DgxU92tG_6fq-VX55Gqs",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260722-main-capture-learning-fixes-v4/star-rupture-rail-and-heat-plan",
+          "display_scope": "Star Rupture",
+          "access_mode": "read_write",
+          "user_id": "user:1953bdc043f24e60bdc499854c91712c",
+          "scope_id": "scope:331ed2b2d4c340d0baa89deed1c417e3",
+          "credential_id": "credential:c6251a14e10b48d8901fd80ab55fa207",
+          "base_corpus_revision": "revision:019f8b38f6dd76c1ab1b6546952732ca",
+          "corpus_revision": "revision:019f8b38f6dd76c1ab1b6546952732ca",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "straylight-trust-handoff": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Straylight",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTgwODY0NmQtOGRkOC00NjU3LWFlNGUtYzRlYmQ4MDY2Y2JmIiwiY3JlZGVudGlhbF9pZCI6IjRhYjE4NWVhLWI0YjUtNDNiNC05YTM4LTFjMWU2NjA0OGFkMSIsInNjb3BlX2lkIjoiYWE2NDYxMDMtOTZhYy00ZTMxLWEzNDAtZmM3MzAwMjYxNjhlIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwOTJiYmFhYTA3ZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwYjQ2OWE0N2RlNiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G7BsBIwGHKhFGROVgeXAl2aW8AGdAUmUUHkTGzAY2Wg",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f8b391efc71f0b39770b469a47de6",
+      "corpus_revision": "revision:019f8b391efc71f0b39770b469a47de6",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 10247.603,
+        "ready_elapsed_ms": 10247.603,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTgwODY0NmQtOGRkOC00NjU3LWFlNGUtYzRlYmQ4MDY2Y2JmIiwiY3JlZGVudGlhbF9pZCI6IjRhYjE4NWVhLWI0YjUtNDNiNC05YTM4LTFjMWU2NjA0OGFkMSIsInNjb3BlX2lkIjoiYWE2NDYxMDMtOTZhYy00ZTMxLWEzNDAtZmM3MzAwMjYxNjhlIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwOTJiYmFhYTA3ZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwYjQ2OWE0N2RlNiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G7BsBIwGHKhFGROVgeXAl2aW8AGdAUmUUHkTGzAY2Wg",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTgwODY0NmQtOGRkOC00NjU3LWFlNGUtYzRlYmQ4MDY2Y2JmIiwiY3JlZGVudGlhbF9pZCI6IjRhYjE4NWVhLWI0YjUtNDNiNC05YTM4LTFjMWU2NjA0OGFkMSIsInNjb3BlX2lkIjoiYWE2NDYxMDMtOTZhYy00ZTMxLWEzNDAtZmM3MzAwMjYxNjhlIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwOTJiYmFhYTA3ZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwYjQ2OWE0N2RlNiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G7BsBIwGHKhFGROVgeXAl2aW8AGdAUmUUHkTGzAY2Wg",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260722-main-capture-learning-fixes-v4/straylight-trust-handoff",
+          "display_scope": "Straylight",
+          "access_mode": "read_write",
+          "user_id": "user:5808646d8dd84657ae4ec4ebd8066cbf",
+          "scope_id": "scope:aa64610396ac4e31a340fc730026168e",
+          "credential_id": "credential:4ab185eab4b543b49a381c1e66048ad1",
+          "base_corpus_revision": "revision:019f8b391efc71f0b39770b469a47de6",
+          "corpus_revision": "revision:019f8b391efc71f0b39770b469a47de6",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTgwODY0NmQtOGRkOC00NjU3LWFlNGUtYzRlYmQ4MDY2Y2JmIiwiY3JlZGVudGlhbF9pZCI6IjRhYjE4NWVhLWI0YjUtNDNiNC05YTM4LTFjMWU2NjA0OGFkMSIsInNjb3BlX2lkIjoiYWE2NDYxMDMtOTZhYy00ZTMxLWEzNDAtZmM3MzAwMjYxNjhlIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwOTJiYmFhYTA3ZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwYjQ2OWE0N2RlNiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G7BsBIwGHKhFGROVgeXAl2aW8AGdAUmUUHkTGzAY2Wg",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTgwODY0NmQtOGRkOC00NjU3LWFlNGUtYzRlYmQ4MDY2Y2JmIiwiY3JlZGVudGlhbF9pZCI6IjRhYjE4NWVhLWI0YjUtNDNiNC05YTM4LTFjMWU2NjA0OGFkMSIsInNjb3BlX2lkIjoiYWE2NDYxMDMtOTZhYy00ZTMxLWEzNDAtZmM3MzAwMjYxNjhlIiwicmVjZWlwdF9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwOTJiYmFhYTA3ZCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjM5LTFlZmMtNzFmMC1iMzk3LTcwYjQ2OWE0N2RlNiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G7BsBIwGHKhFGROVgeXAl2aW8AGdAUmUUHkTGzAY2Wg",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260722-main-capture-learning-fixes-v4/straylight-trust-handoff",
+          "display_scope": "Straylight",
+          "access_mode": "read_write",
+          "user_id": "user:5808646d8dd84657ae4ec4ebd8066cbf",
+          "scope_id": "scope:aa64610396ac4e31a340fc730026168e",
+          "credential_id": "credential:4ab185eab4b543b49a381c1e66048ad1",
+          "base_corpus_revision": "revision:019f8b391efc71f0b39770b469a47de6",
+          "corpus_revision": "revision:019f8b391efc71f0b39770b469a47de6",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "warmind-parser-learning",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 77.374,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260722-main-capture-learning-fixes-v4/service_api/warmind-parser-learning/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "PVE34 proved that the split-lane design was clean and substantially faster than the earlier Nyx profiles, but it did not establish a permanent worker configuration or ceiling. Later autonomous Stage 2 runs replaced that operator-tuned model with runtime-selected controls and restart recovery from durable truth. The next safe step is Stage 3 correctness validation under autonomous controls\u2014not another fixed-worker speed chase.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The historical Nyx checkpoint used `64` fetch workers with split DB lanes `PVE34/PVP2/OTHER1`. Run `split-lanes-64f-pve34-pvp2-other1-200k-to10m-20260523T115711Z` inserted `210624` rows, crossed `10,000,000` at elapsed `442s`, and finished at `10.019M`; elapsed `220-490s` averaged about `403/sec`, the late pre-stop band about `408/sec`, and drain about `372/sec`, with `0` parser errors, retries, duplicates, or terminal markers. Summary recompute, sampled membership, S3, and coverage validation passed. It established PVE34 as the best practical Nyx profile in that data band and identified DB/write coordination\u2014not fetch or JSON decoding\u2014as the then-current limiter, while substantial CPU idle headroom remained.",
+            "source_paths": [
+              "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Later Stage 2 evidence superseded fixed PVE34 as the operating model: D1 beta passed on committed target `b09a85712e` using the standard D1+Cortex wrapper with no operator worker/lane/batch/queue/autotune hints. Restart-003 synchronized from raw DB truth at `22222576`, discovered the previous tail as `20` gap ranges / `23` queued jobs, and reduced that prior-tail missing count to `0`; final raw/cache/failed and S3-ledger checks were clean, including `2237` bundles / `2237000` PGCRs verified at `4136.3 records/s`. The broader scorecard then recorded autonomous D1 peaks of `1016.9/s` to `2704.7/s` across random/fixed latency, gap, maintenance, connection-refused, and S3-first scenarios. Thus PVE34 remains historical tuning evidence, not the current fixed profile or throughput ceiling; the runtime must adapt concurrency and recover autonomously.",
+            "source_paths": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Integrity remains non-negotiable: preserve real product outputs, raw markers, carry/summary inputs, cache and S3 ownership, and protected D2 state; never advance a durable contiguous cursor past unrepaired gaps; never delete sparse repair evidence before the dependent durable cursor movement succeeds; and never convert cache-position proof failures into PGCR parse failures. A hard stop may leave transient gaps, but recovery must come from durable DB/Redis truth through a normal restart and startup gap scanning\u2014not manual row repair. Acceptance requires explained or zero failed rows, cache-tail and complete S3-window proof, cursor recovery, direct DB coverage, and final process hygiene; bounded work in a newly incomplete artificial-stop tail is acceptable only when the cursor remains behind it and a later restart proves recovery.",
+            "source_paths": [
+              "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The next safe experiment is the still-incomplete Stage 3 D1 validation on the final merged target: run an agreed full D1 replay/slice with D1 Cortex and autonomous controls, perform fresh full-intended-coverage dev-S3 bundle/manifest/hash verification, inject TERM/KILL, then restart normally and require an oracle report plus raw/cache/failed/new-mode, summary/carry, Redis cursor, archive, and final process-hygiene proofs with no manual row repair. Only after this passes should further performance tuning resume. This is a proposal; the cited handoff marks Stage 3 D1 full replay, full S3 verification, and D1 oracle/restart proof as `not run`.",
+            "source_paths": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Resume D1 parser performance and autonomy work by reconciling the historical 10M Nyx PVE34 checkpoint with later durable autonomy evidence.",
+          "current_state": [
+            "Historical verified result: PVE34 reached `10.019M` cleanly at about `403/sec` steady-state and exposed DB/write coordination as the then-current bottleneck.",
+            "Superseding verified result: Stage 2 D1 beta passed with autonomous controls, normal restart recovery from durable truth, clean database/cache/S3 invariants, and materially higher scenario throughput.",
+            "Incomplete work: Stage 3 full D1 replay, full intended S3 verification, and final TERM/KILL oracle restart proof remain `not run` in the authoritative handoff."
+          ],
+          "decisions": [
+            "Retain PVE34 as historical architecture evidence, not a prescribed current worker configuration or ceiling.",
+            "Require autonomous runtime control and normal-start recovery from durable DB/Redis truth.",
+            "Do not trade cursor, cache/S3, raw coverage, or repair-evidence integrity for throughput."
+          ],
+          "open_questions": [
+            "Can the final merged current target pass the complete Stage 3 D1 replay, archive verification, and TERM/KILL recovery gates under autonomous controls?",
+            "What bottleneck remains after that correctness gate passes on the current target?"
+          ],
+          "next_actions": [
+            "Run the Stage 3 D1 experiment with the standard D1+Cortex wrapper and no operator tuning hints.",
+            "Capture exact target and binary hashes, autonomous-control decisions, throughput/time series, DB/Redis invariants, and fresh dev-S3 verification.",
+            "Inject TERM/KILL, restart normally, and require complete oracle/recovery and process-hygiene proof before further tuning."
+          ],
+          "artifacts": [
+            "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+            "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.4192,
+        "pass": false,
+        "claims_passed": 1,
+        "claims_total": 4,
+        "claim_score": 0.3167,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 5,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "PVE34",
+                  "34 PVE"
+                ],
+                "matched": "PVE34"
+              },
+              {
+                "alternatives": [
+                  "10M",
+                  "10,000,000",
+                  "10 million"
+                ],
+                "matched": "10M"
+              },
+              {
+                "alternatives": [
+                  "DB/write",
+                  "write path",
+                  "MySQL",
+                  "write coordination"
+                ],
+                "matched": "DB/write"
+              }
+            ],
+            "citations": [
+              "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "1083.1",
+                  "1122.9",
+                  "over 1k",
+                  ">1k",
+                  "more than 1,000",
+                  "exceeded 1,000",
+                  "over 1,000",
+                  "more than 1k",
+                  "above 1k"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "fully autonomous",
+                  "autonomous parsing",
+                  "autoscaler",
+                  "adaptive",
+                  "learned priors"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "evidence, not identity",
+                  "not identity",
+                  "not identities",
+                  "not a fixed",
+                  "no magic worker",
+                  "no policy status",
+                  "not a policy",
+                  "fixed operating policy",
+                  "observations",
+                  "universal targets",
+                  "rather than identities",
+                  "global defaults"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.2667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "DB rows are truth",
+                  "DB truth",
+                  "database truth",
+                  "database rows are truth"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "normal parser restart",
+                  "ordinary parser restart",
+                  "restart recovery",
+                  "restart from DB"
+                ],
+                "matched": "restart recovery"
+              },
+              {
+                "alternatives": [
+                  "optimization state",
+                  "never correctness state",
+                  "not correctness state",
+                  "cannot define correctness",
+                  "no correctness path",
+                  "no rebuild/recompute correctness path",
+                  "parser-state correctness"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "longer alpha",
+                  "beta recovery",
+                  "delta",
+                  "gamma",
+                  "small reviewable commits"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "host pressure",
+                  "decision loop",
+                  "validation gate",
+                  "integrity",
+                  "host/MySQL",
+                  "controller changes"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 14,
+        "commands": 4,
+        "command_output_chars": 170633,
+        "tokens": {
+          "input_tokens": 153952,
+          "cached_input_tokens": 106496,
+          "output_tokens": 3379
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-22T12:06:54.382-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b39462c7a52a61963afd2f3b128",
+          "elapsed_ms": 818.533,
+          "result_chars": 44014
+        },
+        {
+          "at": "2026-07-22T12:07:05.507-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b3971a07b80bbf3cb89e46feaf9",
+          "elapsed_ms": 4742.889,
+          "result_chars": 76639
+        },
+        {
+          "at": "2026-07-22T12:07:17.718-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "partial",
+          "request_id": "req_019f8b39a1557462a347939a8047cc05",
+          "elapsed_ms": 24.247,
+          "result_chars": 47012
+        },
+        {
+          "at": "2026-07-22T12:07:33.797-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f8b39e0257ea1be86e81dcf6c2f21",
+          "elapsed_ms": 155.132,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 170629,
+      "service_latency_ms": 5740.801,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f8b38-d1ca-7f61-82e6-8aa2cdf1c89a",
+        "checkpoint_id": "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+        "corpus_revision": "revision:019f8b39-df9b-7272-a5f0-417f6c5a0962",
+        "created": [
+          {
+            "id": "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "b433e0f6-7280-4892-be57-25fff89f7a32",
+        "deduplicated": [],
+        "id": "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+        "idempotency_key": "eval-checkpoint:session:019f8b39430870c3b4a40e3d992d6b9c:3315fdd708d920c54c5762af909a87456deae1372e23fea707a2dddbfcb4e49d",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f8b39-df9b-7272-a5f0-417f6c5a0962",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f8b39-df98-7c10-8065-32b835fe0146"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:06f71bc33be88e2598936bdd351d75cd6853fba1c43ae0e397dcbef07ff25691",
+        "operation_id": "operation:019f8b39-df98-7c10-8065-32af74153853",
+        "policy": {
+          "policy_id": "60ccb544-6563-4b1e-b1fc-c0b66a7676b9",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f8b39-df98-7c10-8065-32af74153853",
+        "replayed": false,
+        "request_hash": "sha256:1888da65bde5b38849686bf0c678c7bdc88847a62167f3a43dfc6a9c30609db3",
+        "resulting_corpus_revision": "revision:019f8b39-df9b-7272-a5f0-417f6c5a0962",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f8b39430870c3b4a40e3d992d6b9c",
+        "status": "committed",
+        "user_id": "user:200ce81cb24a424e8929a092e8859acc"
+      },
+      "service_session_id": "session:019f8b39430870c3b4a40e3d992d6b9c",
+      "service_corpus_revision": "revision:019f8b39-df9b-7272-a5f0-417f6c5a0962",
+      "workspace_operations": [
+        {
+          "at": "2026-07-22T12:06:54.382-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b39462c7a52a61963afd2f3b128",
+          "elapsed_ms": 818.533,
+          "result_chars": 44014
+        },
+        {
+          "at": "2026-07-22T12:07:05.507-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b3971a07b80bbf3cb89e46feaf9",
+          "elapsed_ms": 4742.889,
+          "result_chars": 76639
+        },
+        {
+          "at": "2026-07-22T12:07:17.718-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "partial",
+          "request_id": "req_019f8b39a1557462a347939a8047cc05",
+          "elapsed_ms": 24.247,
+          "result_chars": 47012
+        },
+        {
+          "at": "2026-07-22T12:07:33.797-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f8b39e0257ea1be86e81dcf6c2f21",
+          "elapsed_ms": 155.132,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 170629,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f8b38-d1ca-7f61-82e6-8aa2cdf1c89a",
+        "checkpoint_id": "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+        "corpus_revision": "revision:019f8b39-df9b-7272-a5f0-417f6c5a0962",
+        "created": [
+          {
+            "id": "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "b433e0f6-7280-4892-be57-25fff89f7a32",
+        "deduplicated": [],
+        "id": "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+        "idempotency_key": "eval-checkpoint:session:019f8b39430870c3b4a40e3d992d6b9c:3315fdd708d920c54c5762af909a87456deae1372e23fea707a2dddbfcb4e49d",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f8b39-df9b-7272-a5f0-417f6c5a0962",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f8b39-df98-7c10-8065-32b835fe0146"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:06f71bc33be88e2598936bdd351d75cd6853fba1c43ae0e397dcbef07ff25691",
+        "operation_id": "operation:019f8b39-df98-7c10-8065-32af74153853",
+        "policy": {
+          "policy_id": "60ccb544-6563-4b1e-b1fc-c0b66a7676b9",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f8b39-df98-7c10-8065-32af74153853",
+        "replayed": false,
+        "request_hash": "sha256:1888da65bde5b38849686bf0c678c7bdc88847a62167f3a43dfc6a9c30609db3",
+        "resulting_corpus_revision": "revision:019f8b39-df9b-7272-a5f0-417f6c5a0962",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f8b39-df9b-7272-a5f0-4169eef28cde"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f8b39430870c3b4a40e3d992d6b9c",
+        "status": "committed",
+        "user_id": "user:200ce81cb24a424e8929a092e8859acc"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "star-rupture-rail-and-heat-plan",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 76.129,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260722-main-capture-learning-fixes-v4/service_api/star-rupture-rail-and-heat-plan/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Update 1 plan: connect the Pure Ore Excavator v.2 to a dedicated Rail v.3: 480 items/min output \u00f7 480 items/min capacity = 100% utilization. Give each Helium-3 Extractor a dedicated Rail v.2: 240 \u00f7 240 = 100% each; alternatively, merge both 240 items/min feeds onto one Rail v.3 because 240 + 240 = 480 items/min. Extractor heat is 18 + 60 + 60 = 138. A Constructorizer and Facturer cannot safely share an unaugmented level-0 Base Core: 500 + 650 = 1,150 heat, which exceeds its 1,000 capacity by 150 and disables Fire Wave protection. Keep the extractor lines dedicated initially, reserve a reversible junction for the optional helium merge, and either upgrade the core or place one heavy machine at a satellite base.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "In EA Update 1 (0.2.x), one Ore Excavator v.2 on a Pure node produces 480 items/min; one currently available Rail v.3 carries 480 items/min, so the dedicated ore line is exactly saturated: 480 \u00f7 480 = 100%.",
+            "source_paths": [
+              "Topics/Star Rupture/Star Rupture production.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Each Helium-3 Extractor produces 240 items/min, so two produce 2 \u00d7 240 = 480 items/min. Use one currently available Rail v.2 per extractor at 240/240 items/min, or aggregate both onto one currently available Rail v.3 at 480/480 items/min.",
+            "source_paths": [
+              "Topics/Star Rupture/Star Rupture production.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The excavator and two helium extractors add 18 + 2 \u00d7 60 = 138 heat. Separately, a Constructorizer adds 500 heat and a Facturer adds 650 heat: 500 + 650 = 1,150, which exceeds a level-0 Base Core's 1,000 capacity by 150; therefore that core cannot safely host both, because exceeding capacity disables Fire Wave protection.",
+            "source_paths": [
+              "Topics/Star Rupture/Star Rupture production.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Safe proposal: start with a dedicated Rail v.3 for ore and two dedicated Rail v.2 helium spurs, leaving a reversible junction where the helium feeds could later merge onto one Rail v.3. Do not place the Constructorizer and Facturer together under an unaugmented level-0 Base Core; upgrade the core or move one heavy machine to a satellite base. Distributed mining outposts connected by power-conducting rail trunks are preferred once core capacity is tight, while Rail Modulator scheduling and Drone Station coverage still require in-game verification.",
+            "source_paths": [
+              "Topics/Star Rupture/Star Rupture production.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Design an Update 1 logistics plan for one Pure Ore Excavator v.2 and two Helium-3 Extractors, and determine whether a level-0 Base Core can also host one Constructorizer and one Facturer.",
+          "current_state": [
+            "Verified current EA Update 1 facts from complete source reads: extractor rates and heat, available rail capacities, production-machine heat, and Base Core capacity.",
+            "Verified ore sizing: 480 items/min uses one saturated Rail v.3.",
+            "Verified helium sizing: two 240 items/min sources use two saturated Rail v.2 lines or one aggregated Rail v.3.",
+            "Verified heat results: extractors total 138 heat; Constructorizer plus Facturer total 1,150 heat, exceeding level-0 capacity by 150."
+          ],
+          "decisions": [
+            "Use only Rail v.1\u2013v.3, which the source identifies as currently in game; v.4 and v.5 are future content.",
+            "Default to dedicated extractor lines and preserve a reversible helium merge point.",
+            "Do not host Constructorizer and Facturer together on an unaugmented level-0 core; upgrade it or use a satellite base."
+          ],
+          "open_questions": [
+            "Rail Modulator merge scheduling, Multirail lane independence, and Drone Station coverage radius remain explicitly unverified in game.",
+            "Total deployed-site heat must include generators and every other powered building, not only the machines requested here."
+          ],
+          "next_actions": [
+            "Build the dedicated saturated extractor lines first.",
+            "Reserve a reversible Rail v.3 helium trunk merge point and test merge behavior before consolidating.",
+            "Measure complete site heat before enabling heavy production; upgrade the core or relocate one heavy machine."
+          ],
+          "artifacts": [
+            "Topics/Star Rupture/Star Rupture production.md",
+            "Topics/Star Rupture/Star Rupture logistics.md",
+            "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+            "Evidence was retrieved from memory session session:019f8b39397276d2ac040c97fb70cdf2; factual results are verified, while identified layout-behavior questions remain incomplete and require in-game testing."
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8867,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.8667,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 7,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "480/min",
+                  "480 items/min",
+                  "480 per minute"
+                ],
+                "matched": "480 items/min"
+              },
+              {
+                "alternatives": [
+                  "Rail v.3",
+                  "v3 rail"
+                ],
+                "matched": "Rail v.3"
+              },
+              {
+                "alternatives": [
+                  "exactly",
+                  "saturates",
+                  "100%"
+                ],
+                "matched": "exactly"
+              }
+            ],
+            "citations": [
+              "Topics/Star Rupture/Star Rupture production.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.4667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "240/min",
+                  "240 per minute"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "480/min",
+                  "480 per minute"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "one Rail v.3",
+                  "share a Rail v.3",
+                  "pair"
+                ],
+                "matched": "one Rail v.3"
+              }
+            ],
+            "citations": [
+              "Topics/Star Rupture/Star Rupture production.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "500"
+                ],
+                "matched": "500"
+              },
+              {
+                "alternatives": [
+                  "650"
+                ],
+                "matched": "650"
+              },
+              {
+                "alternatives": [
+                  "1,150",
+                  "1150",
+                  "1,288",
+                  "1288"
+                ],
+                "matched": "1,150"
+              },
+              {
+                "alternatives": [
+                  "1,000",
+                  "1000"
+                ],
+                "matched": "1,000"
+              },
+              {
+                "alternatives": [
+                  "disables Fire Wave protection",
+                  "exceeds",
+                  "over capacity"
+                ],
+                "matched": "disables Fire Wave protection"
+              }
+            ],
+            "citations": [
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "distributed",
+                  "satellite",
+                  "outpost",
+                  "core upgrade"
+                ],
+                "matched": "distributed"
+              },
+              {
+                "alternatives": [
+                  "rails conduct",
+                  "power grid",
+                  "backbone",
+                  "rail-connected",
+                  "trunk",
+                  "spurs"
+                ],
+                "matched": "trunk"
+              },
+              {
+                "alternatives": [
+                  "v.1",
+                  "v.2",
+                  "v.3"
+                ],
+                "matched": "v.2"
+              }
+            ],
+            "citations": [
+              "Topics/Star Rupture/Star Rupture production.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 16,
+        "commands": 4,
+        "command_output_chars": 134974,
+        "tokens": {
+          "input_tokens": 151196,
+          "cached_input_tokens": 116480,
+          "output_tokens": 3462
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-22T12:06:54.502-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b3946a47671b93aada18c787ccd",
+          "elapsed_ms": 3393.539,
+          "result_chars": 38415
+        },
+        {
+          "at": "2026-07-22T12:07:07.190-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b3978337e9184b6c33b239d9546",
+          "elapsed_ms": 2519.075,
+          "result_chars": 76159
+        },
+        {
+          "at": "2026-07-22T12:07:16.865-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b399e0072c085ba5d84fe953236",
+          "elapsed_ms": 23.449,
+          "result_chars": 17432
+        },
+        {
+          "at": "2026-07-22T12:07:38.531-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f8b39f2a271f28585d2b3ad5f58cb",
+          "elapsed_ms": 148.788,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 134970,
+      "service_latency_ms": 6084.851,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f8b38-f6dd-76c1-ab1b-6546952732ca",
+        "checkpoint_id": "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+        "corpus_revision": "revision:019f8b39-f21f-76d2-aa1e-27daece0510a",
+        "created": [
+          {
+            "id": "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "c6251a14-e10b-48d8-901f-d80ab55fa207",
+        "deduplicated": [],
+        "id": "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+        "idempotency_key": "eval-checkpoint:session:019f8b39397276d2ac040c97fb70cdf2:b83ae43b8d8491c17d74da7b45436b7ced26b7ab25105f4aadc7665cc408cc64",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f8b39-f21f-76d2-aa1e-27daece0510a",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f8b39-f21c-7760-b256-4a1b52b8cdde"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:6ca80c655c49791b88b9c7183e230e269280723216143f4a11f9c60a5c096d36",
+        "operation_id": "operation:019f8b39-f21c-7760-b256-4a0c40924468",
+        "policy": {
+          "policy_id": "b5889335-fda4-4c7e-b65f-2ab3aab1772e",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f8b39-f21c-7760-b256-4a0c40924468",
+        "replayed": false,
+        "request_hash": "sha256:6c5f1aeabf72e2254e04bb3832526d0a476106c37fb384e832728a83435ca950",
+        "resulting_corpus_revision": "revision:019f8b39-f21f-76d2-aa1e-27daece0510a",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f8b39397276d2ac040c97fb70cdf2",
+        "status": "committed",
+        "user_id": "user:1953bdc043f24e60bdc499854c91712c"
+      },
+      "service_session_id": "session:019f8b39397276d2ac040c97fb70cdf2",
+      "service_corpus_revision": "revision:019f8b39-f21f-76d2-aa1e-27daece0510a",
+      "workspace_operations": [
+        {
+          "at": "2026-07-22T12:06:54.502-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b3946a47671b93aada18c787ccd",
+          "elapsed_ms": 3393.539,
+          "result_chars": 38415
+        },
+        {
+          "at": "2026-07-22T12:07:07.190-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b3978337e9184b6c33b239d9546",
+          "elapsed_ms": 2519.075,
+          "result_chars": 76159
+        },
+        {
+          "at": "2026-07-22T12:07:16.865-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b399e0072c085ba5d84fe953236",
+          "elapsed_ms": 23.449,
+          "result_chars": 17432
+        },
+        {
+          "at": "2026-07-22T12:07:38.531-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f8b39f2a271f28585d2b3ad5f58cb",
+          "elapsed_ms": 148.788,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 134970,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f8b38-f6dd-76c1-ab1b-6546952732ca",
+        "checkpoint_id": "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+        "corpus_revision": "revision:019f8b39-f21f-76d2-aa1e-27daece0510a",
+        "created": [
+          {
+            "id": "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "c6251a14-e10b-48d8-901f-d80ab55fa207",
+        "deduplicated": [],
+        "id": "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+        "idempotency_key": "eval-checkpoint:session:019f8b39397276d2ac040c97fb70cdf2:b83ae43b8d8491c17d74da7b45436b7ced26b7ab25105f4aadc7665cc408cc64",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f8b39-f21f-76d2-aa1e-27daece0510a",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f8b39-f21c-7760-b256-4a1b52b8cdde"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:6ca80c655c49791b88b9c7183e230e269280723216143f4a11f9c60a5c096d36",
+        "operation_id": "operation:019f8b39-f21c-7760-b256-4a0c40924468",
+        "policy": {
+          "policy_id": "b5889335-fda4-4c7e-b65f-2ab3aab1772e",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f8b39-f21c-7760-b256-4a0c40924468",
+        "replayed": false,
+        "request_hash": "sha256:6c5f1aeabf72e2254e04bb3832526d0a476106c37fb384e832728a83435ca950",
+        "resulting_corpus_revision": "revision:019f8b39-f21f-76d2-aa1e-27daece0510a",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f8b39-f21e-7ea0-b0a8-618a152f9cad"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f8b39397276d2ac040c97fb70cdf2",
+        "status": "committed",
+        "user_id": "user:1953bdc043f24e60bdc499854c91712c"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "straylight-trust-handoff",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 60.275,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260722-main-capture-learning-fixes-v4/service_api/straylight-trust-handoff/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Safe implementation boundary: keep personal and OpenAI work memory in separate instances. Replicate personal context one way into a work-local read replica; never automate a return channel. A work recommendation may enter personal context only after explicit human-reviewed declassification. The agent-facing retrieval session remains read-only and snapshot-pinned; checkpoint, revision, and handoff operations are separate versioned workspace writes, not permission to write across the trust boundary. Checkpoint persisted as checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Rourke\u2019s cloud-authoritative personal memory service and OpenAI work memory are physically separate instances. The work side receives a complete work-local personal replica and builds its indexes locally through a dedicated outbox and read-only importer. This is a strong software-enforced one-way boundary, not a literal physical zero-return-path guarantee; the latter would require a hardware data diode or manual signed export.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Portable Personal Context Layer.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The only allowed automated direction is personal-to-work through signed, encrypted, application-layer one-way replication: the personal cloud publishes versioned snapshots and deltas\u2014including memories, artifacts, project state, chunks, and deletion tombstones\u2014to a neutral outbox, and the work importer reads its relay inbox to maintain the local replica.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Portable Personal Context Layer.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "No work query, prompt, embedding, output, telemetry, acknowledgement, derived state, request body or metadata, access log, error, or timing information may reach the personal service. The publisher cannot read work state or work-generated acknowledgements; the importer has no route, credential, or write capability for the personal service. Imported personal objects remain tagged `personal-import`, provenance-bearing, non-exportable, and non-promotable into ordinary work memory by default.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Portable Personal Context Layer.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "A work-generated recommendation or other output may enter personal memory only through a separate, explicit, human-reviewed declassification step. This return path is not an automated replication or workspace write. The initial retrieval interface is stateful, snapshot-pinned, and read-only (`memory.open`, `memory.query`, `memory.read`, `memory.compute`, and `memory.verify`), while versioned checkpoint, revision, and handoff writes are a distinct product-workspace capability.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Portable Personal Context Layer.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Create a safe implementation checkpoint for connecting personal Straylight context to a work agent while preserving the trust boundary and the distinction between read retrieval and versioned workspace writes.",
+          "current_state": [
+            "Verified against immutable source corpus revision revision:019f8b391efc71f0b39770b469a47de6.",
+            "Current decision: personal and OpenAI work memories are physically separate, with the personal cloud authoritative and the work agent operating on a work-local replica.",
+            "Current decision: automated flow is exclusively personal-to-work; no automated work-to-personal return is permitted.",
+            "Verified that the retrieval interface is read-only and snapshot-pinned, while versioned checkpoint, revision, and handoff writes are separate workspace operations.",
+            "Persisted checkpoint checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c, producing revision revision:019f8b39-b151-7a91-9f83-fd1433248e16."
+          ],
+          "decisions": [
+            "Use signed, encrypted snapshots and deltas through a dedicated one-way distribution outbox and read-only work importer.",
+            "Build lexical and vector indexes inside the work environment; send no queries or embeddings to the personal service.",
+            "Keep imported personal data tagged `personal-import`, provenance-bearing, non-exportable, and non-promotable by default.",
+            "Require explicit human-reviewed declassification for every work-generated recommendation entering personal context.",
+            "Do not interpret versioned workspace writes as authority to mutate or send data to the personal instance."
+          ],
+          "open_questions": [
+            "The software topology provides a strong application-layer one-way boundary, but a literal physical zero-return-path guarantee remains unimplemented and would require a hardware data diode or manual signed export."
+          ],
+          "next_actions": [
+            "Implement separate identities, keys, endpoints, and control planes for the personal publisher, neutral outbox, relay inbox, and work importer.",
+            "Enforce that the personal publisher cannot read work state or acknowledgements and that the work importer has no personal-service route, credential, or write capability.",
+            "Implement signed/encrypted snapshot and delta verification, sequence numbers, hashes, replay and rollback protection, atomic imports, stale or partial-import warnings, and deletion tombstones.",
+            "Implement a separate human-reviewed declassification workflow for recommendations; do not reuse replication or workspace-write APIs for this return path.",
+            "Test that work queries, embeddings, outputs, telemetry, acknowledgements, logs, errors, timing, and derived state cannot reach the personal service."
+          ],
+          "artifacts": [
+            "Projects/Straylight/Decisions.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+            "commit:019f8b39-b14f-7e91-b7e1-833fff20a112",
+            "revision:019f8b39-b151-7a91-9f83-fd1433248e16"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 8,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "physically separate"
+                ],
+                "matched": "physically separate"
+              },
+              {
+                "alternatives": [
+                  "personal",
+                  "work"
+                ],
+                "matched": "personal"
+              },
+              {
+                "alternatives": [
+                  "not namespace",
+                  "separate instance",
+                  "trust domain"
+                ],
+                "matched": "separate instance"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Portable Personal Context Layer.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "personal to work",
+                  "personal -> work",
+                  "one-way"
+                ],
+                "matched": "one-way"
+              },
+              {
+                "alternatives": [
+                  "signed",
+                  "encrypted"
+                ],
+                "matched": "signed"
+              },
+              {
+                "alternatives": [
+                  "snapshot",
+                  "delta",
+                  "importer"
+                ],
+                "matched": "snapshot"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Portable Personal Context Layer.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "prompt",
+                  "query",
+                  "prompts",
+                  "queries"
+                ],
+                "matched": "prompt"
+              },
+              {
+                "alternatives": [
+                  "outputs",
+                  "telemetry",
+                  "embeddings"
+                ],
+                "matched": "telemetry"
+              },
+              {
+                "alternatives": [
+                  "must never",
+                  "no flow back",
+                  "prohibited",
+                  "no work-generated",
+                  "cannot flow"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Portable Personal Context Layer.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "human-reviewed",
+                  "human reviewed"
+                ],
+                "matched": "human-reviewed"
+              },
+              {
+                "alternatives": [
+                  "declassification"
+                ],
+                "matched": "declassification"
+              },
+              {
+                "alternatives": [
+                  "versioned",
+                  "checkpoint",
+                  "revision"
+                ],
+                "matched": "versioned"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Portable Personal Context Layer.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 14,
+        "commands": 4,
+        "command_output_chars": 147841,
+        "tokens": {
+          "input_tokens": 137525,
+          "cached_input_tokens": 106240,
+          "output_tokens": 2617
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-22T12:06:52.339-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b393e3174e0b74ec96e99c5b276",
+          "elapsed_ms": 945.666,
+          "result_chars": 38918
+        },
+        {
+          "at": "2026-07-22T12:07:00.609-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b395e7f70e183112804421f1392",
+          "elapsed_ms": 3896.943,
+          "result_chars": 73386
+        },
+        {
+          "at": "2026-07-22T12:07:09.252-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "partial",
+          "request_id": "req_019f8b39804374229be379c7bc4fcaf1",
+          "elapsed_ms": 26.544,
+          "result_chars": 32569
+        },
+        {
+          "at": "2026-07-22T12:07:21.948-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f8b39b1dc7200886e2af880cfe142",
+          "elapsed_ms": 155.807,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 147837,
+      "service_latency_ms": 5024.96,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f8b39-1efc-71f0-b397-70b469a47de6",
+        "checkpoint_id": "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+        "corpus_revision": "revision:019f8b39-b151-7a91-9f83-fd1433248e16",
+        "created": [
+          {
+            "id": "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "4ab185ea-b4b5-43b4-9a38-1c1e66048ad1",
+        "deduplicated": [],
+        "id": "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+        "idempotency_key": "eval-checkpoint:session:019f8b393a8e746198c81b4b58d4ec48:d25dc043c84af5f6f68ae5ac7ddfe8509fc33fdabae96fb0f890f25516b9aa96",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f8b39-b151-7a91-9f83-fd1433248e16",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f8b39-b14f-7e91-b7e1-834167cee39b"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:bd367fb2185d72c44b21fa4fce518d492343f883a48142432be83df1a24ae9b1",
+        "operation_id": "operation:019f8b39-b14f-7e91-b7e1-833fff20a112",
+        "policy": {
+          "policy_id": "ed317138-4a09-45c1-88f4-28273dd169ee",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f8b39-b14f-7e91-b7e1-833fff20a112",
+        "replayed": false,
+        "request_hash": "sha256:3d2e0d9a50ac77667a6cc919bb63b33d9c1fad841f5e2714a15eadd529ade75e",
+        "resulting_corpus_revision": "revision:019f8b39-b151-7a91-9f83-fd1433248e16",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f8b393a8e746198c81b4b58d4ec48",
+        "status": "committed",
+        "user_id": "user:5808646d8dd84657ae4ec4ebd8066cbf"
+      },
+      "service_session_id": "session:019f8b393a8e746198c81b4b58d4ec48",
+      "service_corpus_revision": "revision:019f8b39-b151-7a91-9f83-fd1433248e16",
+      "workspace_operations": [
+        {
+          "at": "2026-07-22T12:06:52.339-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b393e3174e0b74ec96e99c5b276",
+          "elapsed_ms": 945.666,
+          "result_chars": 38918
+        },
+        {
+          "at": "2026-07-22T12:07:00.609-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b395e7f70e183112804421f1392",
+          "elapsed_ms": 3896.943,
+          "result_chars": 73386
+        },
+        {
+          "at": "2026-07-22T12:07:09.252-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "partial",
+          "request_id": "req_019f8b39804374229be379c7bc4fcaf1",
+          "elapsed_ms": 26.544,
+          "result_chars": 32569
+        },
+        {
+          "at": "2026-07-22T12:07:21.948-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f8b39b1dc7200886e2af880cfe142",
+          "elapsed_ms": 155.807,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 147837,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f8b39-1efc-71f0-b397-70b469a47de6",
+        "checkpoint_id": "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+        "corpus_revision": "revision:019f8b39-b151-7a91-9f83-fd1433248e16",
+        "created": [
+          {
+            "id": "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "4ab185ea-b4b5-43b4-9a38-1c1e66048ad1",
+        "deduplicated": [],
+        "id": "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+        "idempotency_key": "eval-checkpoint:session:019f8b393a8e746198c81b4b58d4ec48:d25dc043c84af5f6f68ae5ac7ddfe8509fc33fdabae96fb0f890f25516b9aa96",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f8b39-b151-7a91-9f83-fd1433248e16",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f8b39-b14f-7e91-b7e1-834167cee39b"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:bd367fb2185d72c44b21fa4fce518d492343f883a48142432be83df1a24ae9b1",
+        "operation_id": "operation:019f8b39-b14f-7e91-b7e1-833fff20a112",
+        "policy": {
+          "policy_id": "ed317138-4a09-45c1-88f4-28273dd169ee",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f8b39-b14f-7e91-b7e1-833fff20a112",
+        "replayed": false,
+        "request_hash": "sha256:3d2e0d9a50ac77667a6cc919bb63b33d9c1fad841f5e2714a15eadd529ade75e",
+        "resulting_corpus_revision": "revision:019f8b39-b151-7a91-9f83-fd1433248e16",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f8b39-b151-7a91-9f83-fd014817a46c"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f8b393a8e746198c81b4b58d4ec48",
+        "status": "committed",
+        "user_id": "user:5808646d8dd84657ae4ec4ebd8066cbf"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 3,
+        "successful_runs": 3,
+        "cases_passed": 1,
+        "case_pass_rate": 0.3333333333333333,
+        "claims_passed": 8,
+        "claims_total": 12,
+        "claim_pass_rate": 0.6666666666666666,
+        "mean_score": 0.7497,
+        "elapsed_samples": 3,
+        "mean_elapsed_seconds": 71.26,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 151145.3,
+        "persisted_checkpoints": 3,
+        "checkpoint_eligible_runs": 3,
+        "mean_service_calls": 4.0,
+        "mean_service_result_chars": 151145.3,
+        "mean_service_latency_ms": 5616.871,
+        "mean_completed_commands": 4.0,
+        "mean_command_output_chars": 151149.3,
+        "mean_tokens": {
+          "input_tokens": 147557.7,
+          "output_tokens": 3152.7,
+          "cached_input_tokens": 109738.7,
+          "uncached_input_tokens": 37819.0
+        }
+      }
+    },
+    "by_workload": {
+      "Star Rupture": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.8867,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 76.13,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 134970.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 134970.0,
+          "mean_service_latency_ms": 6084.851,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 134974.0,
+          "mean_tokens": {
+            "input_tokens": 151196.0,
+            "output_tokens": 3462.0,
+            "cached_input_tokens": 116480.0,
+            "uncached_input_tokens": 34716.0
+          }
+        }
+      },
+      "Straylight": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 60.27,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 147837.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 147837.0,
+          "mean_service_latency_ms": 5024.96,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 147841.0,
+          "mean_tokens": {
+            "input_tokens": 137525.0,
+            "output_tokens": 2617.0,
+            "cached_input_tokens": 106240.0,
+            "uncached_input_tokens": 31285.0
+          }
+        }
+      },
+      "Warmind": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 1,
+          "claims_total": 4,
+          "claim_pass_rate": 0.25,
+          "mean_score": 0.4192,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 77.37,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 170629.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 170629.0,
+          "mean_service_latency_ms": 5740.801,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 170633.0,
+          "mean_tokens": {
+            "input_tokens": 153952.0,
+            "output_tokens": 3379.0,
+            "cached_input_tokens": 106496.0,
+            "uncached_input_tokens": 47456.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "learning_and_supersession": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 1,
+          "claims_total": 4,
+          "claim_pass_rate": 0.25,
+          "mean_score": 0.4192,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 77.37,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 170629.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 170629.0,
+          "mean_service_latency_ms": 5740.801,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 170633.0,
+          "mean_tokens": {
+            "input_tokens": 153952.0,
+            "output_tokens": 3379.0,
+            "cached_input_tokens": 106496.0,
+            "uncached_input_tokens": 47456.0
+          }
+        }
+      },
+      "quantitative_planning": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.8867,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 76.13,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 134970.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 134970.0,
+          "mean_service_latency_ms": 6084.851,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 134974.0,
+          "mean_tokens": {
+            "input_tokens": 151196.0,
+            "output_tokens": 3462.0,
+            "cached_input_tokens": 116480.0,
+            "uncached_input_tokens": 34716.0
+          }
+        }
+      },
+      "trust_aware_workspace_design": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 60.27,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 147837.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 147837.0,
+          "mean_service_latency_ms": 5024.96,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 147841.0,
+          "mean_tokens": {
+            "input_tokens": 137525.0,
+            "output_tokens": 2617.0,
+            "cached_input_tokens": 106240.0,
+            "uncached_input_tokens": 31285.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "warmind-parser-learning": {
+        "id": "warmind-parser-learning",
+        "workload": "Warmind",
+        "capability": "learning_and_supersession",
+        "task": "Resume the D1 parser performance and autonomy work. Reconcile the older 10M Nyx tuning checkpoint with the later durable autonomy summary. Explain what the PVE34 result established, what later evidence changed the operating model, the integrity rules that remain non-negotiable, and the next safe experiment. Leave a concise durable checkpoint for the next agent.",
+        "claim_slots": {
+          "c1": "historical 10M tuning checkpoint",
+          "c2": "later autonomy evidence and supersession",
+          "c3": "non-negotiable integrity and recovery model",
+          "c4": "next safe work"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "PVE34",
+                  "34 PVE"
+                ]
+              },
+              {
+                "any": [
+                  "10M",
+                  "10,000,000",
+                  "10 million"
+                ]
+              },
+              {
+                "any": [
+                  "DB/write",
+                  "write path",
+                  "MySQL",
+                  "write coordination"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "1083.1",
+                  "1122.9",
+                  "over 1k",
+                  ">1k",
+                  "more than 1,000",
+                  "exceeded 1,000",
+                  "over 1,000",
+                  "more than 1k",
+                  "above 1k"
+                ]
+              },
+              {
+                "any": [
+                  "fully autonomous",
+                  "autonomous parsing",
+                  "autoscaler",
+                  "adaptive",
+                  "learned priors"
+                ]
+              },
+              {
+                "any": [
+                  "evidence, not identity",
+                  "not identity",
+                  "not identities",
+                  "not a fixed",
+                  "no magic worker",
+                  "no policy status",
+                  "not a policy",
+                  "fixed operating policy",
+                  "observations",
+                  "universal targets",
+                  "rather than identities",
+                  "global defaults"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "DB rows are truth",
+                  "DB truth",
+                  "database truth",
+                  "database rows are truth"
+                ]
+              },
+              {
+                "any": [
+                  "normal parser restart",
+                  "ordinary parser restart",
+                  "restart recovery",
+                  "restart from DB"
+                ]
+              },
+              {
+                "any": [
+                  "optimization state",
+                  "never correctness state",
+                  "not correctness state",
+                  "cannot define correctness",
+                  "no correctness path",
+                  "no rebuild/recompute correctness path",
+                  "parser-state correctness"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "longer alpha",
+                  "beta recovery",
+                  "delta",
+                  "gamma",
+                  "small reviewable commits"
+                ]
+              },
+              {
+                "any": [
+                  "host pressure",
+                  "decision loop",
+                  "validation gate",
+                  "integrity",
+                  "host/MySQL",
+                  "controller changes"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "112 is the fixed",
+          "PVE34 is the universal"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      "star-rupture-rail-and-heat-plan": {
+        "id": "star-rupture-rail-and-heat-plan",
+        "workload": "Star Rupture",
+        "capability": "quantitative_planning",
+        "task": "Design an Update 1 logistics plan for one Pure Ore Excavator v.2 and two Helium-3 Extractors, then check whether a level-0 Base Core can also host one Constructorizer and one Facturer. Show the throughput and heat arithmetic, use only currently available rails, and leave a safe layout decision.",
+        "claim_slots": {
+          "c1": "ore rail sizing",
+          "c2": "helium rail sizing",
+          "c3": "core heat arithmetic",
+          "c4": "safe layout decision"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "480/min",
+                  "480 items/min",
+                  "480 per minute"
+                ]
+              },
+              {
+                "any": [
+                  "Rail v.3",
+                  "v3 rail"
+                ]
+              },
+              {
+                "any": [
+                  "exactly",
+                  "saturates",
+                  "100%"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture logistics.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "240/min",
+                  "240 per minute"
+                ]
+              },
+              {
+                "any": [
+                  "480/min",
+                  "480 per minute"
+                ]
+              },
+              {
+                "any": [
+                  "one Rail v.3",
+                  "share a Rail v.3",
+                  "pair"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture logistics.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "500"
+                ]
+              },
+              {
+                "any": [
+                  "650"
+                ]
+              },
+              {
+                "any": [
+                  "1,150",
+                  "1150",
+                  "1,288",
+                  "1288"
+                ]
+              },
+              {
+                "any": [
+                  "1,000",
+                  "1000"
+                ]
+              },
+              {
+                "any": [
+                  "disables Fire Wave protection",
+                  "exceeds",
+                  "over capacity"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "distributed",
+                  "satellite",
+                  "outpost",
+                  "core upgrade"
+                ]
+              },
+              {
+                "any": [
+                  "rails conduct",
+                  "power grid",
+                  "backbone",
+                  "rail-connected",
+                  "trunk",
+                  "spurs"
+                ]
+              },
+              {
+                "any": [
+                  "v.1",
+                  "v.2",
+                  "v.3"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture logistics.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Rail v.4 is available",
+          "Rail v.5 is available"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      "straylight-trust-handoff": {
+        "id": "straylight-trust-handoff",
+        "workload": "Straylight",
+        "capability": "trust_aware_workspace_design",
+        "task": "Create a safe implementation checkpoint for connecting personal Straylight context to a work agent. State the physical trust boundary, allowed automated direction, prohibited return data, and the only allowed path for a work-generated recommendation to enter personal context. Preserve the distinction between a read interface and versioned workspace writes.",
+        "claim_slots": {
+          "c1": "physical trust boundary",
+          "c2": "allowed automated direction",
+          "c3": "prohibited return flow",
+          "c4": "human-reviewed return path and write model"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "physically separate"
+                ]
+              },
+              {
+                "any": [
+                  "personal",
+                  "work"
+                ]
+              },
+              {
+                "any": [
+                  "not namespace",
+                  "separate instance",
+                  "trust domain"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "personal to work",
+                  "personal -> work",
+                  "one-way"
+                ]
+              },
+              {
+                "any": [
+                  "signed",
+                  "encrypted"
+                ]
+              },
+              {
+                "any": [
+                  "snapshot",
+                  "delta",
+                  "importer"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "prompt",
+                  "query",
+                  "prompts",
+                  "queries"
+                ]
+              },
+              {
+                "any": [
+                  "outputs",
+                  "telemetry",
+                  "embeddings"
+                ]
+              },
+              {
+                "any": [
+                  "must never",
+                  "no flow back",
+                  "prohibited",
+                  "no work-generated",
+                  "cannot flow"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "human-reviewed",
+                  "human reviewed"
+                ]
+              },
+              {
+                "any": [
+                  "declassification"
+                ]
+              },
+              {
+                "any": [
+                  "versioned",
+                  "checkpoint",
+                  "revision"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Decisions.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "bidirectional sync",
+          "work telemetry returns"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    }
+  }
+}

@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "model_kind": "playthrough_state",
+  "profile_id": "rourke-update1-save-baseline__20260711",
+  "as_of": "2026-07-11",
+  "history_model": "models/rourke-update1-play-history__20260711.json",
+  "evidence": {
+    "type": "curated_player_report_and_conversation",
+    "import_id": "star-rupture-game-analysis__20260708T190137Z",
+    "supplemental_prompt_import_id": "player-prompt-history__20260711",
+    "structured_data_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+    "latest_public_build_observed": "ea_u1_0.2.8_build_23761620",
+    "warning": "Installed state is player-reported. Planned sites and machines are explicitly separated from confirmed construction."
+  },
+  "operating_model": {
+    "production_pattern": "bursty finite campaigns separated by multi-hour exploration or combat",
+    "transport": "pull-based",
+    "default_interface_buffer_units": 1600,
+    "raw_ore_stockpiling": false,
+    "campaign_service_goal": "campaign-specific; use the detailed service windows rather than one universal throughput threshold",
+    "campaign_service_windows": {
+      "below_level_12": "target under one hour; up to two hours only rarely",
+      "later_final_campaigns": "prefer one to two hours; an occasional three to four hours is tolerable",
+      "warning": "Apply the target per campaign. It is not one universal throughput threshold."
+    },
+    "recipe_choice": "Offer owned v2 production buildings as options, but retain v1 or local alternatives when distance, input availability, heat, freight, footprint, or batch size changes the better choice.",
+    "communication": "Use plain English, exact site-scoped machine counts, visible math, and explicit assumptions.",
+    "architecture_rules": [
+      "Use buffers to support real production capacity, not replace it.",
+      "Prefer a diagnosable hybrid layout over a visually clean but opaque network.",
+      "Preserve the low-friction plug-in planning experience while keeping every route inspectable.",
+      "Keep one obvious route per requester and avoid cyclic or rejoining freight paths.",
+      "Terminate world freight at storage yards rather than inside factory graphs.",
+      "Make ore, bars, and high-rate shapes near their consumers.",
+      "Move compact, complexity-dense intermediates between specialist sites.",
+      "Reserve expansion space and add capacity only when a measured recovery failure justifies it."
+    ]
+  },
+  "sites": [
+    {
+      "id": "landerworks",
+      "code": "LW",
+      "status": "active",
+      "aliases": ["Base 1", "starter base", "original base", "old factory"],
+      "location": "beside the initial lander",
+      "role": "legacy specialist exporter",
+      "exports": ["rotor", "stator", "syringe"],
+      "imports": ["calcium-ore"],
+      "topology": "point-to-point early-Satisfactory-style rail network",
+      "decision": "Preserve it. Add a clean booster leaf only if an output buffer repeatedly fails to recover."
+    },
+    {
+      "id": "sunstone-station",
+      "code": "LW-SA",
+      "status": "active_satellite",
+      "parent": "landerworks",
+      "role": "Calcium extraction and solar generation",
+      "exports": ["calcium-ore", "power"],
+      "exact_map_pin": null
+    },
+    {
+      "id": "faraday-works",
+      "code": "FW",
+      "status": "active",
+      "aliases": ["Base 2", "electrochem plant", "rebuilt second base"],
+      "location": "immediately north of CRRO Warm Dawn",
+      "onsite_resources": ["titanium-ore", "wolfram-ore", "helium-ore"],
+      "imports": ["calcium-powder", "calcium-block", "sulphur-ore", "power", "rotor", "stator", "syringe"],
+      "core_state": {"base_cores": 2, "amplifiers": "multiple", "remaining_capacity": "unknown after final retrofit"},
+      "installed": {
+        "chemicals_machines": 3,
+        "electronics_machines": 3,
+        "inductor_furnaces": 4,
+        "heat_resistant_sheet_furnaces": 2,
+        "hardening_agent_machines": 2,
+        "pressurized_helium_pressurizers": 1,
+        "battery_mega_presses": 1,
+        "sulphuric_acid_pressurizers": 1,
+        "supermagnet_furnaces": 2,
+        "outbound_storage_depot_v2": 12
+      },
+      "service_products": ["basic-building-material", "intermediate-building-material", "standard-ammo", "shotgun-ammo"],
+      "not_installed": ["Flowworks mechanical family", "electromagnetic coil press", "flexible accumulator/electromagnet assembler"],
+      "not_confirmed_installed": ["impeller production"],
+      "internal_topology": [
+        "one bounded low-volume shared bus",
+        "separate Titanium, Calcium, and Helium networks",
+        "two Wolfram networks",
+        "direct Ceramics to Synthetic Silicon inner loop",
+        "direct Chemicals to Acid dominant-consumer bypass"
+      ],
+      "latest_decision": "The second Supermagnet Furnace is installed. Wolfram Plate capacity is sufficient; Acid is the accepted synchronized-load constraint. Do not add a third without measured evidence."
+    },
+    {
+      "id": "brimstone-utility",
+      "code": "FW-BU",
+      "status": "active_satellite",
+      "parent": "faraday-works",
+      "role": "processed Calcium, Sulfur Ore, and all Faraday generation",
+      "exports": ["calcium-powder", "calcium-block", "sulphur-ore", "power"],
+      "critical_boundary": "A failed Faraday-Brimstone rail or power connection blacks out Faraday.",
+      "exact_map_pin": null
+    },
+    {
+      "id": "first-geoscanner-firebase",
+      "code": null,
+      "status": "temporary_defense_site_scanner_completed",
+      "location": "At the first completed Geo Scanner; exact scanner identity and coordinates are not yet confirmed.",
+      "role": "Temporary powered-turret fire base for Geo Scanner defense",
+      "confirmed_installed": ["Regeneration Chamber", "multiple powered turrets", "local power sufficient for the successful defense"],
+      "not_confirmed_installed": ["Cargo Dispatcher", "Cargo Receiver", "separate safe recovery cache"],
+      "failure_history": [
+        "An initial nearby claimed base lacked replacement weapons and materials.",
+        "On the second scanner attempt the installed turrets were unpowered and provided no defense.",
+        "Corruption disabled the contested base and its Regeneration Chamber, causing respawn at the starting launcher.",
+        "The scanner was completed after all turrets were powered."
+      ],
+      "recovery_rule": "Future scanner fire bases need replacement weapons, ammunition, healing, and rebuilding materials in a separate safe cache outside the contested base's corruption failure domain.",
+      "exact_map_pin": null
+    },
+    {
+      "id": "flowworks",
+      "code": "FLW",
+      "status": "site_selected_not_built",
+      "location": "between Landerworks and Faraday, with onsite Titanium and Wolfram",
+      "role": "mechanical and flow specialist",
+      "planned_outputs": ["stabilizer", "nozzle", "impeller", "valve", "turbine", "pump"],
+      "planned_imports": ["heat-resistant-sheet", "helium-ore", "sulphuric-acid", "rotor", "stator"],
+      "topology": "one storage-yard spur from the through trunk; world freight never enters the machine network",
+      "initial_core_count": 1,
+      "unknowns": ["Titanium node purity", "whether any construction has begun"]
+    },
+    {
+      "id": "grand-basin-reserve",
+      "code": "GBR",
+      "status": "reserve_selected_not_built",
+      "location": "broad basin immediately east of GRO Mythic Cry and north of the active production corridor",
+      "mythic_cry_coordinate": {"x": 2518.767, "y": 3099.107},
+      "role": "future multi-campus advanced-production reserve",
+      "onsite_or_nearby": ["titanium-ore", "wolfram-ore", "helium-ore", "sulphur-ore", "calcium-ore"],
+      "not_onsite": ["goethite-ore", "magic-oil-ore"],
+      "production_families": {
+        "GB-A": "chemistry",
+        "GB-B": "biotech",
+        "GB-C": "alloys and structures",
+        "GB-D": "advanced assembly",
+        "GB-E": "final products and exports"
+      },
+      "decision": "Reserve the freight corridor and separate GB-A, GB-B, and GB-C plots before building only the first GB-A chemistry cell."
+    }
+  ],
+  "flowworks_staged_plan": {
+    "status": "planned_not_installed",
+    "starter": [
+      "1 Titanium Excavator",
+      "1 Wolfram Excavator",
+      "1 Titanium Smelter",
+      "1 Wolfram Smelter",
+      "1 Titanium Rod v2",
+      "1 Wolfram Powder v2",
+      "1 Wolfram Plate v2",
+      "1 Stabilizer",
+      "1 Impeller",
+      "1 Turbine"
+    ],
+    "valve_expansion": ["1 Titanium Smelter", "1 Titanium Sheet v2", "1 Titanium Beam", "1 Titanium Housing", "1 Nozzle", "2 Valves"],
+    "pressure_tank_preparation": ["2 Pumps"],
+    "later": ["second Stabilizer before Scanner", "one HRS v2 only if recovery testing justifies it"],
+    "peak_planned_imports_per_minute": {"heat-resistant-sheet": 54, "helium-ore": 72, "sulphuric-acid": 56, "rotor": 60, "stator": 10, "total": 252}
+  },
+  "remote_resource_plan": {
+    "goethite": {
+      "site": "northwestern triple northwest of Mythic Cry/Grand Basin",
+      "coordinate_range": "1393-1464,1838-1891",
+      "planned_extractors": 3,
+      "planned_rate_per_minute": 45,
+      "transport": "one Goethite-only Cargo Dispatcher/Receiver pair into one V2 buffer"
+    },
+    "oil": {
+      "site": "west/southwest of Mythic Cry/Grand Basin",
+      "coordinate": {"x": 1234, "y": 3760},
+      "planned_extractors": 1,
+      "planned_rate_per_minute": 10,
+      "transport": "one Crude-only Cargo Dispatcher/Receiver pair into one V2 buffer and one GB-A Refinery"
+    }
+  },
+  "progression": {
+    "confirmed": [
+      "Corporation level-7 unlock phase was described as complete or nearly complete.",
+      "Battery, Supermagnet, Chemicals, Electronics, and Impeller were craftable.",
+      "Faraday completed every turn-in the player could currently manufacture.",
+      "Figler was unlocked by the recorded exploration checkpoint; the player reported having nothing left afterward.",
+      "The first Geo Scanner defense was completed using a temporary fire base with powered turrets."
+    ],
+    "not_confirmed": [
+      "exact Corporation levels and reputation",
+      "Rail v3 unlocked or installed",
+      "Redleaf blueprint package acquired",
+      "Power Cell researched and crafted",
+      "Forgotten Engine completed",
+      "Selenian 9 reached",
+      "Future Health 9 reached",
+      "Selenian 10 reached",
+      "Flowworks construction begun",
+      "Grand Basin construction begun",
+      "Ore Excavator v2 unlocked or installed since the prompt-history checkpoint",
+      "Machine Gun unlocked since the pre-Engine exploration checkpoint"
+    ]
+  },
+  "unresolved": [
+    "Whether the persistent floating/orphan rail drones were removed or the save was repaired.",
+    "Exact Faraday Core headroom after the second Supermagnet retrofit.",
+    "Exact current Corporation levels, blueprint inventory, and Engine state.",
+    "Whether earlier Wolfram rail bottlenecks were permanently resolved with Rail v3.",
+    "Whether the pure Titanium and merged Helium/Sulfur sources still deliver only one source worth of flow because of their rail links.",
+    "Which Geo Scanner was completed and its exact coordinates.",
+    "The exact identity/count of the two ambiguously reported food-related rewards from the scanner site."
+  ]
+}

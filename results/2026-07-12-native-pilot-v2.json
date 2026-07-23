@@ -1,0 +1,1208 @@
+{
+  "benchmark_version": "0.2",
+  "run_at": "2026-07-12T03:28:57-07:00",
+  "run_id": "20260712T032220-0700",
+  "harness_sha256": "aa44a78d01845791237f2b396471a6102611c050a9f648febde2d2f8baeaccd1",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "043339f4490bba026f252cbb7d587d460bda8a7a705a1c6ae2faa649005df609",
+  "manifest_sha256": "0fd83dd410f4c1f39f0d59354d5726c411abd8db9713e785818a4fb9e588bd46",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+    "sha256": "b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2",
+    "artifact_tree_sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+    "documents": 73,
+    "chunks": 1563,
+    "characters": 1280331
+  },
+  "manifest": {
+    "benchmark_version": "0.2",
+    "name": "Straylight agent-work evaluation",
+    "corpus_root": "eval/corpus-v0.2",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "filesystem",
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "warmind-final-validation-handoff",
+        "workload": "Warmind",
+        "capability": "durable_handoff",
+        "task": "Take over the final parser validation work from its long handoff. Report the latest recorded target, distinguish completed performance rows from unfinished validation, identify the known failing scenario, and state the next safe execution boundary. Do not collapse code cleanup, scorecard evidence, and full validation into one status.",
+        "claim_slots": {
+          "c1": "latest recorded target",
+          "c2": "performance scorecard state",
+          "c3": "full validation state",
+          "c4": "safe next boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "6c5153d5063137ef16fc9bc4872c9b5f01f5831f",
+                  "6c5153d506"
+                ]
+              },
+              {
+                "any": [
+                  "master",
+                  "origin/master"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "alpha",
+                  "eta"
+                ]
+              },
+              {
+                "any": [
+                  "theta",
+                  "FAIL",
+                  "failed"
+                ]
+              },
+              {
+                "any": [
+                  "D2",
+                  "cache repair",
+                  "S3 repair"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Stage 3",
+                  "full data integrity"
+                ]
+              },
+              {
+                "any": [
+                  "not run",
+                  "unfinished",
+                  "pending"
+                ]
+              },
+              {
+                "any": [
+                  "S3",
+                  "restart",
+                  "oracle"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "latest merged",
+                  "current target",
+                  "ground",
+                  "lock and prove",
+                  "confirm the target",
+                  "confirm where"
+                ]
+              },
+              {
+                "any": [
+                  "do not touch production",
+                  "no production",
+                  "dev-S3",
+                  "validation-safe"
+                ]
+              },
+              {
+                "any": [
+                  "do not claim",
+                  "not complete",
+                  "until",
+                  "do not enter",
+                  "before"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "final validation is complete",
+          "all validation passed"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "warmind-final-validation-handoff": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Warmind",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiN2I2YzZmYjctOWRhMi00MjllLTkwYWQtZWU0MDczZGJjNzJhIiwiY3JlZGVudGlhbF9pZCI6IjA1ZTg2ZWY0LWIzMDAtNDQxNS05NjRjLTc3YmEwZjU3NDk2MCIsInNjb3BlX2lkIjoiMzE0YjlmMWEtYzQ0Ny00NmEwLWE4NGEtZDgzYmQ1OGViYzdmIiwicmVjZWlwdF9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2Y2ZkYjA5YThjZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2ZTgyZmM2Y2ViNSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.rIX7pZsfMhtxHREQ6wqxkpfrN7XlF8gBF7rbh4oX4Rk",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f55d9a0467da3893306e82fc6ceb5",
+      "corpus_revision": "revision:019f55d9a0467da3893306e82fc6ceb5",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 13765.102,
+        "ready_elapsed_ms": 13765.102,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiN2I2YzZmYjctOWRhMi00MjllLTkwYWQtZWU0MDczZGJjNzJhIiwiY3JlZGVudGlhbF9pZCI6IjA1ZTg2ZWY0LWIzMDAtNDQxNS05NjRjLTc3YmEwZjU3NDk2MCIsInNjb3BlX2lkIjoiMzE0YjlmMWEtYzQ0Ny00NmEwLWE4NGEtZDgzYmQ1OGViYzdmIiwicmVjZWlwdF9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2Y2ZkYjA5YThjZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2ZTgyZmM2Y2ViNSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.rIX7pZsfMhtxHREQ6wqxkpfrN7XlF8gBF7rbh4oX4Rk",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiN2I2YzZmYjctOWRhMi00MjllLTkwYWQtZWU0MDczZGJjNzJhIiwiY3JlZGVudGlhbF9pZCI6IjA1ZTg2ZWY0LWIzMDAtNDQxNS05NjRjLTc3YmEwZjU3NDk2MCIsInNjb3BlX2lkIjoiMzE0YjlmMWEtYzQ0Ny00NmEwLWE4NGEtZDgzYmQ1OGViYzdmIiwicmVjZWlwdF9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2Y2ZkYjA5YThjZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2ZTgyZmM2Y2ViNSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.rIX7pZsfMhtxHREQ6wqxkpfrN7XlF8gBF7rbh4oX4Rk",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T032220-0700/warmind-final-validation-handoff",
+          "display_scope": "Warmind",
+          "access_mode": "read_write",
+          "user_id": "user:7b6c6fb79da2429e90adee4073dbc72a",
+          "scope_id": "scope:314b9f1ac44746a0a84ad83bd58ebc7f",
+          "credential_id": "credential:05e86ef4b3004415964c77ba0f574960",
+          "base_corpus_revision": "revision:019f55d9a0467da3893306e82fc6ceb5",
+          "corpus_revision": "revision:019f55d9a0467da3893306e82fc6ceb5",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1466,
+            "embeddings": 1466
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiN2I2YzZmYjctOWRhMi00MjllLTkwYWQtZWU0MDczZGJjNzJhIiwiY3JlZGVudGlhbF9pZCI6IjA1ZTg2ZWY0LWIzMDAtNDQxNS05NjRjLTc3YmEwZjU3NDk2MCIsInNjb3BlX2lkIjoiMzE0YjlmMWEtYzQ0Ny00NmEwLWE4NGEtZDgzYmQ1OGViYzdmIiwicmVjZWlwdF9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2Y2ZkYjA5YThjZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2ZTgyZmM2Y2ViNSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.rIX7pZsfMhtxHREQ6wqxkpfrN7XlF8gBF7rbh4oX4Rk",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiN2I2YzZmYjctOWRhMi00MjllLTkwYWQtZWU0MDczZGJjNzJhIiwiY3JlZGVudGlhbF9pZCI6IjA1ZTg2ZWY0LWIzMDAtNDQxNS05NjRjLTc3YmEwZjU3NDk2MCIsInNjb3BlX2lkIjoiMzE0YjlmMWEtYzQ0Ny00NmEwLWE4NGEtZDgzYmQ1OGViYzdmIiwicmVjZWlwdF9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2Y2ZkYjA5YThjZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NWQ5LWEwNDYtN2RhMy04OTMzLTA2ZTgyZmM2Y2ViNSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.rIX7pZsfMhtxHREQ6wqxkpfrN7XlF8gBF7rbh4oX4Rk",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T032220-0700/warmind-final-validation-handoff",
+          "display_scope": "Warmind",
+          "access_mode": "read_write",
+          "user_id": "user:7b6c6fb79da2429e90adee4073dbc72a",
+          "scope_id": "scope:314b9f1ac44746a0a84ad83bd58ebc7f",
+          "credential_id": "credential:05e86ef4b3004415964c77ba0f574960",
+          "base_corpus_revision": "revision:019f55d9a0467da3893306e82fc6ceb5",
+          "corpus_revision": "revision:019f55d9a0467da3893306e82fc6ceb5",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1466,
+            "embeddings": 1466
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "warmind-final-validation-handoff",
+      "condition": "filesystem",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 70.29,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T032220-0700/filesystem/warmind-final-validation-handoff/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Latest recorded target is master/origin/master at 6c5153d5063137ef16fc9bc4872c9b5f01f5831f. Performance rows alpha\u2013eta are complete PASS results; theta remains FAIL on its D2 half. Stage 3 full validation is entirely unrun. Code cleanup and focused tests are verified, but they do not supersede the failed scorecard row or constitute full validation. The next safe boundary is to freeze and prove the current target/bundle, then rerun theta D2 end-to-end against dev S3 with corrected rollup/write-prefix plumbing; do not begin or claim Stage 3 until theta passes or Rourke explicitly waives the remaining performance gate.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The latest recorded target is clean, pushed master/origin/master commit 6c5153d5063137ef16fc9bc4872c9b5f01f5831f (`fix(parser): harden d2 cache repair routing`), following companion commit 204d22330e. Its focused tests/builds and diff check passed, but that is cleanup verification rather than scorecard or Stage 3 evidence.",
+            "source_paths": [
+              "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Stage 2 performance evidence has completed PASS rows for alpha, beta, gamma, delta, epsilon, zeta, and eta for both D1 and D2. Theta is the sole failing row: D1 PASS, D2 FAIL. The recorded peaks are alpha 1425.1/1715.4, beta 1380.1/1901.2, gamma 1242.9/1224.9, delta 1016.9/1001.3, epsilon 1455.1/1830.0, and theta 2704.7/3683.5 D1/D2 per second; zeta and eta are zero-rate fault runs.",
+            "source_paths": [
+              "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Full Stage 3 validation is unfinished: gates 3.1 through 3.10 are all recorded as not run. Cleanup/refactor completion, focused tests, cutover rehearsal evidence, and Stage 2 performance rows must not be collapsed into a Stage 3 pass. The known failing scenario is theta D2 S3-first behavior: after verified source coverage, fallback/rollup archive handling failed; later parser fixes crossed the source boundary and rolled past the prior cache blocker, but the fresh dev-S3 verifier still failed with 575 missing objects because the rollup companion used the read prefix rather than the intended run-owned write prefix.",
+            "source_paths": [
+              "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The next safe execution boundary is target-and-bundle proof for current master, followed by a dev-S3-only theta D2 rerun with the rollup companion/write prefix corrected and fresh verifier evidence captured. Production DB and production S3 remain off-limits; do not start or claim Stage 3 until theta passes, unless Rourke explicitly chooses to skip the remaining performance gate.",
+            "source_paths": [
+              "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Complete final Warmind parser validation without confusing code cleanup, Stage 2 scorecard evidence, and Stage 3 full data-integrity validation.",
+          "current_state": [
+            "Current recorded master/origin/master target: 6c5153d5063137ef16fc9bc4872c9b5f01f5831f; focused cleanup verification passed.",
+            "Stage 2 alpha\u2013eta are verified PASS rows for D1 and D2.",
+            "Stage 2 theta is D1 PASS and D2 FAIL.",
+            "Theta D2 parser-side fallback fixes improved DB/cache behavior, but fresh dev-S3 verification remained unsuccessful because 575 expected objects were absent from the intended write prefix.",
+            "Every Stage 3 gate, 3.1\u20133.10, remains not run."
+          ],
+          "decisions": [
+            "Treat the 2026-06-06 19:21Z target record as superseding earlier commits and branches.",
+            "Preserve historical Stage 2 PASS rows where the handoff explicitly says later changes are non-parser-impacting.",
+            "Do not reinterpret focused tests, cleanup completion, production recovery, or cutover rehearsal as Stage 3 validation.",
+            "Keep theta D2 failed until an end-to-end rerun produces correct run-owned archive output and fresh verifier proof.",
+            "Use dev S3 only; production DB/S3 actions require explicit authorization."
+          ],
+          "open_questions": [
+            "Does Rourke want theta rerun as the remaining Stage 2 gate, or explicitly waive it before Stage 3?",
+            "Has the D2 rollup companion\u2019s read-prefix/write-prefix plumbing been corrected in the latest target and wrapper?",
+            "What exact full-week or agreed slice should be used for Stage 3 D2 and D1 replay?"
+          ],
+          "next_actions": [
+            "Record branch, HEAD, clean status, diff check, schema state, Linux binary hashes, and remote bundle checksum for 6c5153d5 or any newer explicitly selected target.",
+            "Inspect and prove the D2 rollup wrapper passes the run-owned dev-S3 write prefix to the rollup process.",
+            "Reset only the dev theta D2 state under a fresh run name/prefix; preserve saved raw_new_modes evidence and avoid manual truth repair.",
+            "Rerun theta D2 S3-first through the verified-source boundary and post-source fallback; capture DB/Redis/process invariants, rollup output, and a fresh verifier result.",
+            "Only after theta passes or is explicitly waived, begin Stage 3 at gates 3.1 and 3.2 before full replay gates."
+          ],
+          "artifacts": [
+            "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "corpus/Projects/Warmind/Warmind.md",
+            "Stage 2 scorecard table in the final handoff",
+            "Stage 3 gates 3.1\u20133.10 table in the final handoff",
+            "Theta D2 run records theta-d2-final-001-bcc2f0d7, theta-d2-final-002-4568a16e3d, and theta-d2-final-003-324c07646b",
+            "Latest target record for 6c5153d5063137ef16fc9bc4872c9b5f01f5831f"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 4,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "6c5153d5063137ef16fc9bc4872c9b5f01f5831f",
+                  "6c5153d506"
+                ],
+                "matched": "6c5153d5063137ef16fc9bc4872c9b5f01f5831f"
+              },
+              {
+                "alternatives": [
+                  "master",
+                  "origin/master"
+                ],
+                "matched": "master"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "alpha",
+                  "eta"
+                ],
+                "matched": "alpha"
+              },
+              {
+                "alternatives": [
+                  "theta",
+                  "FAIL",
+                  "failed"
+                ],
+                "matched": "theta"
+              },
+              {
+                "alternatives": [
+                  "D2",
+                  "cache repair",
+                  "S3 repair"
+                ],
+                "matched": "D2"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Stage 3",
+                  "full data integrity"
+                ],
+                "matched": "Stage 3"
+              },
+              {
+                "alternatives": [
+                  "not run",
+                  "unfinished",
+                  "pending"
+                ],
+                "matched": "not run"
+              },
+              {
+                "alternatives": [
+                  "S3",
+                  "restart",
+                  "oracle"
+                ],
+                "matched": "S3"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "latest merged",
+                  "current target",
+                  "ground",
+                  "lock and prove",
+                  "confirm the target",
+                  "confirm where"
+                ],
+                "matched": "current target"
+              },
+              {
+                "alternatives": [
+                  "do not touch production",
+                  "no production",
+                  "dev-S3",
+                  "validation-safe"
+                ],
+                "matched": "dev-S3"
+              },
+              {
+                "alternatives": [
+                  "do not claim",
+                  "not complete",
+                  "until",
+                  "do not enter",
+                  "before"
+                ],
+                "matched": "until"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 18,
+        "commands": 6,
+        "command_output_chars": 1598458,
+        "tokens": {
+          "input_tokens": 283793,
+          "cached_input_tokens": 217344,
+          "output_tokens": 2975
+        }
+      },
+      "service_operations": [],
+      "service_calls": 0,
+      "service_result_chars": 0,
+      "service_latency_ms": 0.0,
+      "service_checkpoint": null,
+      "service_session_id": null,
+      "service_corpus_revision": null,
+      "workspace_operations": [],
+      "workspace_result_chars": 0,
+      "workspace_checkpoint": null,
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "warmind-final-validation-handoff",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 383.485,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T032220-0700/service_api/warmind-final-validation-handoff/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Unable to produce an evidence-backed handoff: the authorized `./memory` service timed out twice during `open`, rejected every scoped query, and also rejected the required checkpoint because no session was established. No alternate source was inspected, and no Warmind facts were inferred.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Unverified: the latest recorded target could not be retrieved because `./memory open` timed out.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c2",
+            "value": "Unverified: completed performance scorecard rows could not be distinguished from code cleanup or unfinished evidence.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c3",
+            "value": "Unverified: the full-validation state and known failing scenario could not be retrieved.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c4",
+            "value": "The next safe boundary is to retry `./memory open` when the service is healthy, then perform one batched Warmind query/read before executing any validation work.",
+            "source_paths": [],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Take over final Warmind parser validation and report the latest target, performance scorecard state, full-validation state, failing scenario, and next safe execution boundary.",
+          "current_state": [
+            "No Warmind evidence was retrieved.",
+            "`./memory open` timed out on two clean attempts.",
+            "Scoped queries were rejected with: Run ./memory open or ./memory resume first.",
+            "The checkpoint request was likewise rejected because no session was active."
+          ],
+          "decisions": [
+            "Used only the authorized `./memory` service surface.",
+            "Did not inspect the wrapper, corpus paths, repository files, filesystem search, or web.",
+            "Did not invent or infer handoff facts without service evidence.",
+            "Kept code cleanup, scorecard evidence, and full validation explicitly unresolved rather than collapsing them."
+          ],
+          "open_questions": [
+            "What is the latest recorded target?",
+            "Which performance scorecard rows are verified complete?",
+            "What full validation remains unfinished?",
+            "Which scenario is known to fail?",
+            "What execution boundary does the long handoff prescribe?"
+          ],
+          "next_actions": [
+            "Restore or wait for native memory service availability.",
+            "Run `./memory open`.",
+            "Perform one batched query/read scoped to Warmind covering all four claim slots.",
+            "Use one combined verify call only if retrieval leaves a material ambiguity.",
+            "Persist a superseding evidence-backed checkpoint before performing validation work."
+          ],
+          "artifacts": [
+            "Service error: `invalid_request: timed out` from two `./memory open` attempts.",
+            "Service error: `Run ./memory open or ./memory resume first` from scoped queries.",
+            "Same missing-session error from the attempted checkpoint; therefore no durable checkpoint ID exists."
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.1567,
+        "pass": false,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_score": 0.0667,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 0.0,
+        "citation_count": 0,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "6c5153d5063137ef16fc9bc4872c9b5f01f5831f",
+                  "6c5153d506"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "master",
+                  "origin/master"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c2",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "alpha",
+                  "eta"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "theta",
+                  "FAIL",
+                  "failed"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "D2",
+                  "cache repair",
+                  "S3 repair"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c3",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "Stage 3",
+                  "full data integrity"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "not run",
+                  "unfinished",
+                  "pending"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "S3",
+                  "restart",
+                  "oracle"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c4",
+            "score": 0.2667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "latest merged",
+                  "current target",
+                  "ground",
+                  "lock and prove",
+                  "confirm the target",
+                  "confirm where"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "do not touch production",
+                  "no production",
+                  "dev-S3",
+                  "validation-safe"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "do not claim",
+                  "not complete",
+                  "until",
+                  "do not enter",
+                  "before"
+                ],
+                "matched": "before"
+              }
+            ],
+            "citations": []
+          }
+        ]
+      },
+      "events": {
+        "events": 27,
+        "commands": 10,
+        "command_output_chars": 1985,
+        "tokens": {
+          "input_tokens": 456975,
+          "cached_input_tokens": 423936,
+          "output_tokens": 3651
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T03:23:34.584-07:00",
+          "operation": "failed:query",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 111
+        },
+        {
+          "at": "2026-07-12T03:24:21.338-07:00",
+          "operation": "failed:query",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 111
+        },
+        {
+          "at": "2026-07-12T03:24:45.489-07:00",
+          "operation": "failed:open",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 78
+        },
+        {
+          "at": "2026-07-12T03:25:06.335-07:00",
+          "operation": "failed:query",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 111
+        },
+        {
+          "at": "2026-07-12T03:25:44.336-07:00",
+          "operation": "failed:open",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 78
+        },
+        {
+          "at": "2026-07-12T03:26:26.021-07:00",
+          "operation": "failed:open",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 78
+        },
+        {
+          "at": "2026-07-12T03:28:34.979-07:00",
+          "operation": "failed:open",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 78
+        },
+        {
+          "at": "2026-07-12T03:28:44.311-07:00",
+          "operation": "failed:checkpoint",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 111
+        }
+      ],
+      "service_calls": 8,
+      "service_result_chars": 756,
+      "service_latency_ms": 0.0,
+      "service_checkpoint": null,
+      "service_session_id": null,
+      "service_corpus_revision": null,
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T03:23:34.584-07:00",
+          "operation": "failed:query",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 111
+        },
+        {
+          "at": "2026-07-12T03:24:21.338-07:00",
+          "operation": "failed:query",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 111
+        },
+        {
+          "at": "2026-07-12T03:24:45.489-07:00",
+          "operation": "failed:open",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 78
+        },
+        {
+          "at": "2026-07-12T03:25:06.335-07:00",
+          "operation": "failed:query",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 111
+        },
+        {
+          "at": "2026-07-12T03:25:44.336-07:00",
+          "operation": "failed:open",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 78
+        },
+        {
+          "at": "2026-07-12T03:26:26.021-07:00",
+          "operation": "failed:open",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 78
+        },
+        {
+          "at": "2026-07-12T03:28:34.979-07:00",
+          "operation": "failed:open",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 78
+        },
+        {
+          "at": "2026-07-12T03:28:44.311-07:00",
+          "operation": "failed:checkpoint",
+          "http_status": 0,
+          "service_status": "invalid_request",
+          "request_id": null,
+          "elapsed_ms": 0,
+          "result_chars": 111
+        }
+      ],
+      "workspace_result_chars": 756,
+      "workspace_checkpoint": null,
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "filesystem": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 1,
+        "case_pass_rate": 1.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_pass_rate": 1.0,
+        "mean_score": 1.0,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 70.29,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 0.0,
+        "persisted_checkpoints": 0,
+        "checkpoint_eligible_runs": 0,
+        "mean_service_calls": 0.0,
+        "mean_service_result_chars": 0.0,
+        "mean_service_latency_ms": 0.0,
+        "mean_completed_commands": 6.0,
+        "mean_command_output_chars": 1598458.0,
+        "mean_tokens": {
+          "input_tokens": 283793.0,
+          "output_tokens": 2975.0,
+          "cached_input_tokens": 217344.0,
+          "uncached_input_tokens": 66449.0
+        }
+      },
+      "service_api": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 0,
+        "case_pass_rate": 0.0,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_pass_rate": 0.0,
+        "mean_score": 0.1567,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 383.49,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 756.0,
+        "persisted_checkpoints": 0,
+        "checkpoint_eligible_runs": 1,
+        "mean_service_calls": 8.0,
+        "mean_service_result_chars": 756.0,
+        "mean_service_latency_ms": 0.0,
+        "mean_completed_commands": 10.0,
+        "mean_command_output_chars": 1985.0,
+        "mean_tokens": {
+          "input_tokens": 456975.0,
+          "output_tokens": 3651.0,
+          "cached_input_tokens": 423936.0,
+          "uncached_input_tokens": 33039.0
+        }
+      }
+    },
+    "by_workload": {
+      "Warmind": {
+        "filesystem": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 70.29,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 0.0,
+          "persisted_checkpoints": 0,
+          "checkpoint_eligible_runs": 0,
+          "mean_service_calls": 0.0,
+          "mean_service_result_chars": 0.0,
+          "mean_service_latency_ms": 0.0,
+          "mean_completed_commands": 6.0,
+          "mean_command_output_chars": 1598458.0,
+          "mean_tokens": {
+            "input_tokens": 283793.0,
+            "output_tokens": 2975.0,
+            "cached_input_tokens": 217344.0,
+            "uncached_input_tokens": 66449.0
+          }
+        },
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 0,
+          "claims_total": 4,
+          "claim_pass_rate": 0.0,
+          "mean_score": 0.1567,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 383.49,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 756.0,
+          "persisted_checkpoints": 0,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 8.0,
+          "mean_service_result_chars": 756.0,
+          "mean_service_latency_ms": 0.0,
+          "mean_completed_commands": 10.0,
+          "mean_command_output_chars": 1985.0,
+          "mean_tokens": {
+            "input_tokens": 456975.0,
+            "output_tokens": 3651.0,
+            "cached_input_tokens": 423936.0,
+            "uncached_input_tokens": 33039.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "durable_handoff": {
+        "filesystem": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 70.29,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 0.0,
+          "persisted_checkpoints": 0,
+          "checkpoint_eligible_runs": 0,
+          "mean_service_calls": 0.0,
+          "mean_service_result_chars": 0.0,
+          "mean_service_latency_ms": 0.0,
+          "mean_completed_commands": 6.0,
+          "mean_command_output_chars": 1598458.0,
+          "mean_tokens": {
+            "input_tokens": 283793.0,
+            "output_tokens": 2975.0,
+            "cached_input_tokens": 217344.0,
+            "uncached_input_tokens": 66449.0
+          }
+        },
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 0,
+          "claims_total": 4,
+          "claim_pass_rate": 0.0,
+          "mean_score": 0.1567,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 383.49,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 756.0,
+          "persisted_checkpoints": 0,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 8.0,
+          "mean_service_result_chars": 756.0,
+          "mean_service_latency_ms": 0.0,
+          "mean_completed_commands": 10.0,
+          "mean_command_output_chars": 1985.0,
+          "mean_tokens": {
+            "input_tokens": 456975.0,
+            "output_tokens": 3651.0,
+            "cached_input_tokens": 423936.0,
+            "uncached_input_tokens": 33039.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "warmind-final-validation-handoff": {
+        "id": "warmind-final-validation-handoff",
+        "workload": "Warmind",
+        "capability": "durable_handoff",
+        "task": "Take over the final parser validation work from its long handoff. Report the latest recorded target, distinguish completed performance rows from unfinished validation, identify the known failing scenario, and state the next safe execution boundary. Do not collapse code cleanup, scorecard evidence, and full validation into one status.",
+        "claim_slots": {
+          "c1": "latest recorded target",
+          "c2": "performance scorecard state",
+          "c3": "full validation state",
+          "c4": "safe next boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "6c5153d5063137ef16fc9bc4872c9b5f01f5831f",
+                  "6c5153d506"
+                ]
+              },
+              {
+                "any": [
+                  "master",
+                  "origin/master"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "alpha",
+                  "eta"
+                ]
+              },
+              {
+                "any": [
+                  "theta",
+                  "FAIL",
+                  "failed"
+                ]
+              },
+              {
+                "any": [
+                  "D2",
+                  "cache repair",
+                  "S3 repair"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Stage 3",
+                  "full data integrity"
+                ]
+              },
+              {
+                "any": [
+                  "not run",
+                  "unfinished",
+                  "pending"
+                ]
+              },
+              {
+                "any": [
+                  "S3",
+                  "restart",
+                  "oracle"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "latest merged",
+                  "current target",
+                  "ground",
+                  "lock and prove",
+                  "confirm the target",
+                  "confirm where"
+                ]
+              },
+              {
+                "any": [
+                  "do not touch production",
+                  "no production",
+                  "dev-S3",
+                  "validation-safe"
+                ]
+              },
+              {
+                "any": [
+                  "do not claim",
+                  "not complete",
+                  "until",
+                  "do not enter",
+                  "before"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "final validation is complete",
+          "all validation passed"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    }
+  }
+}

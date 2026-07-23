@@ -1,0 +1,1010 @@
+{
+  "benchmark_version": "rupture-ops-v0.1",
+  "run_at": "2026-07-12T06:19:31-07:00",
+  "run_id": "20260712T061754-0700",
+  "harness_sha256": "21b360bc5a92a07b17cfc4211f22f56d07ca7c3eaa1b962605bf86ebb28122b0",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "bcc7bc00dd42789d92d1417a12507446f76d1d4aa52a7e64e88526fe9055426b",
+  "manifest_sha256": "c9fb31e591e0af8e3b0cb2ef790e4f23169f9b45d62e75051b093834436325a5",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-rupture-ops-v0.1",
+    "sha256": "aa9c33e39777f0899dacecee61a94f5fd11ec1315f7a6e820a41bc217e1a9803",
+    "artifact_tree_sha256": "aa434eb3ffd5f4b6b9c766000d34ec6c30fd14b5ec6f94a4ff625306396b7b50",
+    "documents": 65,
+    "chunks": 587,
+    "characters": 468399
+  },
+  "manifest": {
+    "benchmark_version": "rupture-ops-v0.1",
+    "name": "Straylight Rupture Ops workload evaluation",
+    "report_title": "Straylight Rupture Ops workload evaluation",
+    "report_date": "2026-07-11",
+    "evaluation_model": "subject_plus_product_work",
+    "fixture_domain": "RuptureOps and StarRupture",
+    "generalization": {
+      "purpose": "Evaluate an agent that learns an evolving subject, tracks a concrete instance, advances goals and decisions, builds durable products, and verifies results.",
+      "planes": [
+        "subject",
+        "instance",
+        "work",
+        "product",
+        "validation"
+      ],
+      "fixture_rule": "Game-specific entities and values are concrete test data, not privileged Straylight schema."
+    },
+    "corpus_root": "eval/corpus-rupture-ops-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "future_lanes": [
+      "binary image understanding with source-native reads",
+      "object-store archive inspection and staged promotion",
+      "live web refresh against a snapshot-pinned local corpus",
+      "concurrent multi-agent writes against optimistic revision preconditions"
+    ],
+    "cases": [
+      {
+        "id": "ruptureops-private-public-artifact-boundary",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "artifact_policy_and_export_safety",
+        "task": "Prepare a public-release data and asset boundary for RuptureOps. Explain which source corpus, imports, player artifacts, images, icons, and audio remain private; state what can be used for a public build now; and identify the permission or licensed-data path required before broader distribution.",
+        "claim_slots": {
+          "c1": "third-party data license boundary",
+          "c2": "private personalized import boundary",
+          "c3": "public asset and implementation boundary",
+          "c4": "safe path to public distribution"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "permits crawling",
+                  "crawling"
+                ]
+              },
+              {
+                "any": [
+                  "no explicit",
+                  "reuse license",
+                  "license"
+                ]
+              },
+              {
+                "any": [
+                  "private research assets",
+                  "keep private"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "personalized save",
+                  "player state"
+                ]
+              },
+              {
+                "any": [
+                  "screenshots",
+                  "prompt history",
+                  "conversation"
+                ]
+              },
+              {
+                "any": [
+                  "raw/",
+                  "private",
+                  "ignored"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Topics/StarRupture/Knowledge base and modeling.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "original",
+                  "warning sounds",
+                  "app icon"
+                ]
+              },
+              {
+                "any": [
+                  "do not copy",
+                  "game audio",
+                  "third-party icons"
+                ]
+              },
+              {
+                "any": [
+                  "native type",
+                  "SF Symbols",
+                  "original phase symbols",
+                  "private-use"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Rupture cycle timer - research and product design.md",
+              "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "permission",
+                  "licensed"
+                ]
+              },
+              {
+                "any": [
+                  "separately licensed data",
+                  "licensed-data alternative"
+                ]
+              },
+              {
+                "any": [
+                  "exclude",
+                  "do not redistribute",
+                  "export policy"
+                ]
+              },
+              {
+                "any": [
+                  "source lineage",
+                  "provenance",
+                  "audit"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/README.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the repository is safe to publish as-is",
+          "redistribute the raw corpus",
+          "copy the game audio"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "ruptureops-private-public-artifact-boundary": {
+      "authorization_scope": "scope:root",
+      "display_scope": "RuptureOps",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiM2I5YTJmMzAtOTk1Mi00ZGU3LWJjZTktZTM1ZjZiMTE0ZWM0IiwiY3JlZGVudGlhbF9pZCI6ImIzN2Y0MTEyLWQxOGUtNGIwYy05MTI1LTFlMWE3NTNhMWY3ZSIsInNjb3BlX2lkIjoiZmUzZGQxYWItYzA1MC00M2RjLTk1NzUtZWY3NTQzZDNkMTBiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MWM2MDEwMDEzOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MzM5ODQ5ODY4ZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.uqd_PgbVc31RKyDBEbkIyNRlx9tQ0q3Xv72Yt5Ovl1M",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f567a47b573a0b04b16339849868d",
+      "corpus_revision": "revision:019f567a47b573a0b04b16339849868d",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 7727.685,
+        "ready_elapsed_ms": 7727.685,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiM2I5YTJmMzAtOTk1Mi00ZGU3LWJjZTktZTM1ZjZiMTE0ZWM0IiwiY3JlZGVudGlhbF9pZCI6ImIzN2Y0MTEyLWQxOGUtNGIwYy05MTI1LTFlMWE3NTNhMWY3ZSIsInNjb3BlX2lkIjoiZmUzZGQxYWItYzA1MC00M2RjLTk1NzUtZWY3NTQzZDNkMTBiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MWM2MDEwMDEzOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MzM5ODQ5ODY4ZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.uqd_PgbVc31RKyDBEbkIyNRlx9tQ0q3Xv72Yt5Ovl1M",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiM2I5YTJmMzAtOTk1Mi00ZGU3LWJjZTktZTM1ZjZiMTE0ZWM0IiwiY3JlZGVudGlhbF9pZCI6ImIzN2Y0MTEyLWQxOGUtNGIwYy05MTI1LTFlMWE3NTNhMWY3ZSIsInNjb3BlX2lkIjoiZmUzZGQxYWItYzA1MC00M2RjLTk1NzUtZWY3NTQzZDNkMTBiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MWM2MDEwMDEzOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MzM5ODQ5ODY4ZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.uqd_PgbVc31RKyDBEbkIyNRlx9tQ0q3Xv72Yt5Ovl1M",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T061754-0700/ruptureops-private-public-artifact-boundary",
+          "display_scope": "RuptureOps",
+          "access_mode": "read_write",
+          "user_id": "user:3b9a2f3099524de7bce9e35f6b114ec4",
+          "scope_id": "scope:fe3dd1abc05043dc9575ef7543d3d10b",
+          "credential_id": "credential:b37f4112d18e4b0c91251e1a753a1f7e",
+          "base_corpus_revision": "revision:019f567a47b573a0b04b16339849868d",
+          "corpus_revision": "revision:019f567a47b573a0b04b16339849868d",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 65,
+            "chunks": 566,
+            "embeddings": 566
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 65,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiM2I5YTJmMzAtOTk1Mi00ZGU3LWJjZTktZTM1ZjZiMTE0ZWM0IiwiY3JlZGVudGlhbF9pZCI6ImIzN2Y0MTEyLWQxOGUtNGIwYy05MTI1LTFlMWE3NTNhMWY3ZSIsInNjb3BlX2lkIjoiZmUzZGQxYWItYzA1MC00M2RjLTk1NzUtZWY3NTQzZDNkMTBiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MWM2MDEwMDEzOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MzM5ODQ5ODY4ZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.uqd_PgbVc31RKyDBEbkIyNRlx9tQ0q3Xv72Yt5Ovl1M",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiM2I5YTJmMzAtOTk1Mi00ZGU3LWJjZTktZTM1ZjZiMTE0ZWM0IiwiY3JlZGVudGlhbF9pZCI6ImIzN2Y0MTEyLWQxOGUtNGIwYy05MTI1LTFlMWE3NTNhMWY3ZSIsInNjb3BlX2lkIjoiZmUzZGQxYWItYzA1MC00M2RjLTk1NzUtZWY3NTQzZDNkMTBiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MWM2MDEwMDEzOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjdhLTQ3YjUtNzNhMC1iMDRiLTE2MzM5ODQ5ODY4ZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.uqd_PgbVc31RKyDBEbkIyNRlx9tQ0q3Xv72Yt5Ovl1M",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T061754-0700/ruptureops-private-public-artifact-boundary",
+          "display_scope": "RuptureOps",
+          "access_mode": "read_write",
+          "user_id": "user:3b9a2f3099524de7bce9e35f6b114ec4",
+          "scope_id": "scope:fe3dd1abc05043dc9575ef7543d3d10b",
+          "credential_id": "credential:b37f4112d18e4b0c91251e1a753a1f7e",
+          "base_corpus_revision": "revision:019f567a47b573a0b04b16339849868d",
+          "corpus_revision": "revision:019f567a47b573a0b04b16339849868d",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 65,
+            "chunks": 566,
+            "embeddings": 566
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 65,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "ruptureops-private-public-artifact-boundary",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 89.151,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T061754-0700/service_api/ruptureops-private-public-artifact-boundary/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "RuptureOps cannot currently be released publicly as the existing repository or benchmark fixture. A public build should be a clean artifact containing independently authored implementation only, with no SRDB-derived corpus/assets or personalized material. Generated icon and audio files need provenance and license review before inclusion. Broader distribution requires written source-owner permission or replacement with separately licensed data.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "SRDB permits crawling, but its footer asserts copyright and it publishes no explicit content/data reuse license. Therefore the mirrored raw archive, normalized corpus, derived SQLite database, images, icons, and other mirrored source assets remain private research material and are not cleared for republication.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Projects/RuptureOps/Repository/README.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Private personalized material includes the imported package and duplicate third-party corpus, exact player prompt histories, personalized save state and models, screenshots and site images, player planning notes, conversation-derived decisions, maps/site context, vault knowledge, saved scenarios, and generated player-specific outputs. The benchmark fixture combines this personal play state with third-party-derived material and must not be published.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/README.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "CORPUS.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The current corpus-bearing repository is not itself public-release-safe. A public build can presently use only a separately packaged, independently authored implementation that excludes raw and normalized snapshots, SQLite, source-derived facts and text, mirrored site images/icons, imports, models, screenshots, and other player artifacts. The generated app icon and warning audio occur inside the explicitly private benchmark fixture; because the retrieved evidence contains no distribution license or provenance clearance for those binaries, treat them as private pending review rather than assuming they may ship.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/README.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "CORPUS.md"
+            ],
+            "confidence": "medium"
+          },
+          {
+            "id": "c4",
+            "value": "Safe broader distribution requires either written reuse permission from the source owner covering the dataset, text, images/icons, mirrored assets, normalized and derived forms, and app distribution, or adoption of a different independently obtained and separately licensed data strategy. Before release, establish an explicit allowlist for independently authored code and cleared original assets, review every image/icon/audio file\u2019s provenance and license, and enforce exclusions for private corpus and player material.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/README.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Topics/StarRupture/Knowledge base and modeling.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Prepare an evidence-backed public-release data and asset boundary for RuptureOps.",
+          "current_state": [
+            "Verified against base corpus revision revision:019f567a47b573a0b04b16339849868d that SRDB has no explicit data/content reuse license and asserts copyright.",
+            "Verified that raw captures, mirrored assets, normalized snapshots, SQLite, imported personalized material, and the benchmark fixture remain private.",
+            "Verified that the existing repository co-locates implementation and private corpus material and is documented as private.",
+            "Checkpoint persisted as checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6."
+          ],
+          "decisions": [
+            "Treat the existing repository and benchmark fixture as non-public.",
+            "Treat a clean, independently authored implementation-only artifact as the current public-build path.",
+            "Treat generated icon and warning audio as uncleared until provenance and distribution rights are verified.",
+            "Do not infer that provenance labeling makes promoted source-derived facts redistributable."
+          ],
+          "open_questions": [
+            "Whether written permission can be obtained from the SRDB owner and what uses it would cover.",
+            "Whether generated app icon and warning audio have provenance and license records permitting public distribution.",
+            "Which alternate licensed or first-party dataset could replace SRDB-derived content."
+          ],
+          "next_actions": [
+            "Request written source-owner permission or select a separately licensed dataset.",
+            "Create a public artifact allowlist and automated denylist checks for corpus, database, imports, models, screenshots, prompt history, vault material, and generated player outputs.",
+            "Perform asset-by-asset provenance and license review for every image, icon, and audio file.",
+            "Package independently authored implementation separately from the private research repository."
+          ],
+          "artifacts": [
+            "Projects/RuptureOps/Repository/README.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Topics/StarRupture/Knowledge base and modeling.md",
+            "CORPUS.md",
+            "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.745,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.7,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 12,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "permits crawling",
+                  "crawling"
+                ],
+                "matched": "permits crawling"
+              },
+              {
+                "alternatives": [
+                  "no explicit",
+                  "reuse license",
+                  "license"
+                ],
+                "matched": "no explicit"
+              },
+              {
+                "alternatives": [
+                  "private research assets",
+                  "keep private"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Projects/RuptureOps/Repository/README.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "personalized save",
+                  "player state"
+                ],
+                "matched": "personalized save"
+              },
+              {
+                "alternatives": [
+                  "screenshots",
+                  "prompt history",
+                  "conversation"
+                ],
+                "matched": "screenshots"
+              },
+              {
+                "alternatives": [
+                  "raw/",
+                  "private",
+                  "ignored"
+                ],
+                "matched": "private"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/README.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "CORPUS.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.2667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "original",
+                  "warning sounds",
+                  "app icon"
+                ],
+                "matched": "app icon"
+              },
+              {
+                "alternatives": [
+                  "do not copy",
+                  "game audio",
+                  "third-party icons"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "native type",
+                  "SF Symbols",
+                  "original phase symbols",
+                  "private-use"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/README.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "CORPUS.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.8,
+            "pass": true,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "permission",
+                  "licensed"
+                ],
+                "matched": "permission"
+              },
+              {
+                "alternatives": [
+                  "separately licensed data",
+                  "licensed-data alternative"
+                ],
+                "matched": "separately licensed data"
+              },
+              {
+                "alternatives": [
+                  "exclude",
+                  "do not redistribute",
+                  "export policy"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "source lineage",
+                  "provenance",
+                  "audit"
+                ],
+                "matched": "provenance"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/README.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Topics/StarRupture/Knowledge base and modeling.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 14,
+        "commands": 4,
+        "command_output_chars": 153944,
+        "tokens": {
+          "input_tokens": 164517,
+          "cached_input_tokens": 114688,
+          "output_tokens": 2840
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T06:18:14.922-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f567a797f7a5084256c42145f5ff3",
+          "elapsed_ms": 2352.819,
+          "result_chars": 39127
+        },
+        {
+          "at": "2026-07-12T06:18:29.823-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f567ab3b5701385e5e09322a85da8",
+          "elapsed_ms": 8386.75,
+          "result_chars": 78154
+        },
+        {
+          "at": "2026-07-12T06:18:43.927-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f567aeaca7c62965819fef376d9e4",
+          "elapsed_ms": 3863.543,
+          "result_chars": 33695
+        },
+        {
+          "at": "2026-07-12T06:19:05.820-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f567b405a71d1b97f987f18f92367",
+          "elapsed_ms": 218.923,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 153940,
+      "service_latency_ms": 14822.035,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f567a-47b5-73a0-b04b-16339849868d",
+        "checkpoint_id": "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6",
+        "corpus_revision": "revision:019f567b-3fba-7773-a244-c8fa563bff1b",
+        "created": [
+          {
+            "id": "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "b37f4112-d18e-4b0c-9125-1e1a753a1f7e",
+        "deduplicated": [],
+        "id": "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6",
+        "idempotency_key": "eval-checkpoint:session:019f567a708678429675aa2c37fcf39b:ddf49be05d9318e96d5c8e5bee7241596b2b054f2f217d7e65c41b9b41b95477",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f567b-3fba-7773-a244-c8fa563bff1b",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f567b-3fb7-7e00-a0b7-ddcf837b0212"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:ed882158596353a9870b35a13c8ea660ad74ea02edf10ac038a3301d2abb8b87",
+        "operation_id": "operation:019f567b-3fb1-7153-ab82-5f0907d02ab6",
+        "policy": {
+          "policy_id": "4bdb5ef8-cb57-4329-b6e0-0492a84fe3ce",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f567b-3fb1-7153-ab82-5f0907d02ab6",
+        "replayed": false,
+        "request_hash": "sha256:adf53efd46f20425251be83df1359d6432c527be6b3c63f2afadc2a15f2bda47",
+        "resulting_corpus_revision": "revision:019f567b-3fba-7773-a244-c8fa563bff1b",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f567a708678429675aa2c37fcf39b",
+        "status": "committed",
+        "user_id": "user:3b9a2f3099524de7bce9e35f6b114ec4"
+      },
+      "service_session_id": "session:019f567a708678429675aa2c37fcf39b",
+      "service_corpus_revision": "revision:019f567b-3fba-7773-a244-c8fa563bff1b",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T06:18:14.922-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f567a797f7a5084256c42145f5ff3",
+          "elapsed_ms": 2352.819,
+          "result_chars": 39127
+        },
+        {
+          "at": "2026-07-12T06:18:29.823-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f567ab3b5701385e5e09322a85da8",
+          "elapsed_ms": 8386.75,
+          "result_chars": 78154
+        },
+        {
+          "at": "2026-07-12T06:18:43.927-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f567aeaca7c62965819fef376d9e4",
+          "elapsed_ms": 3863.543,
+          "result_chars": 33695
+        },
+        {
+          "at": "2026-07-12T06:19:05.820-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f567b405a71d1b97f987f18f92367",
+          "elapsed_ms": 218.923,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 153940,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f567a-47b5-73a0-b04b-16339849868d",
+        "checkpoint_id": "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6",
+        "corpus_revision": "revision:019f567b-3fba-7773-a244-c8fa563bff1b",
+        "created": [
+          {
+            "id": "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "b37f4112-d18e-4b0c-9125-1e1a753a1f7e",
+        "deduplicated": [],
+        "id": "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6",
+        "idempotency_key": "eval-checkpoint:session:019f567a708678429675aa2c37fcf39b:ddf49be05d9318e96d5c8e5bee7241596b2b054f2f217d7e65c41b9b41b95477",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f567b-3fba-7773-a244-c8fa563bff1b",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f567b-3fb7-7e00-a0b7-ddcf837b0212"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:ed882158596353a9870b35a13c8ea660ad74ea02edf10ac038a3301d2abb8b87",
+        "operation_id": "operation:019f567b-3fb1-7153-ab82-5f0907d02ab6",
+        "policy": {
+          "policy_id": "4bdb5ef8-cb57-4329-b6e0-0492a84fe3ce",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f567b-3fb1-7153-ab82-5f0907d02ab6",
+        "replayed": false,
+        "request_hash": "sha256:adf53efd46f20425251be83df1359d6432c527be6b3c63f2afadc2a15f2bda47",
+        "resulting_corpus_revision": "revision:019f567b-3fba-7773-a244-c8fa563bff1b",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f567b-3fba-7773-a244-c8e0c9bd10f6"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f567a708678429675aa2c37fcf39b",
+        "status": "committed",
+        "user_id": "user:3b9a2f3099524de7bce9e35f6b114ec4"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 0,
+        "case_pass_rate": 0.0,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.745,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 89.15,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 153940.0,
+        "persisted_checkpoints": 1,
+        "checkpoint_eligible_runs": 1,
+        "mean_service_calls": 4.0,
+        "mean_service_result_chars": 153940.0,
+        "mean_service_latency_ms": 14822.035,
+        "mean_completed_commands": 4.0,
+        "mean_command_output_chars": 153944.0,
+        "mean_tokens": {
+          "input_tokens": 164517.0,
+          "output_tokens": 2840.0,
+          "cached_input_tokens": 114688.0,
+          "uncached_input_tokens": 49829.0
+        }
+      }
+    },
+    "by_workload": {
+      "RuptureOps": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.745,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 89.15,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 153940.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 153940.0,
+          "mean_service_latency_ms": 14822.035,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 153944.0,
+          "mean_tokens": {
+            "input_tokens": 164517.0,
+            "output_tokens": 2840.0,
+            "cached_input_tokens": 114688.0,
+            "uncached_input_tokens": 49829.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "artifact_policy_and_export_safety": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.745,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 89.15,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 153940.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 153940.0,
+          "mean_service_latency_ms": 14822.035,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 153944.0,
+          "mean_tokens": {
+            "input_tokens": 164517.0,
+            "output_tokens": 2840.0,
+            "cached_input_tokens": 114688.0,
+            "uncached_input_tokens": 49829.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "ruptureops-private-public-artifact-boundary": {
+        "id": "ruptureops-private-public-artifact-boundary",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "artifact_policy_and_export_safety",
+        "task": "Prepare a public-release data and asset boundary for RuptureOps. Explain which source corpus, imports, player artifacts, images, icons, and audio remain private; state what can be used for a public build now; and identify the permission or licensed-data path required before broader distribution.",
+        "claim_slots": {
+          "c1": "third-party data license boundary",
+          "c2": "private personalized import boundary",
+          "c3": "public asset and implementation boundary",
+          "c4": "safe path to public distribution"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "permits crawling",
+                  "crawling"
+                ]
+              },
+              {
+                "any": [
+                  "no explicit",
+                  "reuse license",
+                  "license"
+                ]
+              },
+              {
+                "any": [
+                  "private research assets",
+                  "keep private"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "personalized save",
+                  "player state"
+                ]
+              },
+              {
+                "any": [
+                  "screenshots",
+                  "prompt history",
+                  "conversation"
+                ]
+              },
+              {
+                "any": [
+                  "raw/",
+                  "private",
+                  "ignored"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Topics/StarRupture/Knowledge base and modeling.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "original",
+                  "warning sounds",
+                  "app icon"
+                ]
+              },
+              {
+                "any": [
+                  "do not copy",
+                  "game audio",
+                  "third-party icons"
+                ]
+              },
+              {
+                "any": [
+                  "native type",
+                  "SF Symbols",
+                  "original phase symbols",
+                  "private-use"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Rupture cycle timer - research and product design.md",
+              "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "permission",
+                  "licensed"
+                ]
+              },
+              {
+                "any": [
+                  "separately licensed data",
+                  "licensed-data alternative"
+                ]
+              },
+              {
+                "any": [
+                  "exclude",
+                  "do not redistribute",
+                  "export policy"
+                ]
+              },
+              {
+                "any": [
+                  "source lineage",
+                  "provenance",
+                  "audit"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/README.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the repository is safe to publish as-is",
+          "redistribute the raw corpus",
+          "copy the game audio"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    }
+  }
+}

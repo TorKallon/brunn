@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "description": "Curated recipe-to-building associations absent from the SRDB building recipe array.",
+  "overrides": [
+    {
+      "source_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+      "recipe_id": "calcium-ore-impure-mechanical-drill-tier2",
+      "building_id": "mechanical-drill-tier2",
+      "confidence": "medium",
+      "reason": "The recipe exists in the current crafting payload and the live Ore Excavator v.2 has the normal-purity sibling, but SRDB omits this impure variant from the building recipe array.",
+      "evidence_url": "https://starrupture.tools/buildings/mechanical-drill-tier2",
+      "import_evidence": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/artifacts/availability_overrides.csv"
+    },
+    {
+      "source_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+      "recipe_id": "calcium-ore-pure-mechanical-drill-tier2",
+      "building_id": "mechanical-drill-tier2",
+      "confidence": "medium",
+      "reason": "The recipe exists in the current crafting payload and the live Ore Excavator v.2 has the normal-purity sibling, but SRDB omits this pure variant from the building recipe array.",
+      "evidence_url": "https://starrupture.tools/buildings/mechanical-drill-tier2",
+      "import_evidence": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/artifacts/availability_overrides.csv"
+    },
+    {
+      "source_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+      "recipe_id": "titanium-ore-impure-mechanical-drill-tier2",
+      "building_id": "mechanical-drill-tier2",
+      "confidence": "medium",
+      "reason": "The recipe exists in the current crafting payload and the live Ore Excavator v.2 has the normal-purity sibling, but SRDB omits this impure variant from the building recipe array.",
+      "evidence_url": "https://starrupture.tools/buildings/mechanical-drill-tier2",
+      "import_evidence": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/artifacts/availability_overrides.csv"
+    },
+    {
+      "source_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+      "recipe_id": "titanium-ore-pure-mechanical-drill-tier2",
+      "building_id": "mechanical-drill-tier2",
+      "confidence": "medium",
+      "reason": "The recipe exists in the current crafting payload and the live Ore Excavator v.2 has the normal-purity sibling, but SRDB omits this pure variant from the building recipe array.",
+      "evidence_url": "https://starrupture.tools/buildings/mechanical-drill-tier2",
+      "import_evidence": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/artifacts/availability_overrides.csv"
+    },
+    {
+      "source_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+      "recipe_id": "wolfram-ore-impure-mechanical-drill-tier2",
+      "building_id": "mechanical-drill-tier2",
+      "confidence": "medium",
+      "reason": "The recipe exists in the current crafting payload and the live Ore Excavator v.2 has the normal-purity sibling, but SRDB omits this impure variant from the building recipe array.",
+      "evidence_url": "https://starrupture.tools/buildings/mechanical-drill-tier2",
+      "import_evidence": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/artifacts/availability_overrides.csv"
+    },
+    {
+      "source_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+      "recipe_id": "wolfram-ore-pure-mechanical-drill-tier2",
+      "building_id": "mechanical-drill-tier2",
+      "confidence": "medium",
+      "reason": "The recipe exists in the current crafting payload and the live Ore Excavator v.2 has the normal-purity sibling, but SRDB omits this pure variant from the building recipe array.",
+      "evidence_url": "https://starrupture.tools/buildings/mechanical-drill-tier2",
+      "import_evidence": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/artifacts/availability_overrides.csv"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "schema": "source-role-records@v1",
+  "relations": [
+    {
+      "id": "relation:role-401",
+      "subject": "person:p-301",
+      "subject_name_claim": "Morgan Ives",
+      "predicate": "member_of",
+      "object": "group:g-401",
+      "object_name_claim": "Dockside Makers",
+      "qualifiers": {"role": "schedule coordinator", "valid_from": "2026-06-01", "valid_through": "2026-09-30"},
+      "source": "source:dockside-roster-r5"
+    },
+    {
+      "id": "relation:role-402",
+      "subject": "person:p-302",
+      "predicate": "member_of",
+      "object": "organization:o-401",
+      "qualifiers": {"role": "treasurer", "valid_from": "2026-01-01"},
+      "source": "source:organization-register-r2"
+    }
+  ]
+}

@@ -1,0 +1,1916 @@
+{
+  "benchmark_version": "rupture-ops-v0.1",
+  "run_at": "2026-07-12T05:57:11-07:00",
+  "run_id": "20260712T055514-0700",
+  "harness_sha256": "21b360bc5a92a07b17cfc4211f22f56d07ca7c3eaa1b962605bf86ebb28122b0",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "bcc7bc00dd42789d92d1417a12507446f76d1d4aa52a7e64e88526fe9055426b",
+  "manifest_sha256": "c9fb31e591e0af8e3b0cb2ef790e4f23169f9b45d62e75051b093834436325a5",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-rupture-ops-v0.1",
+    "sha256": "aa9c33e39777f0899dacecee61a94f5fd11ec1315f7a6e820a41bc217e1a9803",
+    "artifact_tree_sha256": "aa434eb3ffd5f4b6b9c766000d34ec6c30fd14b5ec6f94a4ff625306396b7b50",
+    "documents": 65,
+    "chunks": 587,
+    "characters": 468399
+  },
+  "manifest": {
+    "benchmark_version": "rupture-ops-v0.1",
+    "name": "Straylight Rupture Ops workload evaluation",
+    "report_title": "Straylight Rupture Ops workload evaluation",
+    "report_date": "2026-07-11",
+    "evaluation_model": "subject_plus_product_work",
+    "fixture_domain": "RuptureOps and StarRupture",
+    "generalization": {
+      "purpose": "Evaluate an agent that learns an evolving subject, tracks a concrete instance, advances goals and decisions, builds durable products, and verifies results.",
+      "planes": [
+        "subject",
+        "instance",
+        "work",
+        "product",
+        "validation"
+      ],
+      "fixture_rule": "Game-specific entities and values are concrete test data, not privileged Straylight schema."
+    },
+    "corpus_root": "eval/corpus-rupture-ops-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "future_lanes": [
+      "binary image understanding with source-native reads",
+      "object-store archive inspection and staged promotion",
+      "live web refresh against a snapshot-pinned local corpus",
+      "concurrent multi-agent writes against optimistic revision preconditions"
+    ],
+    "cases": [
+      {
+        "id": "ruptureops-prompt-history-reconciliation",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "overlapping_history_and_epistemic_state",
+        "task": "Reconcile the three imported player prompt dumps into durable state. Explain their overlap, apply the evidence rules that prevent questions, assistant recommendations, and accepted plans from becoming player facts, and identify the canonical outputs. Preserve exact history without multiplying duplicate facts.",
+        "claim_slots": {
+          "c1": "source overlap and unique spans",
+          "c2": "evidence classification rules",
+          "c3": "temporal and duplicate handling",
+          "c4": "canonical promoted outputs"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "semantic subset",
+                  "formatting variant",
+                  "no new conversation content"
+                ]
+              },
+              {
+                "any": [
+                  "99-249",
+                  "scaling and product history"
+                ]
+              },
+              {
+                "any": [
+                  "95-225",
+                  "exploration history"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "direct first-person",
+                  "direct player statements"
+                ]
+              },
+              {
+                "any": [
+                  "questions establish goals",
+                  "questions",
+                  "not the truth"
+                ]
+              },
+              {
+                "any": [
+                  "quoted assistant",
+                  "not promoted",
+                  "recommendation"
+                ]
+              },
+              {
+                "any": [
+                  "plans",
+                  "installed",
+                  "completed construction"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "historical checkpoint",
+                  "historical"
+                ]
+              },
+              {
+                "any": [
+                  "current unknown",
+                  "live refresh",
+                  "may have advanced"
+                ]
+              },
+              {
+                "any": [
+                  "one canonical fact",
+                  "remain one",
+                  "duplicate statements"
+                ]
+              },
+              {
+                "any": [
+                  "provenance",
+                  "preserved intact",
+                  "losslessly"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Topics/StarRupture/Player save - play history.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "rourke-update1-save-baseline__20260711.json"
+                ]
+              },
+              {
+                "any": [
+                  "rourke-update1-play-history__20260711.json"
+                ]
+              },
+              {
+                "any": [
+                  "Player save - play history.md"
+                ]
+              },
+              {
+                "any": [
+                  "Player-derived product requirements.md"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/import.json",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json"
+            ]
+          }
+        ],
+        "forbidden": [
+          "three independent confirmations",
+          "accepted plans are installed",
+          "the questions prove"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      {
+        "id": "ruptureops-private-public-artifact-boundary",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "artifact_policy_and_export_safety",
+        "task": "Prepare a public-release data and asset boundary for RuptureOps. Explain which source corpus, imports, player artifacts, images, icons, and audio remain private; state what can be used for a public build now; and identify the permission or licensed-data path required before broader distribution.",
+        "claim_slots": {
+          "c1": "third-party data license boundary",
+          "c2": "private personalized import boundary",
+          "c3": "public asset and implementation boundary",
+          "c4": "safe path to public distribution"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "permits crawling",
+                  "crawling"
+                ]
+              },
+              {
+                "any": [
+                  "no explicit",
+                  "reuse license",
+                  "license"
+                ]
+              },
+              {
+                "any": [
+                  "private research assets",
+                  "keep private"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "personalized save",
+                  "player state"
+                ]
+              },
+              {
+                "any": [
+                  "screenshots",
+                  "prompt history",
+                  "conversation"
+                ]
+              },
+              {
+                "any": [
+                  "raw/",
+                  "private",
+                  "ignored"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Topics/StarRupture/Knowledge base and modeling.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "original",
+                  "warning sounds",
+                  "app icon"
+                ]
+              },
+              {
+                "any": [
+                  "do not copy",
+                  "game audio",
+                  "third-party icons"
+                ]
+              },
+              {
+                "any": [
+                  "native type",
+                  "SF Symbols",
+                  "original phase symbols",
+                  "private-use"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Rupture cycle timer - research and product design.md",
+              "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "permission",
+                  "licensed"
+                ]
+              },
+              {
+                "any": [
+                  "separately licensed data",
+                  "licensed-data alternative"
+                ]
+              },
+              {
+                "any": [
+                  "exclude",
+                  "do not redistribute",
+                  "export policy"
+                ]
+              },
+              {
+                "any": [
+                  "source lineage",
+                  "provenance",
+                  "audit"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/README.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the repository is safe to publish as-is",
+          "redistribute the raw corpus",
+          "copy the game audio"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "ruptureops-prompt-history-reconciliation": {
+      "authorization_scope": "scope:root",
+      "display_scope": "RuptureOps",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDMwYTgxZDUtZGE2YS00NjczLTg3OWQtMDRmYTkwMDIxNWE1IiwiY3JlZGVudGlhbF9pZCI6IjMzYTNiN2Y5LTMzMTgtNDMxOS1hNTc1LTRkNDAxNGQwZDgxOSIsInNjb3BlX2lkIjoiOWRkYzQxMTItNTMwZi00MzAyLWExNzgtYzVjNDFmMDQyNzY0IiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNWE3YjEzODYwNSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNzdjYTU1YTg0MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.Ny13v7uhnYLtj2V7SJ-K2LuqOW91v9caMhDwLJ6rHTY",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f566599fb74819d2ef377ca55a841",
+      "corpus_revision": "revision:019f566599fb74819d2ef377ca55a841",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 12754.881,
+        "ready_elapsed_ms": 12754.881,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDMwYTgxZDUtZGE2YS00NjczLTg3OWQtMDRmYTkwMDIxNWE1IiwiY3JlZGVudGlhbF9pZCI6IjMzYTNiN2Y5LTMzMTgtNDMxOS1hNTc1LTRkNDAxNGQwZDgxOSIsInNjb3BlX2lkIjoiOWRkYzQxMTItNTMwZi00MzAyLWExNzgtYzVjNDFmMDQyNzY0IiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNWE3YjEzODYwNSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNzdjYTU1YTg0MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.Ny13v7uhnYLtj2V7SJ-K2LuqOW91v9caMhDwLJ6rHTY",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDMwYTgxZDUtZGE2YS00NjczLTg3OWQtMDRmYTkwMDIxNWE1IiwiY3JlZGVudGlhbF9pZCI6IjMzYTNiN2Y5LTMzMTgtNDMxOS1hNTc1LTRkNDAxNGQwZDgxOSIsInNjb3BlX2lkIjoiOWRkYzQxMTItNTMwZi00MzAyLWExNzgtYzVjNDFmMDQyNzY0IiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNWE3YjEzODYwNSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNzdjYTU1YTg0MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.Ny13v7uhnYLtj2V7SJ-K2LuqOW91v9caMhDwLJ6rHTY",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T055514-0700/ruptureops-prompt-history-reconciliation",
+          "display_scope": "RuptureOps",
+          "access_mode": "read_write",
+          "user_id": "user:030a81d5da6a4673879d04fa900215a5",
+          "scope_id": "scope:9ddc4112530f4302a178c5c41f042764",
+          "credential_id": "credential:33a3b7f933184319a5754d4014d0d819",
+          "base_corpus_revision": "revision:019f566599fb74819d2ef377ca55a841",
+          "corpus_revision": "revision:019f566599fb74819d2ef377ca55a841",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 65,
+            "chunks": 566,
+            "embeddings": 566
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 65,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDMwYTgxZDUtZGE2YS00NjczLTg3OWQtMDRmYTkwMDIxNWE1IiwiY3JlZGVudGlhbF9pZCI6IjMzYTNiN2Y5LTMzMTgtNDMxOS1hNTc1LTRkNDAxNGQwZDgxOSIsInNjb3BlX2lkIjoiOWRkYzQxMTItNTMwZi00MzAyLWExNzgtYzVjNDFmMDQyNzY0IiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNWE3YjEzODYwNSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNzdjYTU1YTg0MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.Ny13v7uhnYLtj2V7SJ-K2LuqOW91v9caMhDwLJ6rHTY",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDMwYTgxZDUtZGE2YS00NjczLTg3OWQtMDRmYTkwMDIxNWE1IiwiY3JlZGVudGlhbF9pZCI6IjMzYTNiN2Y5LTMzMTgtNDMxOS1hNTc1LTRkNDAxNGQwZDgxOSIsInNjb3BlX2lkIjoiOWRkYzQxMTItNTMwZi00MzAyLWExNzgtYzVjNDFmMDQyNzY0IiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNWE3YjEzODYwNSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LTk5ZmItNzQ4MS05ZDJlLWYzNzdjYTU1YTg0MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.Ny13v7uhnYLtj2V7SJ-K2LuqOW91v9caMhDwLJ6rHTY",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T055514-0700/ruptureops-prompt-history-reconciliation",
+          "display_scope": "RuptureOps",
+          "access_mode": "read_write",
+          "user_id": "user:030a81d5da6a4673879d04fa900215a5",
+          "scope_id": "scope:9ddc4112530f4302a178c5c41f042764",
+          "credential_id": "credential:33a3b7f933184319a5754d4014d0d819",
+          "base_corpus_revision": "revision:019f566599fb74819d2ef377ca55a841",
+          "corpus_revision": "revision:019f566599fb74819d2ef377ca55a841",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 65,
+            "chunks": 566,
+            "embeddings": 566
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 65,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "ruptureops-private-public-artifact-boundary": {
+      "authorization_scope": "scope:root",
+      "display_scope": "RuptureOps",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYWNjZWMzYWUtNWVlYi00ZjAyLTg2OTEtYjAwMGRmODA3ODg4IiwiY3JlZGVudGlhbF9pZCI6IjNkMmZkYTExLWQ5NDctNGMyNS05ZWRhLTE4YTEyYjE3NDE2NCIsInNjb3BlX2lkIjoiMmU5NDVhMjctMWNiOS00OTU1LTkzZWYtMWQwNGE3OGRmYjdlIiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTljZmY2MTIzOGIwMiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTlkMWI4ODhiNTQzZiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.dQXhhGbBGSChg3qEQ9q_5lWX2zfnncGuLpGoXwLeALo",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f5665b3097e10baf29d1b888b543f",
+      "corpus_revision": "revision:019f5665b3097e10baf29d1b888b543f",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 6278.778,
+        "ready_elapsed_ms": 6278.778,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYWNjZWMzYWUtNWVlYi00ZjAyLTg2OTEtYjAwMGRmODA3ODg4IiwiY3JlZGVudGlhbF9pZCI6IjNkMmZkYTExLWQ5NDctNGMyNS05ZWRhLTE4YTEyYjE3NDE2NCIsInNjb3BlX2lkIjoiMmU5NDVhMjctMWNiOS00OTU1LTkzZWYtMWQwNGE3OGRmYjdlIiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTljZmY2MTIzOGIwMiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTlkMWI4ODhiNTQzZiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.dQXhhGbBGSChg3qEQ9q_5lWX2zfnncGuLpGoXwLeALo",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYWNjZWMzYWUtNWVlYi00ZjAyLTg2OTEtYjAwMGRmODA3ODg4IiwiY3JlZGVudGlhbF9pZCI6IjNkMmZkYTExLWQ5NDctNGMyNS05ZWRhLTE4YTEyYjE3NDE2NCIsInNjb3BlX2lkIjoiMmU5NDVhMjctMWNiOS00OTU1LTkzZWYtMWQwNGE3OGRmYjdlIiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTljZmY2MTIzOGIwMiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTlkMWI4ODhiNTQzZiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.dQXhhGbBGSChg3qEQ9q_5lWX2zfnncGuLpGoXwLeALo",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T055514-0700/ruptureops-private-public-artifact-boundary",
+          "display_scope": "RuptureOps",
+          "access_mode": "read_write",
+          "user_id": "user:accec3ae5eeb4f028691b000df807888",
+          "scope_id": "scope:2e945a271cb9495593ef1d04a78dfb7e",
+          "credential_id": "credential:3d2fda11d9474c259eda18a12b174164",
+          "base_corpus_revision": "revision:019f5665b3097e10baf29d1b888b543f",
+          "corpus_revision": "revision:019f5665b3097e10baf29d1b888b543f",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 65,
+            "chunks": 566,
+            "embeddings": 566
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 65,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYWNjZWMzYWUtNWVlYi00ZjAyLTg2OTEtYjAwMGRmODA3ODg4IiwiY3JlZGVudGlhbF9pZCI6IjNkMmZkYTExLWQ5NDctNGMyNS05ZWRhLTE4YTEyYjE3NDE2NCIsInNjb3BlX2lkIjoiMmU5NDVhMjctMWNiOS00OTU1LTkzZWYtMWQwNGE3OGRmYjdlIiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTljZmY2MTIzOGIwMiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTlkMWI4ODhiNTQzZiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.dQXhhGbBGSChg3qEQ9q_5lWX2zfnncGuLpGoXwLeALo",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYWNjZWMzYWUtNWVlYi00ZjAyLTg2OTEtYjAwMGRmODA3ODg4IiwiY3JlZGVudGlhbF9pZCI6IjNkMmZkYTExLWQ5NDctNGMyNS05ZWRhLTE4YTEyYjE3NDE2NCIsInNjb3BlX2lkIjoiMmU5NDVhMjctMWNiOS00OTU1LTkzZWYtMWQwNGE3OGRmYjdlIiwicmVjZWlwdF9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTljZmY2MTIzOGIwMiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjY1LWIzMDktN2UxMC1iYWYyLTlkMWI4ODhiNTQzZiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.dQXhhGbBGSChg3qEQ9q_5lWX2zfnncGuLpGoXwLeALo",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T055514-0700/ruptureops-private-public-artifact-boundary",
+          "display_scope": "RuptureOps",
+          "access_mode": "read_write",
+          "user_id": "user:accec3ae5eeb4f028691b000df807888",
+          "scope_id": "scope:2e945a271cb9495593ef1d04a78dfb7e",
+          "credential_id": "credential:3d2fda11d9474c259eda18a12b174164",
+          "base_corpus_revision": "revision:019f5665b3097e10baf29d1b888b543f",
+          "corpus_revision": "revision:019f5665b3097e10baf29d1b888b543f",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 65,
+            "chunks": 566,
+            "embeddings": 566
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 65,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "ruptureops-prompt-history-reconciliation",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 96.161,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T055514-0700/service_api/ruptureops-prompt-history-reconciliation/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Reconciliation is complete. The three raw dumps remain lossless provenance, while eligible player evidence is promoted once into canonical state and history. Questions, assistant text, proposals, and accepted-but-unbuilt plans remain non-factual evidence classes. Checkpoint `checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9` was committed.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Dump 01 lines 1\u2013226 are a formatting variant of the prior factory-planning export, omit some attachment stanzas, and add no unique conversation content. Dump 02 lines 1\u201396 overlap through the Fabricator v2 Tube question; lines 99\u2013249 uniquely add scaling, app/product origin, installed-state corrections, freight conventions, and Cargo Dispatcher planning. Dump 03 lines 2\u201391 overlap the factory sequence and line 229 repeats the final export request; lines 95\u2013225 uniquely add exploration, food, combat, and play-history evidence.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Direct first-person reports may establish player state, history, preferences, and observations. Questions establish goals or uncertainty, not the truth of their premises; quoted assistant recommendations are not independent player observations; and even accepted plans remain proposals until construction or installation is directly evidenced. Hypotheses, unresolved observations, and mechanic inferences retain explicit boundaries rather than being promoted as verified facts.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Because the dumps lack original timestamps and represent overlapping conversation branches, chronology uses explicit before/after language rather than pretending to be a fully dated save log. Historical checkpoints do not overwrite current unknowns or superseding installed state. Repeated statements strengthen provenance but remain one canonical fact; all three exact dumps are preserved byte-identically, without creating another game-data snapshot or three competing saves.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Canonical promoted outputs are: `models/rourke-update1-save-baseline__20260711.json` for best-known current installed state; `models/rourke-update1-play-history__20260711.json` for deduplicated checkpoints, incidents, observations, and durable preferences; `Player save - play history.md` for the human-readable timeline; and `Player-derived product requirements.md` for evidence-derived iOS requirements without treating every idea as MVP scope. The three checksummed source dumps remain canonical raw history, while the earlier ZIP remains canonical for its screenshots, generated reports, and fuller first factory-planning transcript.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+              "Projects/RuptureOps/RuptureOps.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Maintain a durable, lossless reconciliation of the three imported RuptureOps player prompt dumps without multiplying facts or promoting non-factual evidence.",
+          "current_state": [
+            "Verified: all three prompt dumps are checksummed and preserved byte-identically.",
+            "Verified: Dump 01 adds no unique conversation content; Dumps 02 and 03 contain audited unique spans.",
+            "Verified: eligible direct player evidence has been normalized once into canonical history and vault outputs.",
+            "Current installed state, historical evidence, proposals, and unresolved live state remain distinct.",
+            "Checkpoint `checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9` is committed."
+          ],
+          "decisions": [
+            "Promote direct first-person player reports when they support state, history, preferences, or observations.",
+            "Do not convert questions, quoted assistant recommendations, hypotheses, or accepted plans into player facts.",
+            "Treat duplicate statements as additional provenance for one canonical fact.",
+            "Use explicit relative ordering only where supported; do not invent timestamps.",
+            "Do not let historical checkpoints silently overwrite current unknowns or the current-state model."
+          ],
+          "open_questions": [
+            "Live ownership, inventory quantities, unlocks, construction, and unresolved incidents listed by the play-history model require fresh direct evidence.",
+            "The exact ordering of some overlapping branches remains unknown because the dumps lack original timestamps."
+          ],
+          "next_actions": [
+            "Use the semantic audit when classifying future imported evidence.",
+            "Refresh the current-state model only from new direct or verified evidence.",
+            "Preserve future raw history losslessly, then merge repeated facts by identity and provenance rather than duplicating them."
+          ],
+          "artifacts": [
+            "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Projects/RuptureOps/RuptureOps.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 11,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "semantic subset",
+                  "formatting variant",
+                  "no new conversation content"
+                ],
+                "matched": "formatting variant"
+              },
+              {
+                "alternatives": [
+                  "99-249",
+                  "scaling and product history"
+                ],
+                "matched": "99-249"
+              },
+              {
+                "alternatives": [
+                  "95-225",
+                  "exploration history"
+                ],
+                "matched": "95-225"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "direct first-person",
+                  "direct player statements"
+                ],
+                "matched": "direct first-person"
+              },
+              {
+                "alternatives": [
+                  "questions establish goals",
+                  "questions",
+                  "not the truth"
+                ],
+                "matched": "questions establish goals"
+              },
+              {
+                "alternatives": [
+                  "quoted assistant",
+                  "not promoted",
+                  "recommendation"
+                ],
+                "matched": "quoted assistant"
+              },
+              {
+                "alternatives": [
+                  "plans",
+                  "installed",
+                  "completed construction"
+                ],
+                "matched": "plans"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "historical checkpoint",
+                  "historical"
+                ],
+                "matched": "historical checkpoint"
+              },
+              {
+                "alternatives": [
+                  "current unknown",
+                  "live refresh",
+                  "may have advanced"
+                ],
+                "matched": "current unknown"
+              },
+              {
+                "alternatives": [
+                  "one canonical fact",
+                  "remain one",
+                  "duplicate statements"
+                ],
+                "matched": "one canonical fact"
+              },
+              {
+                "alternatives": [
+                  "provenance",
+                  "preserved intact",
+                  "losslessly"
+                ],
+                "matched": "provenance"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "rourke-update1-save-baseline__20260711.json"
+                ],
+                "matched": "rourke-update1-save-baseline__20260711.json"
+              },
+              {
+                "alternatives": [
+                  "rourke-update1-play-history__20260711.json"
+                ],
+                "matched": "rourke-update1-play-history__20260711.json"
+              },
+              {
+                "alternatives": [
+                  "Player save - play history.md"
+                ],
+                "matched": "Player save - play history.md"
+              },
+              {
+                "alternatives": [
+                  "Player-derived product requirements.md"
+                ],
+                "matched": "Player-derived product requirements.md"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+              "Projects/RuptureOps/RuptureOps.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 16,
+        "commands": 4,
+        "command_output_chars": 164581,
+        "tokens": {
+          "input_tokens": 163889,
+          "cached_input_tokens": 114688,
+          "output_tokens": 3339
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T05:55:46.379-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5665e5c07370a44ac4b47b0b8b69",
+          "elapsed_ms": 2430.871,
+          "result_chars": 42270
+        },
+        {
+          "at": "2026-07-12T05:56:08.947-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f56663dcc7fc38f7fde36bb94af42",
+          "elapsed_ms": 5715.63,
+          "result_chars": 87534
+        },
+        {
+          "at": "2026-07-12T05:56:22.295-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f566672157a538019d88364a375bd",
+          "elapsed_ms": 2425.451,
+          "result_chars": 31809
+        },
+        {
+          "at": "2026-07-12T05:56:44.574-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5666c91a7ad3a3e6bc595625add4",
+          "elapsed_ms": 280.179,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 164577,
+      "service_latency_ms": 10852.131,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f5665-99fb-7481-9d2e-f377ca55a841",
+        "checkpoint_id": "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+        "corpus_revision": "revision:019f5666-c83b-7732-983f-fc2b9df4cf2a",
+        "created": [
+          {
+            "id": "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "33a3b7f9-3318-4319-a575-4d4014d0d819",
+        "deduplicated": [],
+        "id": "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+        "idempotency_key": "eval-checkpoint:session:019f5665dc777ec2b85d7fa5eb0225b1:458e122fe6584a8c4c95242effe45200140065edbc0d238ef555d8daf4a5fb02",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5666-c83b-7732-983f-fc2b9df4cf2a",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5666-c836-7a62-aa09-248cd1a712bd"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:075b3b597158ea4acacf0e73e534fc3de5c5bb09ee447e0d6f429253c28503f9",
+        "operation_id": "operation:019f5666-c830-7352-a1f3-7ed1464d9142",
+        "policy": {
+          "policy_id": "e74d3abb-ccd6-41a8-b380-b7b80c84fc40",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5666-c830-7352-a1f3-7ed1464d9142",
+        "replayed": false,
+        "request_hash": "sha256:a75227c92064d7fb0789fe6186c5230efca924d9022e96893a11cc7316f5692f",
+        "resulting_corpus_revision": "revision:019f5666-c83b-7732-983f-fc2b9df4cf2a",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f5665dc777ec2b85d7fa5eb0225b1",
+        "status": "committed",
+        "user_id": "user:030a81d5da6a4673879d04fa900215a5"
+      },
+      "service_session_id": "session:019f5665dc777ec2b85d7fa5eb0225b1",
+      "service_corpus_revision": "revision:019f5666-c83b-7732-983f-fc2b9df4cf2a",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T05:55:46.379-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5665e5c07370a44ac4b47b0b8b69",
+          "elapsed_ms": 2430.871,
+          "result_chars": 42270
+        },
+        {
+          "at": "2026-07-12T05:56:08.947-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f56663dcc7fc38f7fde36bb94af42",
+          "elapsed_ms": 5715.63,
+          "result_chars": 87534
+        },
+        {
+          "at": "2026-07-12T05:56:22.295-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f566672157a538019d88364a375bd",
+          "elapsed_ms": 2425.451,
+          "result_chars": 31809
+        },
+        {
+          "at": "2026-07-12T05:56:44.574-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5666c91a7ad3a3e6bc595625add4",
+          "elapsed_ms": 280.179,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 164577,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f5665-99fb-7481-9d2e-f377ca55a841",
+        "checkpoint_id": "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+        "corpus_revision": "revision:019f5666-c83b-7732-983f-fc2b9df4cf2a",
+        "created": [
+          {
+            "id": "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "33a3b7f9-3318-4319-a575-4d4014d0d819",
+        "deduplicated": [],
+        "id": "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+        "idempotency_key": "eval-checkpoint:session:019f5665dc777ec2b85d7fa5eb0225b1:458e122fe6584a8c4c95242effe45200140065edbc0d238ef555d8daf4a5fb02",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5666-c83b-7732-983f-fc2b9df4cf2a",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5666-c836-7a62-aa09-248cd1a712bd"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:075b3b597158ea4acacf0e73e534fc3de5c5bb09ee447e0d6f429253c28503f9",
+        "operation_id": "operation:019f5666-c830-7352-a1f3-7ed1464d9142",
+        "policy": {
+          "policy_id": "e74d3abb-ccd6-41a8-b380-b7b80c84fc40",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5666-c830-7352-a1f3-7ed1464d9142",
+        "replayed": false,
+        "request_hash": "sha256:a75227c92064d7fb0789fe6186c5230efca924d9022e96893a11cc7316f5692f",
+        "resulting_corpus_revision": "revision:019f5666-c83b-7732-983f-fc2b9df4cf2a",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5666-c83b-7732-983f-fc1bbdc6ebd9"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f5665dc777ec2b85d7fa5eb0225b1",
+        "status": "committed",
+        "user_id": "user:030a81d5da6a4673879d04fa900215a5"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "ruptureops-private-public-artifact-boundary",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 97.871,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T055514-0700/service_api/ruptureops-private-public-artifact-boundary/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "RuptureOps is not ready for broad public distribution with its current data or assets. Keep the SRDB-derived corpus, personalized imports, player artifacts, mirrored imagery, generated icon, and warning audio private. A safe public build can presently contain only independently authored implementation and independently created or clearly licensed replacement assets, with no private database or player material bundled. This is a safe-path proposal, not verified release readiness: the evidence does not establish a public software license or completed clean public/private split. Broader distribution requires written reuse and redistribution permission from the source owner, or replacement with independently obtained, provenance-tracked licensed/open data, plus separate clearance or replacement of every visual and audio asset.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The starrupture.tools/SRDB source permits crawling but publishes no explicit data or content reuse license. Therefore its raw mirror, normalized snapshots/corpus, derived SQLite database, and mirrored assets remain private research material; crawl permission must not be treated as redistribution permission.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Topics/StarRupture/StarRupture.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The imported analysis and player-history material remains private because it includes personalized save state, player screenshots, exact prompt history, conversation-derived decisions, play-history models, generated analysis, and a duplicate third-party corpus. Raw bundles and duplicate corpora remain local/ignored; manifests and selectively promoted provenance-labeled facts may remain in private version control but are not thereby cleared for public redistribution.",
+            "source_paths": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "No retrieved evidence clears the existing binary site images, generated app icon, icons, or warning audio for publication; they are retained inside a private fixture and must remain private or be replaced with independently created or explicitly licensed assets. A clean public build may use independently authored implementation, but current evidence does not establish an explicit public software license or a completed clean public/private repository split, so the existing repository as a whole is not verified publishable.",
+            "source_paths": [
+              "CORPUS.md",
+              "Projects/RuptureOps/Repository/README.md",
+              "Topics/StarRupture/Knowledge base and modeling.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The safe distribution path is to create and audit a data-free, player-data-free public target; add or verify an explicit software license; replace or separately clear every image, icon, and audio asset; and either obtain written source-owner permission covering data/content reuse and redistribution or migrate to an independently obtained, provenance-tracked licensed/open dataset. Until those steps are complete, keep the repository and normalized corpus private and do not push the current corpus to a public remote.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/README.md",
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Topics/StarRupture/StarRupture.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Prepare a public-release data and asset boundary for RuptureOps using only current Straylight evidence.",
+          "current_state": [
+            "Verified current fact: SRDB/starrupture.tools permits crawling but has no explicit reuse license; raw mirrors, normalized snapshots, derived SQLite, and mirrored assets remain private.",
+            "Verified current fact: personalized imports include save state, screenshots, prompt history, conversation-derived decisions, play-history models, and duplicate third-party data; these are not publishable.",
+            "Verified current fact: binary site images, the generated app icon, and warning audio are retained in the private benchmark fixture; redistribution rights were not established.",
+            "Incomplete work: no evidence establishes an explicit public software license or confirms that a clean public/private build split has been completed."
+          ],
+          "decisions": [
+            "Treat crawl permission as distinct from reuse or redistribution permission.",
+            "Keep all current corpus data, private imports, player artifacts, and existing binary assets outside public artifacts.",
+            "Treat an implementation-only build with replacement assets as a proposed safe path, not as verified current release readiness.",
+            "Require either written source-owner permission or a separately licensed/open, provenance-tracked data strategy before distributing data-backed builds."
+          ],
+          "open_questions": [
+            "Who owns or can grant redistribution rights for the SRDB/starrupture.tools data and content?",
+            "What license will govern the public RuptureOps implementation?",
+            "Which existing icons, images, and audio are independently authored, and are their source files and licenses documented?",
+            "Has a reproducible release audit confirmed that no private data or player artifacts enter the application bundle?"
+          ],
+          "next_actions": [
+            "Inventory the public target and exclude data snapshots, SQLite files, raw imports, personalized models/history, screenshots, mirrored assets, the generated icon, and warning audio.",
+            "Create or verify the software license and replace or clear all visual and audio assets.",
+            "Obtain written data/content reuse and redistribution permission, or rebuild against a separately licensed/open dataset with provenance and version boundaries.",
+            "Run a release-artifact audit and document the resulting public/private manifest before publishing."
+          ],
+          "artifacts": [
+            "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+            "Projects/RuptureOps/Repository/README.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Topics/StarRupture/Knowledge base and modeling.md",
+            "Topics/StarRupture/StarRupture.md",
+            "CORPUS.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.7025,
+        "pass": false,
+        "claims_passed": 2,
+        "claims_total": 4,
+        "claim_score": 0.65,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 11,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "permits crawling",
+                  "crawling"
+                ],
+                "matched": "permits crawling"
+              },
+              {
+                "alternatives": [
+                  "no explicit",
+                  "reuse license",
+                  "license"
+                ],
+                "matched": "no explicit"
+              },
+              {
+                "alternatives": [
+                  "private research assets",
+                  "keep private"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Topics/StarRupture/StarRupture.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "personalized save",
+                  "player state"
+                ],
+                "matched": "personalized save"
+              },
+              {
+                "alternatives": [
+                  "screenshots",
+                  "prompt history",
+                  "conversation"
+                ],
+                "matched": "screenshots"
+              },
+              {
+                "alternatives": [
+                  "raw/",
+                  "private",
+                  "ignored"
+                ],
+                "matched": "private"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.2667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "original",
+                  "warning sounds",
+                  "app icon"
+                ],
+                "matched": "app icon"
+              },
+              {
+                "alternatives": [
+                  "do not copy",
+                  "game audio",
+                  "third-party icons"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "native type",
+                  "SF Symbols",
+                  "original phase symbols",
+                  "private-use"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "CORPUS.md",
+              "Projects/RuptureOps/Repository/README.md",
+              "Topics/StarRupture/Knowledge base and modeling.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.6,
+            "pass": false,
+            "content_fraction": 0.5,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "permission",
+                  "licensed"
+                ],
+                "matched": "permission"
+              },
+              {
+                "alternatives": [
+                  "separately licensed data",
+                  "licensed-data alternative"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "exclude",
+                  "do not redistribute",
+                  "export policy"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "source lineage",
+                  "provenance",
+                  "audit"
+                ],
+                "matched": "provenance"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/README.md",
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Topics/StarRupture/StarRupture.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 14,
+        "commands": 4,
+        "command_output_chars": 159319,
+        "tokens": {
+          "input_tokens": 152524,
+          "cached_input_tokens": 115456,
+          "output_tokens": 3090
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T05:55:46.437-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5665e5f478539122ecee9a49e6a8",
+          "elapsed_ms": 2255.132,
+          "result_chars": 42966
+        },
+        {
+          "at": "2026-07-12T05:55:59.123-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5666178c7eb2b03a59497f41f238",
+          "elapsed_ms": 7080.926,
+          "result_chars": 78771
+        },
+        {
+          "at": "2026-07-12T05:56:15.640-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5666581679528eaf651427a9489e",
+          "elapsed_ms": 926.101,
+          "result_chars": 34614
+        },
+        {
+          "at": "2026-07-12T05:56:35.563-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5666a5e974108cea48d848456911",
+          "elapsed_ms": 242.623,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 159315,
+      "service_latency_ms": 10504.782,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f5665-b309-7e10-baf2-9d1b888b543f",
+        "checkpoint_id": "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+        "corpus_revision": "revision:019f5666-a533-7821-ba6a-33b0def95ee4",
+        "created": [
+          {
+            "id": "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "3d2fda11-d947-4c25-9eda-18a12b174164",
+        "deduplicated": [],
+        "id": "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+        "idempotency_key": "eval-checkpoint:session:019f5665dd4f7812b0a5c6b59e963917:ce95b7bc361a293e16a0661e86ab46e7eadc71cd0305c10d9b5fb1aa4e1e11fd",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5666-a533-7821-ba6a-33b0def95ee4",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5666-a52c-7a50-92ce-9c7ac04e03b7"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:2ae6651edeae5042e83eca817eaed6c27956c51cf87dbb67da6359d513b725ed",
+        "operation_id": "operation:019f5666-a528-7680-8016-ada895207fe2",
+        "policy": {
+          "policy_id": "29d017f8-1dbd-4e37-ac96-d134357435f6",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5666-a528-7680-8016-ada895207fe2",
+        "replayed": false,
+        "request_hash": "sha256:9299066fb04c48fab99703635221b6ee990a4b81c19a307aa28d402204593acf",
+        "resulting_corpus_revision": "revision:019f5666-a533-7821-ba6a-33b0def95ee4",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f5665dd4f7812b0a5c6b59e963917",
+        "status": "committed",
+        "user_id": "user:accec3ae5eeb4f028691b000df807888"
+      },
+      "service_session_id": "session:019f5665dd4f7812b0a5c6b59e963917",
+      "service_corpus_revision": "revision:019f5666-a533-7821-ba6a-33b0def95ee4",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T05:55:46.437-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5665e5f478539122ecee9a49e6a8",
+          "elapsed_ms": 2255.132,
+          "result_chars": 42966
+        },
+        {
+          "at": "2026-07-12T05:55:59.123-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5666178c7eb2b03a59497f41f238",
+          "elapsed_ms": 7080.926,
+          "result_chars": 78771
+        },
+        {
+          "at": "2026-07-12T05:56:15.640-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5666581679528eaf651427a9489e",
+          "elapsed_ms": 926.101,
+          "result_chars": 34614
+        },
+        {
+          "at": "2026-07-12T05:56:35.563-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5666a5e974108cea48d848456911",
+          "elapsed_ms": 242.623,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 159315,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f5665-b309-7e10-baf2-9d1b888b543f",
+        "checkpoint_id": "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+        "corpus_revision": "revision:019f5666-a533-7821-ba6a-33b0def95ee4",
+        "created": [
+          {
+            "id": "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "3d2fda11-d947-4c25-9eda-18a12b174164",
+        "deduplicated": [],
+        "id": "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+        "idempotency_key": "eval-checkpoint:session:019f5665dd4f7812b0a5c6b59e963917:ce95b7bc361a293e16a0661e86ab46e7eadc71cd0305c10d9b5fb1aa4e1e11fd",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5666-a533-7821-ba6a-33b0def95ee4",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5666-a52c-7a50-92ce-9c7ac04e03b7"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:2ae6651edeae5042e83eca817eaed6c27956c51cf87dbb67da6359d513b725ed",
+        "operation_id": "operation:019f5666-a528-7680-8016-ada895207fe2",
+        "policy": {
+          "policy_id": "29d017f8-1dbd-4e37-ac96-d134357435f6",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5666-a528-7680-8016-ada895207fe2",
+        "replayed": false,
+        "request_hash": "sha256:9299066fb04c48fab99703635221b6ee990a4b81c19a307aa28d402204593acf",
+        "resulting_corpus_revision": "revision:019f5666-a533-7821-ba6a-33b0def95ee4",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5666-a533-7821-ba6a-33af803dfb4d"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f5665dd4f7812b0a5c6b59e963917",
+        "status": "committed",
+        "user_id": "user:accec3ae5eeb4f028691b000df807888"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 2,
+        "successful_runs": 2,
+        "cases_passed": 1,
+        "case_pass_rate": 0.5,
+        "claims_passed": 6,
+        "claims_total": 8,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.8513,
+        "elapsed_samples": 2,
+        "mean_elapsed_seconds": 97.02,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 161946.0,
+        "persisted_checkpoints": 2,
+        "checkpoint_eligible_runs": 2,
+        "mean_service_calls": 4.0,
+        "mean_service_result_chars": 161946.0,
+        "mean_service_latency_ms": 10678.457,
+        "mean_completed_commands": 4.0,
+        "mean_command_output_chars": 161950.0,
+        "mean_tokens": {
+          "input_tokens": 158206.5,
+          "output_tokens": 3214.5,
+          "cached_input_tokens": 115072.0,
+          "uncached_input_tokens": 43134.5
+        }
+      }
+    },
+    "by_workload": {
+      "RuptureOps": {
+        "service_api": {
+          "runs": 2,
+          "successful_runs": 2,
+          "cases_passed": 1,
+          "case_pass_rate": 0.5,
+          "claims_passed": 6,
+          "claims_total": 8,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.8513,
+          "elapsed_samples": 2,
+          "mean_elapsed_seconds": 97.02,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 161946.0,
+          "persisted_checkpoints": 2,
+          "checkpoint_eligible_runs": 2,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 161946.0,
+          "mean_service_latency_ms": 10678.457,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 161950.0,
+          "mean_tokens": {
+            "input_tokens": 158206.5,
+            "output_tokens": 3214.5,
+            "cached_input_tokens": 115072.0,
+            "uncached_input_tokens": 43134.5
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "artifact_policy_and_export_safety": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 2,
+          "claims_total": 4,
+          "claim_pass_rate": 0.5,
+          "mean_score": 0.7025,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 97.87,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 159315.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 159315.0,
+          "mean_service_latency_ms": 10504.782,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 159319.0,
+          "mean_tokens": {
+            "input_tokens": 152524.0,
+            "output_tokens": 3090.0,
+            "cached_input_tokens": 115456.0,
+            "uncached_input_tokens": 37068.0
+          }
+        }
+      },
+      "overlapping_history_and_epistemic_state": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 96.16,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 164577.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 164577.0,
+          "mean_service_latency_ms": 10852.131,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 164581.0,
+          "mean_tokens": {
+            "input_tokens": 163889.0,
+            "output_tokens": 3339.0,
+            "cached_input_tokens": 114688.0,
+            "uncached_input_tokens": 49201.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "ruptureops-prompt-history-reconciliation": {
+        "id": "ruptureops-prompt-history-reconciliation",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "overlapping_history_and_epistemic_state",
+        "task": "Reconcile the three imported player prompt dumps into durable state. Explain their overlap, apply the evidence rules that prevent questions, assistant recommendations, and accepted plans from becoming player facts, and identify the canonical outputs. Preserve exact history without multiplying duplicate facts.",
+        "claim_slots": {
+          "c1": "source overlap and unique spans",
+          "c2": "evidence classification rules",
+          "c3": "temporal and duplicate handling",
+          "c4": "canonical promoted outputs"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "semantic subset",
+                  "formatting variant",
+                  "no new conversation content"
+                ]
+              },
+              {
+                "any": [
+                  "99-249",
+                  "scaling and product history"
+                ]
+              },
+              {
+                "any": [
+                  "95-225",
+                  "exploration history"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "direct first-person",
+                  "direct player statements"
+                ]
+              },
+              {
+                "any": [
+                  "questions establish goals",
+                  "questions",
+                  "not the truth"
+                ]
+              },
+              {
+                "any": [
+                  "quoted assistant",
+                  "not promoted",
+                  "recommendation"
+                ]
+              },
+              {
+                "any": [
+                  "plans",
+                  "installed",
+                  "completed construction"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "historical checkpoint",
+                  "historical"
+                ]
+              },
+              {
+                "any": [
+                  "current unknown",
+                  "live refresh",
+                  "may have advanced"
+                ]
+              },
+              {
+                "any": [
+                  "one canonical fact",
+                  "remain one",
+                  "duplicate statements"
+                ]
+              },
+              {
+                "any": [
+                  "provenance",
+                  "preserved intact",
+                  "losslessly"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+              "Topics/StarRupture/Player save - play history.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "rourke-update1-save-baseline__20260711.json"
+                ]
+              },
+              {
+                "any": [
+                  "rourke-update1-play-history__20260711.json"
+                ]
+              },
+              {
+                "any": [
+                  "Player save - play history.md"
+                ]
+              },
+              {
+                "any": [
+                  "Player-derived product requirements.md"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/import.json",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json"
+            ]
+          }
+        ],
+        "forbidden": [
+          "three independent confirmations",
+          "accepted plans are installed",
+          "the questions prove"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      "ruptureops-private-public-artifact-boundary": {
+        "id": "ruptureops-private-public-artifact-boundary",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "artifact_policy_and_export_safety",
+        "task": "Prepare a public-release data and asset boundary for RuptureOps. Explain which source corpus, imports, player artifacts, images, icons, and audio remain private; state what can be used for a public build now; and identify the permission or licensed-data path required before broader distribution.",
+        "claim_slots": {
+          "c1": "third-party data license boundary",
+          "c2": "private personalized import boundary",
+          "c3": "public asset and implementation boundary",
+          "c4": "safe path to public distribution"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "permits crawling",
+                  "crawling"
+                ]
+              },
+              {
+                "any": [
+                  "no explicit",
+                  "reuse license",
+                  "license"
+                ]
+              },
+              {
+                "any": [
+                  "private research assets",
+                  "keep private"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "personalized save",
+                  "player state"
+                ]
+              },
+              {
+                "any": [
+                  "screenshots",
+                  "prompt history",
+                  "conversation"
+                ]
+              },
+              {
+                "any": [
+                  "raw/",
+                  "private",
+                  "ignored"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+              "Topics/StarRupture/Knowledge base and modeling.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "original",
+                  "warning sounds",
+                  "app icon"
+                ]
+              },
+              {
+                "any": [
+                  "do not copy",
+                  "game audio",
+                  "third-party icons"
+                ]
+              },
+              {
+                "any": [
+                  "native type",
+                  "SF Symbols",
+                  "original phase symbols",
+                  "private-use"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Rupture cycle timer - research and product design.md",
+              "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "permission",
+                  "licensed"
+                ]
+              },
+              {
+                "any": [
+                  "separately licensed data",
+                  "licensed-data alternative"
+                ]
+              },
+              {
+                "any": [
+                  "exclude",
+                  "do not redistribute",
+                  "export policy"
+                ]
+              },
+              {
+                "any": [
+                  "source lineage",
+                  "provenance",
+                  "audit"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Knowledge base and modeling.md",
+              "Projects/RuptureOps/Repository/README.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the repository is safe to publish as-is",
+          "redistribute the raw corpus",
+          "copy the game audio"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    }
+  }
+}

@@ -1,0 +1,289 @@
+{
+  "schema_version": 1,
+  "model_kind": "playthrough_history",
+  "profile_id": "rourke-update1-play-history__20260711",
+  "as_of": "2026-07-11",
+  "current_state_model": "models/rourke-update1-save-baseline__20260711.json",
+  "chronology_boundary": "The prompt dumps do not preserve original timestamps and come from overlapping conversation branches. Sequence below reflects explicit before/after language, not a fully dated save log.",
+  "evidence_sources": [
+    {
+      "id": "prior-archive-prompts",
+      "path": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/conversation/User Prompts Only.md",
+      "sha256": "1fdc4a371da82331b76a2b287b758a0f1c091effe5fe0135b9e8e6ee586e8861"
+    },
+    {
+      "id": "canonical-structured-data",
+      "snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+      "scope": "Versioned recipe, research-input, and building data"
+    },
+    {
+      "id": "vault-food-strategy",
+      "path": "/Users/aether/obsidian/notes/Topics/StarRupture/Food strategy - permanent low-chore system.md",
+      "scope": "Curated player inventory and adopted food strategy"
+    },
+    {
+      "id": "live-session-first-geoscanner-20260711",
+      "type": "direct_player_report",
+      "scope": "First Geo Scanner completion, two failed recovery loops, fire-base preparation, and player experience"
+    },
+    {
+      "id": "prompt-dump-01",
+      "path": "imports/player-prompt-history__20260711/source/prompt-dump-01-factory-history.txt",
+      "sha256": "a6534f50df6a09c98d6e3465488b60a60e5452a47cc2f63251df049c1cdc4be1",
+      "relationship": "Formatting variant of the prior archive's factory-planning sequence."
+    },
+    {
+      "id": "prompt-dump-02",
+      "path": "imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+      "sha256": "adde9855a1c3e439a02b6ccb243779ab29ed6a40602d15316caa369e1d90ec6d"
+    },
+    {
+      "id": "prompt-dump-03",
+      "path": "imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+      "sha256": "dc259be82ef89c908785b59644fa1f27f2be914c43f95f4f35351f94e1803a40"
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "landerworks-origin",
+      "relative_phase": "earliest factory",
+      "site": "landerworks",
+      "evidence_class": "direct_player_report",
+      "facts": [
+        "The first factory began with dedicated forward and return rail routes.",
+        "Shared return capacity was introduced while forward routes stayed dedicated, creating difficult-to-read spaghetti.",
+        "The limited Rotor, Stator, and Applicator factory remained reliable and was deliberately left operating rather than rebuilt.",
+        "Its buffered exports did not starve the later Faraday factory."
+      ],
+      "evidence": ["prompt-dump-01:13-15", "prompt-dump-01:136-140"]
+    },
+    {
+      "id": "faraday-global-bus",
+      "relative_phase": "first Faraday build before teardown",
+      "site": "faraday-works",
+      "evidence_class": "direct_player_report",
+      "facts": [
+        "Ore and ingots stayed on dedicated routes while Plate, Wire, Powder, and higher products shared a global loop.",
+        "The one-input, select-output, return-to-bus workflow was unusually enjoyable and productive.",
+        "As the loop grew, shortcuts and direct high-volume bypasses created multiple opaque paths and the network slowed or stopped pulling correctly.",
+        "After roughly two hours of unsuccessful diagnosis, the player tore down every machine in the second factory."
+      ],
+      "hypothesis_not_fact": "The player suspected a game routing bug, but the prompts do not establish whether the stoppage was a bug, hidden contention, request starvation, or a connection error.",
+      "evidence": ["prompt-dump-01:13-30"]
+    },
+    {
+      "id": "faraday-rebuild-experiment",
+      "relative_phase": "during full Faraday rebuild",
+      "site": "faraday-works",
+      "evidence_class": "direct_player_report",
+      "facts": [
+        "The intermediate design used dedicated Ore and ingot feeds, separate elemental shape buses, and one low-volume U-shaped central bus.",
+        "Mixed-element recipes were grouped into clusters with long extensions from the relevant elemental buses.",
+        "Ceramics fed storage and then Synthetic Silicon directly; slack Ceramics could serve secondary users.",
+        "The player wanted expensive Chemicals and Acid centralized when practical, while recognizing their refill waves could congest a shared 480/min trunk."
+      ],
+      "status_note": "This records the design path. The U-bus experiment is not the final canonical Faraday topology.",
+      "evidence": ["prompt-dump-01:17-30", "prompt-dump-01:50-67"]
+    },
+    {
+      "id": "faraday-hybrid-operational",
+      "relative_phase": "after rebuild",
+      "site": "faraday-works",
+      "evidence_class": "direct_player_report",
+      "facts": [
+        "The completed hybrid used two Cores plus Amplifiers, one bounded low-volume bus, separate Titanium, Calcium, and Helium networks, and two Wolfram networks.",
+        "A direct Chemicals to Sulphuric Acid feed kept the dominant Chemicals flow off the shared bus.",
+        "The layout was visually messier but easy to trace and ran for hours while storage was repeatedly emptied as a stress test.",
+        "The outbound yard had twelve Storage Depot v2 units.",
+        "At a later exploration checkpoint, every product then craftable had been turned in and there was no useful construction left before obtaining more blueprints."
+      ],
+      "evidence": ["prompt-dump-01:112-132", "prompt-dump-03:95-104", "prompt-dump-03:152-152"]
+    },
+    {
+      "id": "faraday-final-optimization",
+      "relative_phase": "later Faraday retrofit",
+      "site": "faraday-works",
+      "evidence_class": "direct_player_report",
+      "facts": [
+        "The player spent about three hours optimizing Faraday until the factory ran at line speed.",
+        "A second Supermagnet Furnace was then installed as burst and recovery capacity despite the possibility of Acid-limited simultaneous demand."
+      ],
+      "evidence": ["prior-archive-prompts:250-254"]
+    },
+    {
+      "id": "exploration-pivot",
+      "relative_phase": "after the hybrid rebuild; exact ordering versus later optimization is not established",
+      "departure_site": "faraday-works",
+      "departure_landmark": "immediately north of CRRO Warm Dawn",
+      "evidence_class": "direct_player_report",
+      "facts": [
+        "The active goals were blueprint unlocks, map reveal, Quartz, a permanent food solution, and War Bonds for the Machine Gun.",
+        "The Forgotten Engine was still being evaluated as a future objective at this checkpoint.",
+        "Grand Basin was already understood as the center-north future campus immediately east of Mythic Cry.",
+        "Directions should lead with named bases and landmarks, using coordinates only as secondary precision."
+      ],
+      "current_state_warning": "This is a historical checkpoint; Engine completion, Machine Gun ownership, and later map progress remain unconfirmed.",
+      "evidence": ["prompt-dump-03:95-104", "prompt-dump-03:132-152", "prompt-dump-03:156-203"]
+    },
+    {
+      "id": "late-planning-constraints",
+      "relative_phase": "later planet-scale planning branch",
+      "evidence_class": "direct_player_report",
+      "facts": [
+        "A pure Titanium source and merged pairs of Helium and Sulfur sources were each limited by the serving rail to roughly one source of flow.",
+        "The player described the desired upgrade as Rail v4, but canonical Update 1 data calls the 480/min player-facing tier Rail v3; the observed bottleneck is retained while the literal tier is unresolved.",
+        "Ore Excavator v2 was not owned at this transcript checkpoint.",
+        "Long-distance rails ended at storage yards and did not enter internal factory networks.",
+        "Titanium Rod and Wolfram Plate were rejected as world-bus or export-yard cargo.",
+        "Ammunition and building-material Cargo Dispatchers were being considered for temporary expedition firebases and Geo Scanner assaults."
+      ],
+      "evidence": ["prompt-dump-02:122-122", "prompt-dump-02:179-181", "prompt-dump-02:211-211", "prompt-dump-02:237-249"]
+    },
+    {
+      "id": "first-geoscanner-completed",
+      "relative_phase": "current live exploration after Little Cloud",
+      "evidence_class": "direct_player_report",
+      "facts": [
+        "The first Geo Scanner defense was completed after two deaths and a third, successful attempt.",
+        "The first death respawned the player at a nearby claimed base, but that base had no replacement weapons or materials, forcing a walk back to Landerworks.",
+        "For the second attempt, the player claimed the Regeneration Chamber at a temporary scanner fire base but forgot or did not realize that the installed turrets required power.",
+        "The unpowered turrets did nothing, the player was overwhelmed, and corruption disabled the base and took its Regeneration Chamber offline.",
+        "The second death therefore respawned the player at the starting launcher rather than at the intended fire-base checkpoint.",
+        "The successful attempt used a fully built-out fire base with all turrets powered.",
+        "The powered automated defense was highly satisfying; the player described listening to the turrets singing against the enemy.",
+        "After completion, the player sorted loot and gear and continued exploring toward the next major fight."
+      ],
+      "unresolved_observation": "The site appeared to yield two particularly good food-related rewards or stacks, possibly involving a quantity of 20, but the dictated item names/counts were ambiguous.",
+      "evidence": ["live-session-first-geoscanner-20260711"]
+    }
+  ],
+  "incidents_and_observations": [
+    {
+      "id": "orphan-rail-drones",
+      "kind": "unresolved_factory_incident",
+      "observation": "After a large teardown, cargo drones remained floating in the air and survived save/reload.",
+      "causation_status": "unproven",
+      "current_resolution": "unknown",
+      "evidence": ["prompt-dump-01:83-86"]
+    },
+    {
+      "id": "copperfield-death",
+      "kind": "combat_history",
+      "observation": "The player accidentally drew aggro near Copperfield, ran out of ammunition, could not disengage, and died.",
+      "lesson": "Treat high-threat named sites as deliberate raids with an abort route and ammunition reserve, not casual scanner stops.",
+      "evidence": ["prompt-dump-03:112-112"]
+    },
+    {
+      "id": "first-geoscanner-recovery-failures",
+      "kind": "combat_and_respawn_history",
+      "evidence_class": "direct_player_report",
+      "observation": "Two failed Geo Scanner attempts exposed an empty nearby respawn base and a corruption-disabled fire-base Regeneration Chamber before a powered-turret third attempt succeeded.",
+      "lessons": [
+        "A nearby claimed respawn is not a useful recovery point unless it stocks replacement weapons, ammunition, healing, and rebuilding materials.",
+        "Installed turrets must be powered and function-checked before scanner activation.",
+        "Do not keep the only recovery cache inside the same contested base whose corruption can disable the Regeneration Chamber.",
+        "Plan the worst-case respawn and return route before beginning a major defense."
+      ],
+      "mechanic_boundary": "This encounter directly demonstrates the observed failure sequence, but does not establish the universal corruption threshold or every condition that disables a Regeneration Chamber.",
+      "evidence": ["live-session-first-geoscanner-20260711"]
+    },
+    {
+      "id": "rail-zipline-lake-forage",
+      "kind": "direct_world_observation",
+      "observation": "A lake crossed by a rail and zipline, but no Platforms, continued to spawn substantial forage.",
+      "boundary": "This contradicts a blanket nearby-structure suppression rule but does not test Platform effects.",
+      "evidence": ["prompt-dump-03:126-140"]
+    },
+    {
+      "id": "figler-unlock-surprise",
+      "kind": "progression_history",
+      "evidence_class": "direct_player_report_plus_verified_recipe_behavior",
+      "observation": "The player reported that Figler was unlocked and that nothing was left afterward.",
+      "verified_context": "The structured model lists 30 Prickler and 100 Data Points as research inputs, then models the finished Figler as a separate Food Station craft using 3 Prickler.",
+      "evidence": ["prompt-dump-03:144-148", "canonical-structured-data:recipe/figler"]
+    }
+  ],
+  "durable_player_preferences": {
+    "production_and_time": [
+      "Do not optimize for continuous steady state alone; model finite campaigns separated by hours away from the factory.",
+      "Do not use large storage as a substitute for adequate productive capacity.",
+      "Strategic stockpiling during active play is welcome; AFK-only completion is not.",
+      "For below-level-12 turn-ins, target under one hour and allow up to two hours only rarely.",
+      "For later final campaigns, one to two hours is preferred; an occasional three to four hours is tolerable.",
+      "A few modest specialist factories are fun; rebuilding the same large dependency chain repeatedly is tedious.",
+      "Cheap extraction may be deliberately overbuilt for cold-start recovery when the alternative is a large, hot duplicate processing chain."
+    ],
+    "buffers": [
+      "At the later planning checkpoint, V2 storage was used for later-stage parts rather than raw Ore.",
+      "A mature route is effectively triple buffered by machine output storage, source-yard V2 storage, and destination-yard V2 storage.",
+      "New products often begin at zero while their inputs are already warm and buffered."
+    ],
+    "architecture": [
+      "Prefer debuggable tree-shaped freight and visible interfaces over opaque rail meshes.",
+      "Terminate world freight at storage yards.",
+      "Keep high-rate raw and shape products local; move compact intermediates between specialist sites.",
+      "Split recommendations by base and campus so space, rail lanes, and Core heat can be reserved before construction.",
+      "Logical campus separation can remain useful even when physical Cores are spread farther apart to reduce heat and concentrated attacks."
+    ],
+    "recipe_selection": [
+      "Offer owned V2 buildings as recipe options rather than forcing them blindly.",
+      "Compare V1 and V2 choices using onsite inputs, distance, heat, freight, footprint, and batch size."
+    ],
+    "exploration_and_combat": [
+      "Use conservative, low-twitch combat plans calibrated to the player's self-reported FPS constraint.",
+      "Optimize resource and expedition routes for understandability, defense, expansion, and debuggability rather than nearest distance alone.",
+      "Track multiple goals together so food, map, blueprint, War Bond, and resource needs are not lost when the conversation shifts.",
+      "Prefer compact one-slot expedition food that covers both hunger and hydration."
+    ],
+    "communication": [
+      "Use plain English, exact machine counts, visible math, and explicit assumptions.",
+      "Stress-test a proposed architecture rather than approving it merely because it matches the player's initial idea.",
+      "Preserve reopenable visualizations and the reasoning behind plan changes."
+    ]
+  },
+  "historical_inventory_and_unlock_context": {
+    "confirmed_at_a_checkpoint": [
+      "Figler unlocked",
+      "two HRS Furnaces placed at Faraday",
+      "two Hardening Agent machines placed at Faraday",
+      "one Pressurized Helium machine placed at Faraday",
+      "Basic and Intermediate Building Materials produced at Faraday",
+      "Standard and Shotgun Ammo produced at Faraday"
+    ],
+    "not_available_at_a_checkpoint": ["Ore Excavator v2", "Machine Gun before the War Bond outing"],
+    "historical_inventory_notes": [
+      "Glowcaps were being hoarded; the food-strategy inventory recorded 157 at its decision checkpoint, while the current balance is unknown.",
+      "The player commonly gathered Hydrobulb most, then Polufruit, then Prickler, with smaller amounts of other forage."
+    ],
+    "food_strategy_inventory_checkpoint": {
+      "evidence_class": "curated_player_inventory",
+      "prism-herb": 318,
+      "glowcap": 157,
+      "hydrobulb": 97,
+      "polufruit": 82,
+      "finished-hydrolite": 64,
+      "prickler": 42,
+      "oxallop": 27,
+      "star-tears": 24,
+      "grubbler": 9,
+      "serpent-root": 4,
+      "finished-nutri-gel": 2,
+      "evidence": ["vault-food-strategy:Recorded inventory at the strategy decision"]
+    },
+    "current_warning": "Persistent unlocks remain likely, but live ownership, counts, and inventory must be refreshed before a current-session plan."
+  },
+  "open_questions": [
+    "Current Corporation levels and reputation.",
+    "Current rail tier and whether the pure Titanium and merged Helium/Sulfur bottlenecks were fixed.",
+    "Whether Ore Excavator v2 has since been unlocked or installed.",
+    "Whether the Forgotten Engine and Redleaf outings are complete.",
+    "Whether the Machine Gun was unlocked and which weapons/mods are currently owned.",
+    "Whether the orphan rail drones were removed or the save was repaired.",
+    "Whether any Flowworks, Grand Basin, or firebase Cargo construction has begun.",
+    "Which Geo Scanner was completed and its exact coordinates.",
+    "The exact identity and count of the two food-related rewards reported after the scanner defense.",
+    "Current quantities of food, ammunition, Quartz, War Bonds, and Glowcaps.",
+    "Why the player's current shotgun appeared to affect only one target and which attachments are now installed.",
+    "Yellowstone reward and a safe later post-Rupture approach."
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "updated": "2026-07-10",
+  "aliases": [
+    {
+      "entity_type": "building",
+      "entity_id": "drone-roundabout",
+      "alias": "Radial Rail Connector",
+      "canonical_name": "Roundabout Rail Connector",
+      "reason": "Update 1 PTB name changed before the public release.",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875"
+    },
+    {
+      "entity_type": "building",
+      "entity_id": "teleporter",
+      "alias": "Teleport",
+      "canonical_name": "Teleporter",
+      "reason": "Official and community material occasionally shorten the building name.",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875"
+    },
+    {
+      "entity_type": "wildlife",
+      "entity_id": "coralion",
+      "alias": "Corallion",
+      "canonical_name": "Coralion",
+      "reason": "The Update 1 prose uses both spellings; repeated lists and hotfix notes use Coralion.",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875"
+    },
+    {
+      "entity_type": "building",
+      "entity_id": "personal-storage-big",
+      "alias": "Larger Personal Storage",
+      "canonical_name": "Large Personal Storage",
+      "reason": "Marketing prose and in-game/reward terminology differ.",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875"
+    },
+    {
+      "entity_type": "resource",
+      "entity_id": "sulphur-ore",
+      "alias": "Sulfur Ore",
+      "canonical_name": "Sulphur Ore",
+      "reason": "US and UK spellings both occur in official and SRDB material.",
+      "source_url": "https://starrupture.tools/items/sulphur-ore"
+    },
+    {
+      "entity_type": "item",
+      "entity_id": "magic-oil-ore",
+      "alias": "Powerium",
+      "canonical_name": "Crude Oil",
+      "reason": "Powerium names the deposit/resource mechanic; the Oil Extractor recipe output is the item Crude Oil.",
+      "source_url": "https://starrupture.tools/items/magic-oil-ore"
+    },
+    {
+      "entity_type": "corporation",
+      "entity_id": "griffiths",
+      "alias": "Griffiths Blue",
+      "canonical_name": "Griffits Blue Corp",
+      "reason": "Internal ID, community spelling, and official display spelling differ.",
+      "source_url": "https://starrupture.tools/corporations/griffiths"
+    },
+    {
+      "entity_type": "currency",
+      "entity_id": "armory-token",
+      "alias": "War Bonds",
+      "canonical_name": "Armory Token",
+      "reason": "Equipment-currency terminology varies between source surfaces.",
+      "source_url": "https://starrupture.tools/weapons"
+    },
+    {
+      "entity_type": "building",
+      "entity_id": "synthetizer",
+      "alias": "Synthetizer",
+      "canonical_name": "Compounder",
+      "reason": "The raw internal-style ID differs from the player-facing building name.",
+      "source_url": "https://starrupture.tools/buildings/synthetizer"
+    },
+    {
+      "entity_type": "building",
+      "entity_id": "crafter",
+      "alias": "Crafter",
+      "canonical_name": "Fabricator",
+      "reason": "The raw internal-style ID differs from the player-facing building name.",
+      "source_url": "https://starrupture.tools/buildings/crafter"
+    },
+    {
+      "entity_type": "building",
+      "entity_id": "mechanical-drill",
+      "alias": "Mechanical Drill",
+      "canonical_name": "Ore Excavator",
+      "reason": "The raw ID/map marker terminology differs from the player-facing building name.",
+      "source_url": "https://starrupture.tools/buildings/mechanical-drill"
+    },
+    {
+      "entity_type": "building",
+      "entity_id": "pressurizer",
+      "alias": "Pressurizer",
+      "canonical_name": "Refinery",
+      "reason": "The raw internal-style ID differs from the Update 1 player-facing name.",
+      "source_url": "https://starrupture.tools/buildings/pressurizer"
+    },
+    {
+      "entity_type": "map_marker_type",
+      "entity_id": "persoanl_storage",
+      "alias": "persoanl_storage",
+      "canonical_name": "personal_storage",
+      "reason": "Typo preserved in raw SRDB map data; use the alias only for search and display.",
+      "source_url": "https://starrupture.tools/map"
+    },
+    {
+      "entity_type": "building",
+      "entity_id": "antena",
+      "alias": "Antena",
+      "canonical_name": "Antenna",
+      "reason": "Typo preserved in a raw building ID.",
+      "source_url": "https://starrupture.tools/buildings/antena"
+    },
+    {
+      "entity_type": "item",
+      "entity_id": "scafolding",
+      "alias": "Scafolding",
+      "canonical_name": "Scaffolding",
+      "reason": "Typo preserved in the raw item ID and display data.",
+      "source_url": "https://starrupture.tools/items/scafolding"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+Projects/Home Network Improvements/Home Network Improvements.md
+Projects/Metis/Codex session search and dream distillation.md
+Projects/Metis/Codex vault write access and AGENTS setup.md
+Projects/Metis/Decisions.md
+Projects/Metis/Document note template.md
+Projects/Metis/Document processing pipeline.md
+Projects/Metis/Drive organization and tracking plan.md
+Projects/Metis/Finance summary template.md
+Projects/Metis/Folder structure.md
+Projects/Metis/Health history template.md
+Projects/Metis/Historical documents layer.md
+Projects/Metis/Karpathy wiki for Rourke.md
+Projects/Metis/Metis.md
+Projects/Metis/Navigation and retrieval model.md
+Projects/Metis/Obsidian knowledge base master plan.md
+Projects/Metis/Obsidian vault architecture plan.md
+Projects/Metis/Open questions.md
+Projects/Metis/Plan.md
+Projects/Metis/Project status model.md
+Projects/Metis/Rune bridge API handoff - 2026-04-21.md
+Projects/Metis/Rune personal context bridge plan - 2026-04-21.md
+Projects/Metis/Scanned documents in Drive runbook.md
+Projects/Metis/Trip workspace template.md
+Projects/Metis/UpNote migration runbook.md
+Projects/Metis/UpNote to Obsidian migration plan.md
+Projects/Metis/Use cases.md
+Projects/Metis/Vault semantic search.md
+Projects/Metis/Worklog.md
+Projects/N24 RaceWatch/2026 Production Wrap-up.md
+Projects/N24 RaceWatch/2026-05-18 FastN24 competitor note.md
+Projects/N24 RaceWatch/2026-05-18 Offseason and NLS6 handoff.md
+Projects/N24 RaceWatch/2027 Endurance Calendar and Timing Research.md
+Projects/N24 RaceWatch/Cleanup audit 2026-05-15.md
+Projects/N24 RaceWatch/Concurrent websocket load 2026-05-16.md
+Projects/N24 RaceWatch/N24 RaceWatch.md
+Projects/Straylight/Decisions.md
+Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md
+Projects/Straylight/Open questions.md
+Projects/Straylight/Portable Personal Context Layer.md
+Projects/Straylight/Retrieval API - Initial Design.md
+Projects/Straylight/Straylight.md
+Projects/Straylight/Worklog.md
+Projects/Straylight/Write API and Dreaming - Initial Design.md
+Projects/Warmind/Warmind.md
+Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md
+Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md
+Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md
+Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md
+Projects/Warmind/D2 error reparse lock-wait storm - 2026-06-18.md
+Projects/Warmind/Pantheon materializer backlog investigation - 2026-06-18.md
+Projects/Warmind/Bungie API throttle incident - 2026-06-09.md
+Projects/Warmind/D2 first played backfill retired - 2026-06-12.md
+Projects/Warmind/Mode 0 Override Moon investigation - 2026-06-24.md
+Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md
+Projects/Charlemagne/Charlemagne.md
+Projects/Charlemagne/Logbook.md
+Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md
+Projects/Charlemagne/Research/Charlemagne session tracking backend implementation - 2026-06-04.md
+Projects/Charlemagne/Research/Charlemagne session tracking production diagnostic - 2026-06-08.md
+Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md
+Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md
+Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md
+Projects/Charlemagne/Research/Charlemagne alerts diagnostic handoff - 2026-06-24.md
+Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-drop-candidates.tsv
+Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv
+Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql
+Topics/Star Rupture/Star Rupture.md
+Topics/Star Rupture/Star Rupture logistics.md
+Topics/Star Rupture/Star Rupture production.md
+Trips/Switzerland/Switzerland trip planning.md
+Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md
+Trips/Switzerland/Nearby family options menu.md
+Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md

@@ -1,0 +1,17 @@
+.env
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+apps/api/target/
+apps/api/target-codex/
+apps/web/node_modules/
+apps/web/dist/
+apps/mcp/node_modules/
+apps/mcp/dist/
+
+runs/
+*.sqlite
+*.sqlite3

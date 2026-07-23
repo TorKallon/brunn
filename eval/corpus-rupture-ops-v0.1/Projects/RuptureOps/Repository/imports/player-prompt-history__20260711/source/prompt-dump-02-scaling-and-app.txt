@@ -1,0 +1,252 @@
+I want your help brainstorming and planning when I play Star Rupture. I'm playing Update 1, and a huge amount changed from initial Early Access to Update 1. Please deeply research the game, mechanics, and factory information for Update 1, and make sure you don't get confused by our of date information this. This site is a great resource and up to date, though it does have some information on items not in the game yet: [https://starrupture.tools/](https://starrupture.tools/)
+
+Please download everything needed for us to work together on this. Save things in my vault in a single folder, using whatever file type is appropriate. In some cases that is MD files, but for some things you probably want a spreadsheet or even sqllite db. In particular we will be analyzing item build changes quite a bit.
+
+======
+Some important things to note that might not have been well described in those guides:
+- Unlike pure factory games like Satisfactory, this game has oddly bursty dynamics: 1/you often leave the factory and explore, fight for hours at a time. And you need to do this pretty often. 2/there are piles of turn-ins and corp OCL requests that don't build on each other. So often you'll need a pile of one thing and then move on to a pile of other things. It makes large buffers very nice for grabbing things to turn in and also allows even slow production to sometimes work fine because you don't need things quickly and whole parts of your factory would site idle if you provision for constantly needing everything
+- Transport is PULL and not PUSH based. Things only go onto rails when needed by storage of factories
+- The heat dynamic encourages spreading things out rather than building densly. 
+- But... rails crossing over/under rails can be harder, especially when you are building on platforms
+
+======
+Okay, now help me brainstorm a few things. Let's start with this one: I'm building some factories and want to know which things are relatively self-containened mid-game chains. For example, how seperate are the chains for things like nozzle/pump vs batteries/supermagnets/etc?
+
+======
+Okay, that makes sense, but help me with a little bit more brainstorming and let me talk you through a little bit of the history I've been through.
+When I started in my initial factory, I did everything satisfactory style: dedicated rails going across machines, dedicated backward capacity. Slowly, it ended up shifting towards shared backward capacity but still dedicated rails. The issue there was once I started to use shared capacity with dedicated rails, I ended up with absolute spaghetti. It was difficult to debug anything or see what was going where, but it was still an introductory factory that didn't make anything more complicated than a rotor or a stator. I left that alone, and that works. I shipped rotors, stators, and a couple of other components from that first factory and base to a brand new base where I started fresh. In that new base, I started out with that old pattern but quickly evolved and retrofitted into a single shared bus for everything above. I think you'd call them almost the tier three pieces, so raw had dedicated rails, ingots had dedicated rails, but then the plates, wire, powder, all of that stuff was on the shared bus. This worked for a long time and was actually an incredibly pleasant experience, because I got to a point where I could plug in a machine at a single rails input, select the output I wanted, and then I was done. I just put that output back onto the shared bus. Amazing experience, loved it, made me super productive, but then I got to a point where the shared bus was a full loop all the way around the factory, and it started to slow down. Fine, added a couple of shortcuts so things had alternate routes to get to their destination. Even replaced a couple of wirings into the bus with direct lines for really high volume items that worked for a little while longer, and then it turned into crazy spaghetti and started to deadlock. I think the deadlocking was a game bug, because when I tried to trace through things, it looked like it should work, and things just weren't getting pulled off the rail. Again, it was such spaghetti, it was impossible to know for sure and impossible to debug. After wasting about two hours trying to retrofit it and make it work, I just tore down every machine, and I'm now rebuilding that second factory. I'm trying to figure out exactly what I want things to look like moving forward.
+The architecture idea I had that I'm trying to implement is:
+- You have dedicated rails for ingots and ore.
+- You take the tier three-ish items like wire, powder, plates, and you have a shared bus for those that's separate for each of the elements, so a titanium bus, a calcium bus, a wolfram bus.
+- You have a very low-volume central bus that's a U-bend. You put things on one side of the U and you take them off on the other side of the U.
+- If a machine requires one of those tier three elements, you have a second rail coming in that supplies the high-volume tier three.
+- All of the higher-tier, lower-volume items come from the central bus.
+I ran into a couple of issues here when trying to experiment with it last night that caused me to further refine:
+1. Some of these items require tier three pieces from two different places, so calcium powder plus wolfram wire, for instance. In that case, what I started to do was create little clusters and run a long wire that extends each of those two buses and ties them into those machines.
+2. A couple of the items were still very high volume. For instance, the entire chain leading up to synthetic silicon is still pretty high volume, and I don't want it to clog my central bus. I kept that as a dedicated line with dedicated capacity for the machines. All of the ceramics for instance that are required for the synthetic silicon are created by machines that directly feed into storage. That storage then feeds directly into the Syn-Cyl. I can also then take any excess or slack when Syn-Cyl is not at full production and use ceramics for a couple of other things that require ceramics, and I think that will work pretty well.
+Now I'm trying to see if I can continue to take this approach and scale it, but in my head at least it looks like if I do everything in a factory, it'll still turn into spaghetti because you've got long lines coming into one spot to make stuff that requires calcium and wolfram. Then you've got another area where you've got long lines coming from titanium and wolfram. Then you've got another area with helium and titanium, and so it just becomes difficult to manage this without it being total spaghetti.
+That's where I am trying to figure out how I can divide up some of these larger factories so that they're making chains that are a little bit more isolated. For instance, in the above example, batteries, super magnets, those things can all be in one place. So can chemicals, potentially, since I have sulfur coming into this factory already. Maybe the whole propeller impeller nozzle chain can live somewhere else. Again, just brainstorming and trying to figure out what makes the most sense here. Would love for you to analyze where I am and recommend a couple of options for architectures and patterns.
+
+======
+Additionally, to inform this, but not to change the overall architecture recommendation: 
+I'm done with the corp level 7 unlocks and working on level 8s now. As I rebuild this old 2nd factory I want to build it to do two things:
+- help me finish the battery and supermagent turn-ins to level those
+- then supply things at scale to the next factory or set of factories. 
+- i found an amazing new basic to use for a large campus and it has everything i would need nearby. so i could eaasily add up to tier 3 production again there as needed for wolf, tit, sulf, helium, calcium. this is big enough to use for 3-5 campuses/cores
+- i would ship key things at scale from the old factory via a shared rail line with v3 capcity (480/min) using rail depots (buffer on both ends)
+
+in terms of planet-scale architecture, my thought is that the new factory/campus would take inputs to the rail depot from multiple places. start with fairly low volume from the first two bases, but if, even with the bursty needs, i wanted more of something i could just have another small, standalone factory that fed into that factory via a rail line. so if i run out of rotors, for example, another small rotor plant could be added and it would just add more rotors
+
+======
+Love it. Also test against L9s and L10s afterward so we see how well this model continues to scale and evolve.
+
+======
+"Bus admission rule
+Keep these local or dedicated when feeding their main consumers:
+Ceramics
+Synthetic Silicon
+Chemicals
+Sulphuric Acid
+Wolfram Plate
+Heat Resistant Sheet
+Helium-3
+These are much better candidates for buffered campus buses:
+Rotor and Stator
+Nozzle and Impeller
+Valve and Turbine
+Pump
+Battery and Accumulator
+Supermagnet" 
+
+-- this all makes sense, but i'm def dissapointed by chemicals. they take quite a bit to make, so it would be nice if i could bus them and not have to remake them more than once. acid is another one where it would be nice to add it to the planet-scale bus since so much going into making it. and.... even so, with 480/min capacity on the bus, i can see putting acid on there. i can even see sending it across the planet if everything else is low volume. but 4 things at that scale and things clog fast.
+
+======
+Map out the titanium chains (tubes, sheets, rods, etc) with fab v2
+
+======
+For Wolf, which is used least, wire, sheets, or powder? This up to T8, and for Base 2 (elctrochem)
+
+======
+Basically, I'm trying to figure out which one of these to tap off of in order to make basic building materials. I don't want to completely rewire all of my ore extractors. Each of the ore extractors is currently going into a smelter directly. From the smelter, it goes into fabs. One set of fabs makes wires, one makes powder, and one makes plate. I want to figure out which one of those extractors to tap off of in order to make basic building materials without disrupting the chain too much.
+
+======
+Two questions:
+1. How do pure, impure, and normal affect the rate of extraction for titanium in particular?
+2. I've just deleted a whole bunch of things, and I found that I have drones carrying various cargo stuck in the air. Even saving the game and reloading it doesn't seem to fix that. This definitely looks like those are the bugged cars that caused my stuff to get all gummed up, but how do I get rid of it? Will this permanently cause damage to the save in other ways? Can you search online and see if you find any evidence around this?
+
+======
+Bus admission rule
+Keep these local or dedicated when feeding their main consumers:
+Ceramics
+Synthetic Silicon
+Chemicals
+Sulphuric Acid
+Wolfram Plate
+Heat Resistant Sheet
+Helium-3
+These are much better candidates for buffered campus buses:
+Rotor and Stator
+Nozzle and Impeller
+Valve and Turbine
+Pump
+Battery and Accumulator
+Supermagnet
+
+======
+Can you make tubes with the Fab V2? I'm trying to figure out how I would set up factory number two, the electrochem plant, using Fab V2s and particularly the tube production line. If I did use a Fab V2 for tubes, what would be the work back?
+
+======
+I love starrupture.tools as a planning calculator and factory planner but am frustrated by the fact that it won't let me tell it which v2 buildings i have and then offer up the *option* to use those. they are generally better recipes and i'd use them most of the time. sometimes they aren't better because they require a resource that is a mile away, but mostly they are better
+
+======
+Let's build an iOS app to help with a few things here. This is my work laptop, but I'd like to use this as a test app for some work stuff, so a good project to host here. But let's check two things: 
+- do you have what is needed to create and deploy iOS apps here? if not, tell me what i need to do
+- is there any reason i couldn't login to my apple dev account? this laptop will not allow me to log into iCloud from the OS layer, so making sure that won't be a blocked. i need to be able to push to my personal phone
+
+======
+My employer is good with my playing around here as part of my job. As Codex PMM, it's important to dogfood, and this is something fun that will be more like real building than a throwaway I wouldn't use. SO it sounds like we're good. Please fork this task/session with a new name: "SF: App Design"
+
+======
+Sweet. Now this thread goes back to just planning logistics and factory design.
+
+======
+For sulfur deposits, how much ore/sec for each purity level? And can I have that stat for all current resource types?
+
+======
+Keep going.  Network restored.
+
+======
+Keep going.  Network restored.
+
+======
+Couple insights from that: I need to upgrade to v4 rails to take advantage of my pure Titanium deposit and the two places I've merged 2x helium and 2x Sulfur. Right now I'm just getting one deposit worth of flow
+
+======
+If we project my current approach out to the end of Update 1 content and exports, how does it look? How many bases? Are there more suprise items that needs huge volumes for us to prorgess in the future? Kind of like the HMF depedancy in Satisfactory?
+
+======
+"Your architecture scales surprisingly well through the end of Update 1. I would plan for **four real production bases plus four lightweight satellites**, not a giant universal factory and not a separate factory for every chain." -- this sounds a little to neat and clean and like you are saying that exactly what I planned is good enough. I'm pushing back on that. And some of the rest of what you said makes me think this isn't right. I don't want to AFK my way to the final exports. And I don't want to built MASSIVE storage as a way of finishing either. So the real question is, are there specific things I might need to scale up in order for the final exports to complete in a reasonable amount of time?
+
+For example, with my current production, how many hours will the "**Sulphuric Acid:** recursively present in 37 of 38 level-10+ export products." take to produce with a single machine? And is that spread evenly so it'll happen naturally as I explore because it comes step by step and if exports run while I explore then it's fine? Or are there spikes in usage later and I need to scale up to more sulfuric acid bases or production?
+
+Same with  things like, "**211 Synthetic DNA:** 2,110 Synthetic Protein, 1,266 Substance, 1,055 Nanosyringe, 2,110 Plastic, and 422 Biofilament." -- if i have 1-3x machines for each of th products that make up DNA, how long will it take to make the DNA? does thaty require scaling the earlier steps or is what i already have enough to keep 1x to 3x of the DNA machines runing? Please run these scenarios in details and tell me whay you find in every case. If it's setup so I'm fine with my current approach all the way through then that's fine, I'm just trying to think about how much is left and roughly what it will feel like in terms of scaling. 
+
+In Satisfactory, when you get to the last turn ins you need to scale up Computers and HMFs quite a bit and end up building factories for those specific things, with all of the earlier steps duplicated or it'll take 10s of hours in AFK time.
+
+======
+"Your doubled Helium and Sulfur sources are also correctly sized. Two each provide 480/min. That is enough for steady stockpiling, though a third source would improve recovery during final campaigns. One Oil Extractor is probably sufficient if it starts filling early." -- and please be careful with this assumption. i am using v2 storage units right now. and i'm not using them at all for ore, just for later-stage parts. so we shouldn't assume i'm stockpiling sulfur or other parts. i am stockpiling a single v2 storage of many things, and with future rail depot stations it'll go from 1 v2 storage to more -- 2, 3, maybe 4. 
+
+And your answer can be, "unlock the even bigger storage soon and quickly start to stockpiles X, Y, Z, Q, etc"
+
+======
+And... from a playstyle preference, I don't want to AFK to a win. That's cheesy. But I'm happy to play smart and start to store things strategically. That works for me.
+
+======
+I'm also okay with a few new additional factories. Building them is fun if they aren't too massive. But I don't want to build the same things over and over and over again. That gets tedious.
+
+======
+OKay, this is exactly what I wanted to know. The S Acid breakdown is the perfect example, though I think I'm missing some knowledge. It sounds like there is a later-game recipie that is faster or more efficient? My next question is: are those raw extraction numbers? And if so, what is the right upstream item to start building and storing that compresses well enough so I'll reduce those times dramatically, either with or without scaling up a ton? And what are the timings if I follow your reocmmendation to have a 2nd sulfur works? Please give all reasonable scenarios, including my existing pressurizer.
+
+======
+Also, and related: "Meanwhile, one DNA Facturer already finishes the 211 units in **70m 20s**. Two finish in 35m 20s and three in 23m 40s—but feeding them would be absurd. One continuously fed DNA machine requires 12 Substance Compounders, six Protein Compounders, six Tube v2 machines, four Sulfur sources, four Goethite drills, and two Oil Extractors." -- honestly, even having a final objective like this finish in 3-4 hours while I go clean up radar stations and POIs could be okay and better than building too much repeat infra. but 7 compounders could be okay as long as the things needed to feed them aren't absurd. what does the chain required to feel those Substance compounders look like? and how much can we have pre-stored to mitiagte that?
+
+"That implies these intentional expansions:
+Flowworks: approximately two each of Stabilizer, Valve, Turbine, and Nozzle by the final tiers." -- does that mean two machines each wtih the downstream dependancies also doubled? that's very reasoable. or do you mean 2 more full flowworks-style factories? i have been building 2x-4x of most things as I rebuilt Faraday. For example, I have 3x chemical and 3x electronics
+
+======
+To be fair, 3-4 isn't ideal, but it isn't the end of the world. Ideally it would be 1-2 hours if we have the right things stored in advance while building, exploring, etc, right?
+
+======
+keep going
+
+======
+this makes a huge amount of sense. given where i am, it sounds like i'm more and more in the realm of low cardinatliy items i can put on a main bus. can you help identify the places (like acid above) where that isn't true so i can plan ahead and leave factory floor space and rail space for high card items and avoid either sphagetti or slowdowns due to rail traffic jams?
+
+======
+this makes a huge amount of sense. given where i am, it sounds like i'm more and more in the realm of low cardinatliy items i can put on a main bus. can you help identify the places (like acid above) where that isn't true so i can plan ahead and leave factory floor space and rail space for high card items and avoid either sphagetti or slowdowns due to rail traffic jams?
+
+======
+which base are each of these numbers for? can you please split this by base and then by campus within the bse if its a large base? i dont want to have to tear down and rebuild
+
+======
+"The physical pattern should be a comb: bulk corridors run along campus edges; short single-path taps enter each production cell; finished outputs cross once into the low-volume bus. No campus bus continues through the next campus."
+
+"Flowworks: Titanium, Wolfram, HRS, Stabilizer, output/service, and one spare internal path. Keep only one spur to the world trunk."
+
+also pls use plain english. the above doesnt make sense. it sound like consultant speak
+
+======
+"One separate Helium rail from Faraday." -- how much He will need to flow from Faraday to Flowworks? can i use the same rail that will start at Faraday, go to Flowworks and leave some stuff, and then eventually also go to Grand Basin? 
+
+Also, I don't know what this outside edge business is? the long distance rails never directly connect to the inside of bases. they only tough storage yards
+
+======
+I love the campus plan for Grand basin. As I figure out how much space to save per section, roughloy how many machines will go in each? is GB-A more landerworks sized, faraday sized, etc?
+
+======
+that is probably bigger than just the main, even and flat part of Great Basin. this many campuses would extend things to ther southern, less even parts. which is fine. what is the heat per core/campus?
+
+======
+This helps my mental model. And, honestly, I might end up spreading this out more to keep the heat lower so we have fewer areas that need to handling incoming waves of vermin. And so I don't need to gather meteorite cores until my eyes bleed. But the logical seperation would still hold and be a useful way to look at this. And this finally explains why I thought there would be so many more bases and you were always talking about so few
+
+======
+For now it's logically fine since the order is (correct me if I'm wrong):
+- a few more machines at Faraday (we don't have room for too many more, what were you thinking, specifically?)
+- start Flowworks
+- then GB-A and GB-B in the main flat part of Great Basin
+
+======
+I already have placed 2 HRS furnaces at Faraday and 2 hardeners. and i have places the pressurized for helium. i was on a building kick after the full teardown and rebuild
+
+======
+however, i don't think i have Impellers at Faraday. pretty sure i never built them again after the tear down
+
+======
+how big is an assembler? i want to make sure i leave enough space for that if it's a big machine. also, can you give me the full list of everything i will ever export from faraday to any other base (flowworks, GB, etc). i can flip the switch when i leave to do Redleaf and world engine and those buffers will start to fill now
+
+======
+also: have we accounted for other ammo and building material types? i have both material types building at Faraday alongside standard and shotgun ammo.
+
+======
+Also, I don't route rods to the main bus and will not waste export space on them. same with wolf plates. those are a hard pass. it now looks like you were artificially filling the rail yard.
+
+======
+why two full v2 depots of HRS?
+
+======
+based on the above, why even do we have two HRS v2? it sounds like the existing two plus buffer plus ONE HRS v2 would be the same speed for those steps? can you double check please?
+
+======
+Okay, recheck all your math, especially for Flowworks. What is your build recommendation? We don't want 2 hours for a turn in (target < 1hr for the levels under 12ish) and we assume only v2 rail buffers. In reality we are more buffered even than that because each machine has at least a v1 storage attached. But when we do our exports/turn-ins we are often starting the NEW THIING from 0. no buffer. just the inputs are coming from buffers most of the time. up to 2hrs for an export is okay once in a rare while. with that, please gives me your final reocmmendation for Flowworks and then first the v1 of GB (the first 4 exports)
+
+======
+The idea is this: give me the next 8-12 exports worth of building: finishing Faraday, starting Flowworks, back to Faraday for 1 machine, more Flowworks, and then 4 exports worth at GB. 
+
+And looking at this, we'll seperate GB into campuses ffrom the start
+
+======
+This is perfect. Can you add to the report the specific machines I'm building in each location and how many of them? Plus the flow over rails in those places. Show me here, but also add it to the full recommendation report.
+
+======
+keep in mind that most things are effectively triple buffered once they have been online for a while: 
+- buffer after the machine
+- outgoing buffer at faraday
+- incoming buffer at flowworks or GB
+
+======
+I don't have excavator v2s. can you please provide two version of the table with building: one assuming v2 excavators and one assuming only v1s?
+
+======
+For geothite and oil, it looks like these might be prime candidates for cargo dispatchers. And how many of each resource extractor will we need all the way to level 15? we can easily group these together where we have the cargo receivers and then present it to the rest of the GB base as a single flow even if it comes from multiple sources.
+
+======
+This is one of those situations where adding drills at the same site is trivial, so it's worth it to have more capacity online in case we have a cold start for some reason. Building 3x the extra chemicals chain is tedius and consumes a pile of extra heat budget so not worth. dropping 2 extra drills and wiring them to dispatches is nothing.
+
+======
+what is the throughput per cargo dispatcher?
+
+======
+I'm also considering setting up ammo and standard build material cargo dispatchers somewhere. the idea is to be able to "pull" them from a temporary firebase anywhere on the map while on expeditions or when trying to take geo scanners.
+
+======
+Please give me a full list of every prompt I have typed here, seperated by ====== and newlines so it is clear they are seperate prompts.

@@ -1,0 +1,318 @@
+{
+  "benchmark_version": "0.3",
+  "name": "Straylight fresh-agent checkpoint transition evaluation",
+  "base_corpus_root": "eval/corpus-v0.2",
+  "seed_results": "results/2026-07-10-agent-work-v0.2.json",
+  "model": "gpt-5.6-sol",
+  "conditions": [
+    "filesystem_rebuild",
+    "workspace_resume"
+  ],
+  "workspace_max_completed_calls": 4,
+  "cases": [
+    {
+      "id": "warmind-alpha-budget-transition",
+      "workload": "Warmind",
+      "capability": "checkpoint_reopen_with_new_constraint",
+      "seed_case_id": "warmind-parser-learning",
+      "delta_path": "eval/transition-deltas/warmind-alpha-budget-change.md",
+      "task": "Reopen the parser-autonomy checkpoint, incorporate the new bounded-alpha operator constraint, and leave a child checkpoint. Preserve what the earlier PVE34 and adaptive-autonomy evidence established, distinguish the new constraint from historical evidence, and state the revised execution and abort gates.",
+      "claim_slots": {
+        "c1": "recovered prior state",
+        "c2": "new bounded-alpha constraint",
+        "c3": "preserved integrity and authority distinction",
+        "c4": "revised next action"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["PVE34"]},
+            {"any": ["historical", "earlier"]},
+            {"any": ["adaptive", "learned priors", "1,000", "1k"]}
+          ],
+          "sources_any": [
+            "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["30-minute", "30 minute"]},
+            {"any": ["900 PGCR", "900"]},
+            {"any": ["90 percent", "90%"]},
+            {"any": ["three per minute", "3 per minute"]}
+          ],
+          "sources_any": ["eval/transition-deltas/warmind-alpha-budget-change.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["operator constraint", "new constraint"]},
+            {"any": ["DB truth", "DB rows are truth"]},
+            {"any": ["does not supersede", "remain", "preserve"]}
+          ],
+          "sources_any": [
+            "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md",
+            "eval/transition-deltas/warmind-alpha-budget-change.md"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["dev-only", "dev only"]},
+            {"any": ["beta recovery", "beta"]},
+            {"any": ["bad trial", "roll back", "rollback"]}
+          ],
+          "sources_any": ["eval/transition-deltas/warmind-alpha-budget-change.md"]
+        }
+      ],
+      "forbidden": ["deploy the alpha to production now", "durable controller persistence is required"]
+    },
+    {
+      "id": "charlemagne-storage-observation-transition",
+      "workload": "Charlemagne",
+      "capability": "checkpoint_reopen_with_new_evidence",
+      "seed_case_id": "charlemagne-storage-current-state",
+      "delta_path": "eval/transition-deltas/charlemagne-storage-observation.md",
+      "task": "Reopen the storage-investigation checkpoint and advance it using the new six-hour observation. Separate the eased free-space condition from the durable legacy-table question, preserve the write-path distinction, and leave a child checkpoint with the next authorization gates.",
+      "claim_slots": {
+        "c1": "recovered prior causal state",
+        "c2": "new measured observation",
+        "c3": "current retirement decision",
+        "c4": "next authorization gates"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["legacy session", "legacy tables"]},
+            {"any": ["compact replacement", "replacement tables"]},
+            {"any": ["transient", "temporary"]}
+          ],
+          "sources_any": [
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["68 GiB", "68G"]},
+            {"any": ["six-hour", "six hour", "6-hour"]},
+            {"any": ["zero writes", "0 writes"]},
+            {"any": ["active writes"]}
+          ],
+          "sources_any": ["eval/transition-deltas/charlemagne-storage-observation.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["not authorized", "no approved", "do not drop", "not retire"]},
+            {"any": ["physical reclamation", "reclaim"]},
+            {"any": ["eased", "stable"]}
+          ],
+          "sources_any": ["eval/transition-deltas/charlemagne-storage-observation.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["monitor"]},
+            {"any": ["replay"]},
+            {"any": ["rollback"]},
+            {"any": ["maintenance window"]}
+          ],
+          "sources_any": ["eval/transition-deltas/charlemagne-storage-observation.md"]
+        }
+      ],
+      "forbidden": ["drop the legacy tables now", "legacy retirement has completed"]
+    },
+    {
+      "id": "star-rupture-second-facturer-transition",
+      "workload": "Star Rupture",
+      "capability": "checkpoint_reopen_with_infeasible_requirement",
+      "seed_case_id": "star-rupture-plan-revision",
+      "delta_path": "eval/transition-deltas/star-rupture-second-facturer.md",
+      "task": "Reopen the distributed-factory checkpoint and revise it for one Constructorizer plus two Facturers while every Base Core remains level 0. Recompute the heat constraint, reject any unsafe co-location, preserve Update 1 authority rules, and leave a buildable child checkpoint.",
+      "claim_slots": {
+        "c1": "recovered prior architecture",
+        "c2": "changed requirement and heat arithmetic",
+        "c3": "safe revised layout",
+        "c4": "version-safe next action"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["distributed", "satellite", "outpost"]},
+            {"any": ["level-0", "level 0"]},
+            {"any": ["Fire Wave"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture logistics.md",
+            "Topics/Star Rupture/Star Rupture production.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["500"]},
+            {"any": ["650"]},
+            {"any": ["1,800", "1800"]},
+            {"any": ["1,000", "1000"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture production.md",
+            "eval/transition-deltas/star-rupture-second-facturer.md"
+          ]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["three cores", "three level-0", "three occupied", "separate core"]},
+            {"any": ["Constructorizer"]},
+            {"any": ["two Facturers", "each Facturer"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture production.md",
+            "eval/transition-deltas/star-rupture-second-facturer.md"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["Update 1"]},
+            {"any": ["do not begin", "before construction", "before building", "verify"]},
+            {"any": ["Rail v.3", "v.1", "v.2", "rail tiers", "confirmed Update 1 equipment"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture.md",
+            "Topics/Star Rupture/Star Rupture logistics.md",
+            "eval/transition-deltas/star-rupture-second-facturer.md"
+          ]
+        }
+      ],
+      "forbidden": ["Rail v.4 is available", "Rail v.5 is available", "put all three machines on one core"]
+    },
+    {
+      "id": "switzerland-reservation-transition",
+      "workload": "Switzerland",
+      "capability": "checkpoint_reopen_with_booking_transition",
+      "seed_case_id": "switzerland-resume-truth",
+      "delta_path": "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+      "task": "Reopen the Switzerland planning checkpoint and apply the new family window and lodging reservation receipt. Update the itinerary and booking state without promoting unbooked transport or activities, preserve the altitude constraint, and leave a source-bearing child checkpoint.",
+      "claim_slots": {
+        "c1": "recovered camp and meeting sequence",
+        "c2": "new family window",
+        "c3": "lodging reservation state",
+        "c4": "remaining proposed work"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["after both camps", "after Saas"]},
+            {"any": ["August 10-22", "Aug 10-22"]},
+            {"any": ["serious altitude", "altitude"]}
+          ],
+          "sources_any": [
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["August 22", "Aug 22"]},
+            {"any": ["August 25", "Aug 25", "August 22 through August 25", "Aug 22-25", "Aug 22–25"]},
+            {"any": ["three nights", "3 nights"]},
+            {"any": ["superseded", "superseding"]}
+          ],
+          "sources_any": ["eval/transition-deltas/switzerland-family-window-and-reservation.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["Locarno"]},
+            {"any": ["reserved"]},
+            {"any": ["CHF 500", "500"]},
+            {"any": ["July 20", "Jul 20"]},
+            {"any": ["Radley"]}
+          ],
+          "sources_any": ["eval/transition-deltas/switzerland-family-window-and-reservation.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["not booked", "unbooked", "proposed"]},
+            {"any": ["flights", "rail tickets", "rental car"]},
+            {"any": ["activities"]}
+          ],
+          "sources_any": ["eval/transition-deltas/switzerland-family-window-and-reservation.md"]
+        }
+      ],
+      "forbidden": ["everything is booked", "meet after Belgium"]
+    },
+    {
+      "id": "straylight-api-gate-transition",
+      "workload": "Straylight",
+      "capability": "checkpoint_reopen_into_implementation",
+      "seed_case_id": "straylight-product-resume",
+      "delta_path": "eval/transition-deltas/straylight-api-gate.md",
+      "task": "Reopen the Straylight project checkpoint and advance it from evaluation into implementation using the new API gate. Correct the interpretation of the token result, define the first persistent build slice, and leave a child checkpoint with measurable acceptance criteria and source lineage.",
+      "claim_slots": {
+        "c1": "recovered product thesis",
+        "c2": "corrected evaluation interpretation",
+        "c3": "first persistent build slice",
+        "c4": "measurable transition gate"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["agent-first", "agent first"]},
+            {"any": ["durable workspace", "durable-work"]},
+            {"any": ["not retrieval", "more than retrieval", "not primarily", "portable context"]}
+          ],
+          "sources_any": ["Projects/Straylight/Straylight.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["cached replay", "cached history"]},
+            {"any": ["uncached input"]},
+            {"any": ["tool calls", "round trips"]},
+            {"any": ["BM25", "lexical"]}
+          ],
+          "sources_any": ["eval/transition-deltas/straylight-api-gate.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["persistent"]},
+            {"any": ["snapshot-pinned", "snapshot pinned"]},
+            {"any": ["semantic", "hybrid"]},
+            {"any": ["batch"]},
+            {"any": ["child checkpoint"]}
+          ],
+          "sources_any": [
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "eval/transition-deltas/straylight-api-gate.md"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["four", "4"]},
+            {"any": ["filesystem"]},
+            {"any": ["cached", "uncached"]},
+            {"any": ["parent", "source references", "source lineage"]}
+          ],
+          "sources_any": ["eval/transition-deltas/straylight-api-gate.md"]
+        }
+      ],
+      "forbidden": ["BM25 shell is the target architecture", "2.2x more unique context"]
+    }
+  ]
+}

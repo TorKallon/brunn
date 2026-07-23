@@ -1,0 +1,15 @@
+{
+  "schema": "source-profile-records@v1",
+  "identity_rule": "source id is stable input; canonical normalization maps it to one object_id and source-bearing name claims",
+  "profiles": [
+    {"id": "person:p-201", "object_type": "person", "label_claim": "claim:name-kai-r1", "status": "active"},
+    {"id": "organization:o-101", "object_type": "organization", "label_claim": "claim:name-harbor-arts-r1", "status": "active"},
+    {"id": "group:g-101", "object_type": "group", "label_claim": "claim:name-workshop-crew-r1", "status": "active"},
+    {"id": "place:pl-101", "object_type": "place", "label_claim": "claim:name-north-hall-r1", "status": "active"},
+    {"id": "event-series:harbor-practice", "object_type": "event", "label_claim": "claim:name-harbor-practice-r1", "status": "active"},
+    {"id": "arrangement:lodging-801", "object_type": "arrangement", "label_claim": "claim:name-pine-coast-stay-r1", "status": "active"},
+    {"id": "resource:projector-kit", "object_type": "resource", "label_claim": "claim:name-projector-kit-r1", "status": "active"},
+    {"id": "work-item:readiness-601", "object_type": "work-item", "label_claim": "claim:name-readiness-packet-r1", "status": "open"},
+    {"id": "artifact:organizer-field-lab-r2", "object_type": "artifact", "label_claim": "claim:name-field-lab-r2", "status": "current"}
+  ]
+}

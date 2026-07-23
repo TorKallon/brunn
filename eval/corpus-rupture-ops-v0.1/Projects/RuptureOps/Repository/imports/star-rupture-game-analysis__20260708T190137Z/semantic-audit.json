@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "canonical_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+  "comparison": {
+    "items": {"archive": 468, "overlap": 468, "substantive_matches": 467, "unique": 0},
+    "public_buildings": {"archive": 191, "overlap": 191, "unique": 0},
+    "recipes": {"archive_total": 234, "overlap": 234, "unique_definitions": 0},
+    "player_facing_recipe_producer_links": {"shared": 185, "imported_overrides": 6},
+    "corporations": {"archive": 6, "overlap": 6, "unique": 0},
+    "corporation_levels": {"archive": 77, "overlap": 77, "unique": 0},
+    "export_offers": {"archive": 121, "overlap": 121, "unique": 0},
+    "development_upgrades": {"archive": 15, "overlap": 15, "unique": 0},
+    "map_markers": {"archive": 3259, "overlap": 3259, "unique": 0},
+    "loot_entries": {"archive": 3094, "overlap": 3094, "unique": 0},
+    "site_assets": {"archive": 9, "hash_matches_in_canonical_asset_manifest": 0}
+  },
+  "normalization_findings": [
+    {
+      "id": "airlock-item-building-collision",
+      "status": "corrected",
+      "detail": "The item detail route returned a building-shaped object and overwrote the correct item-listing record."
+    },
+    {
+      "id": "training-corporation-undefined-index",
+      "status": "corrected",
+      "detail": "The literal React Flight sentinel $undefined is normalized to null."
+    }
+  ],
+  "promotion_policy": {
+    "active_corpus": "canonical RuptureOps snapshot only",
+    "player_context": "structured model plus consolidated vault notes",
+    "site_images": "StarRupture vault assets",
+    "legacy_reports_and_models": "verified raw import until recomputed",
+    "superseded_flowworks_study": "raw audit history only"
+  }
+}

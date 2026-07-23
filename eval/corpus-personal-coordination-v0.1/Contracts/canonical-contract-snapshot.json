@@ -1,0 +1,160 @@
+{
+  "schema": "straylight-context-contract-fixture@v1",
+  "normalized_from": [
+    "Profiles/object-profiles.json",
+    "Relations/role-relations.json",
+    "Events/harbor-series.json",
+    "Arrangements/arrangement-ledger.json"
+  ],
+  "normalization_rules": [
+    "one object_id per semantic referent",
+    "type_profiles may contain more than one compatible profile",
+    "binary source edges normalize to versioned qualified relations",
+    "civil recurrence uses temporal-spec@v1 local_datetime with an IANA time zone",
+    "independent named state machines never imply one another"
+  ],
+  "object": {
+    "object_id": "object:person-p301",
+    "type_profiles": ["core.person", "coordination.schedule_controller"],
+    "version": "v1",
+    "previous_version": null,
+    "label_claim_ref": "claim:name-morgan-r1",
+    "recorded_at": "2026-07-11T20:00:00Z",
+    "policy_ref": "policy:private-coordination"
+  },
+  "arrangement": {
+    "object_id": "object:arrangement-lodging-801",
+    "type_profiles": ["core.arrangement"],
+    "version": "v1",
+    "previous_version": null,
+    "recorded_at": "2026-07-11T20:01:00Z",
+    "policy_ref": "policy:private-coordination"
+  },
+  "resource": {
+    "object_id": "object:resource-lodging-inventory-801",
+    "type_profiles": ["core.resource"],
+    "version": "v1",
+    "previous_version": null,
+    "recorded_at": "2026-07-11T20:02:00Z",
+    "policy_ref": "policy:private-coordination"
+  },
+  "qualified_relation": {
+    "relation_id": "relation:role-401",
+    "version": "v2",
+    "previous_version": "v1",
+    "predicate": "core.member_of",
+    "endpoints": [
+      {"role": "member", "ref": "object:person-p301"},
+      {"role": "group", "ref": "object:group-dockside-makers"}
+    ],
+    "qualifiers": {
+      "role": "schedule coordinator"
+    },
+    "valid_time": {
+      "kind": "date_interval",
+      "start": "2026-06-01",
+      "end_exclusive": "2026-10-01"
+    },
+    "evidence_refs": ["evidence:dockside-roster-r5"],
+    "recorded_at": "2026-07-11T20:05:00Z",
+    "policy_ref": "policy:private-coordination"
+  },
+  "recurring_event": {
+    "object_id": "object:event-series-harbor-practice",
+    "type_profiles": ["core.event", "core.event_series"],
+    "version": "v1",
+    "temporal_schema": "temporal-spec@v1",
+    "recurrence": {
+      "schema": "recurrence-spec@v1",
+      "start": {
+        "kind": "local_datetime",
+        "local": "2026-08-05T17:00:00",
+        "time_zone": "America/Los_Angeles"
+      },
+      "duration": "PT90M",
+      "rules": ["FREQ=WEEKLY;BYDAY=WE;COUNT=4"],
+      "excluded_recurrence_ids": [],
+      "added_occurrence_refs": [],
+      "split_from_series_ref": null
+    },
+    "recorded_at": "2026-07-11T20:10:00Z",
+    "policy_ref": "policy:private-coordination"
+  },
+  "state_assignments": [
+    {
+      "claim_id": "claim:lodging-booking-confirmed-r4",
+      "about_refs": ["object:arrangement-lodging-801"],
+      "predicate": "state:arrangement.booking@v1",
+      "value": "confirmed",
+      "producer_ref": "object:provider-pine-coast",
+      "formation_method": "extracted",
+      "claim_mode": "state_assignment",
+      "support_state": "verified",
+      "authority": "provider_confirmation",
+      "canonicality": "canonical",
+      "valid_time": {"kind": "instant_interval", "start": "2026-07-10T19:00:00Z", "end": null},
+      "evidence_refs": ["evidence:northwind-arrangements-r4"],
+      "supersedes": []
+    },
+    {
+      "claim_id": "claim:lodging-payment-deposit-r4",
+      "about_refs": ["object:arrangement-lodging-801"],
+      "predicate": "state:arrangement.payment@v1",
+      "value": "deposit_paid",
+      "producer_ref": "object:provider-pine-coast",
+      "formation_method": "extracted",
+      "claim_mode": "state_assignment",
+      "support_state": "verified",
+      "authority": "payment_receipt",
+      "canonicality": "canonical",
+      "valid_time": {"kind": "instant_interval", "start": "2026-07-10T19:00:00Z", "end": null},
+      "evidence_refs": ["evidence:northwind-arrangements-r4"],
+      "supersedes": []
+    },
+    {
+      "claim_id": "claim:lodging-allocation-r4",
+      "about_refs": ["object:arrangement-lodging-801"],
+      "predicate": "state:arrangement.allocation@v1",
+      "value": "allocated",
+      "producer_ref": "object:provider-pine-coast",
+      "formation_method": "extracted",
+      "claim_mode": "state_assignment",
+      "support_state": "verified",
+      "authority": "provider_confirmation",
+      "canonicality": "canonical",
+      "valid_time": {"kind": "instant_interval", "start": "2026-07-10T19:00:00Z", "end": null},
+      "evidence_refs": ["evidence:northwind-arrangements-r4"],
+      "supersedes": []
+    },
+    {
+      "claim_id": "claim:lodging-resource-availability-r4",
+      "about_refs": ["object:resource-lodging-inventory-801"],
+      "predicate": "state:resource.availability@v1",
+      "value": "unknown",
+      "producer_ref": "source:northwind-arrangements-r4",
+      "formation_method": "synthesized",
+      "claim_mode": "state_assignment",
+      "support_state": "supported",
+      "authority": "derived_from_source_scope",
+      "canonicality": "canonical",
+      "valid_time": {"kind": "instant_interval", "start": "2026-07-10T19:00:00Z", "end": null},
+      "evidence_refs": ["evidence:northwind-arrangements-r4"],
+      "supersedes": []
+    },
+    {
+      "claim_id": "claim:lodging-use-r4",
+      "about_refs": ["object:arrangement-lodging-801"],
+      "predicate": "state:arrangement.use@v1",
+      "value": "not_started",
+      "producer_ref": "source:northwind-arrangements-r4",
+      "formation_method": "synthesized",
+      "claim_mode": "state_assignment",
+      "support_state": "supported",
+      "authority": "derived_from_source_scope",
+      "canonicality": "canonical",
+      "valid_time": {"kind": "instant_interval", "start": "2026-07-10T19:00:00Z", "end": null},
+      "evidence_refs": ["evidence:northwind-arrangements-r4"],
+      "supersedes": []
+    }
+  ]
+}

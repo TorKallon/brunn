@@ -1,0 +1,10 @@
+{
+  "snapshot": "source:northwind-arrangements-r4",
+  "arrangements": [
+    {"id": "arrangement:lodging-801", "arrangement_type": "reservation", "service_type": "lodging", "booking_state": "confirmed", "payment_state": "deposit_paid", "allocation_state": "allocated", "allocation_detail": "room_held", "resource_availability_state": "unknown", "actual_use_state": "not_started"},
+    {"id": "arrangement:registration-802", "arrangement_type": "registration", "booking_state": "confirmed", "payment_state": "waived", "payment_detail": "fee_waived", "allocation_state": "allocated", "allocation_detail": "enrolled", "resource_availability_state": "unknown", "actual_use_state": "not_started"},
+    {"id": "arrangement:ticket-803", "arrangement_type": "ticket", "service_type": "transport", "booking_state": "confirmed", "booking_detail": "issued", "payment_state": "paid", "allocation_state": "allocated", "allocation_detail": "seat_assigned", "resource_availability_state": "unknown", "actual_use_state": "not_started"},
+    {"id": "arrangement:rental-804", "arrangement_type": "rental", "booking_state": "proposed", "booking_detail": "requested", "payment_state": "not_due", "allocation_state": "waitlisted", "resource_availability_state": "unknown", "actual_use_state": "not_started"},
+    {"id": "arrangement:transport-805", "arrangement_type": "transport", "booking_state": "confirmed", "booking_detail": "scheduled", "payment_state": "not_due", "payment_detail": "included", "allocation_state": "allocated", "allocation_detail": "capacity_secured", "resource_availability_state": "unknown", "actual_use_state": "not_started", "linked_ticket": "arrangement:ticket-803"}
+  ]
+}

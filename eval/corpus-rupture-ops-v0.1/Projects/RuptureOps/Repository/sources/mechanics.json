@@ -1,0 +1,559 @@
+{
+  "schema_version": 1,
+  "updated": "2026-07-10",
+  "facts": [
+    {
+      "id": "u1-map-radiation-border",
+      "system": "World and story progression",
+      "subject": "Forgotten Engine",
+      "fact_kind": "design_rule",
+      "statement": "Completing the Forgotten Engine mission removes the radiation border and opens the new Update 1 regions.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Update 1 features and spoiler section"
+    },
+    {
+      "id": "u1-map-expanded-content",
+      "system": "World and story progression",
+      "subject": "Expanded map",
+      "fact_kind": "content",
+      "statement": "Update 1 adds unlockable regions, abandoned bases, antennas, caves, resource sites, factory space, foundables, dialogue, audiologs, and datapads; the official notes do not publish a numerical area increase.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "New playable areas"
+    },
+    {
+      "id": "u1-resource-powerium-chain",
+      "system": "Resources and production",
+      "subject": "Powerium",
+      "fact_kind": "design_rule",
+      "statement": "Powerium deposits require an Oil Extractor; the extracted product flows through the Refinery. SRDB names the recipe output item Crude Oil, so deposit identity and item identity must remain separate.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/buildings/liquid-extractor",
+      "evidence_locator": "Building description and recipe output",
+      "notes": "Official Update 1 prose establishes the Powerium -> Oil Extractor -> Refinery chain; SRDB supplies the exact entity IDs."
+    },
+    {
+      "id": "u1-resource-goethite-chain",
+      "system": "Resources and production",
+      "subject": "Goethite",
+      "fact_kind": "design_rule",
+      "statement": "Goethite deposits require a Laser Drill and the extracted ore is refined through the Pyro Forge.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "New resources and harvesting technology"
+    },
+    {
+      "id": "u1-new-production-content-count",
+      "system": "Resources and production",
+      "subject": "Update 1 production content",
+      "fact_kind": "content",
+      "statement": "Creepy Jar advertised more than 40 new items and recipes in Update 1 but did not enumerate all numerical rates; use the versioned SRDB recipe snapshot for exact current data.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Update 1 feature list"
+    },
+    {
+      "id": "u1-development-station-role",
+      "system": "Progression",
+      "subject": "Development Station",
+      "fact_kind": "design_rule",
+      "statement": "The Development Station is placed inside a Habitat and unlocks improved building versions through corporation, material, reputation, and tracked-task requirements represented separately from recipe research.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/upgrades",
+      "evidence_locator": "Development upgrade groups, requirements, tasks, and rewards"
+    },
+    {
+      "id": "u1-development-station-advertised-tiers",
+      "system": "Progression",
+      "subject": "Higher-tier buildings",
+      "fact_kind": "content",
+      "statement": "The advertised higher-tier set includes Compounder v.2, Fabricator v.2, Furnace v.2, Ore Excavator v.2, Orbital Cargo Launcher v.2, and Constructorizer v.2; official prose also identifies Large Personal Storage and Large Habitat among Development Station rewards.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "New higher tier buildings and Development Station sections"
+    },
+    {
+      "id": "u1-recycler-role",
+      "system": "Personal crafting",
+      "subject": "Recycler",
+      "fact_kind": "design_rule",
+      "statement": "The Recycler is a Habitat-interior station that converts items into Basic Building Materials and/or Intermediate Building Materials; specific yields must come from recipe data rather than this prose rule.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "New buildings section"
+    },
+    {
+      "id": "u1-zipline-network",
+      "system": "Traversal and logistics",
+      "subject": "Zipline",
+      "fact_kind": "design_rule",
+      "statement": "Players build a Zipline graph from Zipline Poles and can choose either direction along a track for rapid traversal; unlike Drone Rails, the Zipline carries the player rather than resources.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Zipline feature section"
+    },
+    {
+      "id": "u1-wildlife",
+      "system": "Combat, enemies, and ecology",
+      "subject": "Passive wildlife",
+      "fact_kind": "content",
+      "statement": "Update 1 adds Vulpir, Coralion, and Skylisk as generally shy wildlife and adds related consumable content.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Wildlife section"
+    },
+    {
+      "id": "u1-corporation-reset",
+      "system": "Corporation progression",
+      "subject": "Update 1 migration",
+      "fact_kind": "migration_rule",
+      "statement": "Update 1 reset every corporation to level 1 and restored prior progression as Data Points that could be redistributed in the Corporate Terminal.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Progression Rollback"
+    },
+    {
+      "id": "u1-grandfathered-buildings",
+      "system": "Corporation progression",
+      "subject": "Pre-Update 1 buildings",
+      "fact_kind": "migration_rule",
+      "statement": "Buildings already unlocked and placed before Update 1 remained operational, but the 0.2.0 launch initially required the relevant Corporate Terminal or Development Station unlock before they could be built again.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "valid_to_game_build_id": "ea_u1_0.2.1_build_22793038",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Progression Rollback"
+    },
+    {
+      "id": "u1-hotfix-022-auto-unlock",
+      "system": "Corporation progression",
+      "subject": "Pre-Update 1 buildings",
+      "fact_kind": "fix",
+      "statement": "From hotfix 0.2.2, loading a pre-Update 1 save automatically unlocks previously unlocked or built buildings in the Development Station.",
+      "valid_from_game_build_id": "ea_u1_0.2.2_build_22898977",
+      "confidence": "high",
+      "source_url": "https://steamdb.info/patchnotes/22898977/",
+      "evidence_locator": "Official hotfix 0.2.2 notes"
+    },
+    {
+      "id": "u1-starting-access-rework",
+      "system": "Corporation progression",
+      "subject": "Walkway and Dash",
+      "fact_kind": "design_delta",
+      "statement": "Mechanics previously available at the start moved behind corporation levels: Extendable Walkway to Moon Energy level 4 and Dash to Griffits Blue level 3.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/541135584198920980",
+      "evidence_locator": "Official before/after corporation rewards"
+    },
+    {
+      "id": "u1-pistol-unlock",
+      "system": "Equipment progression",
+      "subject": "UPP-7 Pistol",
+      "fact_kind": "design_delta",
+      "statement": "The pistol is no longer a corporation-level reward; it is crafted through the Equipment Upgrade Station with other weapons.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Progression Rollback"
+    },
+    {
+      "id": "u1-death-weapon-loss",
+      "system": "Player, inventory, and equipment",
+      "subject": "Death",
+      "fact_kind": "design_delta",
+      "statement": "Death drops all weapons the player is carrying, explicitly including the pistol; corpse recovery and inventory-loss questions should therefore model weapons as losable inventory.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Progression Rollback"
+    },
+    {
+      "id": "u1-teleporter-unlock",
+      "system": "Traversal and logistics",
+      "subject": "Teleporter",
+      "fact_kind": "design_delta",
+      "statement": "The Teleporter moved from a Forgotten Engine reward to Clever Robotics level 9; launching the Forgotten Engine is no longer required to unlock it.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Teleporter is now a Corporation Reward"
+    },
+    {
+      "id": "u1-quartz-no-longer-construction",
+      "system": "Construction and progression",
+      "subject": "Quartz",
+      "fact_kind": "design_delta",
+      "statement": "Quartz is no longer a building construction material; Quartz Ore instead participates in Development Station progression.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Quartz is no longer a Building Material"
+    },
+    {
+      "id": "u1-quartz-migration",
+      "system": "Construction and progression",
+      "subject": "Legacy Quartz Building Material",
+      "fact_kind": "migration_rule",
+      "statement": "Quartz already spent on buildings was refunded as Quartz Ore; remaining legacy Quartz Building Material cannot build but can be recycled losslessly into Quartz Ore.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Quartz is no longer a Building Material"
+    },
+    {
+      "id": "u1-quartz-buildings-capacity",
+      "system": "Base Core capacity",
+      "subject": "Former Quartz-cost buildings",
+      "fact_kind": "design_delta",
+      "statement": "Buildings that formerly consumed Quartz Building Material now consume Base Core overheat capacity instead.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Quartz is no longer a Building Material"
+    },
+    {
+      "id": "u1-cargo-one-to-one",
+      "system": "Traversal and logistics",
+      "subject": "Cargo Dispatcher and Receiver",
+      "fact_kind": "design_delta",
+      "statement": "Cargo links are strictly one Dispatcher to one selected Receiver; pre-Update 1 connections must be manually reconnected.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Cargo Dispatcher/Receiver Rework"
+    },
+    {
+      "id": "u1-cargo-auto-parcel",
+      "system": "Traversal and logistics",
+      "subject": "Cargo Dispatcher",
+      "fact_kind": "balance_value",
+      "statement": "Manual parcel sizing was removed; the Dispatcher automatically packs and sends material to its paired Receiver every 20 seconds.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Cargo Dispatcher/Receiver Rework",
+      "raw_value": {
+        "dispatch_interval_seconds": 20
+      }
+    },
+    {
+      "id": "u1-blueprint-duplicates",
+      "system": "Recipe research",
+      "subject": "Duplicate blueprints",
+      "fact_kind": "design_delta",
+      "statement": "Picking up a blueprint already found produces a Data Points item instead of adding another duplicate blueprint entry.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Blueprints changes"
+    },
+    {
+      "id": "u1-blueprint-relocation",
+      "system": "Recipe research",
+      "subject": "Forgotten Engine blueprints",
+      "fact_kind": "design_delta",
+      "statement": "Blueprints previously located in the Forgotten Engine moved to other locations in Update 1.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Blueprints changes"
+    },
+    {
+      "id": "u1-recipe-nanofibre",
+      "system": "Resources and production",
+      "subject": "Nanofibre recipe",
+      "fact_kind": "design_delta",
+      "statement": "Nanofibre gained Wolfram Wire as a third recipe input.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Changes in recipes"
+    },
+    {
+      "id": "u1-recipe-pressure-tank",
+      "system": "Resources and production",
+      "subject": "Pressure Tank recipe",
+      "fact_kind": "design_delta",
+      "statement": "Pressure Tank no longer requires Titanium Housing.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Changes in recipes"
+    },
+    {
+      "id": "u1-recipe-condenser",
+      "system": "Resources and production",
+      "subject": "Condenser recipe",
+      "fact_kind": "design_delta",
+      "statement": "Condenser no longer requires Synthetic Resin.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Changes in recipes"
+    },
+    {
+      "id": "u1-recipe-superconductor",
+      "system": "Resources and production",
+      "subject": "Superconductor recipe",
+      "fact_kind": "design_delta",
+      "statement": "Superconductor uses Synthetic Resin where the prior recipe used Ceramics.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Changes in recipes"
+    },
+    {
+      "id": "srdb-recipe-model",
+      "system": "Resources and production",
+      "subject": "Recipe",
+      "fact_kind": "data_model",
+      "statement": "A recipe is modeled by producer building associations, input items and quantities, output item and quantity, cycle duration, item level, and optional material/Data Point research requirements; recipe outputs remain a separate relation for future multi-output support.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/crafting",
+      "evidence_locator": "SRDB crafting RSC dataset"
+    },
+    {
+      "id": "srdb-research-distinct-progression",
+      "system": "Recipe research",
+      "subject": "Recipe Station",
+      "fact_kind": "design_rule",
+      "statement": "Recipe research costs are distinct from corporation reputation, player XP, and Development Station upgrades; they can include items, blueprints, and Data Points.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/research",
+      "evidence_locator": "Research dataset"
+    },
+    {
+      "id": "srdb-analysis-datapoints",
+      "system": "Progression",
+      "subject": "Analyzing Station",
+      "fact_kind": "design_rule",
+      "statement": "Analyzable items yield item-specific Data Point values; these are stored separately from export reputation and player XP.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/analysis",
+      "evidence_locator": "Analysis dataset"
+    },
+    {
+      "id": "srdb-exports",
+      "system": "Corporation progression",
+      "subject": "Orbital Cargo Launcher exports",
+      "fact_kind": "design_rule",
+      "statement": "Export offers are corporation- and corporation-level-specific item values; a zero value is not an offer and different levels can value the same item differently.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/exports",
+      "evidence_locator": "Exports dataset"
+    },
+    {
+      "id": "srdb-xp-distinct",
+      "system": "Player progression",
+      "subject": "Player XP",
+      "fact_kind": "design_rule",
+      "statement": "Player XP sources are classified as Movement, Combat, or Survival actions and must not be conflated with Data Points or corporation reputation.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/experience",
+      "evidence_locator": "Experience dataset"
+    },
+    {
+      "id": "srdb-power-sign-convention",
+      "system": "Power",
+      "subject": "Building power_raw",
+      "fact_kind": "data_semantics",
+      "statement": "SRDB uses positive raw power values for generation and negative raw values for consumption. Derived generation and demand columns retain the untouched raw value and should be validated against the current game before high-stakes optimization.",
+      "confidence": "medium",
+      "source_url": "https://starrupture.tools/buildings",
+      "evidence_locator": "Building objects and descriptions"
+    },
+    {
+      "id": "srdb-temperature-semantics-boundary",
+      "system": "Base Core capacity",
+      "subject": "Building temperature_raw",
+      "fact_kind": "data_boundary",
+      "statement": "SRDB temperature values appear to encode positive capacity load and negative capacity contribution, but descriptions and numbers are not uniformly self-consistent. Preserve temperature_raw and treat derived load/bonus values as provisional.",
+      "confidence": "medium",
+      "source_url": "https://starrupture.tools/buildings",
+      "evidence_locator": "Building objects and descriptions"
+    },
+    {
+      "id": "srdb-drone-rail-graph",
+      "system": "Traversal and logistics",
+      "subject": "Drone Rails",
+      "fact_kind": "data_model",
+      "statement": "Drone logistics form a directed socket graph with rail tiers, poles, junctions, modulators, roundabouts, producer/consumer requests, storage behavior, and power conduction; socket groups and counts must be retained rather than collapsed to a single connector count.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/buildings/",
+      "evidence_locator": "Transport building descriptions and sockets"
+    },
+    {
+      "id": "srdb-map-loot-model",
+      "system": "World and exploration",
+      "subject": "Loot locations",
+      "fact_kind": "data_model",
+      "statement": "Map loot is represented by markers linked to loot tables whose entries contain item, probability, minimum, and maximum fields; probability semantics remain unvalidated and must not yet drive expected-value models.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/map",
+      "evidence_locator": "Map markers and loot_tables datasets"
+    },
+    {
+      "id": "srdb-map-spawn-model",
+      "system": "Combat, enemies, and ecology",
+      "subject": "NPC spawn presets",
+      "fact_kind": "data_model",
+      "statement": "NPC spawn markers retain raw AI type identifiers, burst-preset settings, custom archetype names, and spawn-count values; display-name mapping and combat formulas require separate validation.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/map",
+      "evidence_locator": "NPCSpawn marker spawn_preset data"
+    },
+    {
+      "id": "srdb-map-coordinate-boundary",
+      "system": "World and exploration",
+      "subject": "Coordinates",
+      "fact_kind": "data_boundary",
+      "statement": "SRDB map coordinates are preserved in their source coordinate space. They must not be mixed with raw game-world or other map coordinate systems until a transform is verified.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/map",
+      "evidence_locator": "Map marker and radiation polygon coordinates"
+    },
+    {
+      "id": "srdb-rupture-cycle-tool-logic",
+      "system": "Environment and survival cycle",
+      "subject": "Ruptura timer",
+      "fact_kind": "community_tool_logic",
+      "statement": "The SRDB timer bundle models a 54-minute cycle: Burning 30 seconds, Cooling 60 seconds, Stabilizing 600 seconds, and Stable 2,550 seconds. This is community-tool logic tied to the SRDB 2.3.4 capture, not an official formula guarantee.",
+      "confidence": "medium",
+      "source_url": "https://starrupture.tools/timer",
+      "evidence_locator": "SRDB timer client bundle",
+      "raw_value": {
+        "burning_seconds": 30,
+        "cooling_seconds": 60,
+        "stabilizing_seconds": 600,
+        "stable_seconds": 2550,
+        "total_seconds": 3240
+      }
+    },
+    {
+      "id": "u1-world-regeneration",
+      "system": "Environment and survival cycle",
+      "subject": "Post-Ruptura regeneration",
+      "fact_kind": "design_rule",
+      "statement": "Official Update 1 prose describes foliage regrowth and water replenishment after the Ruptura fire wave; exact respawn timing and formulas are not published.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Wildlife and world regeneration prose"
+    },
+    {
+      "id": "srdb-building-stability-model",
+      "system": "Construction and base infrastructure",
+      "subject": "Structural stability",
+      "fact_kind": "design_rule",
+      "statement": "Supported platforms, foundations, pillars, Habitats, Airlocks, snapping relationships, and dependent deconstruction form a structural dependency system; building placement is not only a material-cost check.",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/673998750553735383",
+      "evidence_locator": "Official Base Building Basics Part 2 and Update 1 hotfix lineage"
+    },
+    {
+      "id": "u1-hotfix-025-platform-cost",
+      "system": "Construction and base infrastructure",
+      "subject": "Platform stability",
+      "fact_kind": "balance_delta",
+      "statement": "Hotfix 0.2.5 reduced Platform stability cost; scenarios that depend on exact stability limits must distinguish pre-0.2.5 from 0.2.5-and-later Update 1 builds.",
+      "valid_from_game_build_id": "ea_u1_0.2.5_build_23282460",
+      "confidence": "high",
+      "source_url": "https://steamdb.info/patchnotes/23282460/",
+      "evidence_locator": "Official hotfix 0.2.5 notes"
+    },
+    {
+      "id": "srdb-weapon-provenance-boundary",
+      "system": "Combat, enemies, and ecology",
+      "subject": "Weapon statistics",
+      "fact_kind": "data_boundary",
+      "statement": "Current SRDB weapon pages still identify their numerical statistics as Play Test 2 data. Preserve and query them, but do not claim they are verified Update 1 balance without in-game confirmation.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/weapons",
+      "evidence_locator": "Weapon detail provenance labels"
+    },
+    {
+      "id": "srdb-weapon-mod-model",
+      "system": "Combat, enemies, and ecology",
+      "subject": "Weapon modifications",
+      "fact_kind": "data_model",
+      "statement": "Weapon modifications are linked to a weapon and slot, carry a currency cost, and apply one or more named attribute modifiers; raw modifier names and values are retained because operator semantics require validation.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/weapons",
+      "evidence_locator": "Weapon detail modification cards"
+    },
+    {
+      "id": "srdb-lem-categories",
+      "system": "Player, inventory, and equipment",
+      "subject": "LEM modules",
+      "fact_kind": "content",
+      "statement": "LEM items are separated into Combat, Movement, and Survival categories; their description text encodes the effect while equip-slot, stacking, and exact operator behavior require separate validation.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/items",
+      "evidence_locator": "Item categories and descriptions"
+    },
+    {
+      "id": "official-coop-four",
+      "system": "Co-op and dedicated servers",
+      "subject": "Supported party size",
+      "fact_kind": "design_rule",
+      "statement": "StarRupture officially supports online co-op for up to four players; host, client, and dedicated-server synchronization fixes should be stored as historical behavior rather than generalized into new design rules.",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/app/1631270/StarRupture/",
+      "evidence_locator": "Steam Early Access feature description"
+    },
+    {
+      "id": "srdb-hidden-content-boundary",
+      "system": "Data quality",
+      "subject": "Hidden and prototype entities",
+      "fact_kind": "data_boundary",
+      "statement": "The SRDB search index exposes hidden, test, prototype, non-deconstructible, foundation, and internal variants. Preserve them with raw IDs and flags, but player-facing scenario defaults must exclude hidden or unassigned content unless explicitly requested.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/api/search",
+      "evidence_locator": "Full search index and hidden building detail pages"
+    },
+    {
+      "id": "srdb-discovered-field-boundary",
+      "system": "Data quality",
+      "subject": "discovered field",
+      "fact_kind": "data_boundary",
+      "statement": "The SRDB discovered field is provenance-like and not a reliable gameplay-availability flag; even central Update 1 entities can retain test labels. Availability must combine source flags, producer associations, unlocks, and explicit evidence.",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/items",
+      "evidence_locator": "Item records"
+    },
+    {
+      "id": "srdb-source-version-boundary",
+      "system": "Data quality",
+      "subject": "Source versioning",
+      "fact_kind": "data_boundary",
+      "statement": "SRDB 2.3.4 was updated July 10, 2026 but declares its game data as Update 1, internal game version 35118973, dated April 9, 2026. The source snapshot date and claimed game-data build are separate version axes.",
+      "valid_from_game_build_id": "ea_u1_0.2.0_build_22674441",
+      "confidence": "high",
+      "source_url": "https://starrupture.tools/_next/static/chunks/app/%28site%29/layout-536fe9ce60eb21d6.js",
+      "evidence_locator": "Header game-data marker and footer SRDB version"
+    },
+    {
+      "id": "patch-fixes-not-design-rules",
+      "system": "Data quality",
+      "subject": "Patch-note interpretation",
+      "fact_kind": "data_boundary",
+      "statement": "A patch-note bug fix proves a historical behavior and an intended correction but does not by itself define every underlying mechanic or formula; bugfix_behavior and design_delta assertions remain distinct.",
+      "confidence": "high",
+      "source_url": "https://store.steampowered.com/news/app/1631270/view/490464385050870875",
+      "evidence_locator": "Update 1 and hotfix patch notes"
+    }
+  ]
+}

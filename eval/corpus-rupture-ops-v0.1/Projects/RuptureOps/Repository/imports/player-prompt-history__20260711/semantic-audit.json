@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "audit_date": "2026-07-11",
+  "canonical_prior_prompt_export": {
+    "path": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/conversation/User Prompts Only.md",
+    "sha256": "1fdc4a371da82331b76a2b287b758a0f1c091effe5fe0135b9e8e6ee586e8861"
+  },
+  "source_assessments": [
+    {
+      "source_id": "prompt-dump-01",
+      "relationship": "semantic_subset_formatting_variant",
+      "overlap": "Lines 1-226 reproduce the prior prompt export's factory-planning sequence, with formatting differences and omitted attachment stanzas.",
+      "unique_conversation_content": false,
+      "disposition": "Preserved as supplied provenance; no duplicate facts promoted."
+    },
+    {
+      "source_id": "prompt-dump-02",
+      "relationship": "overlapping_prefix_with_unique_scaling_and_product_history",
+      "overlap": "Lines 1-96 substantially reproduce the prior prompt export through the Fabricator v2 Tube question.",
+      "unique_spans": ["99-249"],
+      "disposition": "Preserved losslessly; direct player facts and preferences promoted once."
+    },
+    {
+      "source_id": "prompt-dump-03",
+      "relationship": "overlapping_prefix_with_unique_exploration_history",
+      "overlap": "Lines 2-91 substantially reproduce the prior prompt export's factory-planning sequence; line 229 repeats its final prompt-export request.",
+      "unique_spans": ["95-225"],
+      "disposition": "Preserved losslessly; exploration, food, combat, and play-history facts promoted once."
+    }
+  ],
+  "evidence_rules": [
+    "Direct first-person reports may support player state, history, preferences, and observations.",
+    "Questions establish goals or uncertainty, not the truth of the premise being researched.",
+    "Quoted assistant text is not promoted as an independent player observation.",
+    "Accepted plans remain distinct from installed or completed save state.",
+    "Historical checkpoints do not silently overwrite current unknowns.",
+    "Duplicate statements strengthen provenance but remain one canonical fact."
+  ],
+  "result": {
+    "raw_source_files_preserved": 3,
+    "competing_game_data_snapshot_created": false,
+    "canonical_play_history_model": "models/rourke-update1-play-history__20260711.json",
+    "canonical_vault_history": "/Users/aether/obsidian/notes/Topics/StarRupture/Player save - play history.md",
+    "canonical_product_note": "/Users/aether/obsidian/notes/Projects/RuptureOps/Player-derived product requirements.md"
+  }
+}

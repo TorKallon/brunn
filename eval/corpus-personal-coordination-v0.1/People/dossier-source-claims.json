@@ -1,0 +1,19 @@
+{
+  "subject_id": "person:p-201",
+  "name_claim": {"id": "claim:name-kai-r1", "value": "Kai Rowan", "source": "source:member-roster-r4"},
+  "claims": [
+    {"id": "claim:kai-availability-1", "predicate": "available_for", "value": "Saturday setup", "epistemic": "reported", "source": "source:kai-message-2026-07-06"}
+  ],
+  "relations": [
+    {"id": "relation:kai-equipment-steward", "role": "equipment steward", "group": "group:g-101", "source": "source:crew-roster-r4"}
+  ],
+  "events": [
+    {"id": "event-occurrence:setup-2026-07-11", "participation_response": "accepted", "source": "source:signup-r3"}
+  ],
+  "artifacts": [
+    {"id": "artifact:setup-checklist-v2", "authored_by": "person:p-201", "source": "source:artifact-ledger-r2"}
+  ],
+  "assessments": [
+    {"id": "assessment:kai-morning-preference", "value": "Kai tends to prefer morning setup", "epistemic": "inferred", "basis": ["source:signup-r2", "source:signup-r3"], "promotion": "not_a_trait"}
+  ]
+}

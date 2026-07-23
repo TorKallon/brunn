@@ -1,0 +1,9 @@
+{
+  "work_item": "work-item:readiness-601",
+  "evidence": [
+    {"prerequisite": "work-item:guardian-consent-602", "status": "completed", "artifact": "artifact:guardian-consent-602", "recorded_at": "2026-08-09T13:00:00-07:00", "source": "source:consent-ledger-r2"},
+    {"prerequisite": "work-item:registration-604", "status": "completed", "artifact": "artifact:registration-ledger-604", "recorded_at": "2026-08-09T13:05:00-07:00", "source": "source:registration-ledger-r3"},
+    {"prerequisite": "work-item:equipment-inspection-603", "status": "pending", "artifact": null, "source": "source:inspection-board-r1"}
+  ],
+  "gate": {"id": "gate:field-lab-ready", "state": "blocked", "completion_evidence": null}
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "import_id": "star-rupture-game-analysis__20260708T190137Z",
+  "imported_at": "2026-07-11T19:54:52Z",
+  "source_archive": {
+    "name": "Star Rupture Game Analysis.zip",
+    "byte_size": 21674717,
+    "sha256": "1a1c1ef0ae00905ced37f1221ab22c4b9268f2ebe17b7516e6c9cac67d7f6fa3",
+    "manifested_files": 115,
+    "checksum_file": "CHECKSUMS.sha256",
+    "integrity_status": "verified"
+  },
+  "legacy_data_boundary": {
+    "captured_at": "2026-07-08T19:01:37Z",
+    "source_site_version": null,
+    "claimed_game_build_id": null,
+    "latest_public_build_observed": "ea_u1_0.2.8_build_23761620",
+    "warning": "The archive conflates the latest public executable with the build provenance of its numeric source data."
+  },
+  "canonical_target": {
+    "source_snapshot_id": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z",
+    "claimed_game_build_id": "ea_u1_0.2.0_build_22674441",
+    "latest_public_build_at_capture": "ea_u1_0.2.8_build_23761620"
+  },
+  "artifact_hashes": {
+    "legacy_sqlite": "d9ffbae20414d9e05a5dc02a664c904bc2bf0b8d74c8ae427ee9e8dccf6669fc",
+    "legacy_snapshot_json": "373e0f0dc556ce9cc03120321356bf7ce85fc012ffd7b49ce1aac3e89e6abf59",
+    "legacy_workbook": "2cb9f89360b9a721b2f41771ac77643a0438cb27e96b4f84a161ba93e7e04263"
+  },
+  "raw_local_path": "imports/star-rupture-game-analysis__20260708T190137Z/raw",
+  "raw_git_status": "ignored"
+}

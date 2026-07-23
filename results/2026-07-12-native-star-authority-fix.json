@@ -1,0 +1,924 @@
+{
+  "benchmark_version": "0.2",
+  "run_at": "2026-07-12T05:35:21-07:00",
+  "run_id": "20260712T053232-0700",
+  "harness_sha256": "2a519e8669d123713cc657576378840e4908f9c87589a91c73d47e34995155ca",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "2bc262912ae1a255004938ceb4d92488a47b6058d2332a174cd33aab55e795a8",
+  "manifest_sha256": "1add2880703d3ac5c40c9fc229fe043de9765a4073c7969a96a8c75391e9afe7",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+    "sha256": "b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2",
+    "artifact_tree_sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+    "documents": 73,
+    "chunks": 1563,
+    "characters": 1280331
+  },
+  "manifest": {
+    "benchmark_version": "0.2",
+    "name": "Straylight agent-work evaluation",
+    "corpus_root": "eval/corpus-v0.2",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "star-rupture-source-authority",
+        "workload": "Star Rupture",
+        "capability": "authority_and_missing_artifacts",
+        "task": "A new agent is about to extend the StarRupture factory plan. Establish the current-version and source-authority rules, list examples of future or hidden content that must not enter the live plan, and check whether the referenced structured game database is actually present in this workspace. State how to proceed without fabricating data.",
+        "claim_slots": {
+          "c1": "current game version context",
+          "c2": "source authority hierarchy",
+          "c3": "future or hidden exclusions",
+          "c4": "structured artifact availability and response"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "Update 1"
+                ]
+              },
+              {
+                "any": [
+                  "0.2.x",
+                  "0.2.8"
+                ]
+              },
+              {
+                "any": [
+                  "playtest",
+                  "outdated"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "Steam",
+                  "Creepy Jar"
+                ]
+              },
+              {
+                "any": [
+                  "authoritative",
+                  "actually in the build"
+                ]
+              },
+              {
+                "any": [
+                  "starrupture.tools",
+                  "caveat"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Rail v.4",
+                  "v.4"
+                ]
+              },
+              {
+                "any": [
+                  "Rail v.5",
+                  "v.5"
+                ]
+              },
+              {
+                "any": [
+                  "hidden",
+                  "Chemical Processor",
+                  "Chimeran Power Generator"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "not present",
+                  "missing",
+                  "unavailable"
+                ]
+              },
+              {
+                "any": [
+                  "starrupture.sqlite",
+                  "data/"
+                ]
+              },
+              {
+                "any": [
+                  "do not fabricate",
+                  "cannot claim",
+                  "use the saved tables"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "I queried starrupture.sqlite",
+          "the database confirms"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "star-rupture-source-authority": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Star Rupture",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNGFkNTUxOGQtY2NkMS00NGY2LWIxMWYtZjNkNWNkY2I0MTRlIiwiY3JlZGVudGlhbF9pZCI6ImIwOGQxMzg2LTZjMGMtNGQzOC1iOWY1LWM3Y2E0OGEyODQxZSIsInNjb3BlX2lkIjoiNmQyN2Y4OTctNmRlZi00MmE4LWExYmYtZDE4ZGJjOTZkMWFkIiwicmVjZWlwdF9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhN2U3MjA4NmVmNCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhOTAxZmFjYmM5OSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BXH4hEUl-xZhfh-a0ZbsMUaWXmUKHzcAqNBSZwiU-qs",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f5650e44f7490bd93fa901facbc99",
+      "corpus_revision": "revision:019f5650e44f7490bd93fa901facbc99",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 17681.554,
+        "ready_elapsed_ms": 17681.554,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNGFkNTUxOGQtY2NkMS00NGY2LWIxMWYtZjNkNWNkY2I0MTRlIiwiY3JlZGVudGlhbF9pZCI6ImIwOGQxMzg2LTZjMGMtNGQzOC1iOWY1LWM3Y2E0OGEyODQxZSIsInNjb3BlX2lkIjoiNmQyN2Y4OTctNmRlZi00MmE4LWExYmYtZDE4ZGJjOTZkMWFkIiwicmVjZWlwdF9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhN2U3MjA4NmVmNCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhOTAxZmFjYmM5OSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BXH4hEUl-xZhfh-a0ZbsMUaWXmUKHzcAqNBSZwiU-qs",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNGFkNTUxOGQtY2NkMS00NGY2LWIxMWYtZjNkNWNkY2I0MTRlIiwiY3JlZGVudGlhbF9pZCI6ImIwOGQxMzg2LTZjMGMtNGQzOC1iOWY1LWM3Y2E0OGEyODQxZSIsInNjb3BlX2lkIjoiNmQyN2Y4OTctNmRlZi00MmE4LWExYmYtZDE4ZGJjOTZkMWFkIiwicmVjZWlwdF9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhN2U3MjA4NmVmNCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhOTAxZmFjYmM5OSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BXH4hEUl-xZhfh-a0ZbsMUaWXmUKHzcAqNBSZwiU-qs",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T053232-0700/star-rupture-source-authority",
+          "display_scope": "Star Rupture",
+          "access_mode": "read_write",
+          "user_id": "user:4ad5518dccd144f6b11ff3d5cdcb414e",
+          "scope_id": "scope:6d27f8976def42a8a1bfd18dbc96d1ad",
+          "credential_id": "credential:b08d13866c0c4d38b9f5c7ca48a2841e",
+          "base_corpus_revision": "revision:019f5650e44f7490bd93fa901facbc99",
+          "corpus_revision": "revision:019f5650e44f7490bd93fa901facbc99",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNGFkNTUxOGQtY2NkMS00NGY2LWIxMWYtZjNkNWNkY2I0MTRlIiwiY3JlZGVudGlhbF9pZCI6ImIwOGQxMzg2LTZjMGMtNGQzOC1iOWY1LWM3Y2E0OGEyODQxZSIsInNjb3BlX2lkIjoiNmQyN2Y4OTctNmRlZi00MmE4LWExYmYtZDE4ZGJjOTZkMWFkIiwicmVjZWlwdF9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhN2U3MjA4NmVmNCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhOTAxZmFjYmM5OSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BXH4hEUl-xZhfh-a0ZbsMUaWXmUKHzcAqNBSZwiU-qs",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNGFkNTUxOGQtY2NkMS00NGY2LWIxMWYtZjNkNWNkY2I0MTRlIiwiY3JlZGVudGlhbF9pZCI6ImIwOGQxMzg2LTZjMGMtNGQzOC1iOWY1LWM3Y2E0OGEyODQxZSIsInNjb3BlX2lkIjoiNmQyN2Y4OTctNmRlZi00MmE4LWExYmYtZDE4ZGJjOTZkMWFkIiwicmVjZWlwdF9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhN2U3MjA4NmVmNCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjUwLWU0NGYtNzQ5MC1iZDkzLWZhOTAxZmFjYmM5OSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BXH4hEUl-xZhfh-a0ZbsMUaWXmUKHzcAqNBSZwiU-qs",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T053232-0700/star-rupture-source-authority",
+          "display_scope": "Star Rupture",
+          "access_mode": "read_write",
+          "user_id": "user:4ad5518dccd144f6b11ff3d5cdcb414e",
+          "scope_id": "scope:6d27f8976def42a8a1bfd18dbc96d1ad",
+          "credential_id": "credential:b08d13866c0c4d38b9f5c7ca48a2841e",
+          "base_corpus_revision": "revision:019f5650e44f7490bd93fa901facbc99",
+          "corpus_revision": "revision:019f5650e44f7490bd93fa901facbc99",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "star-rupture-source-authority",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 151.006,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T053232-0700/service_api/star-rupture-source-authority/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "The live plan must remain scoped to Early Access Update 1. The structured database is referenced but was not verified as present through the available service; request access to it and leave unsupported quantitative fields unresolved rather than reconstructing them.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Current live context is Early Access Update 1 on patch line 0.2.x; the note identifies 0.2.8 as a hotfix from about June 17, 2026. Update 2 is still in development and is not current-plan input.",
+            "source_paths": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Use Creepy Jar Steam news and patch notes as authority for what is actually available in the build. Use starrupture.tools as the best maintained statistical source only after filtering its records against that live-build authority. Treat July/December 2025 playtest guides as outdated historical evidence, and reject generic AI-generated articles because fabricated statistics are common.",
+            "source_paths": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Exclude Update 2 work-in-progress features; Rail v.4 (750/min) and Rail v.5 (1500/min); all 27 hidden-flagged buildings, including Chemical Processor, Water Extractor, Deuterium Extractor, and Chimeran Power Generator; and level 10\u201315 recipes associated with the endgame/Forgotten Engine scenario. Also exclude obsolete playtest-era mechanics and unverified AI-invented ores, speeds, or other statistics.",
+            "source_paths": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The notes reference Topics/Star Rupture/data/starrupture.sqlite and CSV mirrors, but retrieval exposed only textual references\u2014not the structured artifact itself. Because service coverage was explicitly not absence-safe, physical absence cannot be conclusively proved, but presence is not verified and the artifact must be treated as unavailable under this condition. Request that the SQLite/CSV data be supplied or exposed through Straylight; until then, do not invent recipes, rates, costs, unlocks, or availability, and leave unsupported quantitative plan fields unresolved.",
+            "source_paths": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ],
+            "confidence": "medium"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Enable the next fresh agent to extend the StarRupture factory plan without admitting non-live content or fabricating unavailable structured data.",
+          "current_state": [
+            "Verified current fact: the live context is Early Access Update 1, patch line 0.2.x.",
+            "Verified proposed/future state: Update 2 is in development and does not supersede the live Update 1 plan.",
+            "Verified authority and exclusion rules from the governing Star Rupture note.",
+            "Verified that the database is referenced in prose but was not returned as an accessible structured artifact.",
+            "Artifact absence remains incomplete rather than proven because service coverage was not absence-safe.",
+            "Checkpoint persisted as checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6."
+          ],
+          "decisions": [
+            "Patch notes from Creepy Jar gate live availability.",
+            "starrupture.tools-derived data may be used only after filtering against current-build authority.",
+            "Treat old playtest material as historical evidence, not current fact.",
+            "Treat the structured database as unavailable/unverified until directly exposed.",
+            "Never synthesize missing quantitative data."
+          ],
+          "open_questions": [
+            "Can Topics/Star Rupture/data/starrupture.sqlite or its CSV mirrors be mounted or exposed as a service-visible artifact?"
+          ],
+          "next_actions": [
+            "Request the database, CSV mirrors, or an exact service-visible artifact reference.",
+            "When available, inspect its schema and filter every record against Update 1 availability.",
+            "Until then, extend only qualitative plan structure supported by current sources and mark quantitative fields unresolved."
+          ],
+          "artifacts": [
+            "Topics/Star Rupture/Star Rupture.md",
+            "Topics/Star Rupture/Star Rupture production.md",
+            "Topics/Star Rupture/Star Rupture logistics.md",
+            "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+            "session:019f565106c274d1815dbb8fdd378bf3",
+            "revision:019f5650e44f7490bd93fa901facbc99"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.83,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 0.8,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 5,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Update 1"
+                ],
+                "matched": "Update 1"
+              },
+              {
+                "alternatives": [
+                  "0.2.x",
+                  "0.2.8"
+                ],
+                "matched": "0.2.x"
+              },
+              {
+                "alternatives": [
+                  "playtest",
+                  "outdated"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Steam",
+                  "Creepy Jar"
+                ],
+                "matched": "Steam"
+              },
+              {
+                "alternatives": [
+                  "authoritative",
+                  "actually in the build"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "starrupture.tools",
+                  "caveat"
+                ],
+                "matched": "starrupture.tools"
+              }
+            ],
+            "citations": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Rail v.4",
+                  "v.4"
+                ],
+                "matched": "Rail v.4"
+              },
+              {
+                "alternatives": [
+                  "Rail v.5",
+                  "v.5"
+                ],
+                "matched": "Rail v.5"
+              },
+              {
+                "alternatives": [
+                  "hidden",
+                  "Chemical Processor",
+                  "Chimeran Power Generator"
+                ],
+                "matched": "hidden"
+              }
+            ],
+            "citations": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "not present",
+                  "missing",
+                  "unavailable"
+                ],
+                "matched": "unavailable"
+              },
+              {
+                "alternatives": [
+                  "starrupture.sqlite",
+                  "data/"
+                ],
+                "matched": "starrupture.sqlite"
+              },
+              {
+                "alternatives": [
+                  "do not fabricate",
+                  "cannot claim",
+                  "use the saved tables"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 20,
+        "commands": 5,
+        "command_output_chars": 120941,
+        "tokens": {
+          "input_tokens": 213626,
+          "cached_input_tokens": 171264,
+          "output_tokens": 4485
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T05:33:06.191-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5651248471f1be7a2c8080e1d36a",
+          "elapsed_ms": 7699.57,
+          "result_chars": 36806
+        },
+        {
+          "at": "2026-07-12T05:33:49.818-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5651cef174329609bf35692237df",
+          "elapsed_ms": 32273.062,
+          "result_chars": 70723
+        },
+        {
+          "at": "2026-07-12T05:34:00.897-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5651fa3d76c288529321df735a29",
+          "elapsed_ms": 75.521,
+          "result_chars": 9338
+        },
+        {
+          "at": "2026-07-12T05:34:52.258-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5652c2e075909292d34ab882e470",
+          "elapsed_ms": 176.71,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 119831,
+      "service_latency_ms": 40224.863,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f5650-e44f-7490-bd93-fa901facbc99",
+        "checkpoint_id": "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+        "corpus_revision": "revision:019f5652-c258-7233-a4e9-f786d1d93aed",
+        "created": [
+          {
+            "id": "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "b08d1386-6c0c-4d38-b9f5-c7ca48a2841e",
+        "deduplicated": [],
+        "id": "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+        "idempotency_key": "eval-checkpoint:session:019f565106c274d1815dbb8fdd378bf3:cd10e5cfa0aec9bdf4d0bfd77e4ab621c9cabc3a158ba1503dc236b4d9494e77",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5652-c258-7233-a4e9-f786d1d93aed",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5652-c254-7861-a323-08f352081536"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:af8eaf4339f26beb71bcf24de1a6689c7d5f5100293cbc48b38656daf5dbfa1d",
+        "operation_id": "operation:019f5652-c252-72f0-95fc-5c9e04069958",
+        "policy": {
+          "policy_id": "545a6662-f542-4f4d-97a5-11bce0e9bf3a",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5652-c252-72f0-95fc-5c9e04069958",
+        "replayed": false,
+        "request_hash": "sha256:40dc9e8117a110c83c1f7f0d1a7387a975140f0c7ef15adc1d2f35f02b16ba68",
+        "resulting_corpus_revision": "revision:019f5652-c258-7233-a4e9-f786d1d93aed",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f565106c274d1815dbb8fdd378bf3",
+        "status": "committed",
+        "user_id": "user:4ad5518dccd144f6b11ff3d5cdcb414e"
+      },
+      "service_session_id": "session:019f565106c274d1815dbb8fdd378bf3",
+      "service_corpus_revision": "revision:019f5652-c258-7233-a4e9-f786d1d93aed",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T05:33:06.191-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5651248471f1be7a2c8080e1d36a",
+          "elapsed_ms": 7699.57,
+          "result_chars": 36806
+        },
+        {
+          "at": "2026-07-12T05:33:49.818-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5651cef174329609bf35692237df",
+          "elapsed_ms": 32273.062,
+          "result_chars": 70723
+        },
+        {
+          "at": "2026-07-12T05:34:00.897-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5651fa3d76c288529321df735a29",
+          "elapsed_ms": 75.521,
+          "result_chars": 9338
+        },
+        {
+          "at": "2026-07-12T05:34:52.258-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5652c2e075909292d34ab882e470",
+          "elapsed_ms": 176.71,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 119831,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f5650-e44f-7490-bd93-fa901facbc99",
+        "checkpoint_id": "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+        "corpus_revision": "revision:019f5652-c258-7233-a4e9-f786d1d93aed",
+        "created": [
+          {
+            "id": "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "b08d1386-6c0c-4d38-b9f5-c7ca48a2841e",
+        "deduplicated": [],
+        "id": "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+        "idempotency_key": "eval-checkpoint:session:019f565106c274d1815dbb8fdd378bf3:cd10e5cfa0aec9bdf4d0bfd77e4ab621c9cabc3a158ba1503dc236b4d9494e77",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5652-c258-7233-a4e9-f786d1d93aed",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5652-c254-7861-a323-08f352081536"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:af8eaf4339f26beb71bcf24de1a6689c7d5f5100293cbc48b38656daf5dbfa1d",
+        "operation_id": "operation:019f5652-c252-72f0-95fc-5c9e04069958",
+        "policy": {
+          "policy_id": "545a6662-f542-4f4d-97a5-11bce0e9bf3a",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5652-c252-72f0-95fc-5c9e04069958",
+        "replayed": false,
+        "request_hash": "sha256:40dc9e8117a110c83c1f7f0d1a7387a975140f0c7ef15adc1d2f35f02b16ba68",
+        "resulting_corpus_revision": "revision:019f5652-c258-7233-a4e9-f786d1d93aed",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5652-c258-7233-a4e9-f77af75f5ea6"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f565106c274d1815dbb8fdd378bf3",
+        "status": "committed",
+        "user_id": "user:4ad5518dccd144f6b11ff3d5cdcb414e"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 1,
+        "case_pass_rate": 1.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_pass_rate": 1.0,
+        "mean_score": 0.83,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 151.01,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 119831.0,
+        "persisted_checkpoints": 1,
+        "checkpoint_eligible_runs": 1,
+        "mean_service_calls": 4.0,
+        "mean_service_result_chars": 119831.0,
+        "mean_service_latency_ms": 40224.863,
+        "mean_completed_commands": 5.0,
+        "mean_command_output_chars": 120941.0,
+        "mean_tokens": {
+          "input_tokens": 213626.0,
+          "output_tokens": 4485.0,
+          "cached_input_tokens": 171264.0,
+          "uncached_input_tokens": 42362.0
+        }
+      }
+    },
+    "by_workload": {
+      "Star Rupture": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.83,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 151.01,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 119831.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 119831.0,
+          "mean_service_latency_ms": 40224.863,
+          "mean_completed_commands": 5.0,
+          "mean_command_output_chars": 120941.0,
+          "mean_tokens": {
+            "input_tokens": 213626.0,
+            "output_tokens": 4485.0,
+            "cached_input_tokens": 171264.0,
+            "uncached_input_tokens": 42362.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "authority_and_missing_artifacts": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.83,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 151.01,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 119831.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 119831.0,
+          "mean_service_latency_ms": 40224.863,
+          "mean_completed_commands": 5.0,
+          "mean_command_output_chars": 120941.0,
+          "mean_tokens": {
+            "input_tokens": 213626.0,
+            "output_tokens": 4485.0,
+            "cached_input_tokens": 171264.0,
+            "uncached_input_tokens": 42362.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "star-rupture-source-authority": {
+        "id": "star-rupture-source-authority",
+        "workload": "Star Rupture",
+        "capability": "authority_and_missing_artifacts",
+        "task": "A new agent is about to extend the StarRupture factory plan. Establish the current-version and source-authority rules, list examples of future or hidden content that must not enter the live plan, and check whether the referenced structured game database is actually present in this workspace. State how to proceed without fabricating data.",
+        "claim_slots": {
+          "c1": "current game version context",
+          "c2": "source authority hierarchy",
+          "c3": "future or hidden exclusions",
+          "c4": "structured artifact availability and response"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "Update 1"
+                ]
+              },
+              {
+                "any": [
+                  "0.2.x",
+                  "0.2.8"
+                ]
+              },
+              {
+                "any": [
+                  "playtest",
+                  "outdated"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "Steam",
+                  "Creepy Jar"
+                ]
+              },
+              {
+                "any": [
+                  "authoritative",
+                  "actually in the build"
+                ]
+              },
+              {
+                "any": [
+                  "starrupture.tools",
+                  "caveat"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Rail v.4",
+                  "v.4"
+                ]
+              },
+              {
+                "any": [
+                  "Rail v.5",
+                  "v.5"
+                ]
+              },
+              {
+                "any": [
+                  "hidden",
+                  "Chemical Processor",
+                  "Chimeran Power Generator"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "not present",
+                  "missing",
+                  "unavailable"
+                ]
+              },
+              {
+                "any": [
+                  "starrupture.sqlite",
+                  "data/"
+                ]
+              },
+              {
+                "any": [
+                  "do not fabricate",
+                  "cannot claim",
+                  "use the saved tables"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "I queried starrupture.sqlite",
+          "the database confirms"
+        ],
+        "grading_mode": "exact_substring_v1"
+      }
+    }
+  }
+}

@@ -1,0 +1,3348 @@
+{
+  "benchmark_version": "0.3",
+  "run_id": "transition-20260711T010020-0700",
+  "run_at": "2026-07-11T01:06:46-07:00",
+  "manifest": {
+    "benchmark_version": "0.3",
+    "name": "Straylight fresh-agent checkpoint transition evaluation",
+    "base_corpus_root": "eval/corpus-v0.2",
+    "seed_results": "results/2026-07-10-agent-work-v0.2.json",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "filesystem_rebuild",
+      "workspace_resume"
+    ],
+    "workspace_max_completed_calls": 4,
+    "cases": [
+      {
+        "id": "warmind-alpha-budget-transition",
+        "workload": "Warmind",
+        "capability": "checkpoint_reopen_with_new_constraint",
+        "seed_case_id": "warmind-parser-learning",
+        "delta_path": "eval/transition-deltas/warmind-alpha-budget-change.md",
+        "task": "Reopen the parser-autonomy checkpoint, incorporate the new bounded-alpha operator constraint, and leave a child checkpoint. Preserve what the earlier PVE34 and adaptive-autonomy evidence established, distinguish the new constraint from historical evidence, and state the revised execution and abort gates.",
+        "claim_slots": {
+          "c1": "recovered prior state",
+          "c2": "new bounded-alpha constraint",
+          "c3": "preserved integrity and authority distinction",
+          "c4": "revised next action"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "PVE34"
+                ]
+              },
+              {
+                "any": [
+                  "historical",
+                  "earlier"
+                ]
+              },
+              {
+                "any": [
+                  "adaptive",
+                  "learned priors",
+                  "1,000",
+                  "1k"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+              "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "30-minute",
+                  "30 minute"
+                ]
+              },
+              {
+                "any": [
+                  "900 PGCR",
+                  "900"
+                ]
+              },
+              {
+                "any": [
+                  "90 percent",
+                  "90%"
+                ]
+              },
+              {
+                "any": [
+                  "three per minute",
+                  "3 per minute"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/warmind-alpha-budget-change.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "operator constraint",
+                  "new constraint"
+                ]
+              },
+              {
+                "any": [
+                  "DB truth",
+                  "DB rows are truth"
+                ]
+              },
+              {
+                "any": [
+                  "does not supersede",
+                  "remain",
+                  "preserve"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md",
+              "eval/transition-deltas/warmind-alpha-budget-change.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "dev-only",
+                  "dev only"
+                ]
+              },
+              {
+                "any": [
+                  "beta recovery",
+                  "beta"
+                ]
+              },
+              {
+                "any": [
+                  "bad trial",
+                  "roll back",
+                  "rollback"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/warmind-alpha-budget-change.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "deploy the alpha to production now",
+          "durable controller persistence is required"
+        ]
+      },
+      {
+        "id": "charlemagne-storage-observation-transition",
+        "workload": "Charlemagne",
+        "capability": "checkpoint_reopen_with_new_evidence",
+        "seed_case_id": "charlemagne-storage-current-state",
+        "delta_path": "eval/transition-deltas/charlemagne-storage-observation.md",
+        "task": "Reopen the storage-investigation checkpoint and advance it using the new six-hour observation. Separate the eased free-space condition from the durable legacy-table question, preserve the write-path distinction, and leave a child checkpoint with the next authorization gates.",
+        "claim_slots": {
+          "c1": "recovered prior causal state",
+          "c2": "new measured observation",
+          "c3": "current retirement decision",
+          "c4": "next authorization gates"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "legacy session",
+                  "legacy tables"
+                ]
+              },
+              {
+                "any": [
+                  "compact replacement",
+                  "replacement tables"
+                ]
+              },
+              {
+                "any": [
+                  "transient",
+                  "temporary"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "68 GiB",
+                  "68G"
+                ]
+              },
+              {
+                "any": [
+                  "six-hour",
+                  "six hour",
+                  "6-hour"
+                ]
+              },
+              {
+                "any": [
+                  "zero writes",
+                  "0 writes"
+                ]
+              },
+              {
+                "any": [
+                  "active writes"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/charlemagne-storage-observation.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "not authorized",
+                  "no approved",
+                  "do not drop",
+                  "not retire"
+                ]
+              },
+              {
+                "any": [
+                  "physical reclamation",
+                  "reclaim"
+                ]
+              },
+              {
+                "any": [
+                  "eased",
+                  "stable"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/charlemagne-storage-observation.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "monitor"
+                ]
+              },
+              {
+                "any": [
+                  "replay"
+                ]
+              },
+              {
+                "any": [
+                  "rollback"
+                ]
+              },
+              {
+                "any": [
+                  "maintenance window"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/charlemagne-storage-observation.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "drop the legacy tables now",
+          "retirement is approved"
+        ]
+      },
+      {
+        "id": "star-rupture-second-facturer-transition",
+        "workload": "Star Rupture",
+        "capability": "checkpoint_reopen_with_infeasible_requirement",
+        "seed_case_id": "star-rupture-plan-revision",
+        "delta_path": "eval/transition-deltas/star-rupture-second-facturer.md",
+        "task": "Reopen the distributed-factory checkpoint and revise it for one Constructorizer plus two Facturers while every Base Core remains level 0. Recompute the heat constraint, reject any unsafe co-location, preserve Update 1 authority rules, and leave a buildable child checkpoint.",
+        "claim_slots": {
+          "c1": "recovered prior architecture",
+          "c2": "changed requirement and heat arithmetic",
+          "c3": "safe revised layout",
+          "c4": "version-safe next action"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "distributed",
+                  "satellite",
+                  "outpost"
+                ]
+              },
+              {
+                "any": [
+                  "level-0",
+                  "level 0"
+                ]
+              },
+              {
+                "any": [
+                  "Fire Wave"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture logistics.md",
+              "Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "500"
+                ]
+              },
+              {
+                "any": [
+                  "650"
+                ]
+              },
+              {
+                "any": [
+                  "1,800",
+                  "1800"
+                ]
+              },
+              {
+                "any": [
+                  "1,000",
+                  "1000"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture production.md",
+              "eval/transition-deltas/star-rupture-second-facturer.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "three cores",
+                  "three level-0",
+                  "separate core"
+                ]
+              },
+              {
+                "any": [
+                  "Constructorizer"
+                ]
+              },
+              {
+                "any": [
+                  "two Facturers",
+                  "each Facturer"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture production.md",
+              "eval/transition-deltas/star-rupture-second-facturer.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "Update 1"
+                ]
+              },
+              {
+                "any": [
+                  "do not begin",
+                  "before construction",
+                  "verify"
+                ]
+              },
+              {
+                "any": [
+                  "Rail v.3",
+                  "v.1",
+                  "v.2"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture logistics.md",
+              "eval/transition-deltas/star-rupture-second-facturer.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Rail v.4 is available",
+          "Rail v.5 is available",
+          "put all three machines on one core"
+        ]
+      },
+      {
+        "id": "switzerland-reservation-transition",
+        "workload": "Switzerland",
+        "capability": "checkpoint_reopen_with_booking_transition",
+        "seed_case_id": "switzerland-resume-truth",
+        "delta_path": "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+        "task": "Reopen the Switzerland planning checkpoint and apply the new family window and lodging reservation receipt. Update the itinerary and booking state without promoting unbooked transport or activities, preserve the altitude constraint, and leave a source-bearing child checkpoint.",
+        "claim_slots": {
+          "c1": "recovered camp and meeting sequence",
+          "c2": "new family window",
+          "c3": "lodging reservation state",
+          "c4": "remaining proposed work"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "after both camps",
+                  "after Saas"
+                ]
+              },
+              {
+                "any": [
+                  "August 10-22",
+                  "Aug 10-22"
+                ]
+              },
+              {
+                "any": [
+                  "serious altitude",
+                  "altitude"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "August 22",
+                  "Aug 22"
+                ]
+              },
+              {
+                "any": [
+                  "August 25",
+                  "Aug 25"
+                ]
+              },
+              {
+                "any": [
+                  "three nights",
+                  "3 nights"
+                ]
+              },
+              {
+                "any": [
+                  "superseded"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Locarno"
+                ]
+              },
+              {
+                "any": [
+                  "reserved"
+                ]
+              },
+              {
+                "any": [
+                  "CHF 500",
+                  "500"
+                ]
+              },
+              {
+                "any": [
+                  "July 20"
+                ]
+              },
+              {
+                "any": [
+                  "Radley"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "not booked",
+                  "unbooked",
+                  "proposed"
+                ]
+              },
+              {
+                "any": [
+                  "flights",
+                  "rail tickets",
+                  "rental car"
+                ]
+              },
+              {
+                "any": [
+                  "activities"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "everything is booked",
+          "meet after Belgium"
+        ]
+      },
+      {
+        "id": "straylight-api-gate-transition",
+        "workload": "Straylight",
+        "capability": "checkpoint_reopen_into_implementation",
+        "seed_case_id": "straylight-product-resume",
+        "delta_path": "eval/transition-deltas/straylight-api-gate.md",
+        "task": "Reopen the Straylight project checkpoint and advance it from evaluation into implementation using the new API gate. Correct the interpretation of the token result, define the first persistent build slice, and leave a child checkpoint with measurable acceptance criteria and source lineage.",
+        "claim_slots": {
+          "c1": "recovered product thesis",
+          "c2": "corrected evaluation interpretation",
+          "c3": "first persistent build slice",
+          "c4": "measurable transition gate"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "agent-first",
+                  "agent first"
+                ]
+              },
+              {
+                "any": [
+                  "durable workspace",
+                  "durable-work"
+                ]
+              },
+              {
+                "any": [
+                  "not retrieval",
+                  "more than retrieval",
+                  "not primarily"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "cached replay",
+                  "cached history"
+                ]
+              },
+              {
+                "any": [
+                  "uncached input"
+                ]
+              },
+              {
+                "any": [
+                  "tool calls",
+                  "round trips"
+                ]
+              },
+              {
+                "any": [
+                  "BM25",
+                  "lexical"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/straylight-api-gate.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "persistent"
+                ]
+              },
+              {
+                "any": [
+                  "snapshot-pinned",
+                  "snapshot pinned"
+                ]
+              },
+              {
+                "any": [
+                  "semantic",
+                  "hybrid"
+                ]
+              },
+              {
+                "any": [
+                  "batch"
+                ]
+              },
+              {
+                "any": [
+                  "child checkpoint"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Retrieval API - Initial Design.md",
+              "eval/transition-deltas/straylight-api-gate.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "four",
+                  "4"
+                ]
+              },
+              {
+                "any": [
+                  "filesystem"
+                ]
+              },
+              {
+                "any": [
+                  "cached",
+                  "uncached"
+                ]
+              },
+              {
+                "any": [
+                  "parent",
+                  "source references",
+                  "source lineage"
+                ]
+              }
+            ],
+            "sources_any": [
+              "eval/transition-deltas/straylight-api-gate.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "BM25 shell is the target architecture",
+          "2.2x more unique context"
+        ]
+      }
+    ]
+  },
+  "manifest_sha256": "db21b417b535533ba094a71e632ff1f9e827afa807456e12ef157d672fd762f7",
+  "harness_sha256": "fefdc97dadfadd34be5ca98b552dcdf77573d9bc521dec6701dd0e74e61d567a",
+  "service_sha256": "274a3b0337ef5a80fa62d1d953245dcc0cd546865117e71b59b461abc1c7bdd6",
+  "store_sha256": "6652a8c29a66b86f520b2912d4e22bcecbf60ea7b53f071d8b56035034e20529",
+  "embeddings": {
+    "kind": "openai",
+    "model": "text-embedding-3-small"
+  },
+  "records": [
+    {
+      "case_id": "warmind-alpha-budget-transition",
+      "condition": "filesystem_rebuild",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 64.189,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/warmind-alpha-budget-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/warmind-alpha-budget-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 14,
+        "commands": 4,
+        "command_output_chars": 63644,
+        "tokens": {
+          "input_tokens": 89340,
+          "cached_input_tokens": 69376,
+          "output_tokens": 2129
+        }
+      },
+      "answer": {
+        "answer": "Revised child checkpoint incorporates the bounded 30-minute dev-only alpha constraint while preserving the historical PVE34 and adaptive-autonomy findings.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Recovered prior state: PVE34 remains historical proof that the split fetch/DB architecture reached and validated 10.019M, with the final crossing chunk sustaining 403/sec and exposing DB/write coordination as the bottleneck. Later adaptive-autonomy evidence supersedes PVE34 as the current performance profile: clean alpha runs exceeded 1k PGCR/sec, fetch adapted below 112 without policy significance, DB trials used fixed budgets with rollback and bad-trial memory, and restart recovery remained grounded in DB truth.",
+            "source_paths": [
+              "checkpoint.json",
+              "corpus/Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+              "corpus/Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "New operator constraint: the next experiment is exactly one 30-minute dev-only alpha soak, with no production changes and no durable controller persistence. Batch 128 is the initial ceiling while fetch may adapt. Acceptance requires at least 900 PGCR/sec steady throughput during the final 10 minutes, zero integrity or recovery violations, no DB connection failure storm, and a successful controlled-stop restart from DB truth.",
+            "source_paths": [
+              "delta.json",
+              "eval/transition-deltas/warmind-alpha-budget-change.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Authority and integrity remain distinct: PVE34 and later autonomy results are historical implementation evidence, while the bounded-alpha terms are a new explicit operator constraint and controlled transition-test input. The new constraint replaces only the earlier open-ended longer-soak wording; it does not supersede DB-as-truth, atomic raw-marker/summary integrity, immediate failed-row retry, ordinary restart gap recovery, protected-state safety, or the prohibition on rebuild/recompute and Cortex-to-DB replay paths.",
+            "source_paths": [
+              "checkpoint.json",
+              "eval/transition-deltas/warmind-alpha-budget-change.md",
+              "corpus/Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Revised action: run the bounded alpha with host/MySQL pressure observed by the controller. Abort and roll back immediately for an integrity, recovery, correctness, or protected-state violation; abort when MySQL exceeds 90% of host memory for two consecutive minutes or DB connection failures exceed three per minute. On a complete pass, advance to beta recovery testing. On failure, preserve the result as a bad trial and revise the controller before continuing.",
+            "source_paths": [
+              "eval/transition-deltas/warmind-alpha-budget-change.md",
+              "corpus/Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+              "corpus/Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Execute one bounded 30-minute dev-only alpha soak that tests adaptive parser autonomy without changing production or adding durable controller persistence.",
+          "current_state": [
+            "PVE34 is preserved as historical validation of the split fetch/DB design, 10.019M correctness, and the DB/write bottleneck; it is not the current fixed profile.",
+            "Later adaptive evidence remains the current operating basis: greater than 1k PGCR/sec is achievable, fetch is adaptive with no special 112 status, batch 128 is a keeper ceiling, and one-worker fixed-budget DB trials require accept/rollback and bad-trial suppression.",
+            "The new explicit operator constraint narrows the next alpha to 30 minutes in dev and replaces the parent checkpoint\u2019s open-ended longer-soak wording only.",
+            "Integrity and recovery remain non-negotiable: DB rows are truth, normal restart fills gaps, and controller state is optimization state rather than correctness state."
+          ],
+          "decisions": [
+            "Do not change production and do not add durable controller persistence.",
+            "Start with batch 128 as the ceiling while allowing fetch to adapt from learned priors.",
+            "Pass only if the final 10 minutes sustain at least 900 PGCR/sec, integrity and recovery violations remain zero, no DB connection failure storm occurs, and restart from DB truth succeeds after the controlled stop.",
+            "Abort and roll back for any integrity, recovery, correctness, or protected-state violation; MySQL memory above 90% of host memory for two consecutive minutes; or DB connection failures above three per minute.",
+            "Treat host-capacity failure separately from parser correctness, but still record an aborted alpha as a bad trial."
+          ],
+          "open_questions": [],
+          "next_actions": [
+            "Run the 30-minute dev-only alpha with throughput, MySQL host-memory share, DB connection failures, integrity checks, and recovery evidence captured.",
+            "Perform the controlled stop and prove ordinary restart from DB truth.",
+            "If every acceptance gate passes, advance to the beta recovery test; otherwise preserve the bad-trial evidence and revise the controller before another experiment."
+          ],
+          "artifacts": [
+            "checkpoint.json",
+            "delta.json",
+            "eval/transition-deltas/warmind-alpha-budget-change.md",
+            "corpus/Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "corpus/Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8447,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.8333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 0.7273,
+        "citation_count": 11,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "PVE34"
+                ],
+                "matched": "PVE34"
+              },
+              {
+                "alternatives": [
+                  "historical",
+                  "earlier"
+                ],
+                "matched": "historical"
+              },
+              {
+                "alternatives": [
+                  "adaptive",
+                  "learned priors",
+                  "1,000",
+                  "1k"
+                ],
+                "matched": "adaptive"
+              }
+            ],
+            "citations": [
+              "checkpoint.json",
+              "corpus/Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+              "corpus/Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.6,
+            "pass": false,
+            "content_fraction": 0.5,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "30-minute",
+                  "30 minute"
+                ],
+                "matched": "30-minute"
+              },
+              {
+                "alternatives": [
+                  "900 PGCR",
+                  "900"
+                ],
+                "matched": "900 PGCR"
+              },
+              {
+                "alternatives": [
+                  "90 percent",
+                  "90%"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "three per minute",
+                  "3 per minute"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "delta.json",
+              "eval/transition-deltas/warmind-alpha-budget-change.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "operator constraint",
+                  "new constraint"
+                ],
+                "matched": "operator constraint"
+              },
+              {
+                "alternatives": [
+                  "DB truth",
+                  "DB rows are truth"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "does not supersede",
+                  "remain",
+                  "preserve"
+                ],
+                "matched": "does not supersede"
+              }
+            ],
+            "citations": [
+              "checkpoint.json",
+              "eval/transition-deltas/warmind-alpha-budget-change.md",
+              "corpus/Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "dev-only",
+                  "dev only"
+                ],
+                "matched": "dev-only"
+              },
+              {
+                "alternatives": [
+                  "beta recovery",
+                  "beta"
+                ],
+                "matched": "beta recovery"
+              },
+              {
+                "alternatives": [
+                  "bad trial",
+                  "roll back",
+                  "rollback"
+                ],
+                "matched": "bad trial"
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/warmind-alpha-budget-change.md",
+              "corpus/Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+              "corpus/Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"
+            ]
+          }
+        ]
+      },
+      "lineage": null,
+      "transition_pass": false
+    },
+    {
+      "case_id": "warmind-alpha-budget-transition",
+      "condition": "workspace_resume",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 59.291,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/warmind-alpha-budget-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/warmind-alpha-budget-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 15,
+        "commands": 4,
+        "command_output_chars": 2988,
+        "tokens": {
+          "input_tokens": 76903,
+          "cached_input_tokens": 58368,
+          "output_tokens": 2029
+        }
+      },
+      "answer": {
+        "answer": "Blocked: the typed adapter failed before returning the parent checkpoint or delta, and the checkpoint write failed for the same reason: `sqlite3.OperationalError: unable to open database file`. No corpus claims were fabricated. Four workspace calls were used.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The prior parser-autonomy state could not be recovered because every `./memory resume` attempt failed before corpus access.",
+            "source_paths": [
+              "/Users/Shared/projects/straylight/transition_adapter.py",
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The new bounded-alpha constraint could not be established from source content because the revision delta was never returned.",
+            "source_paths": [
+              "/Users/Shared/projects/straylight/transition_adapter.py",
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Integrity and authority were preserved by not inventing or conflating unavailable PVE34, adaptive-autonomy, and bounded-alpha evidence.",
+            "source_paths": [
+              "/Users/Shared/projects/straylight/transition_adapter.py",
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The revised next action is to restore writable access to the adapter database, rerun `./memory resume`, then incorporate the returned delta and persist the substantive child checkpoint; inability to access or persist typed memory is the current abort gate.",
+            "source_paths": [
+              "/Users/Shared/projects/straylight/transition_adapter.py",
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Reopen the parser-autonomy checkpoint, incorporate the bounded-alpha operator constraint, preserve historical evidence distinctions, and persist the revised child state.",
+          "current_state": [
+            "Typed memory is blocked before corpus recovery because its configured SQLite database cannot be opened.",
+            "No parent checkpoint, delta, or scoped corpus map was returned.",
+            "The attempted blocker checkpoint was not persisted because the same database error occurred."
+          ],
+          "decisions": [
+            "Do not fabricate historical evidence or the new operator constraint.",
+            "Treat failure to access or persist typed memory as an abort gate."
+          ],
+          "open_questions": [
+            "Which writable adapter database configuration exposes the scoped transition corpus?"
+          ],
+          "next_actions": [
+            "Restore typed adapter database access.",
+            "Rerun `./memory resume`.",
+            "Incorporate the bounded-alpha delta and persist the substantive revised child checkpoint."
+          ],
+          "artifacts": []
+        }
+      },
+      "grade": {
+        "score": 0.1317,
+        "pass": false,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_score": 0.0667,
+        "checkpoint_score": 0.75,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": false
+        },
+        "citation_validity": 0.0,
+        "citation_count": 8,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "PVE34"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "historical",
+                  "earlier"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "adaptive",
+                  "learned priors",
+                  "1,000",
+                  "1k"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "/Users/Shared/projects/straylight/transition_adapter.py",
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "30-minute",
+                  "30 minute"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "900 PGCR",
+                  "900"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "90 percent",
+                  "90%"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "three per minute",
+                  "3 per minute"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "/Users/Shared/projects/straylight/transition_adapter.py",
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.2667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "operator constraint",
+                  "new constraint"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "DB truth",
+                  "DB rows are truth"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "does not supersede",
+                  "remain",
+                  "preserve"
+                ],
+                "matched": "preserve"
+              }
+            ],
+            "citations": [
+              "/Users/Shared/projects/straylight/transition_adapter.py",
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "dev-only",
+                  "dev only"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "beta recovery",
+                  "beta"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "bad trial",
+                  "roll back",
+                  "rollback"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "/Users/Shared/projects/straylight/transition_adapter.py",
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ]
+          }
+        ]
+      },
+      "lineage": {
+        "session_id": null,
+        "child_checkpoint": null,
+        "parent_match": false,
+        "revision_match": false,
+        "delta_source_preserved": false,
+        "prior_source_preserved": false,
+        "within_call_budget": true,
+        "operations": {
+          "completed_calls": 0,
+          "result_chars": 0,
+          "operations": []
+        }
+      },
+      "transition_pass": false
+    },
+    {
+      "case_id": "charlemagne-storage-observation-transition",
+      "condition": "filesystem_rebuild",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 48.787,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/charlemagne-storage-observation-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/charlemagne-storage-observation-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 9,
+        "commands": 2,
+        "command_output_chars": 38273,
+        "tokens": {
+          "input_tokens": 56613,
+          "cached_input_tokens": 39168,
+          "output_tokens": 1596
+        }
+      },
+      "answer": {
+        "answer": "The six-hour window eases the immediate free-space emergency but does not authorize retiring or physically reclaiming the legacy tables. The compact write path remains active while legacy tables remain durable retained storage pending acceptance and maintenance gates.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Prior causal state recovered: durable storage pressure centered on roughly 196 GiB of retained legacy session tables, while active writes had moved to compact replacements; the earlier sharp free-space drop and rebound was treated separately as likely transient MySQL work, not proven legacy-table growth.",
+            "source_paths": [
+              "corpus/Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "At 2026-07-11T07:15:00Z, a six-hour measured window found filesystem free space stable at 68 GiB within 1 GiB, zero legacy-table writes throughout, and continuing writes to compact replacement tables.",
+            "source_paths": [
+              "eval/transition-deltas/charlemagne-storage-observation.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The transient free-space emergency has eased, but legacy-table retirement and physical reclamation remain unauthorized; zero observed writes supports the write-path cutover distinction but does not establish replay safety, rollback readiness, or permission for destructive schema work.",
+            "source_paths": [
+              "eval/transition-deltas/charlemagne-storage-observation.md",
+              "corpus/Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "corpus/Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Before proposing destructive retirement, continue monitoring, complete and accept replay and rollback evidence, obtain an approved schema-maintenance window, and retain separate approval for any physical-reclamation operation with snapshot, runway, lock/runtime, and rollback safeguards.",
+            "source_paths": [
+              "eval/transition-deltas/charlemagne-storage-observation.md",
+              "corpus/Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+              "corpus/Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Advance the rhea storage investigation after the six-hour observation while keeping the eased filesystem condition distinct from the durable legacy-table retirement decision and preserving the active-versus-legacy write-path distinction.",
+          "current_state": [
+            "Measured at 2026-07-11T07:15:00Z: filesystem free space was 68 GiB and stable within 1 GiB over six hours, so the immediate transient free-space emergency is eased but runway remains subject to monitoring.",
+            "Legacy session tables received zero writes per second throughout the window; compact replacement tables continued receiving active writes.",
+            "The legacy tables remain durable retained storage. Their inactivity does not by itself prove replay/rehydration completeness, rollback readiness, or safe retirement.",
+            "Logical table retirement and physical filesystem or EBS reclamation remain separate operations and authorization decisions."
+          ],
+          "decisions": [
+            "Do not propose or perform destructive legacy-table retirement under the current authorization state.",
+            "Treat the six-hour stability result as relief of the transient emergency, not resolution of the durable legacy-storage question.",
+            "Preserve the compact-replacement write path and continue observing both replacement activity and legacy inactivity.",
+            "Require a separately approved physical-reclamation plan even after any future logical-retirement approval."
+          ],
+          "open_questions": [
+            "Will continued observation confirm adequate free-space stability and runway?",
+            "Has replay/rehydration behavior been demonstrated and formally accepted for the retained legacy data?",
+            "Has rollback been rehearsed and accepted?",
+            "When will an approved schema-maintenance window be available?",
+            "If logical retirement is approved, what separately reviewed physical-reclamation method and safeguards will be authorized?"
+          ],
+          "next_actions": [
+            "Continue filesystem free-space and table write-rate monitoring.",
+            "Complete replay/rehydration acceptance evidence for the legacy-table retirement decision.",
+            "Complete and accept a rollback rehearsal.",
+            "Obtain an approved schema-maintenance window before proposing destructive retirement.",
+            "For any later physical reclamation, obtain separate approval with snapshot, runway, lock/runtime, and rollback plans."
+          ],
+          "artifacts": [
+            "eval/transition-deltas/charlemagne-storage-observation.md",
+            "corpus/Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "corpus/Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "corpus/Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8583,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.8333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 8,
+        "forbidden_hits": [
+          "retirement is approved"
+        ],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "legacy session",
+                  "legacy tables"
+                ],
+                "matched": "legacy session"
+              },
+              {
+                "alternatives": [
+                  "compact replacement",
+                  "replacement tables"
+                ],
+                "matched": "compact replacement"
+              },
+              {
+                "alternatives": [
+                  "transient",
+                  "temporary"
+                ],
+                "matched": "transient"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.6,
+            "pass": false,
+            "content_fraction": 0.5,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "68 GiB",
+                  "68G"
+                ],
+                "matched": "68 GiB"
+              },
+              {
+                "alternatives": [
+                  "six-hour",
+                  "six hour",
+                  "6-hour"
+                ],
+                "matched": "six-hour"
+              },
+              {
+                "alternatives": [
+                  "zero writes",
+                  "0 writes"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "active writes"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/charlemagne-storage-observation.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "not authorized",
+                  "no approved",
+                  "do not drop",
+                  "not retire"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "physical reclamation",
+                  "reclaim"
+                ],
+                "matched": "physical reclamation"
+              },
+              {
+                "alternatives": [
+                  "eased",
+                  "stable"
+                ],
+                "matched": "eased"
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/charlemagne-storage-observation.md",
+              "corpus/Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "corpus/Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "monitor"
+                ],
+                "matched": "monitor"
+              },
+              {
+                "alternatives": [
+                  "replay"
+                ],
+                "matched": "replay"
+              },
+              {
+                "alternatives": [
+                  "rollback"
+                ],
+                "matched": "rollback"
+              },
+              {
+                "alternatives": [
+                  "maintenance window"
+                ],
+                "matched": "maintenance window"
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/charlemagne-storage-observation.md",
+              "corpus/Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+              "corpus/Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          }
+        ]
+      },
+      "lineage": null,
+      "transition_pass": false
+    },
+    {
+      "case_id": "charlemagne-storage-observation-transition",
+      "condition": "workspace_resume",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 58.876,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/charlemagne-storage-observation-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/charlemagne-storage-observation-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 13,
+        "commands": 3,
+        "command_output_chars": 2241,
+        "tokens": {
+          "input_tokens": 61118,
+          "cached_input_tokens": 43264,
+          "output_tokens": 1892
+        }
+      },
+      "answer": {
+        "answer": "Blocked: `./memory resume` failed twice because the typed adapter could not open its SQLite database. The required child checkpoint write failed at the same boundary, so no corpus evidence was available and no checkpoint was persisted.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The prior causal state could not be recovered because the typed adapter failed before returning the parent checkpoint.",
+            "source_paths": [],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The new six-hour observation could not be retrieved or measured from the unavailable delta.",
+            "source_paths": [],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "No evidence-backed retirement decision can be made; eased free-space pressure must not be treated as authorization to retire the durable legacy table.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c4",
+            "value": "Next gates are restoring adapter-store access, reviewing the recovered observation, separately authorizing legacy-table retirement, and separately authorizing any write-path migration with rollback coverage.",
+            "source_paths": [],
+            "confidence": "medium"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Advance the storage investigation using the six-hour observation while separating free-space pressure from legacy-table retirement and preserving write-path distinctions.",
+          "current_state": [
+            "`./memory resume` failed twice with `sqlite3.OperationalError: unable to open database file`.",
+            "No parent checkpoint, delta, scoped corpus map, or source paths were returned.",
+            "The child checkpoint write was attempted but failed with the same database error."
+          ],
+          "decisions": [
+            "Do not invent causal or measurement findings.",
+            "Do not infer that eased free-space pressure authorizes durable legacy-table retirement.",
+            "Do not conflate or alter distinct write paths without recovered evidence."
+          ],
+          "open_questions": [
+            "What causal state and write-path distinction does the parent establish?",
+            "What measurements are in the six-hour observation?",
+            "Does the observation affect only operational pressure or also provide durable retirement evidence?"
+          ],
+          "next_actions": [
+            "Restore typed adapter access to its SQLite store and rerun `./memory resume`.",
+            "Evaluate the supplied checkpoint and delta.",
+            "Require an explicit retirement authorization after evidence review.",
+            "Require a separate write-path migration and rollback authorization."
+          ],
+          "artifacts": []
+        }
+      },
+      "grade": {
+        "score": 0.2167,
+        "pass": false,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_score": 0.1667,
+        "checkpoint_score": 0.75,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": false
+        },
+        "citation_validity": 0.0,
+        "citation_count": 0,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "legacy session",
+                  "legacy tables"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "compact replacement",
+                  "replacement tables"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "transient",
+                  "temporary"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c2",
+            "score": 0.2,
+            "pass": false,
+            "content_fraction": 0.25,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "68 GiB",
+                  "68G"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "six-hour",
+                  "six hour",
+                  "6-hour"
+                ],
+                "matched": "six-hour"
+              },
+              {
+                "alternatives": [
+                  "zero writes",
+                  "0 writes"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "active writes"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c3",
+            "score": 0.2667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "not authorized",
+                  "no approved",
+                  "do not drop",
+                  "not retire"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "physical reclamation",
+                  "reclaim"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "eased",
+                  "stable"
+                ],
+                "matched": "eased"
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c4",
+            "score": 0.2,
+            "pass": false,
+            "content_fraction": 0.25,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "monitor"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "replay"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "rollback"
+                ],
+                "matched": "rollback"
+              },
+              {
+                "alternatives": [
+                  "maintenance window"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          }
+        ]
+      },
+      "lineage": {
+        "session_id": null,
+        "child_checkpoint": null,
+        "parent_match": false,
+        "revision_match": false,
+        "delta_source_preserved": false,
+        "prior_source_preserved": false,
+        "within_call_budget": true,
+        "operations": {
+          "completed_calls": 0,
+          "result_chars": 0,
+          "operations": []
+        }
+      },
+      "transition_pass": false
+    },
+    {
+      "case_id": "star-rupture-second-facturer-transition",
+      "condition": "filesystem_rebuild",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 93.762,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/star-rupture-second-facturer-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/star-rupture-second-facturer-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 16,
+        "commands": 5,
+        "command_output_chars": 33973,
+        "tokens": {
+          "input_tokens": 108242,
+          "cached_input_tokens": 88576,
+          "output_tokens": 2842
+        }
+      },
+      "answer": {
+        "answer": "Revised child checkpoint: the three heavy machines require three separate level-0 Base Core sites. Their machine-only heat loads are 500, 650, and 650; no two may share a core because every pairing exceeds the 1,000 capacity.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The parent architecture was an Update 1-only distributed backbone-and-spurs network with a protected core hub, modular processing cells, mining outposts, conservative heat margin, and unlock-gated logistics.",
+            "source_paths": [
+              "checkpoint.json",
+              "corpus/Topics/Star Rupture/Star Rupture logistics.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The new requirement is one Constructorizer plus two Facturers while all Base Cores remain level 0. Machine heat is 500 + 650 + 650 = 1,800 total. A level-0 core has 1,000 capacity, and exceeding it disables Fire Wave protection.",
+            "source_paths": [
+              "eval/transition-deltas/star-rupture-second-facturer.md",
+              "corpus/Topics/Star Rupture/Star Rupture production.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Use at least three occupied level-0 core sites: one Constructorizer site at 500 machine heat with 500 headroom, and two Facturer sites at 650 machine heat with 350 headroom each. Reject Constructorizer-plus-Facturer co-location at 1,150 and two-Facturer co-location at 1,300; all supporting powered buildings must fit within each site's remaining headroom.",
+            "source_paths": [
+              "eval/transition-deltas/star-rupture-second-facturer.md",
+              "corpus/Topics/Star Rupture/Star Rupture production.md",
+              "corpus/Topics/Star Rupture/Star Rupture logistics.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Before construction, verify that the Constructorizer, Facturer, recipes, power sources, and logistics components are actually unlocked in the Update 1 save, then draft and validate each site's complete heat ledger against its core panel. Use only confirmed Update 1 equipment and begin construction only when every site remains at or below 1,000 heat with deliberate operating margin.",
+            "source_paths": [
+              "eval/transition-deltas/star-rupture-second-facturer.md",
+              "corpus/Topics/Star Rupture/Star Rupture.md",
+              "corpus/Topics/Star Rupture/Star Rupture production.md",
+              "corpus/Topics/Star Rupture/Star Rupture logistics.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Build an Update 1-only distributed factory operating one Constructorizer and two Facturers while every Base Core remains level 0 and every occupied core retains Fire Wave protection.",
+          "current_state": [
+            "The prior distributed backbone-and-spurs architecture remains the foundation; the former plan to postpone heavy machines is superseded by the explicit requirement to operate one Constructorizer and two Facturers.",
+            "Required machine-only heat is 1,800: Constructorizer 500 plus two Facturers at 650 each.",
+            "A level-0 Base Core provides 1,000 capacity; exceeding capacity disables that core's Fire Wave protection.",
+            "No two required heavy machines can safely share a level-0 core: Constructorizer plus Facturer is 1,150, and two Facturers are 1,300.",
+            "The build therefore requires at least three occupied level-0 Base Core sites before accounting for supporting buildings."
+          ],
+          "decisions": [
+            "Assign the Constructorizer to a dedicated level-0 core site: 500 machine heat and at most 500 remaining heat for all local support.",
+            "Assign each Facturer to its own dedicated level-0 core site: 650 machine heat and at most 350 remaining heat per site for all local support.",
+            "Reject every layout that co-locates any pair of the three required heavy machines under one level-0 core.",
+            "Retain distributed, single-item rail feeds and buffers where actually unlocked; use Rail v.1-v.3 only as measured throughput requires, and exclude future Rail v.4/v.5, hidden equipment, and unverified unlocks.",
+            "Treat the stated headroom as a hard upper bound, not a support allowance to consume automatically; include generation, extraction, processing, storage, and every other powered building in the responsible core's pre-build heat ledger.",
+            "Do not rely on Base Core Amplifiers to make the plan safe because their documented capacity values conflict; any later use requires in-game verification and a revised ledger."
+          ],
+          "open_questions": [
+            "Which required machines, recipes, power sources, rail components, and storage tiers are currently unlocked in the Update 1 save?",
+            "What existing heat load is already assigned to each candidate level-0 core site?",
+            "Which confirmed Update 1 power arrangement can provide 700 power to the Constructorizer site and 850 power to each Facturer site without exhausting local heat headroom?",
+            "What complete supporting production and logistics chain is required by each selected recipe, and under which core will each supporting building's heat be counted?"
+          ],
+          "next_actions": [
+            "Inspect the live Update 1 build and recipe menus and record the unlocked Constructorizer, Facturer, recipes, power sources, rails, and buffers; exclude hidden, future, pre-Update-1, and merely database-listed content.",
+            "Select three distinct level-0 Base Core sites and record each core panel's current load before placing anything.",
+            "Prepare three complete site ledgers: existing load plus heavy-machine heat plus all local generation, logistics, processing, storage, and defense heat. Require each total to remain at or below 1,000 with deliberate margin.",
+            "Reject or redesign any ledger above its core limit; do not compensate by co-locating required heavy machines or assuming disputed Amplifier capacity.",
+            "Only after all three ledgers pass, construct and commission one site at a time, rechecking the core panel after each powered placement and before operating the heavy machine."
+          ],
+          "artifacts": [
+            "checkpoint.json",
+            "delta.json",
+            "eval/transition-deltas/star-rupture-second-facturer.md",
+            "corpus/Topics/Star Rupture/Star Rupture.md",
+            "corpus/Topics/Star Rupture/Star Rupture production.md",
+            "corpus/Topics/Star Rupture/Star Rupture logistics.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.7688,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.7333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 0.9091,
+        "citation_count": 11,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "distributed",
+                  "satellite",
+                  "outpost"
+                ],
+                "matched": "distributed"
+              },
+              {
+                "alternatives": [
+                  "level-0",
+                  "level 0"
+                ],
+                "matched": "level-0"
+              },
+              {
+                "alternatives": [
+                  "Fire Wave"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "checkpoint.json",
+              "corpus/Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "500"
+                ],
+                "matched": "500"
+              },
+              {
+                "alternatives": [
+                  "650"
+                ],
+                "matched": "650"
+              },
+              {
+                "alternatives": [
+                  "1,800",
+                  "1800"
+                ],
+                "matched": "1,800"
+              },
+              {
+                "alternatives": [
+                  "1,000",
+                  "1000"
+                ],
+                "matched": "1,000"
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/star-rupture-second-facturer.md",
+              "corpus/Topics/Star Rupture/Star Rupture production.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.4667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "three cores",
+                  "three level-0",
+                  "separate core"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Constructorizer"
+                ],
+                "matched": "Constructorizer"
+              },
+              {
+                "alternatives": [
+                  "two Facturers",
+                  "each Facturer"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/star-rupture-second-facturer.md",
+              "corpus/Topics/Star Rupture/Star Rupture production.md",
+              "corpus/Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Update 1"
+                ],
+                "matched": "Update 1"
+              },
+              {
+                "alternatives": [
+                  "do not begin",
+                  "before construction",
+                  "verify"
+                ],
+                "matched": "before construction"
+              },
+              {
+                "alternatives": [
+                  "Rail v.3",
+                  "v.1",
+                  "v.2"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/star-rupture-second-facturer.md",
+              "corpus/Topics/Star Rupture/Star Rupture.md",
+              "corpus/Topics/Star Rupture/Star Rupture production.md",
+              "corpus/Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          }
+        ]
+      },
+      "lineage": null,
+      "transition_pass": false
+    },
+    {
+      "case_id": "star-rupture-second-facturer-transition",
+      "condition": "workspace_resume",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 68.788,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/star-rupture-second-facturer-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/star-rupture-second-facturer-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 15,
+        "commands": 4,
+        "command_output_chars": 2988,
+        "tokens": {
+          "input_tokens": 72799,
+          "cached_input_tokens": 63232,
+          "output_tokens": 2040
+        }
+      },
+      "answer": {
+        "answer": "Blocked: all four permitted workspace calls failed because `./memory` could not initialize SQLite WAL (`unable to open database file`). No parent corpus content was returned, and the checkpoint write also failed, so producing the requested buildable child or fabricating its architecture would be unsafe.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Prior architecture could not be recovered because `./memory resume` failed before returning corpus content.",
+            "source_paths": [
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The changed requirement and heat arithmetic could not be verified without the parent checkpoint and revision delta.",
+            "source_paths": [
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "No safe revised layout can be asserted or cited from the unavailable corpus.",
+            "source_paths": [
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The version-safe next action is to restore writable/WAL-capable adapter database access, then rerun resume and checkpoint; the attempted checkpoint did not persist.",
+            "source_paths": [
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Revise the distributed-factory checkpoint for one Constructorizer plus two Facturers while every Base Core remains level 0.",
+          "current_state": [
+            "Blocked before parent recovery: SQLite WAL initialization fails with `unable to open database file`.",
+            "The required child checkpoint write failed for the same reason."
+          ],
+          "decisions": [
+            "Do not fabricate architecture, heat arithmetic, layout, Update 1 authority rules, or corpus citations."
+          ],
+          "open_questions": [
+            "How can the adapter database be made writable or WAL-capable within the workspace sandbox?"
+          ],
+          "next_actions": [
+            "Restore adapter database access.",
+            "Run `./memory resume`.",
+            "Recompute heat, reject unsafe co-location, preserve Update 1 authority rules, and persist a buildable revised child checkpoint."
+          ],
+          "artifacts": []
+        }
+      },
+      "grade": {
+        "score": 0.075,
+        "pass": false,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_score": 0.0,
+        "checkpoint_score": 0.75,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": false
+        },
+        "citation_validity": 0.0,
+        "citation_count": 4,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "distributed",
+                  "satellite",
+                  "outpost"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "level-0",
+                  "level 0"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Fire Wave"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "500"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "650"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "1,800",
+                  "1800"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "1,000",
+                  "1000"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "three cores",
+                  "three level-0",
+                  "separate core"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Constructorizer"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "two Facturers",
+                  "each Facturer"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "Update 1"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "do not begin",
+                  "before construction",
+                  "verify"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Rail v.3",
+                  "v.1",
+                  "v.2"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "/Users/Shared/projects/straylight/straylight/store.py"
+            ]
+          }
+        ]
+      },
+      "lineage": {
+        "session_id": null,
+        "child_checkpoint": null,
+        "parent_match": false,
+        "revision_match": false,
+        "delta_source_preserved": false,
+        "prior_source_preserved": false,
+        "within_call_budget": true,
+        "operations": {
+          "completed_calls": 0,
+          "result_chars": 0,
+          "operations": []
+        }
+      },
+      "transition_pass": false
+    },
+    {
+      "case_id": "switzerland-reservation-transition",
+      "condition": "filesystem_rebuild",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 86.497,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/switzerland-reservation-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/switzerland-reservation-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 17,
+        "commands": 4,
+        "command_output_chars": 25750,
+        "tokens": {
+          "input_tokens": 112122,
+          "cached_input_tokens": 94720,
+          "output_tokens": 3164
+        }
+      },
+      "answer": {
+        "answer": "Updated and validated `checkpoint.json` as a source-bearing child checkpoint for corpus revision `rev_000002_4042d46add71`. Git status is not applicable because the run directory is not a Git repository.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Radley attends the Belgium indoor slalom camp Aug 5\u201310, transfers Brussels\u2013Geneva on Aug 10, then attends the Saas Fee camp Aug 10\u201322; the family meets him only after both camps.",
+            "source_paths": [
+              "corpus/Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "corpus/Trips/Switzerland/Switzerland trip planning.md",
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The revised family window is exactly Aug 22\u201325, 2026, for three nights, superseding the earlier open-ended three-to-four-day Italy idea.",
+            "source_paths": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+              "corpus/Trips/Switzerland/Switzerland trip planning.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Lodging is reserved for three nights in Locarno at approximately 200 meters elevation, with sleeping space for Radley, a CHF 500 deposit, and free cancellation through Jul 20, 2026. The serious-altitude constraint remains active.",
+            "source_paths": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+              "corpus/Trips/Switzerland/Switzerland trip planning.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Family flights, rail tickets, rental car, activities, and exact Aug 22 handoff mechanics remain proposed or unresolved; none are booked. Future activities must be screened for altitude exposure and remain proposed until supported by booking records.",
+            "source_paths": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+              "corpus/Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "corpus/Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Execute the exact Aug 22\u201325 post-camp family window from a reserved low-altitude Locarno base while preserving altitude safety and strict booked-versus-proposed distinctions.",
+          "current_state": [
+            "Belgium camp Aug 5\u201310, Brussels\u2013Geneva transfer Aug 10, and Saas Fee camp Aug 10\u201322 remain the recovered athlete sequence.",
+            "The family window is exactly Aug 22\u201325, 2026, after both camps.",
+            "Refundable Locarno lodging is reserved for those three nights at approximately 200 meters, with Radley sleeping capacity, a CHF 500 deposit, and free cancellation through Jul 20.",
+            "The serious-altitude constraint remains active.",
+            "No family transport or activities are booked."
+          ],
+          "decisions": [
+            "Supersede the open-ended Italy-tail idea with the exact Aug 22\u201325 window.",
+            "Promote only the Locarno lodging to reserved.",
+            "Keep transport, activities, athlete flights, and unverified camp payments unbooked.",
+            "Retain the altitude constraint and use Locarno as the low-elevation itinerary anchor."
+          ],
+          "open_questions": [
+            "Where and when on Aug 22 will Radley be handed off?",
+            "Which family flights and ground transport will be booked?",
+            "Which altitude-appropriate activities should be selected?",
+            "Have Radley\u2019s camp deposits or athlete flights actually been booked or paid?"
+          ],
+          "next_actions": [
+            "Confirm the Aug 22 handoff details.",
+            "Book family flights and ground transport.",
+            "Select altitude-appropriate activities without marking them booked prematurely.",
+            "Reassess the refundable lodging by Jul 20 if plans change."
+          ],
+          "artifacts": [
+            "checkpoint.json",
+            "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+            "corpus/Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "corpus/Trips/Switzerland/Switzerland trip planning.md",
+            "corpus/Trips/Switzerland/Nearby family options menu.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8243,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.7933,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 10,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "after both camps",
+                  "after Saas"
+                ],
+                "matched": "after both camps"
+              },
+              {
+                "alternatives": [
+                  "August 10-22",
+                  "Aug 10-22"
+                ],
+                "matched": "Aug 10-22"
+              },
+              {
+                "alternatives": [
+                  "serious altitude",
+                  "altitude"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "corpus/Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "corpus/Trips/Switzerland/Switzerland trip planning.md",
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.6,
+            "pass": false,
+            "content_fraction": 0.5,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "August 22",
+                  "Aug 22"
+                ],
+                "matched": "Aug 22"
+              },
+              {
+                "alternatives": [
+                  "August 25",
+                  "Aug 25"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "three nights",
+                  "3 nights"
+                ],
+                "matched": "three nights"
+              },
+              {
+                "alternatives": [
+                  "superseded"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+              "corpus/Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.84,
+            "pass": true,
+            "content_fraction": 0.8,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Locarno"
+                ],
+                "matched": "Locarno"
+              },
+              {
+                "alternatives": [
+                  "reserved"
+                ],
+                "matched": "reserved"
+              },
+              {
+                "alternatives": [
+                  "CHF 500",
+                  "500"
+                ],
+                "matched": "CHF 500"
+              },
+              {
+                "alternatives": [
+                  "July 20"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Radley"
+                ],
+                "matched": "Radley"
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+              "corpus/Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "not booked",
+                  "unbooked",
+                  "proposed"
+                ],
+                "matched": "proposed"
+              },
+              {
+                "alternatives": [
+                  "flights",
+                  "rail tickets",
+                  "rental car"
+                ],
+                "matched": "flights"
+              },
+              {
+                "alternatives": [
+                  "activities"
+                ],
+                "matched": "activities"
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+              "corpus/Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "corpus/Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ]
+      },
+      "lineage": null,
+      "transition_pass": false
+    },
+    {
+      "case_id": "switzerland-reservation-transition",
+      "condition": "workspace_resume",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 57.604,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/switzerland-reservation-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/switzerland-reservation-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 13,
+        "commands": 3,
+        "command_output_chars": 2241,
+        "tokens": {
+          "input_tokens": 61073,
+          "cached_input_tokens": 43264,
+          "output_tokens": 1722
+        }
+      },
+      "answer": {
+        "answer": "Blocked: the typed adapter failed twice on `./memory resume` and again on `./memory checkpoint` with `sqlite3.OperationalError: unable to open database file`. No source content was returned, and no child checkpoint receipt was created. I did not infer or promote any itinerary or booking details.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Unable to recover the camp and meeting sequence because the adapter returned no checkpoint or delta.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c2",
+            "value": "Unable to establish the new family window because the adapter returned no source content.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c3",
+            "value": "Unable to establish the lodging reservation state because the reservation receipt was not returned.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c4",
+            "value": "Remaining work is to restore adapter database access, resume the corpus, apply the family and lodging updates, preserve the altitude constraint, and keep unbooked transport and activities proposed.",
+            "source_paths": [],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Reopen the Switzerland planning checkpoint and apply the new family window and lodging reservation receipt.",
+          "current_state": [
+            "Blocked before recovery: the typed adapter cannot initialize its SQLite store.",
+            "The required child checkpoint could not be persisted."
+          ],
+          "decisions": [
+            "Do not infer or promote itinerary, booking, transport, activity, or altitude details without typed source content."
+          ],
+          "open_questions": [
+            "Writable access to the adapter SQLite store must be restored."
+          ],
+          "next_actions": [
+            "Repair adapter store access.",
+            "Run ./memory resume.",
+            "Apply the delta and persist a source-bearing child checkpoint."
+          ],
+          "artifacts": []
+        }
+      },
+      "grade": {
+        "score": 0.1883,
+        "pass": false,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_score": 0.1333,
+        "checkpoint_score": 0.75,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": false
+        },
+        "citation_validity": 0.0,
+        "citation_count": 0,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "after both camps",
+                  "after Saas"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "August 10-22",
+                  "Aug 10-22"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "serious altitude",
+                  "altitude"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c2",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "August 22",
+                  "Aug 22"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "August 25",
+                  "Aug 25"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "three nights",
+                  "3 nights"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "superseded"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c3",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "Locarno"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "reserved"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "CHF 500",
+                  "500"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "July 20"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Radley"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c4",
+            "score": 0.5333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "not booked",
+                  "unbooked",
+                  "proposed"
+                ],
+                "matched": "unbooked"
+              },
+              {
+                "alternatives": [
+                  "flights",
+                  "rail tickets",
+                  "rental car"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "activities"
+                ],
+                "matched": "activities"
+              }
+            ],
+            "citations": []
+          }
+        ]
+      },
+      "lineage": {
+        "session_id": null,
+        "child_checkpoint": null,
+        "parent_match": false,
+        "revision_match": false,
+        "delta_source_preserved": false,
+        "prior_source_preserved": false,
+        "within_call_budget": true,
+        "operations": {
+          "completed_calls": 0,
+          "result_chars": 0,
+          "operations": []
+        }
+      },
+      "transition_pass": false
+    },
+    {
+      "case_id": "straylight-api-gate-transition",
+      "condition": "filesystem_rebuild",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 107.257,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/straylight-api-gate-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/filesystem_rebuild/straylight-api-gate-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 21,
+        "commands": 6,
+        "command_output_chars": 68614,
+        "tokens": {
+          "input_tokens": 190181,
+          "cached_input_tokens": 153856,
+          "output_tokens": 3745
+        }
+      },
+      "answer": {
+        "answer": "Advanced checkpoint.json to an implementation-ready child checkpoint at corpus revision rev_000002_7323ec9a8a69. The JSON was validated successfully; this run directory is not a Git worktree.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Straylight is an agent-first, user-owned portable context and durable-work layer that preserves learned knowledge together with evidence-bearing, resumable work state so later agents can inspect, revise, advance, and hand off complex work.",
+            "source_paths": [
+              "corpus/Projects/Straylight/Straylight.md",
+              "corpus/Projects/Straylight/Decisions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The approximately 1,070-token one-shot BM25 result versus 2,932 tokens for the minimal workspace showed only that the process-per-operation prototype failed to outperform one-shot retrieval on the narrow benchmark; it did not reject the persistent workspace architecture. The new gate requires persistent sessions and separate measurement of cumulative cached replay and uncached input.",
+            "source_paths": [
+              "corpus/Projects/Straylight/Worklog.md",
+              "corpus/Projects/Straylight/Decisions.md",
+              "eval/transition-deltas/straylight-api-gate.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The first persistent build slice reopens a revision-N parent checkpoint, refreshes it to N+1 with an inspectable diff, supports typed batched query/read using exact and lexical retrieval plus a pluggable semantic path, and atomically commits an immutable source-bearing child checkpoint without reconstructing the complete prior corpus.",
+            "source_paths": [
+              "eval/transition-deltas/straylight-api-gate.md",
+              "corpus/Projects/Straylight/Retrieval API - Initial Design.md",
+              "corpus/Projects/Straylight/Decisions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The transition passes when every case uses at most four completed workspace calls, matches the direct-filesystem answer claims with preserved source references, exercises all required retrieval paths in one snapshot-pinned workspace, commits the correctly linked N+1 child checkpoint, and reports numeric cumulative cached replay and uncached input separately.",
+            "source_paths": [
+              "eval/transition-deltas/straylight-api-gate.md",
+              "delta.json",
+              "corpus/Projects/Straylight/Retrieval API - Initial Design.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Deliver the first persistent Straylight workspace slice and clear the API transition gate at corpus revision rev_000002_7323ec9a8a69.",
+          "current_state": [
+            "Child checkpoint cp_7323ec9a8a69_api_gate_child now names parent cp_de0046ff6008f7e71798 and revision rev_000002_7323ec9a8a69.",
+            "Project-owner direction has advanced Straylight from evaluation into implementation.",
+            "The prior token comparison is retained as regression evidence, not an architectural rejection."
+          ],
+          "decisions": [
+            "Implement parent reopen, N-to-N+1 refresh/diff, typed batched query/read, hybrid retrieval, and immutable child commit as one vertical slice.",
+            "Use checkpoint-plus-delta resumption without reconstructing the complete prior corpus when those inputs suffice.",
+            "Measure direct-filesystem claim parity within four calls and report cumulative cached replay separately from uncached input."
+          ],
+          "open_questions": [
+            "Which transport and semantic retrieval provider should follow the provider-neutral slice?",
+            "Which broader latency, cost, storage, and deployment thresholds should follow successful persistence and claim-parity validation?"
+          ],
+          "next_actions": [
+            "Implement the typed persistent workspace contracts.",
+            "Exercise exact, lexical, and pluggable semantic retrieval paths.",
+            "Run transition cases and record claim parity, citations, call counts, cached replay, and uncached input."
+          ],
+          "artifacts": [
+            "checkpoint.json",
+            "delta.json",
+            "eval/transition-deltas/straylight-api-gate.md",
+            "corpus/Projects/Straylight/Straylight.md",
+            "corpus/Projects/Straylight/Decisions.md",
+            "corpus/Projects/Straylight/Worklog.md",
+            "corpus/Projects/Straylight/Retrieval API - Initial Design.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8623,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 0.8433,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 0.9091,
+        "citation_count": 11,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "agent-first",
+                  "agent first"
+                ],
+                "matched": "agent-first"
+              },
+              {
+                "alternatives": [
+                  "durable workspace",
+                  "durable-work"
+                ],
+                "matched": "durable-work"
+              },
+              {
+                "alternatives": [
+                  "not retrieval",
+                  "more than retrieval",
+                  "not primarily"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "corpus/Projects/Straylight/Straylight.md",
+              "corpus/Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 0.8,
+            "pass": true,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "cached replay",
+                  "cached history"
+                ],
+                "matched": "cached replay"
+              },
+              {
+                "alternatives": [
+                  "uncached input"
+                ],
+                "matched": "uncached input"
+              },
+              {
+                "alternatives": [
+                  "tool calls",
+                  "round trips"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "BM25",
+                  "lexical"
+                ],
+                "matched": "BM25"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/Straylight/Worklog.md",
+              "corpus/Projects/Straylight/Decisions.md",
+              "eval/transition-deltas/straylight-api-gate.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.84,
+            "pass": true,
+            "content_fraction": 0.8,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "persistent"
+                ],
+                "matched": "persistent"
+              },
+              {
+                "alternatives": [
+                  "snapshot-pinned",
+                  "snapshot pinned"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "semantic",
+                  "hybrid"
+                ],
+                "matched": "semantic"
+              },
+              {
+                "alternatives": [
+                  "batch"
+                ],
+                "matched": "batch"
+              },
+              {
+                "alternatives": [
+                  "child checkpoint"
+                ],
+                "matched": "child checkpoint"
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/straylight-api-gate.md",
+              "corpus/Projects/Straylight/Retrieval API - Initial Design.md",
+              "corpus/Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "four",
+                  "4"
+                ],
+                "matched": "four"
+              },
+              {
+                "alternatives": [
+                  "filesystem"
+                ],
+                "matched": "filesystem"
+              },
+              {
+                "alternatives": [
+                  "cached",
+                  "uncached"
+                ],
+                "matched": "cached"
+              },
+              {
+                "alternatives": [
+                  "parent",
+                  "source references",
+                  "source lineage"
+                ],
+                "matched": "source references"
+              }
+            ],
+            "citations": [
+              "eval/transition-deltas/straylight-api-gate.md",
+              "delta.json",
+              "corpus/Projects/Straylight/Retrieval API - Initial Design.md"
+            ]
+          }
+        ]
+      },
+      "lineage": null,
+      "transition_pass": true
+    },
+    {
+      "case_id": "straylight-api-gate-transition",
+      "condition": "workspace_resume",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 68.362,
+      "answer_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/straylight-api-gate-transition/answer.json",
+      "events_path": "/Users/Shared/projects/straylight/runs/transition-20260711T010020-0700/workspace_resume/straylight-api-gate-transition/events.jsonl",
+      "error": null,
+      "events": {
+        "events": 13,
+        "commands": 3,
+        "command_output_chars": 2241,
+        "tokens": {
+          "input_tokens": 60799,
+          "cached_input_tokens": 52224,
+          "output_tokens": 1621
+        }
+      },
+      "answer": {
+        "answer": "Blocked: `./memory resume` failed twice during SQLite WAL initialization with `sqlite3.OperationalError: unable to open database file`. The required checkpoint write failed identically, so no corpus content or receipt was available. I cannot safely invent the requested claims or source lineage.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Not recoverable: the parent checkpoint was never returned.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c2",
+            "value": "Not determinable: the token-result delta was never returned.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c3",
+            "value": "Not definable from evidence: the scoped corpus map was never returned.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c4",
+            "value": "Not definable from evidence: measurable acceptance criteria require the unavailable checkpoint and delta.",
+            "source_paths": [],
+            "confidence": "low"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Advance the Straylight project checkpoint from evaluation into implementation using the new API gate.",
+          "current_state": [
+            "Blocked before corpus recovery because the typed adapter cannot open its SQLite database.",
+            "The attempted child checkpoint was not persisted; no receipt was returned."
+          ],
+          "decisions": [
+            "Do not fabricate project claims, implementation scope, acceptance criteria, or source lineage."
+          ],
+          "open_questions": [
+            "Why the adapter database cannot be opened for WAL initialization in this runtime."
+          ],
+          "next_actions": [
+            "Restore adapter database access.",
+            "Run ./memory resume.",
+            "Derive and persist the revised implementation checkpoint with exact source references."
+          ],
+          "artifacts": [
+            "Adapter error: sqlite3.OperationalError: unable to open database file"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.1425,
+        "pass": false,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_score": 0.05,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 0.0,
+        "citation_count": 0,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "agent-first",
+                  "agent first"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "durable workspace",
+                  "durable-work"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "not retrieval",
+                  "more than retrieval",
+                  "not primarily"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c2",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "cached replay",
+                  "cached history"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "uncached input"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "tool calls",
+                  "round trips"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "BM25",
+                  "lexical"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c3",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "persistent"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "snapshot-pinned",
+                  "snapshot pinned"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "semantic",
+                  "hybrid"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "batch"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "child checkpoint"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c4",
+            "score": 0.2,
+            "pass": false,
+            "content_fraction": 0.25,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "four",
+                  "4"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "filesystem"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "cached",
+                  "uncached"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "parent",
+                  "source references",
+                  "source lineage"
+                ],
+                "matched": "source lineage"
+              }
+            ],
+            "citations": []
+          }
+        ]
+      },
+      "lineage": {
+        "session_id": null,
+        "child_checkpoint": null,
+        "parent_match": false,
+        "revision_match": false,
+        "delta_source_preserved": false,
+        "prior_source_preserved": false,
+        "within_call_budget": true,
+        "operations": {
+          "completed_calls": 0,
+          "result_chars": 0,
+          "operations": []
+        }
+      },
+      "transition_pass": false
+    }
+  ],
+  "summary": {
+    "filesystem_rebuild": {
+      "runs": 5,
+      "cases_passed": 1,
+      "claims_passed": 16,
+      "claims_total": 20,
+      "mean_input_tokens": 111299.6,
+      "mean_cached_input_tokens": 89139.2,
+      "mean_uncached_input_tokens": 22160.4,
+      "mean_shell_calls": 4.2,
+      "mean_workspace_calls": null,
+      "mean_elapsed_seconds": 80.1
+    },
+    "workspace_resume": {
+      "runs": 5,
+      "cases_passed": 0,
+      "claims_passed": 0,
+      "claims_total": 20,
+      "mean_input_tokens": 66538.4,
+      "mean_cached_input_tokens": 52070.4,
+      "mean_uncached_input_tokens": 14468.0,
+      "mean_shell_calls": 3.4,
+      "mean_workspace_calls": 0.0,
+      "mean_elapsed_seconds": 62.58
+    }
+  }
+}

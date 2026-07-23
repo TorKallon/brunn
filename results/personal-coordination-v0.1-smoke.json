@@ -1,0 +1,1370 @@
+{
+  "benchmark_version": "personal-coordination-v0.1",
+  "run_at": "2026-07-11T17:39:59-07:00",
+  "run_id": "20260711T173715-0700",
+  "harness_sha256": "856f938223d349a6725a8506734aa02a7e42f5b1adfd622720d22f54c56f488d",
+  "workspace_cli_sha256": "490e7c88f10a1786dd577bf2b1ccd987e9d87cd3eb3bdfc095d81520ddbd505f",
+  "manifest_sha256": "a102d8a2bcc7ebaa239e364537c4b512c9bdffaaeac77921d67a827d236a7a0c",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-personal-coordination-v0.1",
+    "sha256": "4f0b77f5e5bb58bb49ca92ec75a244fe29e4a349449b339cc9938d637955feff",
+    "artifact_tree_sha256": "4f0b77f5e5bb58bb49ca92ec75a244fe29e4a349449b339cc9938d637955feff",
+    "documents": 26,
+    "chunks": 27,
+    "characters": 19155
+  },
+  "manifest": {
+    "benchmark_version": "personal-coordination-v0.1",
+    "name": "Straylight personal coordination evaluation",
+    "report_title": "Straylight personal coordination evaluation",
+    "report_date": "2026-07-11",
+    "evaluation_model": "generalized_personal_coordination",
+    "fixture_domain": "Synthetic personal coordination",
+    "generalization": {
+      "purpose": "Evaluate source-faithful coordination across identity, relationships, events, arrangements, obligations, authority, sensitivity, and resumable work.",
+      "kernel": [
+        "stable objects",
+        "source-bearing claims",
+        "qualified relations",
+        "temporal revisions",
+        "checkpoints"
+      ],
+      "profile_types": [
+        "person",
+        "organization",
+        "group",
+        "place",
+        "event",
+        "arrangement",
+        "resource",
+        "work-item",
+        "artifact"
+      ],
+      "fixture_rule": "Vacation and game examples use the same corpus primitives; fixture vocabulary is not privileged runner schema."
+    },
+    "corpus_root": "eval/corpus-personal-coordination-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "fixed_pack",
+      "filesystem",
+      "workspace"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "coord-series-exceptions",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "recurring_event_identity_and_exceptions",
+        "task": "Materialize the Harbor Practice series and its sparse exceptions. Preserve the series rule and IANA timezone, then distinguish the canceled, overridden, and added occurrences with original, current, and actual times.",
+        "claim_slots": {
+          "c1": "series temporal specification",
+          "c2": "canceled occurrence",
+          "c3": "overridden occurrence times",
+          "c4": "added occurrence identity"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "event-series:harbor-practice"
+                ]
+              },
+              {
+                "any": [
+                  "America/Los_Angeles"
+                ]
+              },
+              {
+                "any": [
+                  "FREQ=WEEKLY;BYDAY=WE;COUNT=4"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/harbor-series.json"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "event-occurrence:harbor-2026-08-12"
+                ]
+              },
+              {
+                "any": [
+                  "canceled"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-12T17:00:00-07:00"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "event-occurrence:harbor-2026-08-19"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-19T17:00:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-19T18:30:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-19T18:42:00-07:00"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "event-occurrence:harbor-special-2026-08-22"
+                ]
+              },
+              {
+                "any": [
+                  "own identity"
+                ]
+              },
+              {
+                "any": [
+                  "Original time is `null`"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-22T10:00:00-07:00"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the canceled occurrence is deleted",
+          "the added occurrence has no identity",
+          "18:30 was the original time"
+        ]
+      }
+    ]
+  },
+  "records": [
+    {
+      "case_id": "coord-series-exceptions",
+      "condition": "fixed_pack",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 32.49,
+      "fixed_context_chars": 12648,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260711T173715-0700/fixed_pack/coord-series-exceptions/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Harbor Practice is a four-occurrence weekly Wednesday series in America/Los_Angeles, with sparse overlays: the August 12 occurrence is canceled, August 19 is rescheduled with an actual start, and August 22 is a separately identified added occurrence. The evidence does not specify current or actual times for the canceled occurrence.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "event-series:harbor-practice (\u201cHarbor Practice\u201d): timezone America/Los_Angeles; DTSTART 2026-08-05T17:00:00-07:00; duration 90 minutes; RRULE FREQ=WEEKLY;BYDAY=WE;COUNT=4.",
+            "source_paths": [
+              "Events/harbor-series.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "event-occurrence:harbor-2026-08-12 is canceled. Original time: 2026-08-12T17:00:00-07:00. Current status: canceled. Current time and actual time are not specified in the available evidence.",
+            "source_paths": [
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "event-occurrence:harbor-2026-08-19 is overridden. Original time: 2026-08-19T17:00:00-07:00; current time: 2026-08-19T18:30:00-07:00; actual start: 2026-08-19T18:42:00-07:00.",
+            "source_paths": [
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "event-occurrence:harbor-special-2026-08-22 is an added occurrence with its own identity. Original time: null; current time: 2026-08-22T10:00:00-07:00; actual time: null.",
+            "source_paths": [
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Materialize the Harbor Practice recurrence and its sparse canceled, overridden, and added occurrence exceptions while preserving the series RRULE and IANA timezone.",
+          "current_state": [
+            "Verified current series specification: event-series:harbor-practice uses America/Los_Angeles, starts 2026-08-05T17:00:00-07:00, lasts 90 minutes, and follows FREQ=WEEKLY;BYDAY=WE;COUNT=4.",
+            "Verified sparse overlay state: August 12 is canceled; August 19 retains its original time but has a later current time and actual start; August 22 is an added occurrence with a distinct ID.",
+            "Verified that August 5 and August 26 inherit the series unchanged.",
+            "The exception overlay does not rewrite the underlying series."
+          ],
+          "decisions": [
+            "Preserved the RRULE and IANA timezone exactly as recorded.",
+            "Treated original times as historical evidence and current times/status as superseding occurrence state.",
+            "Kept the added occurrence distinct from the four generated series occurrence IDs.",
+            "Reported absent canceled-occurrence current and actual times as unspecified rather than inferring null values."
+          ],
+          "open_questions": [
+            "The available evidence gives no current_time or actual_time value for event-occurrence:harbor-2026-08-12; only its original time and canceled status are recorded."
+          ],
+          "next_actions": [
+            "If a downstream schema requires current_time and actual_time fields for canceled occurrences, obtain authoritative evidence defining their values or the schema\u2019s cancellation convention before populating them."
+          ],
+          "artifacts": [
+            "Events/harbor-series.json",
+            "Events/harbor-series-exceptions.md",
+            "context.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9575,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 0.95,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 4,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-series:harbor-practice"
+                ],
+                "matched": "event-series:harbor-practice"
+              },
+              {
+                "alternatives": [
+                  "America/Los_Angeles"
+                ],
+                "matched": "America/Los_Angeles"
+              },
+              {
+                "alternatives": [
+                  "FREQ=WEEKLY;BYDAY=WE;COUNT=4"
+                ],
+                "matched": "FREQ=WEEKLY;BYDAY=WE;COUNT=4"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series.json"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-2026-08-12"
+                ],
+                "matched": "event-occurrence:harbor-2026-08-12"
+              },
+              {
+                "alternatives": [
+                  "canceled"
+                ],
+                "matched": "canceled"
+              },
+              {
+                "alternatives": [
+                  "2026-08-12T17:00:00-07:00"
+                ],
+                "matched": "2026-08-12T17:00:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-2026-08-19"
+                ],
+                "matched": "event-occurrence:harbor-2026-08-19"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T17:00:00-07:00"
+                ],
+                "matched": "2026-08-19T17:00:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T18:30:00-07:00"
+                ],
+                "matched": "2026-08-19T18:30:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T18:42:00-07:00"
+                ],
+                "matched": "2026-08-19T18:42:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.8,
+            "pass": true,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-special-2026-08-22"
+                ],
+                "matched": "event-occurrence:harbor-special-2026-08-22"
+              },
+              {
+                "alternatives": [
+                  "own identity"
+                ],
+                "matched": "own identity"
+              },
+              {
+                "alternatives": [
+                  "Original time is `null`"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "2026-08-22T10:00:00-07:00"
+                ],
+                "matched": "2026-08-22T10:00:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 7,
+        "commands": 1,
+        "command_output_chars": 12648,
+        "tokens": {
+          "input_tokens": 35513,
+          "cached_input_tokens": 15104,
+          "output_tokens": 1094
+        }
+      },
+      "workspace_operations": [],
+      "workspace_result_chars": 0,
+      "workspace_checkpoint": null,
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "coord-series-exceptions",
+      "condition": "filesystem",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 51.349,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260711T173715-0700/filesystem/coord-series-exceptions/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Harbor Practice remains a four-occurrence weekly Wednesday series in America/Los_Angeles. The August 12 occurrence is canceled, August 19 is rescheduled with a recorded actual start, and August 22 is an independently identified added occurrence.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "event-series:harbor-practice \u2014 DTSTART 2026-08-05T17:00:00-07:00; duration 90 minutes; RRULE FREQ=WEEKLY;BYDAY=WE;COUNT=4; timezone America/Los_Angeles.",
+            "source_paths": [
+              "Events/harbor-series.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "event-occurrence:harbor-2026-08-12 \u2014 canceled; original time 2026-08-12T17:00:00-07:00; no current or actual time is specified by the corpus.",
+            "source_paths": [
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "event-occurrence:harbor-2026-08-19 \u2014 overridden; original time 2026-08-19T17:00:00-07:00; current time 2026-08-19T18:30:00-07:00; actual start 2026-08-19T18:42:00-07:00.",
+            "source_paths": [
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "event-occurrence:harbor-special-2026-08-22 \u2014 added occurrence with its own identity; original time null; current time 2026-08-22T10:00:00-07:00; actual time null.",
+            "source_paths": [
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Materialize the Harbor Practice recurring series and its sparse occurrence exceptions while preserving the series RRULE and IANA timezone.",
+          "current_state": [
+            "Verified current series specification from source:harbor-series-r1.",
+            "Verified source:harbor-exceptions-r3 as an occurrence-level overlay that does not rewrite the series.",
+            "Verified one canceled occurrence, one overridden occurrence, and one independently identified added occurrence.",
+            "Corpus-wide Harbor search found no competing or superseding Harbor evidence."
+          ],
+          "decisions": [
+            "Preserved RRULE FREQ=WEEKLY;BYDAY=WE;COUNT=4 and timezone America/Los_Angeles.",
+            "Kept the cancellation, override, and addition separate from generated series occurrences.",
+            "Reported the canceled occurrence's current and actual times as unspecified rather than inferring null values absent explicit evidence.",
+            "Treated the r3 exception overlay as current fact; no conflicting historical Harbor schedule was found."
+          ],
+          "open_questions": [],
+          "next_actions": [
+            "No further action is required unless a downstream schema requires explicit unknown fields for the canceled occurrence."
+          ],
+          "artifacts": [
+            "Events/harbor-series.json",
+            "Events/harbor-series-exceptions.md",
+            "Profiles/object-profiles.json"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9575,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 0.95,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 4,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-series:harbor-practice"
+                ],
+                "matched": "event-series:harbor-practice"
+              },
+              {
+                "alternatives": [
+                  "America/Los_Angeles"
+                ],
+                "matched": "America/Los_Angeles"
+              },
+              {
+                "alternatives": [
+                  "FREQ=WEEKLY;BYDAY=WE;COUNT=4"
+                ],
+                "matched": "FREQ=WEEKLY;BYDAY=WE;COUNT=4"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series.json"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-2026-08-12"
+                ],
+                "matched": "event-occurrence:harbor-2026-08-12"
+              },
+              {
+                "alternatives": [
+                  "canceled"
+                ],
+                "matched": "canceled"
+              },
+              {
+                "alternatives": [
+                  "2026-08-12T17:00:00-07:00"
+                ],
+                "matched": "2026-08-12T17:00:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-2026-08-19"
+                ],
+                "matched": "event-occurrence:harbor-2026-08-19"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T17:00:00-07:00"
+                ],
+                "matched": "2026-08-19T17:00:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T18:30:00-07:00"
+                ],
+                "matched": "2026-08-19T18:30:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T18:42:00-07:00"
+                ],
+                "matched": "2026-08-19T18:42:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.8,
+            "pass": true,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-special-2026-08-22"
+                ],
+                "matched": "event-occurrence:harbor-special-2026-08-22"
+              },
+              {
+                "alternatives": [
+                  "own identity"
+                ],
+                "matched": "own identity"
+              },
+              {
+                "alternatives": [
+                  "Original time is `null`"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "2026-08-22T10:00:00-07:00"
+                ],
+                "matched": "2026-08-22T10:00:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 17,
+        "commands": 5,
+        "command_output_chars": 7587,
+        "tokens": {
+          "input_tokens": 104358,
+          "cached_input_tokens": 63488,
+          "output_tokens": 2118
+        }
+      },
+      "workspace_operations": [],
+      "workspace_result_chars": 0,
+      "workspace_checkpoint": null,
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "coord-series-exceptions",
+      "condition": "workspace",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 80.591,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260711T173715-0700/workspace/coord-series-exceptions/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Harbor Practice remains a four-Wednesday series in America/Los_Angeles. The r3 exception layer cancels Aug 12, overrides Aug 19, and adds a separate Aug 22 occurrence without rewriting the series.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "{\"id\":\"event-series:harbor-practice\",\"name\":\"Harbor Practice\",\"timezone\":\"America/Los_Angeles\",\"dtstart\":\"2026-08-05T17:00:00-07:00\",\"duration_minutes\":90,\"rrule\":\"FREQ=WEEKLY;BYDAY=WE;COUNT=4\",\"generated_occurrence_ids\":[\"event-occurrence:harbor-2026-08-05\",\"event-occurrence:harbor-2026-08-12\",\"event-occurrence:harbor-2026-08-19\",\"event-occurrence:harbor-2026-08-26\"]}",
+            "source_paths": [
+              "Events/harbor-series.json",
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "{\"id\":\"event-occurrence:harbor-2026-08-12\",\"exception_type\":\"canceled\",\"original_time\":\"2026-08-12T17:00:00-07:00\",\"current_status\":\"canceled\",\"current_time\":\"unrecorded\",\"actual_time\":\"unrecorded\"}",
+            "source_paths": [
+              "Events/harbor-series.json",
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "{\"id\":\"event-occurrence:harbor-2026-08-19\",\"exception_type\":\"overridden\",\"original_time\":\"2026-08-19T17:00:00-07:00\",\"current_time\":\"2026-08-19T18:30:00-07:00\",\"actual_time\":\"2026-08-19T18:42:00-07:00\"}",
+            "source_paths": [
+              "Events/harbor-series.json",
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "{\"id\":\"event-occurrence:harbor-special-2026-08-22\",\"exception_type\":\"added\",\"identity\":\"separate added occurrence\",\"original_time\":null,\"current_time\":\"2026-08-22T10:00:00-07:00\",\"actual_time\":null}",
+            "source_paths": [
+              "Events/harbor-series-exceptions.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Materialize the Harbor Practice recurrence and its sparse canceled, overridden, and added exceptions while preserving the series RRULE and IANA timezone.",
+          "current_state": [
+            "Verified the series specification and four generated occurrence identities from Events/harbor-series.json.",
+            "Verified collectively that source:harbor-exceptions-r3 overlays the series: Aug 12 is canceled, Aug 19 is overridden with an actual start, Aug 22 is separately added, and Aug 5/Aug 26 inherit unchanged.",
+            "Computed that the recorded 90-minute duration equals 1.5 hours."
+          ],
+          "decisions": [
+            "Treat the r1 series as preserved current recurrence truth and r3 as superseding occurrence-level state only.",
+            "Do not rewrite DTSTART, RRULE, timezone, or generated identities when applying exceptions.",
+            "Use explicit nulls where recorded for the added occurrence; describe the canceled occurrence's unspecified current and actual timestamps as unrecorded."
+          ],
+          "open_questions": [
+            "No factual conflict remains. The canceled record supplies original_time and current_status but does not explicitly supply current_time or actual_time values."
+          ],
+          "next_actions": [
+            "If a downstream schema requires timestamps for canceled occurrences, map the two unrecorded fields according to that schema without inventing times."
+          ],
+          "artifacts": [
+            "Events/harbor-series.json",
+            "Events/harbor-series-exceptions.md",
+            "Persisted memory checkpoint containing the collective verification and computation result."
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.915,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.9,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 7,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-series:harbor-practice"
+                ],
+                "matched": "event-series:harbor-practice"
+              },
+              {
+                "alternatives": [
+                  "America/Los_Angeles"
+                ],
+                "matched": "America/Los_Angeles"
+              },
+              {
+                "alternatives": [
+                  "FREQ=WEEKLY;BYDAY=WE;COUNT=4"
+                ],
+                "matched": "FREQ=WEEKLY;BYDAY=WE;COUNT=4"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series.json",
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-2026-08-12"
+                ],
+                "matched": "event-occurrence:harbor-2026-08-12"
+              },
+              {
+                "alternatives": [
+                  "canceled"
+                ],
+                "matched": "canceled"
+              },
+              {
+                "alternatives": [
+                  "2026-08-12T17:00:00-07:00"
+                ],
+                "matched": "2026-08-12T17:00:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series.json",
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-2026-08-19"
+                ],
+                "matched": "event-occurrence:harbor-2026-08-19"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T17:00:00-07:00"
+                ],
+                "matched": "2026-08-19T17:00:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T18:30:00-07:00"
+                ],
+                "matched": "2026-08-19T18:30:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "2026-08-19T18:42:00-07:00"
+                ],
+                "matched": "2026-08-19T18:42:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series.json",
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 0.6,
+            "pass": false,
+            "content_fraction": 0.5,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "event-occurrence:harbor-special-2026-08-22"
+                ],
+                "matched": "event-occurrence:harbor-special-2026-08-22"
+              },
+              {
+                "alternatives": [
+                  "own identity"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Original time is `null`"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "2026-08-22T10:00:00-07:00"
+                ],
+                "matched": "2026-08-22T10:00:00-07:00"
+              }
+            ],
+            "citations": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 35,
+        "commands": 14,
+        "command_output_chars": 23665,
+        "tokens": {
+          "input_tokens": 205154,
+          "cached_input_tokens": 171776,
+          "output_tokens": 3390
+        }
+      },
+      "workspace_operations": [
+        {
+          "at": "2026-07-11T17:38:46-07:00",
+          "operation": "open",
+          "arguments": {
+            "command": "open",
+            "scope": "Personal Coordination"
+          },
+          "result_chars": 1237
+        },
+        {
+          "at": "2026-07-11T17:38:52-07:00",
+          "operation": "query",
+          "arguments": {
+            "command": "query",
+            "query": "Harbor Practice",
+            "scope": null,
+            "limit": 8,
+            "max_chars": 7000
+          },
+          "result_chars": 3630
+        },
+        {
+          "at": "2026-07-11T17:39:04-07:00",
+          "operation": "read",
+          "arguments": {
+            "command": "read",
+            "ref": "chunk-e356aa9b8d02",
+            "path": null,
+            "start": null,
+            "end": null,
+            "max_chars": 20000
+          },
+          "result_chars": 748
+        },
+        {
+          "at": "2026-07-11T17:39:04-07:00",
+          "operation": "read",
+          "arguments": {
+            "command": "read",
+            "ref": "chunk-d705603b3e7d",
+            "path": null,
+            "start": null,
+            "end": null,
+            "max_chars": 20000
+          },
+          "result_chars": 1014
+        },
+        {
+          "at": "2026-07-11T17:39:08-07:00",
+          "operation": "query",
+          "arguments": {
+            "command": "query",
+            "query": "harbor-2026-08-12 current time actual time canceled",
+            "scope": null,
+            "limit": 8,
+            "max_chars": 7000
+          },
+          "result_chars": 7277
+        },
+        {
+          "at": "2026-07-11T17:39:29-07:00",
+          "operation": "compute",
+          "arguments": {
+            "command": "compute",
+            "expression": "90 / 60"
+          },
+          "result_chars": 46
+        },
+        {
+          "at": "2026-07-11T17:39:30-07:00",
+          "operation": "verify",
+          "arguments": {
+            "command": "verify",
+            "claim": "Harbor Practice is event-series:harbor-practice in America/Los_Angeles, DTSTART 2026-08-05T17:00:00-07:00, duration 90 minutes, RRULE FREQ=WEEKLY;BYDAY=WE;COUNT=4; event-occurrence:harbor-2026-08-12 is canceled with original time 2026-08-12T17:00:00-07:00; event-occurrence:harbor-2026-08-19 is overridden from 2026-08-19T17:00:00-07:00 to 2026-08-19T18:30:00-07:00 and actually started 2026-08-19T18:42:00-07:00; event-occurrence:harbor-special-2026-08-22 is an added identity with original null, current 2026-08-22T10:00:00-07:00, actual null.",
+            "scope": null,
+            "limit": 6
+          },
+          "result_chars": 6218
+        },
+        {
+          "at": "2026-07-11T17:39:42-07:00",
+          "operation": "checkpoint",
+          "arguments": {
+            "command": "checkpoint",
+            "objective": "Materialize the Harbor Practice recurrence and its sparse canceled, overridden, and added exceptions while preserving the series RRULE and IANA timezone.",
+            "current_state": [
+              "Verified from Events/harbor-series.json that event-series:harbor-practice uses America/Los_Angeles, DTSTART 2026-08-05T17:00:00-07:00, duration 90 minutes (computed as 1.5 hours), and RRULE FREQ=WEEKLY;BYDAY=WE;COUNT=4, generating Aug 5, 12, 19, and 26 identities.",
+              "Verified collectively from Events/harbor-series-exceptions.md that source:harbor-exceptions-r3 overlays rather than rewrites the series: Aug 12 is canceled; Aug 19 is overridden and has an actual start; Aug 22 is a separately identified added occurrence; Aug 5 and Aug 26 inherit unchanged."
+            ],
+            "decision": [
+              "Treat the r1 series as the preserved recurrence fact and r3 as superseding occurrence-level state only; do not rewrite DTSTART, RRULE, timezone, or generated occurrence identities.",
+              "Report explicitly recorded nulls for the added occurrence. For the canceled occurrence, report original time and canceled status, and mark current/actual times as unrecorded because the source does not state timestamp values for them."
+            ],
+            "open_question": [
+              "No unresolved factual conflict. The canceled record does not explicitly encode current_time or actual_time values; only original_time and current status canceled are evidenced."
+            ],
+            "next_action": [
+              "Return exactly claims c1-c4 with relative source paths and confidence calibrated to direct evidence."
+            ],
+            "artifact": [
+              "Events/harbor-series.json",
+              "Events/harbor-series-exceptions.md",
+              "Combined memory verify result supporting all four claim slots; compute result 90/60 = 1.5."
+            ]
+          },
+          "result_chars": 1756
+        }
+      ],
+      "workspace_result_chars": 21926,
+      "workspace_checkpoint": {
+        "objective": "Materialize the Harbor Practice recurrence and its sparse canceled, overridden, and added exceptions while preserving the series RRULE and IANA timezone.",
+        "current_state": [
+          "Verified from Events/harbor-series.json that event-series:harbor-practice uses America/Los_Angeles, DTSTART 2026-08-05T17:00:00-07:00, duration 90 minutes (computed as 1.5 hours), and RRULE FREQ=WEEKLY;BYDAY=WE;COUNT=4, generating Aug 5, 12, 19, and 26 identities.",
+          "Verified collectively from Events/harbor-series-exceptions.md that source:harbor-exceptions-r3 overlays rather than rewrites the series: Aug 12 is canceled; Aug 19 is overridden and has an actual start; Aug 22 is a separately identified added occurrence; Aug 5 and Aug 26 inherit unchanged."
+        ],
+        "decisions": [
+          "Treat the r1 series as the preserved recurrence fact and r3 as superseding occurrence-level state only; do not rewrite DTSTART, RRULE, timezone, or generated occurrence identities.",
+          "Report explicitly recorded nulls for the added occurrence. For the canceled occurrence, report original time and canceled status, and mark current/actual times as unrecorded because the source does not state timestamp values for them."
+        ],
+        "open_questions": [
+          "No unresolved factual conflict. The canceled record does not explicitly encode current_time or actual_time values; only original_time and current status canceled are evidenced."
+        ],
+        "next_actions": [
+          "Return exactly claims c1-c4 with relative source paths and confidence calibrated to direct evidence."
+        ],
+        "artifacts": [
+          "Events/harbor-series.json",
+          "Events/harbor-series-exceptions.md",
+          "Combined memory verify result supporting all four claim slots; compute result 90/60 = 1.5."
+        ]
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "fixed_pack": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 1,
+        "case_pass_rate": 1.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_pass_rate": 1.0,
+        "mean_score": 0.9575,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 32.49,
+        "mean_fixed_context_chars": 12648.0,
+        "mean_workspace_result_chars": 0.0,
+        "persisted_checkpoints": 0,
+        "mean_completed_commands": 1.0,
+        "mean_command_output_chars": 12648.0,
+        "mean_tokens": {
+          "input_tokens": 35513.0,
+          "output_tokens": 1094.0,
+          "cached_input_tokens": 15104.0,
+          "uncached_input_tokens": 20409.0
+        }
+      },
+      "filesystem": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 1,
+        "case_pass_rate": 1.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_pass_rate": 1.0,
+        "mean_score": 0.9575,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 51.35,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 0.0,
+        "persisted_checkpoints": 0,
+        "mean_completed_commands": 5.0,
+        "mean_command_output_chars": 7587.0,
+        "mean_tokens": {
+          "input_tokens": 104358.0,
+          "output_tokens": 2118.0,
+          "cached_input_tokens": 63488.0,
+          "uncached_input_tokens": 40870.0
+        }
+      },
+      "workspace": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 0,
+        "case_pass_rate": 0.0,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.915,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 80.59,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 21926.0,
+        "persisted_checkpoints": 1,
+        "mean_completed_commands": 14.0,
+        "mean_command_output_chars": 23665.0,
+        "mean_tokens": {
+          "input_tokens": 205154.0,
+          "output_tokens": 3390.0,
+          "cached_input_tokens": 171776.0,
+          "uncached_input_tokens": 33378.0
+        }
+      }
+    },
+    "by_workload": {
+      "Personal Coordination": {
+        "fixed_pack": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9575,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 32.49,
+          "mean_fixed_context_chars": 12648.0,
+          "mean_workspace_result_chars": 0.0,
+          "persisted_checkpoints": 0,
+          "mean_completed_commands": 1.0,
+          "mean_command_output_chars": 12648.0,
+          "mean_tokens": {
+            "input_tokens": 35513.0,
+            "output_tokens": 1094.0,
+            "cached_input_tokens": 15104.0,
+            "uncached_input_tokens": 20409.0
+          }
+        },
+        "filesystem": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9575,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 51.35,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 0.0,
+          "persisted_checkpoints": 0,
+          "mean_completed_commands": 5.0,
+          "mean_command_output_chars": 7587.0,
+          "mean_tokens": {
+            "input_tokens": 104358.0,
+            "output_tokens": 2118.0,
+            "cached_input_tokens": 63488.0,
+            "uncached_input_tokens": 40870.0
+          }
+        },
+        "workspace": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.915,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 80.59,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 21926.0,
+          "persisted_checkpoints": 1,
+          "mean_completed_commands": 14.0,
+          "mean_command_output_chars": 23665.0,
+          "mean_tokens": {
+            "input_tokens": 205154.0,
+            "output_tokens": 3390.0,
+            "cached_input_tokens": 171776.0,
+            "uncached_input_tokens": 33378.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "recurring_event_identity_and_exceptions": {
+        "fixed_pack": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9575,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 32.49,
+          "mean_fixed_context_chars": 12648.0,
+          "mean_workspace_result_chars": 0.0,
+          "persisted_checkpoints": 0,
+          "mean_completed_commands": 1.0,
+          "mean_command_output_chars": 12648.0,
+          "mean_tokens": {
+            "input_tokens": 35513.0,
+            "output_tokens": 1094.0,
+            "cached_input_tokens": 15104.0,
+            "uncached_input_tokens": 20409.0
+          }
+        },
+        "filesystem": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9575,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 51.35,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 0.0,
+          "persisted_checkpoints": 0,
+          "mean_completed_commands": 5.0,
+          "mean_command_output_chars": 7587.0,
+          "mean_tokens": {
+            "input_tokens": 104358.0,
+            "output_tokens": 2118.0,
+            "cached_input_tokens": 63488.0,
+            "uncached_input_tokens": 40870.0
+          }
+        },
+        "workspace": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.915,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 80.59,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 21926.0,
+          "persisted_checkpoints": 1,
+          "mean_completed_commands": 14.0,
+          "mean_command_output_chars": 23665.0,
+          "mean_tokens": {
+            "input_tokens": 205154.0,
+            "output_tokens": 3390.0,
+            "cached_input_tokens": 171776.0,
+            "uncached_input_tokens": 33378.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "coord-series-exceptions": {
+        "id": "coord-series-exceptions",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "recurring_event_identity_and_exceptions",
+        "task": "Materialize the Harbor Practice series and its sparse exceptions. Preserve the series rule and IANA timezone, then distinguish the canceled, overridden, and added occurrences with original, current, and actual times.",
+        "claim_slots": {
+          "c1": "series temporal specification",
+          "c2": "canceled occurrence",
+          "c3": "overridden occurrence times",
+          "c4": "added occurrence identity"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "event-series:harbor-practice"
+                ]
+              },
+              {
+                "any": [
+                  "America/Los_Angeles"
+                ]
+              },
+              {
+                "any": [
+                  "FREQ=WEEKLY;BYDAY=WE;COUNT=4"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/harbor-series.json"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "event-occurrence:harbor-2026-08-12"
+                ]
+              },
+              {
+                "any": [
+                  "canceled"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-12T17:00:00-07:00"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "event-occurrence:harbor-2026-08-19"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-19T17:00:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-19T18:30:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-19T18:42:00-07:00"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "event-occurrence:harbor-special-2026-08-22"
+                ]
+              },
+              {
+                "any": [
+                  "own identity"
+                ]
+              },
+              {
+                "any": [
+                  "Original time is `null`"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-22T10:00:00-07:00"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/harbor-series-exceptions.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the canceled occurrence is deleted",
+          "the added occurrence has no identity",
+          "18:30 was the original time"
+        ]
+      }
+    }
+  }
+}

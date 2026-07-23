@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "import_id": "player-prompt-history__20260711",
+  "imported_at": "2026-07-11T21:06:13Z",
+  "content_class": "user_authored_prompt_history",
+  "privacy": "private_player_context",
+  "codex_thread_context": {
+    "requested_thread_id": "019f5263-8bae-7d10-b944-0fd4a543afb9",
+    "host_id": "remote-ssh-discovered:nyx-aether",
+    "upstream_star_rupture_thread_id": "019f4f6d-169c-70e2-8de4-81722b41eee9",
+    "retained": [
+      "clean pre-migration StarRupture research context",
+      "RuptureOps name and broad companion-app scope",
+      "repository bootstrap and repo-vault ownership boundary"
+    ],
+    "excluded": [
+      "thread migration attempt",
+      "vault synchronization discussion",
+      "handoff helper and activation noise"
+    ],
+    "verification": "Read from the Codex thread service on 2026-07-11."
+  },
+  "sources": [
+    {
+      "id": "prompt-dump-01",
+      "original_attachment": "/Users/aether/.codex/attachments/7fc316b4-2d45-4d63-9558-444de7e5e92b/pasted-text.txt",
+      "archived_path": "source/prompt-dump-01-factory-history.txt",
+      "byte_size": 16533,
+      "posix_line_count": 225,
+      "word_count": 2980,
+      "prompt_delimiter_count": 36,
+      "sha256": "a6534f50df6a09c98d6e3465488b60a60e5452a47cc2f63251df049c1cdc4be1"
+    },
+    {
+      "id": "prompt-dump-02",
+      "original_attachment": "/Users/aether/.codex/attachments/fdd312c6-0593-4add-9008-1810ada1d6d1/pasted-text.txt",
+      "archived_path": "source/prompt-dump-02-scaling-and-app.txt",
+      "byte_size": 25263,
+      "posix_line_count": 251,
+      "word_count": 4550,
+      "prompt_delimiter_count": 55,
+      "sha256": "adde9855a1c3e439a02b6ccb243779ab29ed6a40602d15316caa369e1d90ec6d"
+    },
+    {
+      "id": "prompt-dump-03",
+      "original_attachment": "/Users/aether/.codex/attachments/d47031a9-d0b8-4a44-b8b9-144af29eeec0/pasted-text.txt",
+      "archived_path": "source/prompt-dump-03-exploration-and-combat.txt",
+      "byte_size": 16411,
+      "posix_line_count": 228,
+      "word_count": 2866,
+      "prompt_delimiter_count": 25,
+      "sha256": "dc259be82ef89c908785b59644fa1f27f2be914c43f95f4f35351f94e1803a40"
+    }
+  ],
+  "totals": {
+    "files": 3,
+    "bytes": 58207,
+    "posix_lines": 704,
+    "words": 10396,
+    "prompt_delimiters": 116
+  },
+  "dedupe_target": {
+    "import_id": "star-rupture-game-analysis__20260708T190137Z",
+    "prompt_export_path": "imports/star-rupture-game-analysis__20260708T190137Z/raw/Star Rupture Game Analysis/conversation/User Prompts Only.md",
+    "prompt_export_sha256": "1fdc4a371da82331b76a2b287b758a0f1c091effe5fe0135b9e8e6ee586e8861"
+  },
+  "promoted_artifacts": [
+    "models/rourke-update1-play-history__20260711.json",
+    "/Users/aether/obsidian/notes/Topics/StarRupture/Player save - play history.md",
+    "/Users/aether/obsidian/notes/Projects/RuptureOps/Player-derived product requirements.md"
+  ]
+}

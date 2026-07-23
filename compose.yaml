@@ -1,0 +1,235 @@
+name: straylight
+
+x-api-build: &api-build
+  context: .
+  dockerfile: apps/api/Dockerfile
+
+x-common-environment: &common-environment
+  RUST_LOG: ${RUST_LOG:-info,straylight=debug}
+  STRAYLIGHT_BIND: 0.0.0.0:8080
+  STRAYLIGHT_BIND_ADDR: 0.0.0.0:8080
+  DATABASE_URL_RW: postgres://app_rw:${POSTGRES_APP_RW_PASSWORD:?set POSTGRES_APP_RW_PASSWORD}@db:5432/${POSTGRES_DB:-straylight}
+  DATABASE_URL_RO: postgres://app_ro:${POSTGRES_APP_RO_PASSWORD:?set POSTGRES_APP_RO_PASSWORD}@db:5432/${POSTGRES_DB:-straylight}
+  STRAYLIGHT_DATABASE_URL: postgres://app_rw:${POSTGRES_APP_RW_PASSWORD:?set POSTGRES_APP_RW_PASSWORD}@db:5432/${POSTGRES_DB:-straylight}
+  STRAYLIGHT_READ_ONLY_DATABASE_URL: postgres://app_ro:${POSTGRES_APP_RO_PASSWORD:?set POSTGRES_APP_RO_PASSWORD}@db:5432/${POSTGRES_DB:-straylight}
+  STRAYLIGHT_S3_ENDPOINT: http://minio:9000
+  STRAYLIGHT_S3_REGION: ${STRAYLIGHT_MINIO_REGION:-us-east-1}
+  STRAYLIGHT_S3_BUCKET: ${STRAYLIGHT_MINIO_BUCKET:-straylight}
+  STRAYLIGHT_S3_ACCESS_KEY: ${STRAYLIGHT_MINIO_ACCESS_KEY:?set STRAYLIGHT_MINIO_ACCESS_KEY}
+  STRAYLIGHT_S3_SECRET_KEY: ${STRAYLIGHT_MINIO_SECRET_KEY:?set STRAYLIGHT_MINIO_SECRET_KEY}
+  STRAYLIGHT_MINIO_ENDPOINT: http://minio:9000
+  STRAYLIGHT_MINIO_REGION: ${STRAYLIGHT_MINIO_REGION:-us-east-1}
+  STRAYLIGHT_MINIO_BUCKET: ${STRAYLIGHT_MINIO_BUCKET:-straylight}
+  STRAYLIGHT_MINIO_ACCESS_KEY: ${STRAYLIGHT_MINIO_ACCESS_KEY:?set STRAYLIGHT_MINIO_ACCESS_KEY}
+  STRAYLIGHT_MINIO_SECRET_KEY: ${STRAYLIGHT_MINIO_SECRET_KEY:?set STRAYLIGHT_MINIO_SECRET_KEY}
+  STRAYLIGHT_CONTINUATION_SECRET: ${STRAYLIGHT_CONTINUATION_SIGNING_KEY:?set STRAYLIGHT_CONTINUATION_SIGNING_KEY}
+  STRAYLIGHT_CONTINUATION_SIGNING_KEY: ${STRAYLIGHT_CONTINUATION_SIGNING_KEY:?set STRAYLIGHT_CONTINUATION_SIGNING_KEY}
+  STRAYLIGHT_EMBEDDING_PROVIDER: ${STRAYLIGHT_EMBEDDING_PROVIDER:-openai}
+  STRAYLIGHT_EMBEDDING_MODEL: ${STRAYLIGHT_EMBEDDING_MODEL:-text-embedding-3-small}
+  STRAYLIGHT_EMBEDDING_DIMENSIONS: ${STRAYLIGHT_EMBEDDING_DIMENSIONS:-1536}
+  STRAYLIGHT_DREAM_MODEL: ${STRAYLIGHT_DREAM_MODEL:-gpt-5.6}
+  STRAYLIGHT_CAPTURE_MODEL: ${STRAYLIGHT_CAPTURE_MODEL:-gpt-5.6}
+  STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS: ${STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS:-8192}
+  STRAYLIGHT_DREAM_SCHEDULER_ENABLED: ${STRAYLIGHT_DREAM_SCHEDULER_ENABLED:-true}
+  STRAYLIGHT_DREAM_SCHEDULER_POLL_SECONDS: ${STRAYLIGHT_DREAM_SCHEDULER_POLL_SECONDS:-15}
+  STRAYLIGHT_DREAM_INACTIVITY_SECONDS: ${STRAYLIGHT_DREAM_INACTIVITY_SECONDS:-60}
+  STRAYLIGHT_DREAM_COOLDOWN_SECONDS: ${STRAYLIGHT_DREAM_COOLDOWN_SECONDS:-900}
+  STRAYLIGHT_DREAM_DIRTY_THRESHOLD: ${STRAYLIGHT_DREAM_DIRTY_THRESHOLD:-10}
+  STRAYLIGHT_DATABASE_MAX_CONNECTIONS: ${STRAYLIGHT_DATABASE_MAX_CONNECTIONS:-20}
+  STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET: ${STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET:-24000}
+  STRAYLIGHT_REQUEST_TIMEOUT_SECONDS: ${STRAYLIGHT_REQUEST_TIMEOUT_SECONDS:-30}
+  STRAYLIGHT_DEV_USER_REF: ${STRAYLIGHT_DEV_USER_REF:-user:local}
+  STRAYLIGHT_DEV_USER_NAME: ${STRAYLIGHT_DEV_USER_NAME:-Local user}
+  STRAYLIGHT_DEV_READ_WRITE_TOKEN: ${STRAYLIGHT_DEV_READ_WRITE_TOKEN:-}
+  STRAYLIGHT_DEV_READ_ONLY_TOKEN: ${STRAYLIGHT_DEV_READ_ONLY_TOKEN:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.2-pg17-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-straylight}
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD}
+      APP_RW_PASSWORD: ${POSTGRES_APP_RW_PASSWORD:?set POSTGRES_APP_RW_PASSWORD}
+      APP_RO_PASSWORD: ${POSTGRES_APP_RO_PASSWORD:?set POSTGRES_APP_RO_PASSWORD}
+    ports:
+      - "127.0.0.1:${STRAYLIGHT_POSTGRES_PORT:-15110}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d ${POSTGRES_DB:-straylight}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  minio:
+    build:
+      context: infra/minio
+      args:
+        MINIO_COMMIT: 9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
+        MINIO_RELEASE: RELEASE.2025-10-15T17-29-55Z
+    image: straylight-minio:RELEASE.2025-10-15T17-29-55Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    ports:
+      - "127.0.0.1:${STRAYLIGHT_MINIO_PORT:-19110}:9000"
+      - "127.0.0.1:${STRAYLIGHT_MINIO_CONSOLE_PORT:-19111}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      STRAYLIGHT_MINIO_BUCKET: ${STRAYLIGHT_MINIO_BUCKET:-straylight}
+      STRAYLIGHT_MINIO_ACCESS_KEY: ${STRAYLIGHT_MINIO_ACCESS_KEY:?set STRAYLIGHT_MINIO_ACCESS_KEY}
+      STRAYLIGHT_MINIO_SECRET_KEY: ${STRAYLIGHT_MINIO_SECRET_KEY:?set STRAYLIGHT_MINIO_SECRET_KEY}
+    volumes:
+      - ./infra/minio/app-policy.json:/config/app-policy.json:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing "local/$${STRAYLIGHT_MINIO_BUCKET}"
+        mc version enable "local/$${STRAYLIGHT_MINIO_BUCKET}"
+        mc anonymous set none "local/$${STRAYLIGHT_MINIO_BUCKET}"
+        : > /tmp/straylight-app-policy.json
+        while IFS= read -r policy_line || [ -n "$${policy_line}" ]; do
+          printf '%s\n' \
+            "$${policy_line//__STRAYLIGHT_BUCKET__/$${STRAYLIGHT_MINIO_BUCKET}}" \
+            >> /tmp/straylight-app-policy.json
+        done < /config/app-policy.json
+        mc admin user add local "$${STRAYLIGHT_MINIO_ACCESS_KEY}" "$${STRAYLIGHT_MINIO_SECRET_KEY}" || \
+          mc admin user info local "$${STRAYLIGHT_MINIO_ACCESS_KEY}"
+        mc admin policy create local straylight-app /tmp/straylight-app-policy.json || \
+          mc admin policy info local straylight-app
+        mc admin policy attach local straylight-app --user "$${STRAYLIGHT_MINIO_ACCESS_KEY}"
+    restart: "no"
+
+  migrate:
+    build: *api-build
+    image: straylight-api:local
+    command: ["migrate"]
+    environment:
+      <<: *common-environment
+      DATABASE_URL_ADMIN: postgres://admin:${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD}@db:5432/${POSTGRES_DB:-straylight}
+      STRAYLIGHT_ADMIN_DATABASE_URL: postgres://admin:${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD}@db:5432/${POSTGRES_DB:-straylight}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: *api-build
+    image: straylight-api:local
+    command: ["serve"]
+    environment: *common-environment
+    ports:
+      - "127.0.0.1:${STRAYLIGHT_API_PORT:-18110}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/straylight", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    init: true
+    restart: unless-stopped
+
+  worker:
+    build: *api-build
+    image: straylight-api:local
+    command: ["worker"]
+    environment:
+      <<: *common-environment
+      DATABASE_URL_ADMIN: postgres://admin:${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD}@db:5432/${POSTGRES_DB:-straylight}
+      STRAYLIGHT_ADMIN_DATABASE_URL: postgres://admin:${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD}@db:5432/${POSTGRES_DB:-straylight}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    init: true
+    restart: unless-stopped
+
+  # The API listens on 8080 in its container. This tools-only bridge preserves
+  # the MCP adapter's canonical http://api:18110 URL without changing web/API
+  # networking or exposing another host port.
+  api-tools-port:
+    image: alpine/socat:1.8.0.3
+    profiles: ["tools"]
+    network_mode: "service:api"
+    command:
+      - TCP-LISTEN:18110,fork,reuseaddr
+      - TCP:127.0.0.1:8080
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "18110"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    restart: "no"
+
+  mcp:
+    build:
+      context: apps/mcp
+      dockerfile: Dockerfile
+    image: straylight-mcp:local
+    profiles: ["tools"]
+    environment:
+      STRAYLIGHT_API_URL: http://api:18110
+      STRAYLIGHT_API_TOKEN: ${STRAYLIGHT_MCP_API_TOKEN:-}
+      STRAYLIGHT_MCP_IMPORT_ROOT: /imports
+    volumes:
+      - ${STRAYLIGHT_MCP_IMPORT_ROOT:-./imports}:/imports:ro
+    depends_on:
+      api-tools-port:
+        condition: service_healthy
+    stdin_open: true
+    tty: false
+    restart: "no"
+
+  web:
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    image: straylight-web:local
+    ports:
+      - "0.0.0.0:${STRAYLIGHT_WEB_PORT:-13110}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  minio_data:

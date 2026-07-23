@@ -1,0 +1,881 @@
+{
+  "benchmark_version": "personal-coordination-v0.1",
+  "name": "Straylight personal coordination evaluation",
+  "report_title": "Straylight personal coordination evaluation",
+  "report_date": "2026-07-11",
+  "evaluation_model": "generalized_personal_coordination",
+  "grading_mode": "concept_tokens_v1",
+  "fixture_domain": "Synthetic personal coordination",
+  "generalization": {
+    "purpose": "Evaluate source-faithful coordination across identity, relationships, events, arrangements, obligations, authority, sensitivity, and resumable work.",
+    "kernel": ["stable objects", "source-bearing claims", "qualified relations", "temporal revisions", "checkpoints"],
+    "profile_types": ["person", "organization", "group", "place", "event", "arrangement", "resource", "work-item", "artifact"],
+    "fixture_rule": "Vacation and game examples use the same corpus primitives; fixture vocabulary is not privileged runner schema."
+  },
+  "corpus_root": "eval/corpus-personal-coordination-v0.1",
+  "model": "gpt-5.6-sol",
+  "conditions": ["fixed_pack", "filesystem", "workspace"],
+  "fixed_pack_chars": 24000,
+  "fixed_pack_chunks": 16,
+  "cases": [
+    {
+      "id": "coord-person-resolution",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "identity_resolution_with_provenance",
+      "task": "Resolve the three Avery Lin identity records without collapsing ambiguous people. State which stable IDs remain distinct, why matching names and email are insufficient, and distinguish the unreviewed possibly_same_as edge from the reviewed same_as decision.",
+      "claim_slots": {
+        "c1": "source-bearing identity claims and stable IDs",
+        "c2": "no merge from matching name or email",
+        "c3": "ambiguous possibly_same_as state",
+        "c4": "reviewed same_as state"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["person:p-101"]},
+            {"any": ["person:p-102"]},
+            {"any": ["source:club-intake-r1"]},
+            {"any": ["source:volunteer-roster-r1"]}
+          ],
+          "sources_any": ["Identity/source-identity-claims.csv", "Identity/resolution-review.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["matching name"]},
+            {"any": ["matching email"]},
+            {"any": ["did not trigger a merge"]}
+          ],
+          "sources_any": ["Identity/resolution-review.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["possibly_same_as"]},
+            {"any": ["unreviewed"]},
+            {"any": ["ambiguous candidate linkage"]}
+          ],
+          "sources_any": ["Identity/resolution-review.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["person:p-103"]},
+            {"any": ["same_as"]},
+            {"any": ["confirmed"]},
+            {"any": ["explicit owner review"]}
+          ],
+          "sources_any": ["Identity/resolution-review.md"]
+        }
+      ],
+      "forbidden": ["person:p-101 and person:p-102 are the same person", "matching email proves identity", "possibly_same_as is confirmed"]
+    },
+    {
+      "id": "coord-identity-equivalence-reversal",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "reversible_identity_equivalence",
+      "task": "Apply the later Avery Lin owner correction to the previously reviewed same_as relation. Explain the superseding relation revision, preserve both stable person IDs and inbound references, and state what derived views must be invalidated without performing a destructive merge or reference rewrite.",
+      "claim_slots": {
+        "c1": "authoritative changed evidence",
+        "c2": "superseding relation revision",
+        "c3": "stable identity and inbound-reference preservation",
+        "c4": "derived-view invalidation and rebuild"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["evidence:owner-correction-2026-07-10"]},
+            {"any": ["person:p-103 is not the same person as person:p-101"]},
+            {"any": ["2026-07-10T09:15:00-07:00"]}
+          ],
+          "sources_any": ["Identity/equivalence-reversal.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["relation:identity-103-r2"]},
+            {"any": ["supersedes relation:identity-103-r1"]},
+            {"any": ["same_as equivalence refuted"]}
+          ],
+          "sources_any": ["Identity/equivalence-reversal.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["Both stable IDs remain"]},
+            {"any": ["relation:participation-103"]},
+            {"any": ["still points to person:p-103"]},
+            {"any": ["no references are rewritten to person:p-101"]}
+          ],
+          "sources_any": ["Identity/equivalence-reversal.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["Derived dossiers"]},
+            {"any": ["retrieval aliases"]},
+            {"any": ["invalidated", "invalidate"]},
+            {"any": ["rebuilt from the corrected relation revision", "rebuild those views from relation:identity-103-r2", "rebuild from relation:identity-103-r2"]}
+          ],
+          "sources_any": ["Identity/equivalence-reversal.md"]
+        }
+      ],
+      "forbidden": ["delete person:p-103", "choose person:p-101 as the surviving ID", "rewrite relation:participation-103 to person:p-101"]
+    },
+    {
+      "id": "coord-person-dossier",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "derived_person_view",
+      "task": "Reconstruct Kai Rowan's person dossier as a derived view. Identify the claims, role, event, and artifact it joins, preserve provenance, and keep the morning-preference inference from becoming a trait.",
+      "claim_slots": {
+        "c1": "dossier projection boundary",
+        "c2": "joined evidence objects",
+        "c3": "inferred assessment status",
+        "c4": "rebuild and provenance behavior"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["person:p-201"]},
+            {"any": ["rebuildable derived view"]},
+            {"any": ["not a second canonical person profile"]}
+          ],
+          "sources_any": ["People/person-dossier-view.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["claim:kai-availability-1"]},
+            {"any": ["relation:kai-equipment-steward"]},
+            {"any": ["event-occurrence:setup-2026-07-11"]},
+            {"any": ["artifact:setup-checklist-v2"]}
+          ],
+          "sources_any": ["People/dossier-source-claims.json", "People/person-dossier-view.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["assessment:kai-morning-preference"]},
+            {"any": ["inferred"]},
+            {"any": ["not a trait"]}
+          ],
+          "sources_any": ["People/dossier-source-claims.json", "People/person-dossier-view.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["Each row retains its source ID"]},
+            {"any": ["Rebuilding from the cited source claims"]},
+            {"any": ["must not mutate those sources"]}
+          ],
+          "sources_any": ["People/person-dossier-view.md"]
+        }
+      ],
+      "forbidden": ["Kai has a morning trait", "the dossier is the canonical person profile", "the inferred assessment is an observed fact"]
+    },
+    {
+      "id": "coord-role-relationship-provenance",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "qualified_role_relation_and_authority",
+      "task": "Audit Morgan Ives's Dockside Makers role. Report the qualified relation, valid interval, source, and the exact fact scope of schedule authority without extending that authority to consent, sharing, or payment.",
+      "claim_slots": {
+        "c1": "role-bearing relation",
+        "c2": "relation validity",
+        "c3": "relation provenance",
+        "c4": "fact-scoped authority"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["relation:role-401"]},
+            {"any": ["person:p-301"]},
+            {"any": ["group:g-401"]},
+            {"any": ["schedule coordinator"]}
+          ],
+          "sources_any": ["Relations/role-relations.json", "Relations/role-authority-review.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["2026-06-01"]},
+            {"any": ["2026-09-30"]},
+            {"any": ["valid interval"]}
+          ],
+          "sources_any": ["Relations/role-relations.json", "Relations/role-authority-review.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["source:dockside-roster-r5"]}
+          ],
+          "sources_any": ["Relations/role-relations.json", "Relations/role-authority-review.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["authority:schedule-401"]},
+            {"any": ["event-series:field-lab schedule"]},
+            {"any": ["does not authorize minor participation consent"]},
+            {"any": ["sharing decisions"]}
+          ],
+          "sources_any": ["Relations/role-authority-review.md"]
+        }
+      ],
+      "forbidden": ["Morgan can approve payments", "the role grants universal authority", "Morgan controls minor sharing"]
+    },
+    {
+      "id": "coord-canonical-contract-normalization",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "canonical_contract_normalization",
+      "task": "Audit the normalized Straylight contract snapshot. Demonstrate one canonical multi-profile object, one immutable qualified-relation revision, one civil-time recurring event, and five independent arrangement state assignments. Explain which source records they normalize without treating source shorthand as a second canonical identity.",
+      "claim_slots": {
+        "c1": "single canonical object and profiles",
+        "c2": "versioned qualified relation",
+        "c3": "typed recurrence and civil time",
+        "c4": "independent namespaced state claims"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["object:person-p301"]},
+            {"any": ["core.person"]},
+            {"any": ["coordination.schedule_controller"]},
+            {"any": ["one object_id per semantic referent"]}
+          ],
+          "sources_any": ["Contracts/canonical-contract-snapshot.json"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["relation:role-401"]},
+            {"any": ["v2"]},
+            {"any": ["previous_version"]},
+            {"any": ["evidence:dockside-roster-r5"]}
+          ],
+          "sources_any": ["Contracts/canonical-contract-snapshot.json"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["temporal-spec@v1"]},
+            {"any": ["local_datetime"]},
+            {"any": ["America/Los_Angeles"]},
+            {"any": ["FREQ=WEEKLY;BYDAY=WE;COUNT=4"]}
+          ],
+          "sources_any": ["Contracts/canonical-contract-snapshot.json"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["state:arrangement.booking@v1"]},
+            {"any": ["state:arrangement.payment@v1"]},
+            {"any": ["state:arrangement.allocation@v1"]},
+            {"any": ["state:resource.availability@v1"]},
+            {"any": ["state:arrangement.use@v1"]}
+          ],
+          "sources_any": ["Contracts/canonical-contract-snapshot.json"]
+        }
+      ],
+      "forbidden": ["source shorthand creates a second canonical object", "allocation means the resource is available", "one global lifecycle state"]
+    },
+    {
+      "id": "coord-series-exceptions",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "recurring_event_identity_and_exceptions",
+      "task": "Materialize the Harbor Practice series and its sparse exceptions. Preserve the series rule and IANA timezone, then distinguish the canceled, overridden, and added occurrences with original, current, and actual times.",
+      "claim_slots": {
+        "c1": "series temporal specification",
+        "c2": "canceled occurrence",
+        "c3": "overridden occurrence times",
+        "c4": "added occurrence identity"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["event-series:harbor-practice"]},
+            {"any": ["America/Los_Angeles"]},
+            {"any": ["FREQ=WEEKLY;BYDAY=WE;COUNT=4"]}
+          ],
+          "sources_any": ["Events/harbor-series.json"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["event-occurrence:harbor-2026-08-12"]},
+            {"any": ["canceled"]},
+            {"any": ["2026-08-12T17:00:00-07:00"]}
+          ],
+          "sources_any": ["Events/harbor-series-exceptions.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["event-occurrence:harbor-2026-08-19"]},
+            {"any": ["2026-08-19T17:00:00-07:00"]},
+            {"any": ["2026-08-19T18:30:00-07:00"]},
+            {"any": ["2026-08-19T18:42:00-07:00"]}
+          ],
+          "sources_any": ["Events/harbor-series-exceptions.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["event-occurrence:harbor-special-2026-08-22"]},
+            {"any": ["own identity", "separate added occurrence", "distinct ID"]},
+            {"any": ["Original time is `null`", "original time: null", "\"original_time\":null", "\"original_time\": null"]},
+            {"any": ["2026-08-22T10:00:00-07:00"]}
+          ],
+          "sources_any": ["Events/harbor-series-exceptions.md"]
+        }
+      ],
+      "forbidden": ["the canceled occurrence is deleted", "the added occurrence has no identity", "18:30 was the original time"]
+    },
+    {
+      "id": "coord-schedule-supersession",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "authoritative_temporal_supersession",
+      "task": "Reconcile Field Lab schedule snapshots r1 and r2. State the original and current time, the still-unknown actual time, why r2 supersedes r1, and why the stale family copy cannot rewrite the organizer schedule.",
+      "claim_slots": {
+        "c1": "original official schedule",
+        "c2": "authoritative superseding revision",
+        "c3": "original current and actual time",
+        "c4": "family-copy authority boundary"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["artifact:organizer-field-lab-r1", "Organizer snapshot r1", "organizer revision r1"]},
+            {"any": ["2026-08-16T09:00:00-07:00", "2026-08-16 at 09:00", "09:00 America/Los_Angeles"]},
+            {"any": ["America/Los_Angeles"]}
+          ],
+          "sources_any": ["Events/schedule-snapshot-r1.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["artifact:organizer-field-lab-r2", "organizer revision r2", "revision r2"]},
+            {"any": ["supersedes r1"]},
+            {"any": ["authority:schedule-401"]},
+            {"any": ["event-series:field-lab schedule", "Field Lab schedule"]}
+          ],
+          "sources_any": ["Events/schedule-snapshot-r2.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["original time remains 2026-08-16T09:00:00-07:00"]},
+            {"any": ["current time is 2026-08-16T11:30:00-07:00"]},
+            {"any": ["Actual time remains `null`"]}
+          ],
+          "sources_any": ["Events/schedule-snapshot-r2.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["family copy"]},
+            {"any": ["stale"]},
+            {"any": ["schedule_authority: none"]},
+            {"any": ["cannot rewrite the official schedule"]}
+          ],
+          "sources_any": ["Events/schedule-snapshot-r1.md", "Events/schedule-snapshot-r2.md"]
+        }
+      ],
+      "forbidden": ["09:00 is the current official time", "the family copy controls the schedule", "11:30 is the actual start"]
+    },
+    {
+      "id": "coord-participation-independent-state",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "qualified_participation_state",
+      "task": "Summarize Jules Hart's Field Lab commitment without conflating role, requiredness, response, notification, or delegation. Report each state and the narrow scope of the accepted delegation.",
+      "claim_slots": {
+        "c1": "role and requiredness",
+        "c2": "participant response",
+        "c3": "notification state",
+        "c4": "delegation state and scope"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["participation:501"]},
+            {"any": ["equipment lead"]},
+            {"any": ["required"]}
+          ],
+          "sources_any": ["Participation/commitments.csv", "Participation/communication-and-delegation.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["tentative"]},
+            {"any": ["person:p-501", "Jules Hart", "Jules"]},
+            {"any": ["participant response", "response remains tentative", "remains tentative", "not accepted"]}
+          ],
+          "sources_any": ["Participation/commitments.csv", "Participation/communication-and-delegation.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["notification:notif-501"]},
+            {"any": ["delivered"]},
+            {"any": ["2026-08-10T14:10:00-07:00", "2026-08-10 at 14:10", "August 10 at 14:10"]},
+            {"any": ["Delivery is not acceptance", "Neither notification state constitutes or changes participation acceptance", "does not change Jules's participant response"]}
+          ],
+          "sources_any": ["Participation/communication-and-delegation.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["delegation:del-501"]},
+            {"any": ["accepted delegation"]},
+            {"any": ["carry projector kit only"]},
+            {"any": ["does not make Jules optional"]}
+          ],
+          "sources_any": ["Participation/communication-and-delegation.md"]
+        }
+      ],
+      "forbidden": ["Jules accepted participation", "delivery means acceptance", "delegation makes Jules optional"]
+    },
+    {
+      "id": "coord-deadline-readiness",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "obligation_and_readiness_gates",
+      "task": "Assess the Field Lab readiness packet. Identify the responsible person and zoned due time, enumerate prerequisites, evaluate the readiness gate, and distinguish completed evidence from the still-pending inspection and packet.",
+      "claim_slots": {
+        "c1": "responsibility and due time",
+        "c2": "prerequisite states",
+        "c3": "readiness gate",
+        "c4": "completion evidence boundary"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["work-item:readiness-601"]},
+            {"any": ["person:p-601"]},
+            {"any": ["2026-08-14T17:00:00-07:00"]},
+            {"any": ["America/Los_Angeles"]}
+          ],
+          "sources_any": ["Work/readiness-plan.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["work-item:guardian-consent-602", "guardian consent 602"]},
+            {"any": ["work-item:equipment-inspection-603", "equipment inspection 603"]},
+            {"any": ["work-item:registration-604", "registration 604"]},
+            {"any": ["official schedule revision r2"]}
+          ],
+          "sources_any": ["Work/readiness-plan.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["gate:field-lab-ready"]},
+            {"any": ["blocked"]},
+            {"any": ["equipment inspection is pending"]}
+          ],
+          "sources_any": ["Work/readiness-plan.md", "Work/completion-evidence.json"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["artifact:guardian-consent-602", "guardian consent completed"]},
+            {"any": ["artifact:registration-ledger-604", "registration completed"]},
+            {"any": ["equipment inspection remains pending", "equipment inspection is still pending", "equipment inspection is pending", "equipment inspection pending with no artifact"]},
+            {"any": ["readiness packet itself remains incomplete", "readiness packet remains incomplete", "packet is not complete", "The packet itself is not complete"]}
+          ],
+          "sources_any": ["Work/readiness-plan.md", "Work/completion-evidence.json"]
+        }
+      ],
+      "forbidden": ["the readiness gate is open", "payment proves readiness", "the packet is complete"]
+    },
+    {
+      "id": "coord-handoff-logistics",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "planned_and_actual_handoff",
+      "task": "Reconcile the Projector Kit handoff plan and actual record. State the resource and parties, planned time and place, response and notification, then preserve the distinct actual time and completion evidence.",
+      "claim_slots": {
+        "c1": "handoff resource and parties",
+        "c2": "planned logistics",
+        "c3": "response and notification",
+        "c4": "actual use and evidence"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["arrangement:handoff-701"]},
+            {"any": ["resource:projector-kit"]},
+            {"any": ["person:p-701"]},
+            {"any": ["person:p-702"]}
+          ],
+          "sources_any": ["Logistics/handoff-plan.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["2026-08-15T16:30:00-07:00"]},
+            {"any": ["America/Los_Angeles"]},
+            {"any": ["place:north-hall-lobby"]},
+            {"any": ["planned"]}
+          ],
+          "sources_any": ["Logistics/handoff-plan.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["response is `accepted`"]},
+            {"any": ["notification:handoff-701"]},
+            {"any": ["delivered at 2026-08-14T09:00:00-07:00"]}
+          ],
+          "sources_any": ["Logistics/handoff-plan.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["2026-08-15T16:47:00-07:00"]},
+            {"any": ["artifact:handoff-checklist-701"]},
+            {"any": ["completed_with_evidence"]},
+            {"any": ["planned 16:30 field is preserved"]}
+          ],
+          "sources_any": ["Logistics/handoff-actual.md"]
+        }
+      ],
+      "forbidden": ["the actual handoff was 16:30", "the plan was overwritten", "payment completed the handoff"]
+    },
+    {
+      "id": "coord-arrangement-independent-state",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "arrangement_state_separation",
+      "task": "Audit the Northwind weekend arrangements. Show that reservation, registration, ticket, transport, lodging, and rental share one arrangement model while booking, payment, allocation, resource-availability, and actual-use states remain independent.",
+      "claim_slots": {
+        "c1": "arrangement profile coverage",
+        "c2": "lodging state separation",
+        "c3": "rental state separation",
+        "c4": "ticket actual-use evidence"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["Reservation, registration, ticket, transport, lodging, and rental"]},
+            {"any": ["arrangement profiles"]},
+            {"any": ["same state model"]}
+          ],
+          "sources_any": ["Arrangements/actual-use-evidence.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["arrangement:lodging-801"]},
+            {"any": ["confirmed"]},
+            {"any": ["deposit paid"]},
+            {"any": ["allocated", "room held"]},
+            {"any": ["not_started"]}
+          ],
+          "sources_any": ["Arrangements/arrangement-ledger.json", "Arrangements/actual-use-evidence.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["arrangement:rental-804"]},
+            {"any": ["requested"]},
+            {"any": ["waitlisted"]},
+            {"any": ["not_due"]}
+          ],
+          "sources_any": ["Arrangements/arrangement-ledger.json", "Arrangements/actual-use-evidence.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["arrangement:ticket-803", "Ticket 803", "ticket arrangement ticket-803"]},
+            {"any": ["issued and paid", "issued, paid", "issued and is paid"]},
+            {"any": ["not_started", "not started"]},
+            {"any": ["no boarding evidence exists", "no boarding evidence", "no evidence of boarding"]}
+          ],
+          "sources_any": ["Arrangements/arrangement-ledger.json", "Arrangements/actual-use-evidence.md"]
+        }
+      ],
+      "forbidden": ["paid means used", "waitlisted means booked", "confirmation proves actual use"]
+    },
+    {
+      "id": "coord-vacation-game-continuity",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "cross_domain_checkpoint_continuity",
+      "task": "Resume both Cedar Break vacation planning and the Lanterns campaign game night. Give the verified current state and next action for each, then explain how both continuations use the same generic coordination primitives rather than domain-specific runner logic.",
+      "claim_slots": {
+        "c1": "vacation checkpoint state",
+        "c2": "vacation unresolved work",
+        "c3": "game checkpoint state and action",
+        "c4": "shared generic kernel"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["checkpoint:vacation-901", "Cedar Break checkpoint revision 3"]},
+            {"any": ["finalize Cedar Break vacation readiness"]},
+            {"any": ["lodging is confirmed and deposit paid", "lodging is confirmed, deposit paid"]},
+            {"any": ["room allocated", "allocated room"]},
+            {"any": ["actual use not started", "not_started"]}
+          ],
+          "sources_any": ["Continuity/vacation-checkpoint.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["rental allocation is waitlisted", "allocation is waitlisted", "rental clears its waitlist", "requested and waitlisted"]},
+            {"any": ["person:p-901"]},
+            {"any": ["2026-08-18T12:00:00-07:00"]},
+            {"any": ["artifact:vacation-comparison-v3", "whether it clears is unresolved", "check rental availability"]}
+          ],
+          "sources_any": ["Continuity/vacation-checkpoint.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["checkpoint:game-902"]},
+            {"any": ["chapter 4 is complete"]},
+            {"any": ["one participant is tentative"]},
+            {"any": ["2026-08-20T18:00:00-07:00"]}
+          ],
+          "sources_any": ["Continuity/game-checkpoint.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["same profiles, claims, qualified relations, events, work-items, artifacts, and checkpoints"]},
+            {"any": ["no game-specific runner logic"]},
+            {"any": ["same kernel"]}
+          ],
+          "sources_any": ["CORPUS.md", "Continuity/game-checkpoint.md"]
+        }
+      ],
+      "forbidden": ["vacation requires a separate storage system", "game continuity requires game-specific runner logic", "the tentative player is accepted"]
+    },
+    {
+      "id": "coord-weekly-brief-change-impact",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "authority_aware_change_impact_brief",
+      "task": "Produce the weekly coordination change-impact brief after the Field Lab organizer update. Cover the schedule delta and authority, Jules's response and notification consequence, readiness responsibility and blocker, and whether the Projector Kit handoff moves.",
+      "claim_slots": {
+        "c1": "authoritative schedule change",
+        "c2": "participation and notification impact",
+        "c3": "readiness impact",
+        "c4": "handoff and family-copy impact"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["09:00 -> 11:30"]},
+            {"any": ["organizer revision r2", "published r2"]},
+            {"any": ["authority:schedule-401", "schedule authority"]}
+          ],
+          "sources_any": [
+            "Briefs/weekly-source-digest.md",
+            "Briefs/change-impact.md",
+            "Events/schedule-snapshot-r2.md",
+            "Relations/role-authority-review.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["required as equipment lead"]},
+            {"any": ["tentative"]},
+            {"any": ["notification:notif-502", "corrected-time acknowledgment", "corrected-time notification"]},
+            {"any": ["does not become accepted", "does not make their tentative response accepted", "delivery is not acceptance"]}
+          ],
+          "sources_any": [
+            "Briefs/weekly-source-digest.md",
+            "Briefs/change-impact.md",
+            "Participation/communication-and-delegation.md",
+            "Participation/commitments.csv"
+          ]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["Niko Ward"]},
+            {"any": ["2026-08-14 17:00", "2026-08-14T17:00:00-07:00", "August 14 at 17:00"]},
+            {"any": ["equipment inspection still blocks"]}
+          ],
+          "sources_any": [
+            "Briefs/weekly-source-digest.md",
+            "Briefs/change-impact.md",
+            "Work/readiness-plan.md",
+            "Work/completion-evidence.json"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["handoff remains 2026-08-15 at 16:30", "2026-08-15T16:30:00-07:00", "August 15 at 16:30"]},
+            {"any": ["unaffected", "does not move", "did not move"]},
+            {"any": ["family copy stale"]},
+            {"any": ["Do not move it merely because the event changed", "does not move with the event", "schedule change did not move"]}
+          ],
+          "sources_any": [
+            "Briefs/change-impact.md",
+            "Logistics/handoff-plan.md",
+            "Logistics/handoff-actual.md",
+            "Events/schedule-snapshot-r1.md",
+            "Events/schedule-snapshot-r2.md"
+          ]
+        }
+      ],
+      "forbidden": ["Jules accepted the new time", "the handoff automatically moves", "the family copy is authoritative"]
+    },
+    {
+      "id": "coord-read-only-capability-boundary",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "read_only_authorization_boundary",
+      "workspace_access": "read_only",
+      "task": "Audit credential:observer-1301 as a strictly read-only agent credential. State its user and scope binding, list the allowed reasoning operations, list the denied mutation operations and stable error, and distinguish permitted ephemeral session/audit records from forbidden corpus or staged-state changes. Do not persist a workspace checkpoint.",
+      "claim_slots": {
+        "c1": "credential ownership and scope",
+        "c2": "allowed reasoning operations",
+        "c3": "denied mutation operations and error",
+        "c4": "ephemeral records versus corpus mutation"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["credential:observer-1301"]},
+            {"any": ["user:u-1301"]},
+            {"any": ["scope:personal-coordination"]}
+          ],
+          "sources_any": ["Authorization/read-only-capability-contract.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["memory.open"]},
+            {"any": ["memory.query"]},
+            {"any": ["memory.read"]},
+            {"any": ["memory.compute"]},
+            {"any": ["memory.verify"]}
+          ],
+          "sources_any": ["Authorization/read-only-capability-contract.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["capability_denied"]},
+            {"any": ["memory.checkpoint"]},
+            {"any": ["memory.save"]},
+            {"any": ["memory.stage"]},
+            {"any": ["correction, deletion, and dream-management operations"]}
+          ],
+          "sources_any": ["Authorization/read-only-capability-contract.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["ephemeral session and audit records"]},
+            {"any": ["must not change corpus revisions"]},
+            {"any": ["staged content"]},
+            {"any": ["output proposal only"]}
+          ],
+          "sources_any": ["Authorization/read-only-capability-contract.md"]
+        }
+      ],
+      "forbidden": ["read-only may save", "persisted a workspace checkpoint", "scope membership grants write access"]
+    },
+    {
+      "id": "coord-minor-export-policy",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "fact_scoped_authority_and_redaction",
+      "task": "Audit the public projection for minor River K. Explain the guardian's fact-scoped authority, field and relationship sensitivity, the projection's policy/audience/included/withheld/transform receipt, and why organizer schedule authority and the stale family copy remain separate.",
+      "claim_slots": {
+        "c1": "guardian relation and authority scope",
+        "c2": "field and relationship sensitivity",
+        "c3": "auditable redacted projection",
+        "c4": "schedule and inference boundaries"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["relation:guardian-1201"]},
+            {"any": ["authority:guardian-1201"]},
+            {"any": ["participation consent and sharing/export decisions"]},
+            {"any": ["does not let the guardian edit the official event schedule", "does not authorize editing the official event schedule"]}
+          ],
+          "sources_any": [
+            "Policy/minor-sharing-policy.md",
+            "Policy/redacted-minor-projection.json"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["restricted_family"]},
+            {"any": ["contact_email"]},
+            {"any": ["precise_handoff_place"]},
+            {"any": ["restricted"]}
+          ],
+          "sources_any": [
+            "Policy/minor-sharing-policy.md",
+            "Policy/redacted-minor-projection.json"
+          ]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["Participant R."]},
+            {"any": ["policy:dependent-schedule@v3"]},
+            {"any": ["audience:public"]},
+            {"any": ["included_paths", "includes"]},
+            {"any": ["withheld", "withholds"]},
+            {"any": ["replace_internal_identity_with_public_alias", "public alias"]},
+            {"any": ["audit:redaction-1201"]}
+          ],
+          "sources_any": ["Policy/redacted-minor-projection.json"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["artifact:organizer-field-lab-r2", "organizer revision r2", "organizer r2"]},
+            {"any": ["schedule_controller", "organizer authority", "authority:schedule-401"]},
+            {"any": ["family_copy_schedule_authority", "family copy"]},
+            {"any": ["none", "no schedule authority"]}
+          ],
+          "sources_any": [
+            "Policy/redacted-minor-projection.json",
+            "Events/schedule-snapshot-r1.md",
+            "Events/schedule-snapshot-r2.md",
+            "Relations/role-authority-review.md",
+            "Policy/minor-sharing-policy.md",
+            "CORPUS.md"
+          ]
+        }
+      ],
+      "forbidden": ["the guardian edits the official schedule", "export the minor contact email", "the family copy rewrites organizer time"]
+    }
+  ]
+}

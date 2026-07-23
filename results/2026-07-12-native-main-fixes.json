@@ -1,0 +1,4427 @@
+{
+  "benchmark_version": "0.2",
+  "run_at": "2026-07-12T05:25:09-07:00",
+  "run_id": "20260712T052130-0700",
+  "harness_sha256": "2a519e8669d123713cc657576378840e4908f9c87589a91c73d47e34995155ca",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "744bbbe0acea78b2c1acf95002e79310fd997e1d6b05f998449ae44f32db82bc",
+  "manifest_sha256": "350fe64272ec3ecad8f3f9a643b34e8b9f7e3f4ec5eedb7b683d50aff11fb136",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+    "sha256": "b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2",
+    "artifact_tree_sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+    "documents": 73,
+    "chunks": 1563,
+    "characters": 1280331
+  },
+  "manifest": {
+    "benchmark_version": "0.2",
+    "name": "Straylight agent-work evaluation",
+    "corpus_root": "eval/corpus-v0.2",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "charlemagne-storage-current-state",
+        "workload": "Charlemagne",
+        "capability": "temporal_state_and_planning",
+        "task": "Resume the rhea storage investigation using the May, June 16, and June 24 records. State the current durable growth story, separate it from the transient free-space drop and rebound, explain what is and is not still receiving writes, and propose the next safe actions without treating large legacy tables as disposable.",
+        "claim_slots": {
+          "c1": "current disk and schema state",
+          "c2": "durable versus transient cause",
+          "c3": "legacy versus active writes",
+          "c4": "safe next actions"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "496G",
+                  "496 G"
+                ]
+              },
+              {
+                "any": [
+                  "87%",
+                  "87 percent"
+                ]
+              },
+              {
+                "any": [
+                  "273.95",
+                  "273.9"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "legacy session",
+                  "_legacy"
+                ]
+              },
+              {
+                "any": [
+                  "196 GiB",
+                  "196G",
+                  "196 Gi"
+                ]
+              },
+              {
+                "any": [
+                  "temporary",
+                  "transient",
+                  "GROUP BY",
+                  "skill_rating_match_audits"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "compact replacement",
+                  "replacement tables",
+                  "active writes"
+                ]
+              },
+              {
+                "any": [
+                  "0/s",
+                  "zero writes",
+                  "not current write"
+                ]
+              },
+              {
+                "any": [
+                  "retained",
+                  "durable retained"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "monitor",
+                  "watch",
+                  "df"
+                ]
+              },
+              {
+                "any": [
+                  "replay",
+                  "rollback",
+                  "cutover acceptance"
+                ]
+              },
+              {
+                "any": [
+                  "physical reclaim",
+                  "separate decision",
+                  "maintenance"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "drop the legacy tables immediately",
+          "turn off session tracking"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      {
+        "id": "charlemagne-index-artifact-review",
+        "workload": "Charlemagne",
+        "capability": "artifact_computation_and_safety",
+        "task": "Inspect the saved unused-index TSV and SQL artifacts as a maintenance-planning task. Identify the three largest rough index estimates, compute their combined rough GiB, and explain why the generated DROP script is not an execution plan. Leave the exact verification and maintenance gates for a future operator.",
+        "claim_slots": {
+          "c1": "three largest rough estimates",
+          "c2": "combined rough size",
+          "c3": "why the SQL is not ready to execute",
+          "c4": "verification and maintenance gates"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "summary_weapon_meta_daily"
+                ]
+              },
+              {
+                "any": [
+                  "45.67"
+                ]
+              },
+              {
+                "any": [
+                  "raw_raids"
+                ]
+              },
+              {
+                "any": [
+                  "characterId",
+                  "membershipId"
+                ]
+              },
+              {
+                "any": [
+                  "32.31"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "110.29",
+                  "110.3"
+                ]
+              },
+              {
+                "any": [
+                  "rough",
+                  "estimate"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "zero operations",
+                  "collected stats"
+                ]
+              },
+              {
+                "any": [
+                  "FULLTEXT",
+                  "review-fulltext"
+                ]
+              },
+              {
+                "any": [
+                  "not proof",
+                  "not execute",
+                  "not an execution"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-drop-candidates.tsv",
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "mysql.innodb_index_stats",
+                  "exact pages",
+                  "real query usage"
+                ]
+              },
+              {
+                "any": [
+                  "maintenance window"
+                ]
+              },
+              {
+                "any": [
+                  "rollback",
+                  "backup",
+                  "monitor"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv",
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql"
+            ]
+          }
+        ],
+        "forbidden": [
+          "run the drop script now",
+          "safe to drop all"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      {
+        "id": "star-rupture-source-authority",
+        "workload": "Star Rupture",
+        "capability": "authority_and_missing_artifacts",
+        "task": "A new agent is about to extend the StarRupture factory plan. Establish the current-version and source-authority rules, list examples of future or hidden content that must not enter the live plan, and check whether the referenced structured game database is actually present in this workspace. State how to proceed without fabricating data.",
+        "claim_slots": {
+          "c1": "current game version context",
+          "c2": "source authority hierarchy",
+          "c3": "future or hidden exclusions",
+          "c4": "structured artifact availability and response"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "Update 1"
+                ]
+              },
+              {
+                "any": [
+                  "0.2.x",
+                  "0.2.8"
+                ]
+              },
+              {
+                "any": [
+                  "playtest",
+                  "outdated"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "Steam",
+                  "Creepy Jar"
+                ]
+              },
+              {
+                "any": [
+                  "authoritative",
+                  "actually in the build"
+                ]
+              },
+              {
+                "any": [
+                  "starrupture.tools",
+                  "caveat"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Rail v.4",
+                  "v.4"
+                ]
+              },
+              {
+                "any": [
+                  "Rail v.5",
+                  "v.5"
+                ]
+              },
+              {
+                "any": [
+                  "hidden",
+                  "Chemical Processor",
+                  "Chimeran Power Generator"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "not present",
+                  "missing",
+                  "unavailable"
+                ]
+              },
+              {
+                "any": [
+                  "starrupture.sqlite",
+                  "data/"
+                ]
+              },
+              {
+                "any": [
+                  "do not fabricate",
+                  "cannot claim",
+                  "use the saved tables"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "I queried starrupture.sqlite",
+          "the database confirms"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      {
+        "id": "switzerland-authority-and-next-actions",
+        "workload": "Switzerland",
+        "capability": "authority_and_actionability",
+        "task": "Build a source-aware planning checkpoint for the Switzerland trip. Explain what authority each of the four notes carries, which details must not be promoted into booked facts, and the next concrete research or booking decisions needed to advance the trip safely.",
+        "claim_slots": {
+          "c1": "coach brief authority",
+          "c2": "user constraint authority",
+          "c3": "options and inspiration authority",
+          "c4": "next concrete decisions"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "coach",
+                  "camp brief"
+                ]
+              },
+              {
+                "any": [
+                  "camp dates",
+                  "camp logistics"
+                ]
+              },
+              {
+                "any": [
+                  "example itinerary",
+                  "not a family booking",
+                  "confirmation numbers"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "user-provided",
+                  "family constraints",
+                  "correction"
+                ]
+              },
+              {
+                "any": [
+                  "after both camps",
+                  "altitude",
+                  "two weeks"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "shortlist",
+                  "options",
+                  "recommendation"
+                ]
+              },
+              {
+                "any": [
+                  "inspiration",
+                  "A&K",
+                  "rhythm"
+                ]
+              },
+              {
+                "any": [
+                  "not booked",
+                  "not a reservation",
+                  "proposal"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "arrival",
+                  "departure",
+                  "flight"
+                ]
+              },
+              {
+                "any": [
+                  "lodging",
+                  "room",
+                  "availability"
+                ]
+              },
+              {
+                "any": [
+                  "pickup",
+                  "handoff",
+                  "Malpensa"
+                ]
+              },
+              {
+                "any": [
+                  "verify",
+                  "before booking"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "family flights are booked",
+          "hotel is booked"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      {
+        "id": "straylight-product-resume",
+        "workload": "Straylight",
+        "capability": "project_continuation",
+        "task": "Resume Straylight after the product-framing correction. State what the product is, what durable state it must preserve beyond learned memory, why Obsidian is not the product boundary, why the first benchmark was too narrow, and what the expanded evaluation must now prove.",
+        "claim_slots": {
+          "c1": "correct product category",
+          "c2": "durable work state",
+          "c3": "relationship to Obsidian",
+          "c4": "new evaluation gate"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "agent context",
+                  "durable-work",
+                  "durable work"
+                ]
+              },
+              {
+                "any": [
+                  "agent-first",
+                  "agent first"
+                ]
+              },
+              {
+                "any": [
+                  "learn",
+                  "continue",
+                  "advance"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "goals",
+                  "evidence"
+                ]
+              },
+              {
+                "any": [
+                  "hypotheses",
+                  "plans"
+                ]
+              },
+              {
+                "any": [
+                  "artifacts",
+                  "computations"
+                ]
+              },
+              {
+                "any": [
+                  "open questions",
+                  "rejected",
+                  "checkpoints",
+                  "next actions"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "projection",
+                  "prototype input",
+                  "export"
+                ]
+              },
+              {
+                "any": [
+                  "not the product",
+                  "not canonical",
+                  "not the boundary"
+                ]
+              },
+              {
+                "any": [
+                  "Markdown",
+                  "Obsidian"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "resume",
+                  "continuation"
+                ]
+              },
+              {
+                "any": [
+                  "iterate",
+                  "planning",
+                  "constraints"
+                ]
+              },
+              {
+                "any": [
+                  "compute",
+                  "verify",
+                  "checkpoint",
+                  "next-state"
+                ]
+              },
+              {
+                "any": [
+                  "Warmind",
+                  "StarRupture",
+                  "Switzerland"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          }
+        ],
+        "forbidden": [],
+        "grading_mode": "exact_substring_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "charlemagne-storage-current-state": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Charlemagne",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNzAwODM2NTYtZDk1ZC00MGY1LTlmMzItZTE5NTE3NDRkZDYzIiwiY3JlZGVudGlhbF9pZCI6ImYxZDQxYTA3LWFiNzItNDJmNi05ODlhLTQ5MzA1NTc4ODM3ZSIsInNjb3BlX2lkIjoiMjM0M2Q3MTktNzQzMy00OGQ3LWJhMTUtZjdiMzFkYmIwNjRiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkMmQ5ZGU3ZjI1NiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkNDM1NzMyNGEwYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.pQ09W9_E6EJzFlw7Zhry3YAl8YgcVHlsZVAV8vHtBjo",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f5646b70a70a381e32d4357324a0b",
+      "corpus_revision": "revision:019f5646b70a70a381e32d4357324a0b",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 12623.901,
+        "ready_elapsed_ms": 12623.901,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNzAwODM2NTYtZDk1ZC00MGY1LTlmMzItZTE5NTE3NDRkZDYzIiwiY3JlZGVudGlhbF9pZCI6ImYxZDQxYTA3LWFiNzItNDJmNi05ODlhLTQ5MzA1NTc4ODM3ZSIsInNjb3BlX2lkIjoiMjM0M2Q3MTktNzQzMy00OGQ3LWJhMTUtZjdiMzFkYmIwNjRiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkMmQ5ZGU3ZjI1NiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkNDM1NzMyNGEwYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.pQ09W9_E6EJzFlw7Zhry3YAl8YgcVHlsZVAV8vHtBjo",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNzAwODM2NTYtZDk1ZC00MGY1LTlmMzItZTE5NTE3NDRkZDYzIiwiY3JlZGVudGlhbF9pZCI6ImYxZDQxYTA3LWFiNzItNDJmNi05ODlhLTQ5MzA1NTc4ODM3ZSIsInNjb3BlX2lkIjoiMjM0M2Q3MTktNzQzMy00OGQ3LWJhMTUtZjdiMzFkYmIwNjRiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkMmQ5ZGU3ZjI1NiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkNDM1NzMyNGEwYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.pQ09W9_E6EJzFlw7Zhry3YAl8YgcVHlsZVAV8vHtBjo",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/charlemagne-storage-current-state",
+          "display_scope": "Charlemagne",
+          "access_mode": "read_write",
+          "user_id": "user:70083656d95d40f59f32e1951744dd63",
+          "scope_id": "scope:2343d719743348d7ba15f7b31dbb064b",
+          "credential_id": "credential:f1d41a07ab7242f6989a49305578837e",
+          "base_corpus_revision": "revision:019f5646b70a70a381e32d4357324a0b",
+          "corpus_revision": "revision:019f5646b70a70a381e32d4357324a0b",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNzAwODM2NTYtZDk1ZC00MGY1LTlmMzItZTE5NTE3NDRkZDYzIiwiY3JlZGVudGlhbF9pZCI6ImYxZDQxYTA3LWFiNzItNDJmNi05ODlhLTQ5MzA1NTc4ODM3ZSIsInNjb3BlX2lkIjoiMjM0M2Q3MTktNzQzMy00OGQ3LWJhMTUtZjdiMzFkYmIwNjRiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkMmQ5ZGU3ZjI1NiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkNDM1NzMyNGEwYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.pQ09W9_E6EJzFlw7Zhry3YAl8YgcVHlsZVAV8vHtBjo",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNzAwODM2NTYtZDk1ZC00MGY1LTlmMzItZTE5NTE3NDRkZDYzIiwiY3JlZGVudGlhbF9pZCI6ImYxZDQxYTA3LWFiNzItNDJmNi05ODlhLTQ5MzA1NTc4ODM3ZSIsInNjb3BlX2lkIjoiMjM0M2Q3MTktNzQzMy00OGQ3LWJhMTUtZjdiMzFkYmIwNjRiIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkMmQ5ZGU3ZjI1NiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWI3MGEtNzBhMy04MWUzLTJkNDM1NzMyNGEwYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.pQ09W9_E6EJzFlw7Zhry3YAl8YgcVHlsZVAV8vHtBjo",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/charlemagne-storage-current-state",
+          "display_scope": "Charlemagne",
+          "access_mode": "read_write",
+          "user_id": "user:70083656d95d40f59f32e1951744dd63",
+          "scope_id": "scope:2343d719743348d7ba15f7b31dbb064b",
+          "credential_id": "credential:f1d41a07ab7242f6989a49305578837e",
+          "base_corpus_revision": "revision:019f5646b70a70a381e32d4357324a0b",
+          "corpus_revision": "revision:019f5646b70a70a381e32d4357324a0b",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "charlemagne-index-artifact-review": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Charlemagne",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTMyZDMwNDktYjZkZS00ZTJhLTllMjUtMjZlOGY2MmQ5YTVhIiwiY3JlZGVudGlhbF9pZCI6IjFkZjJjYWI2LWE2ZWQtNDExYS04MjkyLTIzODk1YjQwMzEwOSIsInNjb3BlX2lkIjoiMjcwNWY5MDAtNTA0OC00N2U0LTllOGYtNTQ1ZDk1OGNjYzQ2IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjMmIzZjYxMjg5MyIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjNGFjMGJjYmZiOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.vdB91EK3t2j9x0rHbS9H1mzGPjNhBIrdi1DMQnxclrI",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f5646e7487203830dac4ac0bcbfb9",
+      "corpus_revision": "revision:019f5646e7487203830dac4ac0bcbfb9",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 12321.418,
+        "ready_elapsed_ms": 12321.418,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTMyZDMwNDktYjZkZS00ZTJhLTllMjUtMjZlOGY2MmQ5YTVhIiwiY3JlZGVudGlhbF9pZCI6IjFkZjJjYWI2LWE2ZWQtNDExYS04MjkyLTIzODk1YjQwMzEwOSIsInNjb3BlX2lkIjoiMjcwNWY5MDAtNTA0OC00N2U0LTllOGYtNTQ1ZDk1OGNjYzQ2IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjMmIzZjYxMjg5MyIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjNGFjMGJjYmZiOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.vdB91EK3t2j9x0rHbS9H1mzGPjNhBIrdi1DMQnxclrI",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTMyZDMwNDktYjZkZS00ZTJhLTllMjUtMjZlOGY2MmQ5YTVhIiwiY3JlZGVudGlhbF9pZCI6IjFkZjJjYWI2LWE2ZWQtNDExYS04MjkyLTIzODk1YjQwMzEwOSIsInNjb3BlX2lkIjoiMjcwNWY5MDAtNTA0OC00N2U0LTllOGYtNTQ1ZDk1OGNjYzQ2IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjMmIzZjYxMjg5MyIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjNGFjMGJjYmZiOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.vdB91EK3t2j9x0rHbS9H1mzGPjNhBIrdi1DMQnxclrI",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/charlemagne-index-artifact-review",
+          "display_scope": "Charlemagne",
+          "access_mode": "read_write",
+          "user_id": "user:532d3049b6de4e2a9e2526e8f62d9a5a",
+          "scope_id": "scope:2705f900504847e49e8f545d958ccc46",
+          "credential_id": "credential:1df2cab6a6ed411a829223895b403109",
+          "base_corpus_revision": "revision:019f5646e7487203830dac4ac0bcbfb9",
+          "corpus_revision": "revision:019f5646e7487203830dac4ac0bcbfb9",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTMyZDMwNDktYjZkZS00ZTJhLTllMjUtMjZlOGY2MmQ5YTVhIiwiY3JlZGVudGlhbF9pZCI6IjFkZjJjYWI2LWE2ZWQtNDExYS04MjkyLTIzODk1YjQwMzEwOSIsInNjb3BlX2lkIjoiMjcwNWY5MDAtNTA0OC00N2U0LTllOGYtNTQ1ZDk1OGNjYzQ2IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjMmIzZjYxMjg5MyIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjNGFjMGJjYmZiOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.vdB91EK3t2j9x0rHbS9H1mzGPjNhBIrdi1DMQnxclrI",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTMyZDMwNDktYjZkZS00ZTJhLTllMjUtMjZlOGY2MmQ5YTVhIiwiY3JlZGVudGlhbF9pZCI6IjFkZjJjYWI2LWE2ZWQtNDExYS04MjkyLTIzODk1YjQwMzEwOSIsInNjb3BlX2lkIjoiMjcwNWY5MDAtNTA0OC00N2U0LTllOGYtNTQ1ZDk1OGNjYzQ2IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjMmIzZjYxMjg5MyIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ2LWU3NDgtNzIwMy04MzBkLWFjNGFjMGJjYmZiOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.vdB91EK3t2j9x0rHbS9H1mzGPjNhBIrdi1DMQnxclrI",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/charlemagne-index-artifact-review",
+          "display_scope": "Charlemagne",
+          "access_mode": "read_write",
+          "user_id": "user:532d3049b6de4e2a9e2526e8f62d9a5a",
+          "scope_id": "scope:2705f900504847e49e8f545d958ccc46",
+          "credential_id": "credential:1df2cab6a6ed411a829223895b403109",
+          "base_corpus_revision": "revision:019f5646e7487203830dac4ac0bcbfb9",
+          "corpus_revision": "revision:019f5646e7487203830dac4ac0bcbfb9",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "star-rupture-source-authority": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Star Rupture",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODJmY2VhNGYtNGU5Mi00YzBlLTkzMGMtNDg1NjNjYTMyNGQ3IiwiY3JlZGVudGlhbF9pZCI6IjY1MWY5ODkyLWNlMzUtNGY2Zi05ZTcxLWRjNzEyNDA4Mjc1YiIsInNjb3BlX2lkIjoiZTE2YTIyNjEtYzY1OS00YTIzLThmOTQtYzViYjQ4YTgxZGEyIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmOGI4YzY3MWE4YSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmYWQ0NTgwYzQ3YiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.CyXpQ7RKYFzSS4BvE5vhwrvuCgBU6LIMbbelUrT0unk",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f56471d407d4084337fad4580c47b",
+      "corpus_revision": "revision:019f56471d407d4084337fad4580c47b",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 13802.356,
+        "ready_elapsed_ms": 13802.356,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODJmY2VhNGYtNGU5Mi00YzBlLTkzMGMtNDg1NjNjYTMyNGQ3IiwiY3JlZGVudGlhbF9pZCI6IjY1MWY5ODkyLWNlMzUtNGY2Zi05ZTcxLWRjNzEyNDA4Mjc1YiIsInNjb3BlX2lkIjoiZTE2YTIyNjEtYzY1OS00YTIzLThmOTQtYzViYjQ4YTgxZGEyIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmOGI4YzY3MWE4YSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmYWQ0NTgwYzQ3YiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.CyXpQ7RKYFzSS4BvE5vhwrvuCgBU6LIMbbelUrT0unk",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODJmY2VhNGYtNGU5Mi00YzBlLTkzMGMtNDg1NjNjYTMyNGQ3IiwiY3JlZGVudGlhbF9pZCI6IjY1MWY5ODkyLWNlMzUtNGY2Zi05ZTcxLWRjNzEyNDA4Mjc1YiIsInNjb3BlX2lkIjoiZTE2YTIyNjEtYzY1OS00YTIzLThmOTQtYzViYjQ4YTgxZGEyIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmOGI4YzY3MWE4YSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmYWQ0NTgwYzQ3YiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.CyXpQ7RKYFzSS4BvE5vhwrvuCgBU6LIMbbelUrT0unk",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/star-rupture-source-authority",
+          "display_scope": "Star Rupture",
+          "access_mode": "read_write",
+          "user_id": "user:82fcea4f4e924c0e930c48563ca324d7",
+          "scope_id": "scope:e16a2261c6594a238f94c5bb48a81da2",
+          "credential_id": "credential:651f9892ce354f6f9e71dc712408275b",
+          "base_corpus_revision": "revision:019f56471d407d4084337fad4580c47b",
+          "corpus_revision": "revision:019f56471d407d4084337fad4580c47b",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODJmY2VhNGYtNGU5Mi00YzBlLTkzMGMtNDg1NjNjYTMyNGQ3IiwiY3JlZGVudGlhbF9pZCI6IjY1MWY5ODkyLWNlMzUtNGY2Zi05ZTcxLWRjNzEyNDA4Mjc1YiIsInNjb3BlX2lkIjoiZTE2YTIyNjEtYzY1OS00YTIzLThmOTQtYzViYjQ4YTgxZGEyIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmOGI4YzY3MWE4YSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmYWQ0NTgwYzQ3YiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.CyXpQ7RKYFzSS4BvE5vhwrvuCgBU6LIMbbelUrT0unk",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODJmY2VhNGYtNGU5Mi00YzBlLTkzMGMtNDg1NjNjYTMyNGQ3IiwiY3JlZGVudGlhbF9pZCI6IjY1MWY5ODkyLWNlMzUtNGY2Zi05ZTcxLWRjNzEyNDA4Mjc1YiIsInNjb3BlX2lkIjoiZTE2YTIyNjEtYzY1OS00YTIzLThmOTQtYzViYjQ4YTgxZGEyIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmOGI4YzY3MWE4YSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTFkNDAtN2Q0MC04NDMzLTdmYWQ0NTgwYzQ3YiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.CyXpQ7RKYFzSS4BvE5vhwrvuCgBU6LIMbbelUrT0unk",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/star-rupture-source-authority",
+          "display_scope": "Star Rupture",
+          "access_mode": "read_write",
+          "user_id": "user:82fcea4f4e924c0e930c48563ca324d7",
+          "scope_id": "scope:e16a2261c6594a238f94c5bb48a81da2",
+          "credential_id": "credential:651f9892ce354f6f9e71dc712408275b",
+          "base_corpus_revision": "revision:019f56471d407d4084337fad4580c47b",
+          "corpus_revision": "revision:019f56471d407d4084337fad4580c47b",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "switzerland-authority-and-next-actions": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Switzerland",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYzc1NjU1Y2EtNmZlZC00ZGUyLWIwOTAtMjRlM2RjZWI4ZTlhIiwiY3JlZGVudGlhbF9pZCI6IjI0ODY0ZTBjLWNhNDMtNDVjZS05MWQwLTQ0MTE1NzJlZTdjZCIsInNjb3BlX2lkIjoiZGQ5MmFkZjEtMDFkNC00Nzk0LWJlYWYtOTBkYzkyYWM0NWUwIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwY2MwZjY0ZmE4YiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwZWRhOGRlMmQxZSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BCsYJi6yn0tONJg-pCal1JhDneUN32IUOstdNArWWWA",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f564748087fe18f7fa0eda8de2d1e",
+      "corpus_revision": "revision:019f564748087fe18f7fa0eda8de2d1e",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 10948.176,
+        "ready_elapsed_ms": 10948.176,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYzc1NjU1Y2EtNmZlZC00ZGUyLWIwOTAtMjRlM2RjZWI4ZTlhIiwiY3JlZGVudGlhbF9pZCI6IjI0ODY0ZTBjLWNhNDMtNDVjZS05MWQwLTQ0MTE1NzJlZTdjZCIsInNjb3BlX2lkIjoiZGQ5MmFkZjEtMDFkNC00Nzk0LWJlYWYtOTBkYzkyYWM0NWUwIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwY2MwZjY0ZmE4YiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwZWRhOGRlMmQxZSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BCsYJi6yn0tONJg-pCal1JhDneUN32IUOstdNArWWWA",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYzc1NjU1Y2EtNmZlZC00ZGUyLWIwOTAtMjRlM2RjZWI4ZTlhIiwiY3JlZGVudGlhbF9pZCI6IjI0ODY0ZTBjLWNhNDMtNDVjZS05MWQwLTQ0MTE1NzJlZTdjZCIsInNjb3BlX2lkIjoiZGQ5MmFkZjEtMDFkNC00Nzk0LWJlYWYtOTBkYzkyYWM0NWUwIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwY2MwZjY0ZmE4YiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwZWRhOGRlMmQxZSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BCsYJi6yn0tONJg-pCal1JhDneUN32IUOstdNArWWWA",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/switzerland-authority-and-next-actions",
+          "display_scope": "Switzerland",
+          "access_mode": "read_write",
+          "user_id": "user:c75655ca6fed4de2b09024e3dceb8e9a",
+          "scope_id": "scope:dd92adf101d44794beaf90dc92ac45e0",
+          "credential_id": "credential:24864e0cca4345ce91d04411572ee7cd",
+          "base_corpus_revision": "revision:019f564748087fe18f7fa0eda8de2d1e",
+          "corpus_revision": "revision:019f564748087fe18f7fa0eda8de2d1e",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYzc1NjU1Y2EtNmZlZC00ZGUyLWIwOTAtMjRlM2RjZWI4ZTlhIiwiY3JlZGVudGlhbF9pZCI6IjI0ODY0ZTBjLWNhNDMtNDVjZS05MWQwLTQ0MTE1NzJlZTdjZCIsInNjb3BlX2lkIjoiZGQ5MmFkZjEtMDFkNC00Nzk0LWJlYWYtOTBkYzkyYWM0NWUwIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwY2MwZjY0ZmE4YiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwZWRhOGRlMmQxZSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BCsYJi6yn0tONJg-pCal1JhDneUN32IUOstdNArWWWA",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiYzc1NjU1Y2EtNmZlZC00ZGUyLWIwOTAtMjRlM2RjZWI4ZTlhIiwiY3JlZGVudGlhbF9pZCI6IjI0ODY0ZTBjLWNhNDMtNDVjZS05MWQwLTQ0MTE1NzJlZTdjZCIsInNjb3BlX2lkIjoiZGQ5MmFkZjEtMDFkNC00Nzk0LWJlYWYtOTBkYzkyYWM0NWUwIiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwY2MwZjY0ZmE4YiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTQ4MDgtN2ZlMS04ZjdmLWEwZWRhOGRlMmQxZSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.BCsYJi6yn0tONJg-pCal1JhDneUN32IUOstdNArWWWA",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/switzerland-authority-and-next-actions",
+          "display_scope": "Switzerland",
+          "access_mode": "read_write",
+          "user_id": "user:c75655ca6fed4de2b09024e3dceb8e9a",
+          "scope_id": "scope:dd92adf101d44794beaf90dc92ac45e0",
+          "credential_id": "credential:24864e0cca4345ce91d04411572ee7cd",
+          "base_corpus_revision": "revision:019f564748087fe18f7fa0eda8de2d1e",
+          "corpus_revision": "revision:019f564748087fe18f7fa0eda8de2d1e",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "straylight-product-resume": {
+      "authorization_scope": "scope:root",
+      "display_scope": "Straylight",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTVmMmI2MWUtNWVhZi00MmU1LWFmYjctYjgwNWM2MWZkYzczIiwiY3JlZGVudGlhbF9pZCI6ImU5YjYwODM5LTIwNWYtNDRkMy05ZTUxLWM3ZDk4NmM5ZDgzYSIsInNjb3BlX2lkIjoiNDJkZTM5ZTYtZWY3ZC00NzZhLWJkNjQtYmIyM2FkZTA2MmY3IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhYjRkZjQ3NmU3OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhZDM1YzlkNmQ4NCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.OpvdZq3GQ2UwuLmxpPDsv3mnJw4aLtvf7vQlHNBAamY",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f56476e9577339d019ad35c9d6d84",
+      "corpus_revision": "revision:019f56476e9577339d019ad35c9d6d84",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 9860.875,
+        "ready_elapsed_ms": 9860.875,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTVmMmI2MWUtNWVhZi00MmU1LWFmYjctYjgwNWM2MWZkYzczIiwiY3JlZGVudGlhbF9pZCI6ImU5YjYwODM5LTIwNWYtNDRkMy05ZTUxLWM3ZDk4NmM5ZDgzYSIsInNjb3BlX2lkIjoiNDJkZTM5ZTYtZWY3ZC00NzZhLWJkNjQtYmIyM2FkZTA2MmY3IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhYjRkZjQ3NmU3OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhZDM1YzlkNmQ4NCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.OpvdZq3GQ2UwuLmxpPDsv3mnJw4aLtvf7vQlHNBAamY",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTVmMmI2MWUtNWVhZi00MmU1LWFmYjctYjgwNWM2MWZkYzczIiwiY3JlZGVudGlhbF9pZCI6ImU5YjYwODM5LTIwNWYtNDRkMy05ZTUxLWM3ZDk4NmM5ZDgzYSIsInNjb3BlX2lkIjoiNDJkZTM5ZTYtZWY3ZC00NzZhLWJkNjQtYmIyM2FkZTA2MmY3IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhYjRkZjQ3NmU3OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhZDM1YzlkNmQ4NCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.OpvdZq3GQ2UwuLmxpPDsv3mnJw4aLtvf7vQlHNBAamY",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/straylight-product-resume",
+          "display_scope": "Straylight",
+          "access_mode": "read_write",
+          "user_id": "user:55f2b61e5eaf42e5afb7b805c61fdc73",
+          "scope_id": "scope:42de39e6ef7d476abd64bb23ade062f7",
+          "credential_id": "credential:e9b60839205f44d39e51c7d986c9d83a",
+          "base_corpus_revision": "revision:019f56476e9577339d019ad35c9d6d84",
+          "corpus_revision": "revision:019f56476e9577339d019ad35c9d6d84",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTVmMmI2MWUtNWVhZi00MmU1LWFmYjctYjgwNWM2MWZkYzczIiwiY3JlZGVudGlhbF9pZCI6ImU5YjYwODM5LTIwNWYtNDRkMy05ZTUxLWM3ZDk4NmM5ZDgzYSIsInNjb3BlX2lkIjoiNDJkZTM5ZTYtZWY3ZC00NzZhLWJkNjQtYmIyM2FkZTA2MmY3IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhYjRkZjQ3NmU3OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhZDM1YzlkNmQ4NCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.OpvdZq3GQ2UwuLmxpPDsv3mnJw4aLtvf7vQlHNBAamY",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTVmMmI2MWUtNWVhZi00MmU1LWFmYjctYjgwNWM2MWZkYzczIiwiY3JlZGVudGlhbF9pZCI6ImU5YjYwODM5LTIwNWYtNDRkMy05ZTUxLWM3ZDk4NmM5ZDgzYSIsInNjb3BlX2lkIjoiNDJkZTM5ZTYtZWY3ZC00NzZhLWJkNjQtYmIyM2FkZTA2MmY3IiwicmVjZWlwdF9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhYjRkZjQ3NmU3OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY1NjQ3LTZlOTUtNzczMy05ZDAxLTlhZDM1YzlkNmQ4NCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.OpvdZq3GQ2UwuLmxpPDsv3mnJw4aLtvf7vQlHNBAamY",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260712T052130-0700/straylight-product-resume",
+          "display_scope": "Straylight",
+          "access_mode": "read_write",
+          "user_id": "user:55f2b61e5eaf42e5afb7b805c61fdc73",
+          "scope_id": "scope:42de39e6ef7d476abd64bb23ade062f7",
+          "credential_id": "credential:e9b60839205f44d39e51c7d986c9d83a",
+          "base_corpus_revision": "revision:019f56476e9577339d019ad35c9d6d84",
+          "corpus_revision": "revision:019f56476e9577339d019ad35c9d6d84",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1464,
+            "embeddings": 1464
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "charlemagne-storage-current-state",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 74.707,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T052130-0700/service_api/charlemagne-storage-current-state/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "As of the superseding June 24 read-only snapshot, Rhea had about 496 GiB free, and the durable growth was concentrated in Charlemagne\u2019s session/cutover schema\u2014not the sharp intraday free-space event. Charlemagne grew from 53.99 GiB on May 22 to 159.76 GiB on June 16 and 273.95 GiB on June 24; roughly 196 GiB was retained legacy session storage. The June 24 drop and rebound was instead consistent with temporary MySQL pressure, plausibly the active Season 30 duplicate-audit query, though temp/deleted-open files were not directly verified. Live sampling showed writes flowing to compact replacement tables and none to the sampled `_legacy` counterparts. Preserve the legacy tables until cutover acceptance, replay, archive, and rollback requirements are reviewed; monitor another drop with privileged diagnostics before stopping jobs or deleting data.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The superseding June 24 snapshot showed `/` at 3.7 TiB total, 3.2 TiB used, about 496 GiB available, and 87% utilization. MySQL schema totals were `nexus` 1,732.74 GiB, `charlemagne` 273.95 GiB, `nexustoo` 8.46 GiB, and `discord` 6.39 GiB. Historically, `charlemagne` was about 53.99 GiB on May 22 and 159.76 GiB on June 16, so it added about 114.2 GiB from June 16 to June 24.",
+            "source_paths": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The durable growth story is Charlemagne session/cutover storage, dominated by roughly 196 GiB of retained `_legacy` tables. That is separate from the latest sharp free-space fall and rebound, which behaved like transient MySQL temporary work rather than permanent table/file growth. The observed Season 30 repair duplicate-audit over the 81.99 GiB `nexus.skill_rating_match_audits` table was a plausible source, but physical temp files or deleted-but-open files were not proven because root, `lsof`, and MySQL `PROCESS` access were unavailable.",
+            "source_paths": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "A 121-second June 24 sample verified writes to the compact replacements: `session_activity_events` about 43.8 rows/s, `play_sessions` about 3.4 rows/s, and `session_pgcr_ingest` about 105.8 rows/s. Their sampled `_legacy` counterparts received zero writes. The large legacy tables are therefore retained durable cutover/rollback storage, not the source of current write amplification; tables not sampled cannot be declared inactive solely from this test.",
+            "source_paths": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Safe next actions are: monitor `df` and Datadog while the repair runs; if another sharp decline occurs, use privileged inspection of MySQL temp storage and deleted-open files before killing anything; replace the broad duplicate-audit `GROUP BY` with a smaller indexed proof if equivalent; and handle legacy archival or removal only in a separate reviewed maintenance decision after cutover acceptance, replay proof, archive requirements, and rollback criteria are satisfied. Treat logical table-space release and physical EBS reclaim as separate decisions. Logs, caches, and old archives may be cleaned as background work but are not the core durable-growth fix.",
+            "source_paths": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Resume the Rhea storage investigation from the May 22, June 16, and June 24 records; distinguish durable growth from transient pressure, identify active writes, and propose safe actions without assuming legacy data is disposable.",
+          "current_state": [
+            "Current verified fact from June 24: root storage was 3.7 TiB total, 3.2 TiB used, about 496 GiB free, at 87%.",
+            "Current verified schema state: `nexus` 1,732.74 GiB and `charlemagne` 273.95 GiB; historical Charlemagne measurements were 53.99 GiB on May 22 and 159.76 GiB on June 16.",
+            "Current verified write sample: compact session tables received writes while the three sampled `_legacy` counterparts received none.",
+            "Historical evidence and current interpretation identify about 196 GiB of retained legacy session tables as the main durable body.",
+            "The transient-pressure mechanism remains plausible rather than proven because privileged physical-file diagnostics were unavailable."
+          ],
+          "decisions": [
+            "Use June 24 as the superseding operational state; use May and June 16 as historical baselines and retention context.",
+            "Separate durable schema growth from the sharp intraday free-space drop/rebound.",
+            "Do not classify large legacy tables as disposable; preserve them pending explicit cutover, replay, archive, and rollback review.",
+            "Do not stop the repair process merely from the observed correlation; capture privileged storage evidence during recurrence first."
+          ],
+          "open_questions": [
+            "Would root-level `du` and `lsof +L1`, plus MySQL `PROCESS` visibility during another drop, confirm temp or deleted-open storage?",
+            "Can the Season 30 duplicate audit be replaced with an equivalent indexed query?",
+            "Have cutover acceptance, replay completeness, archive retention, and rollback criteria been satisfied for each legacy table?",
+            "What maintenance procedure would release logical table space, and would separate EBS-level reclaim be worthwhile?"
+          ],
+          "next_actions": [
+            "Continue `df` and Datadog monitoring while the skill-rating repair runs.",
+            "On another sharp free-space decline, inspect `/var/lib/mysql`, deleted-open files, and MySQL temp-table state with appropriate privileges before stopping work.",
+            "Review and benchmark a narrower indexed duplicate-audit query.",
+            "Prepare a separate reviewed legacy-retention decision by table; archive or drop nothing until acceptance, replay, and rollback requirements pass.",
+            "Keep non-database cleanup as lower-priority background maintenance."
+          ],
+          "artifacts": [
+            "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 9,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "496G",
+                  "496 G"
+                ],
+                "matched": "496 G"
+              },
+              {
+                "alternatives": [
+                  "87%",
+                  "87 percent"
+                ],
+                "matched": "87%"
+              },
+              {
+                "alternatives": [
+                  "273.95",
+                  "273.9"
+                ],
+                "matched": "273.95"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "legacy session",
+                  "_legacy"
+                ],
+                "matched": "legacy session"
+              },
+              {
+                "alternatives": [
+                  "196 GiB",
+                  "196G",
+                  "196 Gi"
+                ],
+                "matched": "196 GiB"
+              },
+              {
+                "alternatives": [
+                  "temporary",
+                  "transient",
+                  "GROUP BY",
+                  "skill_rating_match_audits"
+                ],
+                "matched": "temporary"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "compact replacement",
+                  "replacement tables",
+                  "active writes"
+                ],
+                "matched": "compact replacement"
+              },
+              {
+                "alternatives": [
+                  "0/s",
+                  "zero writes",
+                  "not current write"
+                ],
+                "matched": "zero writes"
+              },
+              {
+                "alternatives": [
+                  "retained",
+                  "durable retained"
+                ],
+                "matched": "retained"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "monitor",
+                  "watch",
+                  "df"
+                ],
+                "matched": "monitor"
+              },
+              {
+                "alternatives": [
+                  "replay",
+                  "rollback",
+                  "cutover acceptance"
+                ],
+                "matched": "replay"
+              },
+              {
+                "alternatives": [
+                  "physical reclaim",
+                  "separate decision",
+                  "maintenance"
+                ],
+                "matched": "separate decision"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 14,
+        "commands": 4,
+        "command_output_chars": 120934,
+        "tokens": {
+          "input_tokens": 153063,
+          "cached_input_tokens": 118528,
+          "output_tokens": 3144
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T05:22:40.501-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647986f7ab2861c9abaa4df2f18",
+          "elapsed_ms": 1217.974,
+          "result_chars": 40467
+        },
+        {
+          "at": "2026-07-12T05:22:46.337-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647af3b73d2ac01efc71020ae04",
+          "elapsed_ms": 1128.37,
+          "result_chars": 61032
+        },
+        {
+          "at": "2026-07-12T05:22:55.641-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647d3957382a96299d99e9db138",
+          "elapsed_ms": 35.214,
+          "result_chars": 16467
+        },
+        {
+          "at": "2026-07-12T05:23:12.422-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f564815247b53944052db59806932",
+          "elapsed_ms": 175.62,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 120930,
+      "service_latency_ms": 2557.178,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f5646-b70a-70a3-81e3-2d4357324a0b",
+        "checkpoint_id": "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+        "corpus_revision": "revision:019f5648-1497-7c80-ae43-e9eeefcc5e1b",
+        "created": [
+          {
+            "id": "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "f1d41a07-ab72-42f6-989a-49305578837e",
+        "deduplicated": [],
+        "id": "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+        "idempotency_key": "eval-checkpoint:session:019f564793be72f3a5a1ff4070bdf802:78e9e8de64b237bdb329f25d9b85a78cb0532a1eaa4b00b95dbc29f82839a2a5",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5648-1497-7c80-ae43-e9eeefcc5e1b",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5648-1490-7af3-a841-5c023bfac04c"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:f14204a3f814d10ed317e317f96981c2b487794888c2371a33199a5b6ed89a5d",
+        "operation_id": "operation:019f5648-148f-7740-82e6-7bdbcfaaa4a9",
+        "policy": {
+          "policy_id": "82959c6b-1f33-47b3-946c-0470c3906589",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5648-148f-7740-82e6-7bdbcfaaa4a9",
+        "replayed": false,
+        "request_hash": "sha256:457634eea821ff62d4557be93dc7cfdba3e4f8be16752e724492a5d75df58959",
+        "resulting_corpus_revision": "revision:019f5648-1497-7c80-ae43-e9eeefcc5e1b",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f564793be72f3a5a1ff4070bdf802",
+        "status": "committed",
+        "user_id": "user:70083656d95d40f59f32e1951744dd63"
+      },
+      "service_session_id": "session:019f564793be72f3a5a1ff4070bdf802",
+      "service_corpus_revision": "revision:019f5648-1497-7c80-ae43-e9eeefcc5e1b",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T05:22:40.501-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647986f7ab2861c9abaa4df2f18",
+          "elapsed_ms": 1217.974,
+          "result_chars": 40467
+        },
+        {
+          "at": "2026-07-12T05:22:46.337-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647af3b73d2ac01efc71020ae04",
+          "elapsed_ms": 1128.37,
+          "result_chars": 61032
+        },
+        {
+          "at": "2026-07-12T05:22:55.641-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647d3957382a96299d99e9db138",
+          "elapsed_ms": 35.214,
+          "result_chars": 16467
+        },
+        {
+          "at": "2026-07-12T05:23:12.422-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f564815247b53944052db59806932",
+          "elapsed_ms": 175.62,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 120930,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f5646-b70a-70a3-81e3-2d4357324a0b",
+        "checkpoint_id": "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+        "corpus_revision": "revision:019f5648-1497-7c80-ae43-e9eeefcc5e1b",
+        "created": [
+          {
+            "id": "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "f1d41a07-ab72-42f6-989a-49305578837e",
+        "deduplicated": [],
+        "id": "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+        "idempotency_key": "eval-checkpoint:session:019f564793be72f3a5a1ff4070bdf802:78e9e8de64b237bdb329f25d9b85a78cb0532a1eaa4b00b95dbc29f82839a2a5",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5648-1497-7c80-ae43-e9eeefcc5e1b",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5648-1490-7af3-a841-5c023bfac04c"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:f14204a3f814d10ed317e317f96981c2b487794888c2371a33199a5b6ed89a5d",
+        "operation_id": "operation:019f5648-148f-7740-82e6-7bdbcfaaa4a9",
+        "policy": {
+          "policy_id": "82959c6b-1f33-47b3-946c-0470c3906589",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5648-148f-7740-82e6-7bdbcfaaa4a9",
+        "replayed": false,
+        "request_hash": "sha256:457634eea821ff62d4557be93dc7cfdba3e4f8be16752e724492a5d75df58959",
+        "resulting_corpus_revision": "revision:019f5648-1497-7c80-ae43-e9eeefcc5e1b",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5648-1497-7c80-ae43-e9df0ea85798"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f564793be72f3a5a1ff4070bdf802",
+        "status": "committed",
+        "user_id": "user:70083656d95d40f59f32e1951744dd63"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "charlemagne-index-artifact-review",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 87.126,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T052130-0700/service_api/charlemagne-index-artifact-review/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "The three largest saved rough estimates total 110.29 GiB. They are candidates for future verification and maintenance planning\u2014not an executable DROP sequence.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The three largest rough estimates are `nexus.summary_weapon_meta_daily.kills` at 45.67 GiB, `nexus.raw_raids.characterId` at 32.31 GiB, and `nexus.raw_raids.membershipId` at 32.31 GiB.",
+            "source_paths": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Their combined displayed rough size is 110.29 GiB (45.67 + 32.31 + 32.31).",
+            "source_paths": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The SQL is not ready to execute because it is explicitly a generated candidate list based on a `db_schema.tar` snapshot collected on 2026-04-25. Its evidence is `ops=0` plus confidence labels, FULLTEXT entries require review, and the file instructs execution only during a maintenance window. It provides neither fresh live validation nor an approved, safely sequenced execution plan.",
+            "source_paths": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "A future operator must establish a fresh read-only baseline; verify exact allocation with `mysql.innodb_index_stats`; recheck current usage, query/application dependencies, constraints, and FULLTEXT requirements; then approve and sequence selected drops within a maintenance window that has explicit lock, runtime, free-space, snapshot, and rollback planning. These gates remain proposed and unverified in this review.",
+            "source_paths": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv",
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Inspect the saved Charlemagne unused-index TSV and generated SQL as maintenance-planning artifacts, without performing live verification or execution planning.",
+          "current_state": [
+            "Verified the three largest historical TSV estimates and calculated their displayed-estimate sum as 110.29 GiB.",
+            "Read the complete generated SQL artifact.",
+            "No live database checks or DDL operations were performed.",
+            "Persisted checkpoint `checkpoint:019f5648-725f-7d10-82b9-6bd93175036f`."
+          ],
+          "decisions": [
+            "Treat the April 25 artifacts as historical candidate evidence, not current execution authority.",
+            "Leave exact verification, candidate selection, sequencing, and operational approval to a future operator."
+          ],
+          "open_questions": [
+            "Current live index usage and exact InnoDB page allocation.",
+            "Application, query, constraint, and FULLTEXT dependencies.",
+            "Approved maintenance window and acceptable lock/runtime/free-space risk.",
+            "Snapshot and rollback procedure for selected DDL."
+          ],
+          "next_actions": [
+            "Capture a fresh read-only production baseline.",
+            "Verify exact pages using `mysql.innodb_index_stats` and recheck live usage and dependencies.",
+            "Review FULLTEXT candidates separately.",
+            "Select and sequence only approved drops.",
+            "Schedule selected DDL with explicit lock, runtime, free-space, snapshot, and rollback safeguards."
+          ],
+          "artifacts": [
+            "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv",
+            "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8867,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.8667,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 6,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "summary_weapon_meta_daily"
+                ],
+                "matched": "summary_weapon_meta_daily"
+              },
+              {
+                "alternatives": [
+                  "45.67"
+                ],
+                "matched": "45.67"
+              },
+              {
+                "alternatives": [
+                  "raw_raids"
+                ],
+                "matched": "raw_raids"
+              },
+              {
+                "alternatives": [
+                  "characterId",
+                  "membershipId"
+                ],
+                "matched": "characterId"
+              },
+              {
+                "alternatives": [
+                  "32.31"
+                ],
+                "matched": "32.31"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "110.29",
+                  "110.3"
+                ],
+                "matched": "110.29"
+              },
+              {
+                "alternatives": [
+                  "rough",
+                  "estimate"
+                ],
+                "matched": "rough"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.4667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "zero operations",
+                  "collected stats"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "FULLTEXT",
+                  "review-fulltext"
+                ],
+                "matched": "FULLTEXT"
+              },
+              {
+                "alternatives": [
+                  "not proof",
+                  "not execute",
+                  "not an execution"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "mysql.innodb_index_stats",
+                  "exact pages",
+                  "real query usage"
+                ],
+                "matched": "mysql.innodb_index_stats"
+              },
+              {
+                "alternatives": [
+                  "maintenance window"
+                ],
+                "matched": "maintenance window"
+              },
+              {
+                "alternatives": [
+                  "rollback",
+                  "backup",
+                  "monitor"
+                ],
+                "matched": "rollback"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv",
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 20,
+        "commands": 6,
+        "command_output_chars": 96773,
+        "tokens": {
+          "input_tokens": 227064,
+          "cached_input_tokens": 191744,
+          "output_tokens": 3345
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T05:22:41.081-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f56479ab47c41bd3cac4f72eb8c3c",
+          "elapsed_ms": 753.211,
+          "result_chars": 39699
+        },
+        {
+          "at": "2026-07-12T05:22:49.324-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647bae77480881b8b83481a4054",
+          "elapsed_ms": 797.352,
+          "result_chars": 40280
+        },
+        {
+          "at": "2026-07-12T05:22:53.069-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647c9897f50a8b0db29aeaa082c",
+          "elapsed_ms": 34.577,
+          "result_chars": 11600
+        },
+        {
+          "at": "2026-07-12T05:23:36.430-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f564872ec79b1a5650a518c222e43",
+          "elapsed_ms": 171.368,
+          "result_chars": 3221
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 94800,
+      "service_latency_ms": 1756.508,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f5646-e748-7203-830d-ac4ac0bcbfb9",
+        "checkpoint_id": "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f",
+        "corpus_revision": "revision:019f5648-7260-7c82-9080-80fc204c0a20",
+        "created": [
+          {
+            "id": "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "1df2cab6-a6ed-411a-8292-23895b403109",
+        "deduplicated": [],
+        "id": "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f",
+        "idempotency_key": "eval-checkpoint:session:019f564797d67c31840325627995267d:708bba78dd2da3e8121e5c490203e6831c4296cdee760e09c143083f40f94c7f",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5648-7260-7c82-9080-80fc204c0a20",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv",
+                "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql",
+                "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:b1c71ff83017cb5f55e6159209344aaa10b6798a96a3ed9869a92cae5e3e256e",
+        "operation_id": "operation:019f5648-7259-7351-8800-caad99bf3a83",
+        "policy": {
+          "policy_id": "8d5ff725-e749-4998-a1c3-6ea0059e598e",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5648-7259-7351-8800-caad99bf3a83",
+        "replayed": false,
+        "request_hash": "sha256:30fd9574a8b8077ac01156798c2d2ed20deeb2caad2cf67ac9c15cc0fa9fbe82",
+        "resulting_corpus_revision": "revision:019f5648-7260-7c82-9080-80fc204c0a20",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f564797d67c31840325627995267d",
+        "status": "committed",
+        "user_id": "user:532d3049b6de4e2a9e2526e8f62d9a5a"
+      },
+      "service_session_id": "session:019f564797d67c31840325627995267d",
+      "service_corpus_revision": "revision:019f5648-7260-7c82-9080-80fc204c0a20",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T05:22:41.081-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f56479ab47c41bd3cac4f72eb8c3c",
+          "elapsed_ms": 753.211,
+          "result_chars": 39699
+        },
+        {
+          "at": "2026-07-12T05:22:49.324-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647bae77480881b8b83481a4054",
+          "elapsed_ms": 797.352,
+          "result_chars": 40280
+        },
+        {
+          "at": "2026-07-12T05:22:53.069-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647c9897f50a8b0db29aeaa082c",
+          "elapsed_ms": 34.577,
+          "result_chars": 11600
+        },
+        {
+          "at": "2026-07-12T05:23:36.430-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f564872ec79b1a5650a518c222e43",
+          "elapsed_ms": 171.368,
+          "result_chars": 3221
+        }
+      ],
+      "workspace_result_chars": 94800,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f5646-e748-7203-830d-ac4ac0bcbfb9",
+        "checkpoint_id": "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f",
+        "corpus_revision": "revision:019f5648-7260-7c82-9080-80fc204c0a20",
+        "created": [
+          {
+            "id": "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "1df2cab6-a6ed-411a-8292-23895b403109",
+        "deduplicated": [],
+        "id": "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f",
+        "idempotency_key": "eval-checkpoint:session:019f564797d67c31840325627995267d:708bba78dd2da3e8121e5c490203e6831c4296cdee760e09c143083f40f94c7f",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5648-7260-7c82-9080-80fc204c0a20",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv",
+                "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql",
+                "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:b1c71ff83017cb5f55e6159209344aaa10b6798a96a3ed9869a92cae5e3e256e",
+        "operation_id": "operation:019f5648-7259-7351-8800-caad99bf3a83",
+        "policy": {
+          "policy_id": "8d5ff725-e749-4998-a1c3-6ea0059e598e",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5648-7259-7351-8800-caad99bf3a83",
+        "replayed": false,
+        "request_hash": "sha256:30fd9574a8b8077ac01156798c2d2ed20deeb2caad2cf67ac9c15cc0fa9fbe82",
+        "resulting_corpus_revision": "revision:019f5648-7260-7c82-9080-80fc204c0a20",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5648-725f-7d10-82b9-6bd93175036f"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f564797d67c31840325627995267d",
+        "status": "committed",
+        "user_id": "user:532d3049b6de4e2a9e2526e8f62d9a5a"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "star-rupture-source-authority",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 86.088,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T052130-0700/service_api/star-rupture-source-authority/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "The retrieved evidence is insufficient to safely extend the live StarRupture factory plan. No relevant planning source established the current game version, authority hierarchy, or concrete future/hidden exclusions. The only database-related result was an illustrative asset-reference example, not evidence that the database exists here. Because retrieval coverage was explicitly not absence-safe, its absence is also unproven. Proceed by obtaining the authoritative StarRupture source and verifying the structured artifact through a service-native structured or typed verification call; until then, leave dependent plan fields unknown and do not invent recipes, rates, buildings, items, or exclusions.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Not established by the returned evidence. No relevant StarRupture source identified the current live game version, so the plan must not assume one.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c2",
+            "value": "Not established by the returned evidence. No original StarRupture authority source was recovered, so no hierarchy should be asserted; proposals and historical material must not be promoted to current fact without the authoritative source.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c3",
+            "value": "No concrete StarRupture future or hidden-content examples were recovered. Therefore none can be safely enumerated from this evidence; exclude any unverified future, unreleased, hidden, deprecated, placeholder, or creative-mode content pending authoritative confirmation.",
+            "source_paths": [],
+            "confidence": "low"
+          },
+          {
+            "id": "c4",
+            "value": "The structured database is not verified as present. `asset:starrupture-research-db@v3` appears only as an illustrative asset-reference example; it is not proof of an available artifact. Retrieval reported `absence_safe: false`, so absence is likewise inconclusive. Request or service-verify the artifact, and leave database-dependent facts unknown rather than fabricating them.",
+            "source_paths": [
+              "Projects/Straylight/Write API and Dreaming - Initial Design.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Establish current-version and source-authority rules, exclusions, and structured artifact availability for extending the StarRupture factory plan.",
+          "current_state": [
+            "Verified: the memory service opened successfully.",
+            "Verified: retrieval did not surface a relevant StarRupture planning source for version, authority, or exclusions.",
+            "Historical/illustrative evidence: an example `asset:starrupture-research-db@v3` reference exists, but does not verify artifact presence.",
+            "Incomplete: retrieval coverage reported `absence_safe: false`; database absence cannot be concluded.",
+            "Checkpoint committed as `checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261`."
+          ],
+          "decisions": [
+            "Do not fabricate the current version, authority hierarchy, exclusion examples, recipes, rates, buildings, items, or database contents.",
+            "Do not treat an illustrative asset reference as proof that the structured database exists.",
+            "Keep proposals and historical illustrations separate from verified current state."
+          ],
+          "open_questions": [
+            "Which exact StarRupture source contains the live factory-plan rules?",
+            "Is the structured database registered or mounted somewhere outside the retrieved projection?",
+            "What typed service operation can conclusively verify its availability?"
+          ],
+          "next_actions": [
+            "Retrieve using the exact authoritative StarRupture source name or read neighbors from a relevant returned StarRupture chunk.",
+            "Use a service-native structured or typed verification operation to establish artifact presence before consuming database facts.",
+            "If the source or artifact remains unavailable, request it and mark all dependent plan fields unknown."
+          ],
+          "artifacts": [
+            "session:019f564793737b6293368df42d99c3fb",
+            "revision:019f56471d407d4084337fad4580c47b",
+            "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+            "Projects/Straylight/Write API and Dreaming - Initial Design.md",
+            "asset:starrupture-research-db@v3 (illustrative only)"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.2633,
+        "pass": false,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_score": 0.1333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 1,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "Update 1"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "0.2.x",
+                  "0.2.8"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "playtest",
+                  "outdated"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c2",
+            "score": 0.2667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "Steam",
+                  "Creepy Jar"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "authoritative",
+                  "actually in the build"
+                ],
+                "matched": "authoritative"
+              },
+              {
+                "alternatives": [
+                  "starrupture.tools",
+                  "caveat"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c3",
+            "score": 0.2667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "Rail v.4",
+                  "v.4"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Rail v.5",
+                  "v.5"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "hidden",
+                  "Chemical Processor",
+                  "Chimeran Power Generator"
+                ],
+                "matched": "hidden"
+              }
+            ],
+            "citations": []
+          },
+          {
+            "id": "c4",
+            "score": 0.0,
+            "pass": false,
+            "content_fraction": 0.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "not present",
+                  "missing",
+                  "unavailable"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "starrupture.sqlite",
+                  "data/"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "do not fabricate",
+                  "cannot claim",
+                  "use the saved tables"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Write API and Dreaming - Initial Design.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 20,
+        "commands": 6,
+        "command_output_chars": 144679,
+        "tokens": {
+          "input_tokens": 250531,
+          "cached_input_tokens": 210176,
+          "output_tokens": 3246
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T05:22:40.127-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f564796f97e71a299a58d910c55aa",
+          "elapsed_ms": 946.006,
+          "result_chars": 37245
+        },
+        {
+          "at": "2026-07-12T05:22:50.715-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647c0557c2194c4ae64f1faadcb",
+          "elapsed_ms": 1629.56,
+          "result_chars": 71367
+        },
+        {
+          "at": "2026-07-12T05:23:01.928-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647ec237d11a3070c98104ab010",
+          "elapsed_ms": 719.218,
+          "result_chars": 31157
+        },
+        {
+          "at": "2026-07-12T05:23:33.467-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5648675a79039023928e1ea2cb85",
+          "elapsed_ms": 156.905,
+          "result_chars": 2983
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 142752,
+      "service_latency_ms": 3451.689,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f5647-1d40-7d40-8433-7fad4580c47b",
+        "checkpoint_id": "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+        "corpus_revision": "revision:019f5648-66d5-70a1-96cf-51c6ba2835f5",
+        "created": [
+          {
+            "id": "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "651f9892-ce35-4f6f-9e71-dc712408275b",
+        "deduplicated": [],
+        "id": "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+        "idempotency_key": "eval-checkpoint:session:019f564793737b6293368df42d99c3fb:ca4ae59e458e50748160da322775495e48dc457b7daefd4fc70d7136c5bb389e",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5648-66d5-70a1-96cf-51c6ba2835f5",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "Projects/Straylight/Write API and Dreaming - Initial Design.md"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:994991e1565a9b0d3c2fa16dd0ee9aad12959104071d881b0a65ba7e9e3ee0f9",
+        "operation_id": "operation:019f5648-66d2-7122-9a1e-fe00a2c83c33",
+        "policy": {
+          "policy_id": "7b284472-b074-4b5e-8ca3-da37deafb56f",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5648-66d2-7122-9a1e-fe00a2c83c33",
+        "replayed": false,
+        "request_hash": "sha256:d16300a26860ea154117d552ce3b3b5c1145316f77281a36abc651885f3a3ebf",
+        "resulting_corpus_revision": "revision:019f5648-66d5-70a1-96cf-51c6ba2835f5",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f564793737b6293368df42d99c3fb",
+        "status": "committed",
+        "user_id": "user:82fcea4f4e924c0e930c48563ca324d7"
+      },
+      "service_session_id": "session:019f564793737b6293368df42d99c3fb",
+      "service_corpus_revision": "revision:019f5648-66d5-70a1-96cf-51c6ba2835f5",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T05:22:40.127-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f564796f97e71a299a58d910c55aa",
+          "elapsed_ms": 946.006,
+          "result_chars": 37245
+        },
+        {
+          "at": "2026-07-12T05:22:50.715-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647c0557c2194c4ae64f1faadcb",
+          "elapsed_ms": 1629.56,
+          "result_chars": 71367
+        },
+        {
+          "at": "2026-07-12T05:23:01.928-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5647ec237d11a3070c98104ab010",
+          "elapsed_ms": 719.218,
+          "result_chars": 31157
+        },
+        {
+          "at": "2026-07-12T05:23:33.467-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5648675a79039023928e1ea2cb85",
+          "elapsed_ms": 156.905,
+          "result_chars": 2983
+        }
+      ],
+      "workspace_result_chars": 142752,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f5647-1d40-7d40-8433-7fad4580c47b",
+        "checkpoint_id": "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+        "corpus_revision": "revision:019f5648-66d5-70a1-96cf-51c6ba2835f5",
+        "created": [
+          {
+            "id": "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "651f9892-ce35-4f6f-9e71-dc712408275b",
+        "deduplicated": [],
+        "id": "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+        "idempotency_key": "eval-checkpoint:session:019f564793737b6293368df42d99c3fb:ca4ae59e458e50748160da322775495e48dc457b7daefd4fc70d7136c5bb389e",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5648-66d5-70a1-96cf-51c6ba2835f5",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "Projects/Straylight/Write API and Dreaming - Initial Design.md"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:994991e1565a9b0d3c2fa16dd0ee9aad12959104071d881b0a65ba7e9e3ee0f9",
+        "operation_id": "operation:019f5648-66d2-7122-9a1e-fe00a2c83c33",
+        "policy": {
+          "policy_id": "7b284472-b074-4b5e-8ca3-da37deafb56f",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5648-66d2-7122-9a1e-fe00a2c83c33",
+        "replayed": false,
+        "request_hash": "sha256:d16300a26860ea154117d552ce3b3b5c1145316f77281a36abc651885f3a3ebf",
+        "resulting_corpus_revision": "revision:019f5648-66d5-70a1-96cf-51c6ba2835f5",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5648-66d5-70a1-96cf-51bdc696c261"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f564793737b6293368df42d99c3fb",
+        "status": "committed",
+        "user_id": "user:82fcea4f4e924c0e930c48563ca324d7"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "switzerland-authority-and-next-actions",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 79.697,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T052130-0700/service_api/switzerland-authority-and-next-actions/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "The safe planning baseline is: treat the coach brief as authoritative only for the athlete/team program, the working planning note as authoritative for the family\u2019s latest constraints, and the two research notes as non-booking inputs. Nothing in the retrieved evidence establishes family flights, lodging, transfers, handoff arrangements, Italy travel, or activities as booked. The immediate dependency is confirming the post-camp handoff, then choosing dates/airports, a lower-elevation lodging strategy, and whether to include Italy before checking live inventory and booking cancellable arrangements.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The coach brief is the primary source for Radley\u2019s CMAC Belgium/Saas-Fee program and team flight logistics, including any confirmation numbers recorded there. Its authority does not extend to the family itinerary. Camp schedules, arrival targets, Italy-stop ideas, and handoff implications must be reconfirmed with the coach/team before family bookings depend on them; their presence in the brief does not prove family transport, lodging, or a handoff is booked.",
+            "source_paths": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The working trip-planning note carries authority for the family\u2019s current stated constraints and preferences. These include altitude-risk planning, lower-elevation escape options, lodging capacity for Radley, a preferred family duration near two weeks, and the superseding correction that the family meets Radley after both camps\u2014not after Belgium. The roughly Aug 21/22 reunion, a 3\u20134-day Italy tail, and possible team-stop or Milan/Malpensa handoffs remain approximate choices, not booked facts.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The nearby-options menu is comparative planning research, while the A&K note is inspiration for route rhythm, sequencing, excursions, and scenic transitions. Candidate bases, routes, hotels, activities, transfers, durations, and Italy-tail concepts from either source are proposals or examples only. They must not be promoted into current itinerary or booked facts without live verification and an explicit selection; the planning note confirms this work remains active research.",
+            "source_paths": [
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Advance the trip in dependency order: (1) obtain written confirmation from the coach/team of the exact camp-end date, time, handoff location, Italy stop or Milan/Malpensa feasibility, baggage, and supervision; (2) choose the family travel window and arrival/departure airports within the roughly two-week preference; (3) select a lower-elevation lodging base with cancellation flexibility, practical Saas-Fee access, and capacity for Radley; (4) decide between no Italy tail and a specific 3\u20134-day Italy route; (5) compare transfer modes and timing; and only then verify live availability, total prices, cancellation terms, and altitude/transport feasibility before booking flights, lodging, and transfers. Activities should remain optional until the transport and lodging spine is secured.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Create a durable, source-aware Switzerland trip plan that separates authoritative current facts from proposals, historical/reference material, and incomplete research.",
+          "current_state": [
+            "The coach brief is the primary evidence for athlete/team camp logistics, not for family bookings.",
+            "The working planning note records the family\u2019s latest constraints, including a correction superseding the earlier reunion concept.",
+            "Nearby-region and Italy-tail work remains active research.",
+            "No retrieved source proves that family flights, lodging, transfers, handoff arrangements, Italy travel, or activities have been booked.",
+            "The required checkpoint was committed as checkpoint:019f5649-5c74-7120-b497-1403338b9494."
+          ],
+          "decisions": [
+            "Meet Radley only after both camps, not after Belgium.",
+            "Preserve a lower-elevation contingency because of prior serious altitude issues.",
+            "Prefer lodging that can accommodate Radley if needed.",
+            "Keep the family trip near two weeks unless a modest extension is justified.",
+            "Do not convert example routes, approximate dates, candidate properties, activities, or handoff ideas into facts without verification and explicit selection."
+          ],
+          "open_questions": [
+            "What are the coach-confirmed camp-end time and exact handoff location?",
+            "Will the team make a usable Italy stop, or is Milan/Malpensa the practical handoff?",
+            "What family arrival/departure dates and airports best satisfy the duration constraint?",
+            "Which lower-elevation base provides the best balance of access, contingency, capacity, and cancellation terms?",
+            "Should the trip include a 3\u20134-day Italy tail, and if so, which route?",
+            "What transport mode safely connects the selected airports, base, handoff, and Italy segment?"
+          ],
+          "next_actions": [
+            "Request written handoff and final schedule details from the coach/team.",
+            "Build two or three date-and-airport envelopes around the confirmed handoff.",
+            "Shortlist lower-elevation, cancellable lodging with Radley capacity and verify live inventory.",
+            "Choose the Italy-tail or no-tail scenario.",
+            "Verify live schedules, transfer times, total prices, and cancellation terms.",
+            "Book the itinerary spine in dependency order; add activities afterward."
+          ],
+          "artifacts": [
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Switzerland trip planning.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "checkpoint:019f5649-5c74-7120-b497-1403338b9494"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 9,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "coach",
+                  "camp brief"
+                ],
+                "matched": "coach"
+              },
+              {
+                "alternatives": [
+                  "camp dates",
+                  "camp logistics"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "example itinerary",
+                  "not a family booking",
+                  "confirmation numbers"
+                ],
+                "matched": "confirmation numbers"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "user-provided",
+                  "family constraints",
+                  "correction"
+                ],
+                "matched": "correction"
+              },
+              {
+                "alternatives": [
+                  "after both camps",
+                  "altitude",
+                  "two weeks"
+                ],
+                "matched": "after both camps"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "shortlist",
+                  "options",
+                  "recommendation"
+                ],
+                "matched": "options"
+              },
+              {
+                "alternatives": [
+                  "inspiration",
+                  "A&K",
+                  "rhythm"
+                ],
+                "matched": "inspiration"
+              },
+              {
+                "alternatives": [
+                  "not booked",
+                  "not a reservation",
+                  "proposal"
+                ],
+                "matched": "proposal"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "arrival",
+                  "departure",
+                  "flight"
+                ],
+                "matched": "arrival"
+              },
+              {
+                "alternatives": [
+                  "lodging",
+                  "room",
+                  "availability"
+                ],
+                "matched": "lodging"
+              },
+              {
+                "alternatives": [
+                  "pickup",
+                  "handoff",
+                  "Malpensa"
+                ],
+                "matched": "handoff"
+              },
+              {
+                "alternatives": [
+                  "verify",
+                  "before booking"
+                ],
+                "matched": "verify"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 16,
+        "commands": 4,
+        "command_output_chars": 121166,
+        "tokens": {
+          "input_tokens": 135161,
+          "cached_input_tokens": 106240,
+          "output_tokens": 3271
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T05:23:50.755-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5648aae171818ee95c60fb611477",
+          "elapsed_ms": 599.791,
+          "result_chars": 37657
+        },
+        {
+          "at": "2026-07-12T05:24:04.103-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5648df0476b390a72c0cc2ada0ff",
+          "elapsed_ms": 1352.151,
+          "result_chars": 73832
+        },
+        {
+          "at": "2026-07-12T05:24:15.210-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f56490a697f7287f1cde09b34cc4e",
+          "elapsed_ms": 30.388,
+          "result_chars": 6709
+        },
+        {
+          "at": "2026-07-12T05:24:36.349-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f56495cfc723183304d1248801a00",
+          "elapsed_ms": 162.94,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 121162,
+      "service_latency_ms": 2145.27,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f5647-4808-7fe1-8f7f-a0eda8de2d1e",
+        "checkpoint_id": "checkpoint:019f5649-5c74-7120-b497-1403338b9494",
+        "corpus_revision": "revision:019f5649-5c74-7120-b497-14146a3e8ded",
+        "created": [
+          {
+            "id": "checkpoint:019f5649-5c74-7120-b497-1403338b9494",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "24864e0c-ca43-45ce-91d0-4411572ee7cd",
+        "deduplicated": [],
+        "id": "checkpoint:019f5649-5c74-7120-b497-1403338b9494",
+        "idempotency_key": "eval-checkpoint:session:019f5648a89b7a42a1b8cd547f6f94cb:3596e3a542a398d6ee0162612fe2fa95620f8d786dd2ce3a81f1270208fbdd01",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5649-5c74-7120-b497-14146a3e8ded",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5649-5c6f-7232-bd62-8ae4debe7b3f"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5649-5c74-7120-b497-1403338b9494",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:058da47b8365034b22ce140dd3e7d83d04aa26d3ac5240c4308ffd4b48fcf1bb",
+        "operation_id": "operation:019f5649-5c6e-7d41-b262-76ef4c0be1fc",
+        "policy": {
+          "policy_id": "dd9a1b74-1ac0-4876-a428-93f9372b9676",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5649-5c6e-7d41-b262-76ef4c0be1fc",
+        "replayed": false,
+        "request_hash": "sha256:92f637dcc4cb07392b29501e7240b97a184b6738316e020e52bab99601e26083",
+        "resulting_corpus_revision": "revision:019f5649-5c74-7120-b497-14146a3e8ded",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5649-5c74-7120-b497-1403338b9494"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f5648a89b7a42a1b8cd547f6f94cb",
+        "status": "committed",
+        "user_id": "user:c75655ca6fed4de2b09024e3dceb8e9a"
+      },
+      "service_session_id": "session:019f5648a89b7a42a1b8cd547f6f94cb",
+      "service_corpus_revision": "revision:019f5649-5c74-7120-b497-14146a3e8ded",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T05:23:50.755-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5648aae171818ee95c60fb611477",
+          "elapsed_ms": 599.791,
+          "result_chars": 37657
+        },
+        {
+          "at": "2026-07-12T05:24:04.103-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5648df0476b390a72c0cc2ada0ff",
+          "elapsed_ms": 1352.151,
+          "result_chars": 73832
+        },
+        {
+          "at": "2026-07-12T05:24:15.210-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f56490a697f7287f1cde09b34cc4e",
+          "elapsed_ms": 30.388,
+          "result_chars": 6709
+        },
+        {
+          "at": "2026-07-12T05:24:36.349-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f56495cfc723183304d1248801a00",
+          "elapsed_ms": 162.94,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 121162,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f5647-4808-7fe1-8f7f-a0eda8de2d1e",
+        "checkpoint_id": "checkpoint:019f5649-5c74-7120-b497-1403338b9494",
+        "corpus_revision": "revision:019f5649-5c74-7120-b497-14146a3e8ded",
+        "created": [
+          {
+            "id": "checkpoint:019f5649-5c74-7120-b497-1403338b9494",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "24864e0c-ca43-45ce-91d0-4411572ee7cd",
+        "deduplicated": [],
+        "id": "checkpoint:019f5649-5c74-7120-b497-1403338b9494",
+        "idempotency_key": "eval-checkpoint:session:019f5648a89b7a42a1b8cd547f6f94cb:3596e3a542a398d6ee0162612fe2fa95620f8d786dd2ce3a81f1270208fbdd01",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5649-5c74-7120-b497-14146a3e8ded",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5649-5c6f-7232-bd62-8ae4debe7b3f"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5649-5c74-7120-b497-1403338b9494",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:058da47b8365034b22ce140dd3e7d83d04aa26d3ac5240c4308ffd4b48fcf1bb",
+        "operation_id": "operation:019f5649-5c6e-7d41-b262-76ef4c0be1fc",
+        "policy": {
+          "policy_id": "dd9a1b74-1ac0-4876-a428-93f9372b9676",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5649-5c6e-7d41-b262-76ef4c0be1fc",
+        "replayed": false,
+        "request_hash": "sha256:92f637dcc4cb07392b29501e7240b97a184b6738316e020e52bab99601e26083",
+        "resulting_corpus_revision": "revision:019f5649-5c74-7120-b497-14146a3e8ded",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5649-5c74-7120-b497-1403338b9494"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f5648a89b7a42a1b8cd547f6f94cb",
+        "status": "committed",
+        "user_id": "user:c75655ca6fed4de2b09024e3dceb8e9a"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "straylight-product-resume",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 73.617,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260712T052130-0700/service_api/straylight-product-resume/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Straylight is an agent-first portable context layer for durable machine continuity. It must preserve learned knowledge together with resumable work state. Obsidian is a useful projection, input, and evaluation corpus\u2014not the canonical product boundary. The original retrieval benchmark measured only a narrow slice; the expanded gate must demonstrate successful continuation and advancement of realistic end-to-end work, with faithful evidence use, verification, revision, and durable handoff.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The corrected product category is an agent-first portable context layer and durable-work product whose primary job is durable machine continuity across research, planning, implementation, operations, verification, and handoff\u2014not primarily a notes app, retrieval product, or memory database.",
+            "source_paths": [
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Beyond learned memory, Straylight must preserve the live state of work: goals and current state, evidence and provenance, decisions, hypotheses, plans, artifacts, computations, unresolved questions, rejected paths, checkpoints, verification state, and resumable next safe actions. A later agent must be able to inspect how that state arose, revise it, and leave a better handoff.",
+            "source_paths": [
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Obsidian and human-readable Markdown are prototype inputs, human-facing projections, and a representative evaluation corpus. They are not the product boundary, canonical agent interaction model, or necessarily the canonical storage representation; Straylight is the portable agent context and durable-work system built over such corpora.",
+            "source_paths": [
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The completed first benchmark was too narrow because it evaluated retrieval readiness\u201420 frozen questions and 53 gold evidence items\u2014rather than the larger product promise of continuing real work. The expanded evaluation must prove successful resumption and advancement across changing constraints and realistic workloads, comparing direct filesystem tooling, an agent-first open/query/read/compute/verify/checkpoint/revision workspace, and a fixed handoff pack. It must test reasoning quality, source fidelity, durable-state and handoff quality, quantitative artifact work, temporal supersession, contradictions, operational learning, full-source inspection, and verification before action across Warmind/Charlemagne, StarRupture, Switzerland planning, and Straylight itself. This is the current evaluation proposal/gate, not yet a verified pass.",
+            "source_paths": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Worklog.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Resume Straylight under the corrected agent-first durable-work framing and carry the expanded evaluation through to evidence-backed results.",
+          "current_state": [
+            "Current fact: Straylight is an agent-first portable context layer for durable machine continuity, not primarily a notes, retrieval, or memory-database product.",
+            "Current fact: learned knowledge and live resumable work state are both required.",
+            "Historical evidence: the first retrieval-readiness benchmark completed with 20 frozen questions and 53 gold evidence items.",
+            "Superseding state: the current project thesis says that benchmark covered too narrow a product slice.",
+            "Incomplete work: the expanded real-work evaluation is being proposed and developed; no passing result was found in the available evidence.",
+            "Checkpoint committed as checkpoint:019f5649-61d3-7af0-8131-8f05f5081916."
+          ],
+          "decisions": [
+            "Treat Projects/Straylight/Straylight.md as the authoritative current product framing.",
+            "Treat Projects/Straylight/Worklog.md as historical evidence for the initial benchmark, not as the current product boundary.",
+            "Treat Obsidian and Markdown as projections, prototype inputs, and evaluation material rather than canonical product or storage boundaries.",
+            "Make successful continuation and advancement of real work the evaluation gate, with retrieval recall only one contributing capability.",
+            "Compare direct filesystem tooling, the agent-first workspace, and a fixed handoff/context-pack control."
+          ],
+          "open_questions": [
+            "Which concrete scoring rubric and pass thresholds should govern the expanded evaluation?",
+            "Storage, schema, deployment, commercial choices, and the public descriptor remain open.",
+            "The representative workloads have not yet produced a verified expanded-gate result."
+          ],
+          "next_actions": [
+            "Create end-to-end resumption tasks for Warmind/Charlemagne investigations, StarRupture factory iteration, Switzerland planning under changing constraints, and Straylight's own design continuation.",
+            "Score reasoning quality, source fidelity, durable-state quality, temporal and supersession handling, contradiction handling, quantitative artifact work, verification before action, and handoff resumability.",
+            "Run all three comparison conditions and record verified results separately from proposals and historical benchmark evidence.",
+            "Persist revised checkpoints as evaluation evidence changes."
+          ],
+          "artifacts": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Worklog.md",
+            "chunk:019f564748b47ca38b04f3c265b85734",
+            "chunk:019f564748b47ca38b04f42942260254",
+            "chunk:019f564748b47ca38b04f44a18241fb1",
+            "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 5,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "agent context",
+                  "durable-work",
+                  "durable work"
+                ],
+                "matched": "durable-work"
+              },
+              {
+                "alternatives": [
+                  "agent-first",
+                  "agent first"
+                ],
+                "matched": "agent-first"
+              },
+              {
+                "alternatives": [
+                  "learn",
+                  "continue",
+                  "advance"
+                ],
+                "matched": "learn"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Straylight.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "goals",
+                  "evidence"
+                ],
+                "matched": "goals"
+              },
+              {
+                "alternatives": [
+                  "hypotheses",
+                  "plans"
+                ],
+                "matched": "hypotheses"
+              },
+              {
+                "alternatives": [
+                  "artifacts",
+                  "computations"
+                ],
+                "matched": "artifacts"
+              },
+              {
+                "alternatives": [
+                  "open questions",
+                  "rejected",
+                  "checkpoints",
+                  "next actions"
+                ],
+                "matched": "rejected"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Straylight.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "projection",
+                  "prototype input",
+                  "export"
+                ],
+                "matched": "projection"
+              },
+              {
+                "alternatives": [
+                  "not the product",
+                  "not canonical",
+                  "not the boundary"
+                ],
+                "matched": "not the product"
+              },
+              {
+                "alternatives": [
+                  "Markdown",
+                  "Obsidian"
+                ],
+                "matched": "Markdown"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Straylight.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "resume",
+                  "continuation"
+                ],
+                "matched": "continuation"
+              },
+              {
+                "alternatives": [
+                  "iterate",
+                  "planning",
+                  "constraints"
+                ],
+                "matched": "planning"
+              },
+              {
+                "alternatives": [
+                  "compute",
+                  "verify",
+                  "checkpoint",
+                  "next-state"
+                ],
+                "matched": "compute"
+              },
+              {
+                "alternatives": [
+                  "Warmind",
+                  "StarRupture",
+                  "Switzerland"
+                ],
+                "matched": "Warmind"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Worklog.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 14,
+        "commands": 4,
+        "command_output_chars": 129809,
+        "tokens": {
+          "input_tokens": 148214,
+          "cached_input_tokens": 116480,
+          "output_tokens": 2714
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-12T05:24:04.581-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5648e0e37ef18ddd3997f22e108c",
+          "elapsed_ms": 703.428,
+          "result_chars": 39317
+        },
+        {
+          "at": "2026-07-12T05:24:11.236-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5648fae273b3829c87d453f35b87",
+          "elapsed_ms": 1448.291,
+          "result_chars": 71332
+        },
+        {
+          "at": "2026-07-12T05:24:21.464-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f564922d676e3b524ca7ea842e59d",
+          "elapsed_ms": 28.262,
+          "result_chars": 16192
+        },
+        {
+          "at": "2026-07-12T05:24:37.725-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5649625c7ef0a2c00ad5d7f6ab96",
+          "elapsed_ms": 160.296,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 129805,
+      "service_latency_ms": 2340.277,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f5647-6e95-7733-9d01-9ad35c9d6d84",
+        "checkpoint_id": "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916",
+        "corpus_revision": "revision:019f5649-61d3-7af0-8131-8f1fd24f7c07",
+        "created": [
+          {
+            "id": "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "e9b60839-205f-44d3-9e51-c7d986c9d83a",
+        "deduplicated": [],
+        "id": "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916",
+        "idempotency_key": "eval-checkpoint:session:019f5648de3370809d6c8ec5a0c3308d:abd0429bfd27bb27035f6cae4328fb8203878988c6c095a0d9eef456eae7f619",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5649-61d3-7af0-8131-8f1fd24f7c07",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5649-61cf-7ad3-9070-7a6ff75e88c4"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:3418737817527f5fc856599b9585d3ca40dd6a03c69bf5bfe0aee66dd70b3f17",
+        "operation_id": "operation:019f5649-61ce-7953-8091-7d4d80db744e",
+        "policy": {
+          "policy_id": "57cce035-9692-4f8c-8c9e-3e29d29a8a9f",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5649-61ce-7953-8091-7d4d80db744e",
+        "replayed": false,
+        "request_hash": "sha256:72b8fecddbe1a48523c357c20615965cfdf620a4e6c65f68729b40a69635f1b0",
+        "resulting_corpus_revision": "revision:019f5649-61d3-7af0-8131-8f1fd24f7c07",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f5648de3370809d6c8ec5a0c3308d",
+        "status": "committed",
+        "user_id": "user:55f2b61e5eaf42e5afb7b805c61fdc73"
+      },
+      "service_session_id": "session:019f5648de3370809d6c8ec5a0c3308d",
+      "service_corpus_revision": "revision:019f5649-61d3-7af0-8131-8f1fd24f7c07",
+      "workspace_operations": [
+        {
+          "at": "2026-07-12T05:24:04.581-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5648e0e37ef18ddd3997f22e108c",
+          "elapsed_ms": 703.428,
+          "result_chars": 39317
+        },
+        {
+          "at": "2026-07-12T05:24:11.236-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f5648fae273b3829c87d453f35b87",
+          "elapsed_ms": 1448.291,
+          "result_chars": 71332
+        },
+        {
+          "at": "2026-07-12T05:24:21.464-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f564922d676e3b524ca7ea842e59d",
+          "elapsed_ms": 28.262,
+          "result_chars": 16192
+        },
+        {
+          "at": "2026-07-12T05:24:37.725-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f5649625c7ef0a2c00ad5d7f6ab96",
+          "elapsed_ms": 160.296,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 129805,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f5647-6e95-7733-9d01-9ad35c9d6d84",
+        "checkpoint_id": "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916",
+        "corpus_revision": "revision:019f5649-61d3-7af0-8131-8f1fd24f7c07",
+        "created": [
+          {
+            "id": "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "e9b60839-205f-44d3-9e51-c7d986c9d83a",
+        "deduplicated": [],
+        "id": "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916",
+        "idempotency_key": "eval-checkpoint:session:019f5648de3370809d6c8ec5a0c3308d:abd0429bfd27bb27035f6cae4328fb8203878988c6c095a0d9eef456eae7f619",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f5649-61d3-7af0-8131-8f1fd24f7c07",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f5649-61cf-7ad3-9070-7a6ff75e88c4"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:3418737817527f5fc856599b9585d3ca40dd6a03c69bf5bfe0aee66dd70b3f17",
+        "operation_id": "operation:019f5649-61ce-7953-8091-7d4d80db744e",
+        "policy": {
+          "policy_id": "57cce035-9692-4f8c-8c9e-3e29d29a8a9f",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f5649-61ce-7953-8091-7d4d80db744e",
+        "replayed": false,
+        "request_hash": "sha256:72b8fecddbe1a48523c357c20615965cfdf620a4e6c65f68729b40a69635f1b0",
+        "resulting_corpus_revision": "revision:019f5649-61d3-7af0-8131-8f1fd24f7c07",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f5649-61d3-7af0-8131-8f05f5081916"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f5648de3370809d6c8ec5a0c3308d",
+        "status": "committed",
+        "user_id": "user:55f2b61e5eaf42e5afb7b805c61fdc73"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 5,
+        "successful_runs": 5,
+        "cases_passed": 3,
+        "case_pass_rate": 0.6,
+        "claims_passed": 15,
+        "claims_total": 20,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.8187,
+        "elapsed_samples": 5,
+        "mean_elapsed_seconds": 80.25,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 121889.8,
+        "persisted_checkpoints": 5,
+        "checkpoint_eligible_runs": 5,
+        "mean_service_calls": 4.0,
+        "mean_service_result_chars": 121889.8,
+        "mean_service_latency_ms": 2450.184,
+        "mean_completed_commands": 4.8,
+        "mean_command_output_chars": 122672.2,
+        "mean_tokens": {
+          "input_tokens": 182806.6,
+          "output_tokens": 3144.0,
+          "cached_input_tokens": 148633.6,
+          "uncached_input_tokens": 34173.0
+        }
+      }
+    },
+    "by_workload": {
+      "Charlemagne": {
+        "service_api": {
+          "runs": 2,
+          "successful_runs": 2,
+          "cases_passed": 1,
+          "case_pass_rate": 0.5,
+          "claims_passed": 7,
+          "claims_total": 8,
+          "claim_pass_rate": 0.875,
+          "mean_score": 0.9434,
+          "elapsed_samples": 2,
+          "mean_elapsed_seconds": 80.92,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 107865.0,
+          "persisted_checkpoints": 2,
+          "checkpoint_eligible_runs": 2,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 107865.0,
+          "mean_service_latency_ms": 2156.843,
+          "mean_completed_commands": 5.0,
+          "mean_command_output_chars": 108853.5,
+          "mean_tokens": {
+            "input_tokens": 190063.5,
+            "output_tokens": 3244.5,
+            "cached_input_tokens": 155136.0,
+            "uncached_input_tokens": 34927.5
+          }
+        }
+      },
+      "Star Rupture": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 0,
+          "claims_total": 4,
+          "claim_pass_rate": 0.0,
+          "mean_score": 0.2633,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 86.09,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 142752.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 142752.0,
+          "mean_service_latency_ms": 3451.689,
+          "mean_completed_commands": 6.0,
+          "mean_command_output_chars": 144679.0,
+          "mean_tokens": {
+            "input_tokens": 250531.0,
+            "output_tokens": 3246.0,
+            "cached_input_tokens": 210176.0,
+            "uncached_input_tokens": 40355.0
+          }
+        }
+      },
+      "Straylight": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 73.62,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 129805.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 129805.0,
+          "mean_service_latency_ms": 2340.277,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 129809.0,
+          "mean_tokens": {
+            "input_tokens": 148214.0,
+            "output_tokens": 2714.0,
+            "cached_input_tokens": 116480.0,
+            "uncached_input_tokens": 31734.0
+          }
+        }
+      },
+      "Switzerland": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 79.7,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 121162.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 121162.0,
+          "mean_service_latency_ms": 2145.27,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 121166.0,
+          "mean_tokens": {
+            "input_tokens": 135161.0,
+            "output_tokens": 3271.0,
+            "cached_input_tokens": 106240.0,
+            "uncached_input_tokens": 28921.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "artifact_computation_and_safety": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.8867,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 87.13,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 94800.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 94800.0,
+          "mean_service_latency_ms": 1756.508,
+          "mean_completed_commands": 6.0,
+          "mean_command_output_chars": 96773.0,
+          "mean_tokens": {
+            "input_tokens": 227064.0,
+            "output_tokens": 3345.0,
+            "cached_input_tokens": 191744.0,
+            "uncached_input_tokens": 35320.0
+          }
+        }
+      },
+      "authority_and_actionability": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 79.7,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 121162.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 121162.0,
+          "mean_service_latency_ms": 2145.27,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 121166.0,
+          "mean_tokens": {
+            "input_tokens": 135161.0,
+            "output_tokens": 3271.0,
+            "cached_input_tokens": 106240.0,
+            "uncached_input_tokens": 28921.0
+          }
+        }
+      },
+      "authority_and_missing_artifacts": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 0,
+          "claims_total": 4,
+          "claim_pass_rate": 0.0,
+          "mean_score": 0.2633,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 86.09,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 142752.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 142752.0,
+          "mean_service_latency_ms": 3451.689,
+          "mean_completed_commands": 6.0,
+          "mean_command_output_chars": 144679.0,
+          "mean_tokens": {
+            "input_tokens": 250531.0,
+            "output_tokens": 3246.0,
+            "cached_input_tokens": 210176.0,
+            "uncached_input_tokens": 40355.0
+          }
+        }
+      },
+      "project_continuation": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 73.62,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 129805.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 129805.0,
+          "mean_service_latency_ms": 2340.277,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 129809.0,
+          "mean_tokens": {
+            "input_tokens": 148214.0,
+            "output_tokens": 2714.0,
+            "cached_input_tokens": 116480.0,
+            "uncached_input_tokens": 31734.0
+          }
+        }
+      },
+      "temporal_state_and_planning": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 74.71,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 120930.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 120930.0,
+          "mean_service_latency_ms": 2557.178,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 120934.0,
+          "mean_tokens": {
+            "input_tokens": 153063.0,
+            "output_tokens": 3144.0,
+            "cached_input_tokens": 118528.0,
+            "uncached_input_tokens": 34535.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "charlemagne-storage-current-state": {
+        "id": "charlemagne-storage-current-state",
+        "workload": "Charlemagne",
+        "capability": "temporal_state_and_planning",
+        "task": "Resume the rhea storage investigation using the May, June 16, and June 24 records. State the current durable growth story, separate it from the transient free-space drop and rebound, explain what is and is not still receiving writes, and propose the next safe actions without treating large legacy tables as disposable.",
+        "claim_slots": {
+          "c1": "current disk and schema state",
+          "c2": "durable versus transient cause",
+          "c3": "legacy versus active writes",
+          "c4": "safe next actions"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "496G",
+                  "496 G"
+                ]
+              },
+              {
+                "any": [
+                  "87%",
+                  "87 percent"
+                ]
+              },
+              {
+                "any": [
+                  "273.95",
+                  "273.9"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "legacy session",
+                  "_legacy"
+                ]
+              },
+              {
+                "any": [
+                  "196 GiB",
+                  "196G",
+                  "196 Gi"
+                ]
+              },
+              {
+                "any": [
+                  "temporary",
+                  "transient",
+                  "GROUP BY",
+                  "skill_rating_match_audits"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "compact replacement",
+                  "replacement tables",
+                  "active writes"
+                ]
+              },
+              {
+                "any": [
+                  "0/s",
+                  "zero writes",
+                  "not current write"
+                ]
+              },
+              {
+                "any": [
+                  "retained",
+                  "durable retained"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "monitor",
+                  "watch",
+                  "df"
+                ]
+              },
+              {
+                "any": [
+                  "replay",
+                  "rollback",
+                  "cutover acceptance"
+                ]
+              },
+              {
+                "any": [
+                  "physical reclaim",
+                  "separate decision",
+                  "maintenance"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "drop the legacy tables immediately",
+          "turn off session tracking"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      "charlemagne-index-artifact-review": {
+        "id": "charlemagne-index-artifact-review",
+        "workload": "Charlemagne",
+        "capability": "artifact_computation_and_safety",
+        "task": "Inspect the saved unused-index TSV and SQL artifacts as a maintenance-planning task. Identify the three largest rough index estimates, compute their combined rough GiB, and explain why the generated DROP script is not an execution plan. Leave the exact verification and maintenance gates for a future operator.",
+        "claim_slots": {
+          "c1": "three largest rough estimates",
+          "c2": "combined rough size",
+          "c3": "why the SQL is not ready to execute",
+          "c4": "verification and maintenance gates"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "summary_weapon_meta_daily"
+                ]
+              },
+              {
+                "any": [
+                  "45.67"
+                ]
+              },
+              {
+                "any": [
+                  "raw_raids"
+                ]
+              },
+              {
+                "any": [
+                  "characterId",
+                  "membershipId"
+                ]
+              },
+              {
+                "any": [
+                  "32.31"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "110.29",
+                  "110.3"
+                ]
+              },
+              {
+                "any": [
+                  "rough",
+                  "estimate"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "zero operations",
+                  "collected stats"
+                ]
+              },
+              {
+                "any": [
+                  "FULLTEXT",
+                  "review-fulltext"
+                ]
+              },
+              {
+                "any": [
+                  "not proof",
+                  "not execute",
+                  "not an execution"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-drop-candidates.tsv",
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "mysql.innodb_index_stats",
+                  "exact pages",
+                  "real query usage"
+                ]
+              },
+              {
+                "any": [
+                  "maintenance window"
+                ]
+              },
+              {
+                "any": [
+                  "rollback",
+                  "backup",
+                  "monitor"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv",
+              "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql"
+            ]
+          }
+        ],
+        "forbidden": [
+          "run the drop script now",
+          "safe to drop all"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      "star-rupture-source-authority": {
+        "id": "star-rupture-source-authority",
+        "workload": "Star Rupture",
+        "capability": "authority_and_missing_artifacts",
+        "task": "A new agent is about to extend the StarRupture factory plan. Establish the current-version and source-authority rules, list examples of future or hidden content that must not enter the live plan, and check whether the referenced structured game database is actually present in this workspace. State how to proceed without fabricating data.",
+        "claim_slots": {
+          "c1": "current game version context",
+          "c2": "source authority hierarchy",
+          "c3": "future or hidden exclusions",
+          "c4": "structured artifact availability and response"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "Update 1"
+                ]
+              },
+              {
+                "any": [
+                  "0.2.x",
+                  "0.2.8"
+                ]
+              },
+              {
+                "any": [
+                  "playtest",
+                  "outdated"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "Steam",
+                  "Creepy Jar"
+                ]
+              },
+              {
+                "any": [
+                  "authoritative",
+                  "actually in the build"
+                ]
+              },
+              {
+                "any": [
+                  "starrupture.tools",
+                  "caveat"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Rail v.4",
+                  "v.4"
+                ]
+              },
+              {
+                "any": [
+                  "Rail v.5",
+                  "v.5"
+                ]
+              },
+              {
+                "any": [
+                  "hidden",
+                  "Chemical Processor",
+                  "Chimeran Power Generator"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md",
+              "Topics/Star Rupture/Star Rupture logistics.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "not present",
+                  "missing",
+                  "unavailable"
+                ]
+              },
+              {
+                "any": [
+                  "starrupture.sqlite",
+                  "data/"
+                ]
+              },
+              {
+                "any": [
+                  "do not fabricate",
+                  "cannot claim",
+                  "use the saved tables"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/Star Rupture/Star Rupture.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "I queried starrupture.sqlite",
+          "the database confirms"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      "switzerland-authority-and-next-actions": {
+        "id": "switzerland-authority-and-next-actions",
+        "workload": "Switzerland",
+        "capability": "authority_and_actionability",
+        "task": "Build a source-aware planning checkpoint for the Switzerland trip. Explain what authority each of the four notes carries, which details must not be promoted into booked facts, and the next concrete research or booking decisions needed to advance the trip safely.",
+        "claim_slots": {
+          "c1": "coach brief authority",
+          "c2": "user constraint authority",
+          "c3": "options and inspiration authority",
+          "c4": "next concrete decisions"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "coach",
+                  "camp brief"
+                ]
+              },
+              {
+                "any": [
+                  "camp dates",
+                  "camp logistics"
+                ]
+              },
+              {
+                "any": [
+                  "example itinerary",
+                  "not a family booking",
+                  "confirmation numbers"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "user-provided",
+                  "family constraints",
+                  "correction"
+                ]
+              },
+              {
+                "any": [
+                  "after both camps",
+                  "altitude",
+                  "two weeks"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "shortlist",
+                  "options",
+                  "recommendation"
+                ]
+              },
+              {
+                "any": [
+                  "inspiration",
+                  "A&K",
+                  "rhythm"
+                ]
+              },
+              {
+                "any": [
+                  "not booked",
+                  "not a reservation",
+                  "proposal"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "arrival",
+                  "departure",
+                  "flight"
+                ]
+              },
+              {
+                "any": [
+                  "lodging",
+                  "room",
+                  "availability"
+                ]
+              },
+              {
+                "any": [
+                  "pickup",
+                  "handoff",
+                  "Malpensa"
+                ]
+              },
+              {
+                "any": [
+                  "verify",
+                  "before booking"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "family flights are booked",
+          "hotel is booked"
+        ],
+        "grading_mode": "exact_substring_v1"
+      },
+      "straylight-product-resume": {
+        "id": "straylight-product-resume",
+        "workload": "Straylight",
+        "capability": "project_continuation",
+        "task": "Resume Straylight after the product-framing correction. State what the product is, what durable state it must preserve beyond learned memory, why Obsidian is not the product boundary, why the first benchmark was too narrow, and what the expanded evaluation must now prove.",
+        "claim_slots": {
+          "c1": "correct product category",
+          "c2": "durable work state",
+          "c3": "relationship to Obsidian",
+          "c4": "new evaluation gate"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "agent context",
+                  "durable-work",
+                  "durable work"
+                ]
+              },
+              {
+                "any": [
+                  "agent-first",
+                  "agent first"
+                ]
+              },
+              {
+                "any": [
+                  "learn",
+                  "continue",
+                  "advance"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "goals",
+                  "evidence"
+                ]
+              },
+              {
+                "any": [
+                  "hypotheses",
+                  "plans"
+                ]
+              },
+              {
+                "any": [
+                  "artifacts",
+                  "computations"
+                ]
+              },
+              {
+                "any": [
+                  "open questions",
+                  "rejected",
+                  "checkpoints",
+                  "next actions"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "projection",
+                  "prototype input",
+                  "export"
+                ]
+              },
+              {
+                "any": [
+                  "not the product",
+                  "not canonical",
+                  "not the boundary"
+                ]
+              },
+              {
+                "any": [
+                  "Markdown",
+                  "Obsidian"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "resume",
+                  "continuation"
+                ]
+              },
+              {
+                "any": [
+                  "iterate",
+                  "planning",
+                  "constraints"
+                ]
+              },
+              {
+                "any": [
+                  "compute",
+                  "verify",
+                  "checkpoint",
+                  "next-state"
+                ]
+              },
+              {
+                "any": [
+                  "Warmind",
+                  "StarRupture",
+                  "Switzerland"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          }
+        ],
+        "forbidden": [],
+        "grading_mode": "exact_substring_v1"
+      }
+    }
+  }
+}

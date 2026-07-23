@@ -1,0 +1,18 @@
+{
+  "schema": "source-calendar-series@v1",
+  "event_series": {
+    "id": "event-series:harbor-practice",
+    "name": "Harbor Practice",
+    "timezone": "America/Los_Angeles",
+    "dtstart": "2026-08-05T17:00:00-07:00",
+    "duration_minutes": 90,
+    "rrule": "FREQ=WEEKLY;BYDAY=WE;COUNT=4",
+    "source": "source:harbor-series-r1"
+  },
+  "generated_occurrence_ids": [
+    "event-occurrence:harbor-2026-08-05",
+    "event-occurrence:harbor-2026-08-12",
+    "event-occurrence:harbor-2026-08-19",
+    "event-occurrence:harbor-2026-08-26"
+  ]
+}

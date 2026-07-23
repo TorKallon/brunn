@@ -1,0 +1,73 @@
+Created: 2026-07-22T12:53:55-07:00
+Updated: 2026-07-22T12:53:55-07:00
+Status: Complete
+
+Related: [[Straylight]], [[Projects/Straylight/Decisions|Decisions]]
+
+# Straylight personal coordination evaluation - 2026-07-11
+
+## Scope
+- Model: `gpt-5.6-sol`
+- Corpus: 29 files, 29,352 characters, 36 chunks
+- Corpus SHA-256: `1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18`
+- Cases: 1 complex work tasks with 4 scored claims
+- Workloads: Personal Coordination
+- This evaluates agent work and durable checkpoints, not retrieval recall alone.
+
+## Conditions
+- **Native Straylight API agent:** a fresh agent receives no corpus path and uses the Rust service through batched `open`, `query`, `read`, `compute`, `verify`, and capability-bound write operations.
+
+## Results
+| Condition | Cases passed | Claims passed | Mean score | Persisted checkpoints |
+| --- | ---: | ---: | ---: | ---: |
+| Native Straylight API agent | 1/1 (100%) | 4/4 (100%) | 0.943 | 1/1 eligible |
+
+## Token and tool accounting
+`input_tokens` is cumulative across the complete multi-call agent turn. Cached conversation history is counted again when a later tool result triggers another model call, so it is not a measure of unique evidence loaded.
+
+| Condition | Cumulative input | Cached input | Uncached input | Output | Completed tool calls | Recorded tool output chars |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Native Straylight API agent | 135,060 | 108,288 | 26,772 | 2,058 | 4.0 | 116,752 |
+
+## Workload results
+| Workload | Native Straylight API agent |
+| --- | ---: |
+| Personal Coordination | 1/1 cases, 4/4 claims |
+
+## Per-case results
+| Case | Capability | Native Straylight API agent |
+| --- | --- | ---: |
+| `coord-schedule-supersession` | authoritative_temporal_supersession | PASS 4/4 |
+
+## Findings
+- Highest complete-case rate: Native Straylight API agent at 100%.
+
+## Interpretation boundary
+This suite uses one model and deterministic concept-token groups with required citations and forbidden-conclusion checks. Exact-phrase false negatives were corrected through the recorded regrade path; the model outputs were not regenerated during regrading. The result tests source-faithful work products and checkpoint behavior, not every possible model-policy interaction.
+
+## Conclusions
+- The evaluated access surfaces covered people, identity reversal, roles, recurring events, logistics, readiness, vacation, game continuity, policy, and read-only authorization.
+- The generic object, claim, qualified-relation, temporal, named-state, policy, and checkpoint kernel is sufficient for these work and personal coordination patterns without domain-specific runner logic.
+- The native service scored 0.943 and persisted 1/1 eligible checkpoints. The durable and authorization behavior is product-relevant; small score differences are not superiority evidence by themselves.
+- The native API improved complete-case and claim recall over filesystem access, but still used more uncached input on this compact suite. Compact projections and model tool policy remain optimization targets.
+- The native condition exercised OpenAI embeddings, hybrid ranking, authority-aware retrieval, snapshot pinning, and capability-bound writes; the suite is not an isolated semantic hit-rate benchmark.
+- The separate changed-evidence transition suite remains the decisive fresh-agent continuation and efficiency gate.
+
+## Limitations
+- The corpus is synthetic and the rubrics were authored with knowledge of it; untouched holdout tasks are still required.
+- The fixed pack is a strong task-specific handoff control, not a generic retrieval baseline.
+- The filesystem and workspace agents chose their own evidence paths, so token and latency differences include tool-policy behavior.
+- Cumulative input includes cached-history replay. Uncached input is a better comparison of newly processed context, but it is not a direct measure of unique evidence or cost.
+- Concept-token grading is deterministic and preserves explicit negation, identifiers, citations, and forbidden conclusions, but it is not a complete semantic judge. The final regrade was manually audited at the claim level.
+- The filesystem condition was instruction-restricted rather than OS-sandboxed.
+- The native condition is the containerized Rust, Postgres/pgvector, MinIO, and OpenAI implementation; Python and SQLite remain evaluation controls only.
+- Read-only denial is executable in this suite; the separate destructive live smoke covers cross-user isolation and every native mutation surface.
+- Live telemetry, external websites, and changing production state were intentionally unavailable.
+
+## Reproduce
+```bash
+cd /Users/Shared/projects/straylight
+python3 -m unittest discover -s tests -v
+python3 agent_work_eval.py --manifest eval/personal_coordination_cases.json validate
+python3 agent_work_eval.py --manifest eval/personal_coordination_cases.json run --filesystem-native --concurrency 3 --timeout 420 --out results/native-personal-coordination.json
+```

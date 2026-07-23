@@ -1,0 +1,44 @@
+{
+  "projection_id": "projection:minor-public-1201",
+  "source_revision": "rev:personal-coordination-1201",
+  "policy_version": "policy:dependent-schedule@v3",
+  "audience": "audience:public",
+  "purpose": "public coordination brief",
+  "path_basis": {
+    "kind": "source_revision",
+    "revision_ref": "rev:personal-coordination-1201",
+    "schema_ref": "schema:personal-coordination-source@v1"
+  },
+  "subject": {"public_alias": "Participant R.", "internal_id_redacted": true},
+  "included": {
+    "event_occurrence": "event-occurrence:field-lab-2026-08-16",
+    "current_time": "2026-08-16T11:30:00-07:00",
+    "timezone": "America/Los_Angeles",
+    "participation_consent": "pending_guardian"
+  },
+  "included_paths": [
+    "/subject/display_name",
+    "/event/occurrence_id",
+    "/event/current_time",
+    "/event/time_zone",
+    "/participation/consent"
+  ],
+  "withheld": [
+    {"path": "/subject/internal_id", "reason": "dependent_identity"},
+    {"path": "/subject/contact_email", "reason": "field_policy"},
+    {"path": "/handoff/precise_place", "reason": "dependent_location"},
+    {"path": "/guardian/relationship_notes", "reason": "relation_policy"},
+    {"path": "/subject/inferred_assessments", "reason": "sensitive_inference"}
+  ],
+  "redacted_fields": ["contact_email", "precise_handoff_place", "guardian_relationship_notes", "inferred_assessments"],
+  "transforms": ["replace_internal_identity_with_public_alias", "withhold_precise_handoff_place"],
+  "authority": {
+    "schedule_source": "artifact:organizer-field-lab-r2",
+    "schedule_controller": "organizer",
+    "sharing_controller": "authority:guardian-1201",
+    "family_copy_schedule_authority": "none"
+  },
+  "generated_at": "2026-08-11T23:35:00Z",
+  "audit_receipt": "audit:redaction-1201",
+  "source": "source:projection-policy-r1"
+}

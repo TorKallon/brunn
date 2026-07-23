@@ -1,0 +1,238 @@
+{
+  "benchmark_version": "0.1",
+  "created_at": "2026-07-10T21:45:00-07:00",
+  "description": "Frozen retrieval-first Straylight benchmark over non-private Obsidian project notes.",
+  "corpus_roots": [
+    {"project": "Metis", "path": "Projects/Metis", "glob": "*.md"},
+    {"project": "N24 RaceWatch", "path": "Projects/N24 RaceWatch", "glob": "*.md"},
+    {"project": "Home Network Improvements", "path": "Projects/Home Network Improvements", "glob": "*.md"},
+    {"project": "Straylight", "path": "Projects/Straylight", "glob": "*.md"}
+  ],
+  "budgets": {
+    "chunk_chars": 1200,
+    "chunk_overlap_chars": 180,
+    "one_shot_chars": 6000,
+    "one_shot_chunks": 6,
+    "workspace_chars": 12000,
+    "workspace_initial_chunks": 3,
+    "workspace_expansion_chunks": 6,
+    "workspace_materialize_project_chars": 45000,
+    "direct_chars": 45000,
+    "direct_files": 3
+  },
+  "cases": [
+    {
+      "id": "metis-storage-policy",
+      "project": "Metis",
+      "category": "policy",
+      "question": "Where should dense digital PDFs and paper scans be stored?",
+      "gold": [
+        {"path": "Projects/Metis/Decisions.md", "contains": "born-digital, information-dense PDFs should be retained in the vault for deeper AI analysis"},
+        {"path": "Projects/Metis/Decisions.md", "contains": "scanned receipts and scanned documents should stay in Drive"}
+      ]
+    },
+    {
+      "id": "metis-scanned-bill-status",
+      "project": "Metis",
+      "category": "temporal_state",
+      "question": "A paper bill was scanned and discarded, but the document never says it was paid. What statuses should Metis record?",
+      "gold": [
+        {"path": "Projects/Metis/Document processing pipeline.md", "contains": "default workflow status to something like `scanned_handled`"},
+        {"path": "Projects/Metis/Document processing pipeline.md", "contains": "payment status can remain `unknown`"}
+      ]
+    },
+    {
+      "id": "metis-ocr-model-fallback",
+      "project": "Metis",
+      "category": "exact_fact",
+      "question": "Which OCR model handles normal scans and which model retries weak cases?",
+      "gold": [
+        {"path": "Projects/Metis/Scanned documents in Drive runbook.md", "contains": "uses `gemini-2.5-pro` as the primary model"},
+        {"path": "Projects/Metis/Scanned documents in Drive runbook.md", "contains": "retry weak cases with `gemini-3.1-pro-preview` as a stronger fallback"}
+      ]
+    },
+    {
+      "id": "metis-session-corpus",
+      "project": "Metis",
+      "category": "multi_fact",
+      "question": "What was the initial Codex session corpus size and refresh cadence?",
+      "gold": [
+        {"path": "Projects/Metis/Codex session search and dream distillation.md", "contains": "195 active rollout JSONL files"},
+        {"path": "Projects/Metis/Codex session search and dream distillation.md", "contains": "70 archived rollout JSONL files"},
+        {"path": "Projects/Metis/Codex session search and dream distillation.md", "contains": "221 rows in `session_index.jsonl`"},
+        {"path": "Projects/Metis/Codex session search and dream distillation.md", "contains": "every 15 minutes with a bounded semantic budget"}
+      ]
+    },
+    {
+      "id": "metis-dream-promotion",
+      "project": "Metis",
+      "category": "policy",
+      "question": "How should session-search dreaming surface candidates without rewriting durable memory?",
+      "gold": [
+        {"path": "Projects/Metis/Codex session search and dream distillation.md", "contains": "The dream output should not silently rewrite durable memory."},
+        {"path": "Projects/Metis/Codex session search and dream distillation.md", "contains": "a promotion queue note for review"}
+      ]
+    },
+    {
+      "id": "metis-sync-limits",
+      "project": "Metis",
+      "category": "exact_fact",
+      "question": "What hard Obsidian Sync Plus limits does Metis design against?",
+      "gold": [
+        {"path": "Projects/Metis/Decisions.md", "contains": "10 GB account-wide storage"},
+        {"path": "Projects/Metis/Decisions.md", "contains": "200 MB max file size"},
+        {"path": "Projects/Metis/Decisions.md", "contains": "10 synced vaults"},
+        {"path": "Projects/Metis/Decisions.md", "contains": "12 months version history"}
+      ]
+    },
+    {
+      "id": "n24-next-event-config",
+      "project": "N24 RaceWatch",
+      "category": "continuation",
+      "question": "What should RaceWatch cover next, when is it, and which event ID assumption must be rechecked?",
+      "gold": [
+        {"path": "Projects/N24 RaceWatch/2026-05-18 Offseason and NLS6 handoff.md", "contains": "NLS6 / 1. ADAC Eifel Trophy"},
+        {"path": "Projects/N24 RaceWatch/2026-05-18 Offseason and NLS6 handoff.md", "contains": "Date: 20 June 2026"},
+        {"path": "Projects/N24 RaceWatch/2026-05-18 Offseason and NLS6 handoff.md", "contains": "N24/Qualifiers used event id 50"},
+        {"path": "Projects/N24 RaceWatch/2026-05-18 Offseason and NLS6 handoff.md", "contains": "regular NLS has historically used a different id, often 20"}
+      ]
+    },
+    {
+      "id": "n24-production-source",
+      "project": "N24 RaceWatch",
+      "category": "multi_source",
+      "question": "Which checkout should future race-day production use, and what old automation should stay disabled?",
+      "gold": [
+        {"path": "Projects/N24 RaceWatch/N24 RaceWatch.md", "contains": "Canonical local repo: `/Users/shared/projects/n24-racewatch`"},
+        {"path": "Projects/N24 RaceWatch/2026 Production Wrap-up.md", "contains": "OpenClaw N24 crons were removed after the race; do not revive them by default."}
+      ]
+    },
+    {
+      "id": "n24-fastn24-inspiration",
+      "project": "N24 RaceWatch",
+      "category": "architecture",
+      "question": "What FastN24-inspired feature should be prototyped, while preserving which architectural difference?",
+      "gold": [
+        {"path": "Projects/N24 RaceWatch/2026-05-18 FastN24 competitor note.md", "contains": "Prototype race-control / Code 60 ingestion"},
+        {"path": "Projects/N24 RaceWatch/2026-05-18 FastN24 competitor note.md", "contains": "Prefer RaceWatch's Cloudflare/server fanout and persisted history over direct client-to-official timing connections."}
+      ]
+    },
+    {
+      "id": "n24-timing-reuse",
+      "project": "N24 RaceWatch",
+      "category": "multi_hop",
+      "question": "Which race families can directly reuse the collector, and what is needed for Spa, WEC, and IMSA?",
+      "gold": [
+        {"path": "Projects/N24 RaceWatch/2027 Endurance Calendar and Timing Research.md", "contains": "N24, ADAC 24h Qualifiers, and NLS are the only current high-confidence targets"},
+        {"path": "Projects/N24 RaceWatch/2027 Endurance Calendar and Timing Research.md", "contains": "likely need provider-specific adapters"}
+      ]
+    },
+    {
+      "id": "n24-websocket-load",
+      "project": "N24 RaceWatch",
+      "category": "quantitative",
+      "question": "What were the peak and representative average websocket loads, and what did the metric actually count?",
+      "gold": [
+        {"path": "Projects/N24 RaceWatch/Concurrent websocket load 2026-05-16.md", "contains": "High point: 60 connected websocket clients"},
+        {"path": "Projects/N24 RaceWatch/Concurrent websocket load 2026-05-16.md", "contains": "Time-weighted average: 39.5 connected websocket clients"},
+        {"path": "Projects/N24 RaceWatch/Concurrent websocket load 2026-05-16.md", "contains": "counts open realtime websocket connections, not unique humans"}
+      ]
+    },
+    {
+      "id": "home-core-switch",
+      "project": "Home Network Improvements",
+      "category": "multi_fact",
+      "question": "Which closet core switch was chosen, what ports does it provide, and what is its main physical caveat?",
+      "gold": [
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "`USW-Pro-XG-8-PoE`, also called Switch Pro XG 8 PoE"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "8 x 10GbE RJ45 PoE++"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "2 x 10G SFP+"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "Treat airflow as a first-class requirement"}
+      ]
+    },
+    {
+      "id": "home-cabling-proof",
+      "project": "Home Network Improvements",
+      "category": "verification",
+      "question": "What did the cable validation prove, what remains unproven, and which run merits a later 10G retest?",
+      "gold": [
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "about 4.69 Gbps represent 5G line rate"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "10G is untested and would need 10G adapters"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "Only the office-to-closet link would ever want a 10G re-test"}
+      ]
+    },
+    {
+      "id": "home-gateway-storage",
+      "project": "Home Network Improvements",
+      "category": "exact_fact",
+      "question": "What gateway storage parts and SSD form should be installed?",
+      "gold": [
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "It uses the `UACC-SSD-Tray`"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "`WD Black SN850X`, 2TB, no-heatsink version"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "buy tray, SSD, and opening tool"}
+      ]
+    },
+    {
+      "id": "home-nyx-ethernet",
+      "project": "Home Network Improvements",
+      "category": "contradiction",
+      "question": "Can Nyx safely be treated as the direct 10GbE endpoint yet?",
+      "gold": [
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "this pasted planning note says Nyx has native 10GBASE-T"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "captured order info listing Gigabit Ethernet"},
+        {"path": "Projects/Home Network Improvements/Home Network Improvements.md", "contains": "Verify the actual Ethernet tier before making Nyx the direct 10G RJ45 endpoint."}
+      ]
+    },
+    {
+      "id": "straylight-save-stage",
+      "project": "Straylight",
+      "category": "api_contract",
+      "question": "When should an agent call memory.save versus memory.stage?",
+      "gold": [
+        {"path": "Projects/Straylight/Write API and Dreaming - Initial Design.md", "contains": "Ordinary explicit and implicit saves should take one `memory.save` call."},
+        {"path": "Projects/Straylight/Write API and Dreaming - Initial Design.md", "contains": "`memory.stage` is needed only when the model must inspect or select uploaded material first."}
+      ]
+    },
+    {
+      "id": "straylight-directional-trust",
+      "project": "Straylight",
+      "category": "trust",
+      "question": "What exact directional trust guarantee does Rourke require, including query and embedding behavior?",
+      "gold": [
+        {"path": "Projects/Straylight/Portable Personal Context Layer.md", "contains": "personal context may flow into the work environment; work context must never flow into the personal system"},
+        {"path": "Projects/Straylight/Portable Personal Context Layer.md", "contains": "no work query or embedding is sent to the personal system"}
+      ]
+    },
+    {
+      "id": "straylight-retrieval-priority",
+      "project": "Straylight",
+      "category": "multi_hop",
+      "question": "What does retrieval optimize first, and what role may context packs play?",
+      "gold": [
+        {"path": "Projects/Straylight/Retrieval API - Initial Design.md", "contains": "Final-answer correctness and completeness"},
+        {"path": "Projects/Straylight/Retrieval API - Initial Design.md", "contains": "the optional initial case file returned by `memory.open`"},
+        {"path": "Projects/Straylight/Retrieval API - Initial Design.md", "contains": "They are not: - the primary retrieval interface"}
+      ]
+    },
+    {
+      "id": "straylight-dream-authority",
+      "project": "Straylight",
+      "category": "authority",
+      "question": "What is authoritative in dreaming, and how are canonical changes handled?",
+      "gold": [
+        {"path": "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md", "contains": "The evidence ledger is memory. The consolidated layer is a disposable, versioned optimization over that evidence."},
+        {"path": "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md", "contains": "Canonical changes remain proposals for review."}
+      ]
+    },
+    {
+      "id": "straylight-dream-output-policy",
+      "project": "Straylight",
+      "category": "authority",
+      "question": "Give one automatically publishable dream output and one destructive output that must remain a proposal.",
+      "gold": [
+        {"path": "Projects/Straylight/Write API and Dreaming - Initial Design.md", "contains": "derived summaries labeled 'derived'"},
+        {"path": "Projects/Straylight/Write API and Dreaming - Initial Design.md", "contains": "deletion or destructive consolidation"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+Some important things to note that might not have been well described in those guides:
+
+Unlike pure factory games like Satisfactory, this game has oddly bursty dynamics: 1/you often leave the factory and explore, fight for hours at a time. And you need to do this pretty often. 2/there are piles of turn-ins and corp OCL requests that don't build on each other. So often you'll need a pile of one thing and then move on to a pile of other things. It makes large buffers very nice for grabbing things to turn in and also allows even slow production to sometimes work fine because you don't need things quickly and whole parts of your factory would site idle if you provision for constantly needing everything
+Transport is PULL and not PUSH based. Things only go onto rails when needed by storage of factories
+The heat dynamic encourages spreading things out rather than building densly.
+But... rails crossing over/under rails can be harder, especially when you are building on platforms
+======
+
+Okay, now help me brainstorm a few things. Let's start with this one: I'm building some factories and want to know which things are relatively self-containened mid-game chains. For example, how seperate are the chains for things like nozzle/pump vs batteries/supermagnets/etc?
+
+======
+
+Okay, that makes sense, but help me with a little bit more brainstorming and let me talk you through a little bit of the history I've been through.
+
+When I started in my initial factory, I did everything satisfactory style: dedicated rails going across machines, dedicated backward capacity. Slowly, it ended up shifting towards shared backward capacity but still dedicated rails. The issue there was once I started to use shared capacity with dedicated rails, I ended up with absolute spaghetti. It was difficult to debug anything or see what was going where, but it was still an introductory factory that didn't make anything more complicated than a rotor or a stator. I left that alone, and that works. I shipped rotors, stators, and a couple of other components from that first factory and base to a brand new base where I started fresh. In that new base, I started out with that old pattern but quickly evolved and retrofitted into a single shared bus for everything above. I think you'd call them almost the tier three pieces, so raw had dedicated rails, ingots had dedicated rails, but then the plates, wire, powder, all of that stuff was on the shared bus. This worked for a long time and was actually an incredibly pleasant experience, because I got to a point where I could plug in a machine at a single rails input, select the output I wanted, and then I was done. I just put that output back onto the shared bus. Amazing experience, loved it, made me super productive, but then I got to a point where the shared bus was a full loop all the way around the factory, and it started to slow down. Fine, added a couple of shortcuts so things had alternate routes to get to their destination. Even replaced a couple of wirings into the bus with direct lines for really high volume items that worked for a little while longer, and then it turned into crazy spaghetti and started to deadlock. I think the deadlocking was a game bug, because when I tried to trace through things, it looked like it should work, and things just weren't getting pulled off the rail. Again, it was such spaghetti, it was impossible to know for sure and impossible to debug. After wasting about two hours trying to retrofit it and make it work, I just tore down every machine, and I'm now rebuilding that second factory. I'm trying to figure out exactly what I want things to look like moving forward.
+
+The architecture idea I had that I'm trying to implement is:
+
+You have dedicated rails for ingots and ore.
+You take the tier three-ish items like wire, powder, plates, and you have a shared bus for those that's separate for each of the elements, so a titanium bus, a calcium bus, a wolfram bus.
+You have a very low-volume central bus that's a U-bend. You put things on one side of the U and you take them off on the other side of the U.
+If a machine requires one of those tier three elements, you have a second rail coming in that supplies the high-volume tier three.
+All of the higher-tier, lower-volume items come from the central bus.
+I ran into a couple of issues here when trying to experiment with it last night that caused me to further refine:
+
+Some of these items require tier three pieces from two different places, so calcium powder plus wolfram wire, for instance. In that case, what I started to do was create little clusters and run a long wire that extends each of those two buses and ties them into those machines.
+A couple of the items were still very high volume. For instance, the entire chain leading up to synthetic silicon is still pretty high volume, and I don't want it to clog my central bus. I kept that as a dedicated line with dedicated capacity for the machines. All of the ceramics for instance that are required for the synthetic silicon are created by machines that directly feed into storage. That storage then feeds directly into the Syn-Cyl. I can also then take any excess or slack when Syn-Cyl is not at full production and use ceramics for a couple of other things that require ceramics, and I think that will work pretty well.
+Now I'm trying to see if I can continue to take this approach and scale it, but in my head at least it looks like if I do everything in a factory, it'll still turn into spaghetti because you've got long lines coming into one spot to make stuff that requires calcium and wolfram. Then you've got another area where you've got long lines coming from titanium and wolfram. Then you've got another area with helium and titanium, and so it just becomes difficult to manage this without it being total spaghetti.
+
+That's where I am trying to figure out how I can divide up some of these larger factories so that they're making chains that are a little bit more isolated. For instance, in the above example, batteries, super magnets, those things can all be in one place. So can chemicals, potentially, since I have sulfur coming into this factory already. Maybe the whole propeller impeller nozzle chain can live somewhere else. Again, just brainstorming and trying to figure out what makes the most sense here. Would love for you to analyze where I am and recommend a couple of options for architectures and patterns.
+
+======
+
+Additionally, to inform this, but not to change the overall architecture recommendation:
+
+I'm done with the corp level 7 unlocks and working on level 8s now. As I rebuild this old 2nd factory I want to build it to do two things:
+
+help me finish the battery and supermagent turn-ins to level those
+then supply things at scale to the next factory or set of factories.
+i found an amazing new basic to use for a large campus and it has everything i would need nearby. so i could eaasily add up to tier 3 production again there as needed for wolf, tit, sulf, helium, calcium. this is big enough to use for 3-5 campuses/cores
+i would ship key things at scale from the old factory via a shared rail line with v3 capcity (480/min) using rail depots (buffer on both ends)
+in terms of planet-scale architecture, my thought is that the new factory/campus would take inputs to the rail depot from multiple places. start with fairly low volume from the first two bases, but if, even with the bursty needs, i wanted more of something i could just have another small, standalone factory that fed into that factory via a rail line. so if i run out of rotors, for example, another small rotor plant could be added and it would just add more rotors
+
+======
+
+Love it. Also test against L9s and L10s afterward so we see how well this model continues to scale and evolve.
+
+======
+
+"Bus admission rule
+Keep these local or dedicated when feeding their main consumers:
+Ceramics
+Synthetic Silicon
+Chemicals
+Sulphuric Acid
+Wolfram Plate
+Heat Resistant Sheet
+Helium-3
+These are much better candidates for buffered campus buses:
+Rotor and Stator
+Nozzle and Impeller
+Valve and Turbine
+Pump
+Battery and Accumulator
+Supermagnet"
+
+-- this all makes sense, but i'm def dissapointed by chemicals. they take quite a bit to make, so it would be nice if i could bus them and not have to remake them more than once. acid is another one where it would be nice to add it to the planet-scale bus since so much going into making it. and.... even so, with 480/min capacity on the bus, i can see putting acid on there. i can even see sending it across the planet if everything else is low volume. but 4 things at that scale and things clog fast.
+
+======
+
+Map out the titanium chains (tubes, sheets, rods, etc) with fab v2
+
+======
+
+For Wolf, which is used least, wire, sheets, or powder? This up to T8, and for Base 2 (elctrochem)
+
+======
+
+Basically, I'm trying to figure out which one of these to tap off of in order to make basic building materials. I don't want to completely rewire all of my ore extractors. Each of the ore extractors is currently going into a smelter directly. From the smelter, it goes into fabs. One set of fabs makes wires, one makes powder, and one makes plate. I want to figure out which one of those extractors to tap off of in order to make basic building materials without disrupting the chain too much.
+
+======
+
+Two questions:
+
+How do pure, impure, and normal affect the rate of extraction for titanium in particular?
+I've just deleted a whole bunch of things, and I found that I have drones carrying various cargo stuck in the air. Even saving the game and reloading it doesn't seem to fix that. This definitely looks like those are the bugged cars that caused my stuff to get all gummed up, but how do I get rid of it? Will this permanently cause damage to the save in other ways? Can you search online and see if you find any evidence around this?
+======
+
+Bus admission rule
+Keep these local or dedicated when feeding their main consumers:
+Ceramics
+Synthetic Silicon
+Chemicals
+Sulphuric Acid
+Wolfram Plate
+Heat Resistant Sheet
+Helium-3
+These are much better candidates for buffered campus buses:
+Rotor and Stator
+Nozzle and Impeller
+Valve and Turbine
+Pump
+Battery and Accumulator
+Supermagnet
+
+======
+
+Can you make tubes with the Fab V2? I'm trying to figure out how I would set up factory number two, the electrochem plant, using Fab V2s and particularly the tube production line. If I did use a Fab V2 for tubes, what would be the work back?
+
+======
+
+Okay, I fully rebuilt my factory with a hybrid approach and it was humming along nicely. It's two full cores plus a nice pile of amps in empty space, and probably has room/capacity for another 3-5 machines depending on size. I pre-placed machines for Hardening Agent. I did build heat-resist plates but then left the rest of the nozzle/turbine/etc stuff out. I also setup an outgoing rail depot with 12 v2 storage units.
+
+There are a few rails that still serve as bottlnecks if it is building everything, mainly Wolf parts, and the Wolf mines are fully utlized. The bottlenecks will be fixed when I unlock v3 rails.
+
+The things that worked, but not quite as well as hoped:
+
+i used one main bus with mostly low volume things and then seperate wolf/tit/calc/hel buses. I had to run two for wolf because volume was so high in places, and am still bottlenecked in one place until i get to v3 rails
+the hyrbid is a little sphagetti looking, but much easier to debug and figure out. not as neat and clean as a single bus, but it worked for hours with me pulling from storage just to test
+======
+
+Chemicals was the one real surprise test case for the main bus. The n is very high there. But it held well enough.
+
+======
+
+I've finished most level 7 unlocks, including: battery, super magnet, chemicals, electronics, impeller
+
+What will my next unlocks look like after I have explored and gotten more blueprints?
+
+======
+
+I built chemicals and then put the pressurizer for sulfuric acid near it. so the chemicals for sulfuric go direct rather than entering the main bus. chemicals on the main bus are just for other things. that seems to be helping.
+
+======
+
+Let's talk bases right now. My actual base 1 is a hot mess right next to the initial lander with pure point-to-point early-Satisfactory style spaghetti. It exports: rotors, stators, and applicators. It ships these via rail depot to the new base, and while not efficient, it has never slowed anything at the next base down due to those buffers and the bursty nature of production in this game. That first base also has a satellite nearby with calcium that just send raw ore to the 1st base and also has a pile of solar power plants.
+
+Let's name the bases. Propose something so we have a common language.
+
+Most of our discsussion has been about my 2nd base, which is two cores, a pile of amps, and was just entirely rebuilt. this 2nd base has tit, wolf, and helium right onsite plus a calcium and sulfer satellite that ships tier 1 calc productions (powder, blocks) plus sulf ore and has all of the power (no power at all at the 2nd big base.
+
+future plans, all vague now:
+
+small-medium base that just has tit and wolf onsite, gets exports from base 2, and makes nozzles, pumps, turbines, etc
+a found a massive basin with everything. i shared two images, the whole area, zoomed out, and then zoomed into the massive flat area that will be really nice to build on. i don't know what i'll do with this yet, but know i want to do something there at some point.
+also sharing images of the first base, near the lander. and then 2nd base, the one we have done all of this talking about
+
+======
+
+That makes sense. This is where I'm thinking of putting Flowworks. It sits between Landerworks and Faraday
+
+======
+
+these images are way zoomed out. but by comparing them to the other images i shared you should be able to put together an overall world map that shows where each of the names locations are. can you save an artifact that says that and then also encore that location info in the MD files that are easier to reason over? then share a prompt I can drop into a session where i'm planning my exploration
+
+======
+
+Please keep going and finish. Sorry for the network issues.
+
+======
+
+I'd like this work to also help you ground discussions in my actual base locations: "you get the blueprint from Mythic Cry, which is just west of Grand Basin in the mountains"
+
+======
+
+this will also let us plan where to pull Geothite and Oil from as we think this through. though those ores seem so bid that railing the raw ore -- or even using a cargo dispatcher -- might be the play
+
+======
+
+Please finish
+
+======
+
+What can I export from my existing bases for Flowworks?
+
+======
+
+In this list of diferent campuses, I love the seperation. If we push all the way to the end of Update 1 content. What does this look like by the end? DOes it stay the same with roughly 3 families or are there more as time goes on?
+
+======
+
+keep going
+
+======
+
+What is the card on the He3 I'd be moving over the bus to Flowworks?
+
+======
+
+Do I need more HRS? Which is less load, HRS or He3? I can make more HRS at Faraday if needed
+
+======
+
+card --> cardinality
+
+======
+
+that table doesn't make sense. tell me the number of each machine i need in flowworks for levels 8 - 12 to keep the relevant turn-ins to 2-3 hours or less. then tell me how much i'd need to import of each thigs from faraday. and then tell me which is better: import Acid/He3, HRS, made something else, or a mix? and help me do the math so i can see how well it fits into the line
+
+======
+
+Well, go all the way to level 15 and do the complete analysis, then. and take into account storage -- we don't need to oversize if we can store the right things in v2 storage units and that buffer helps accelerate appropriately while I build or explore
+
+======
+
+I think you might have leaned too far into buffers. And, ideally, I won't be waiting too hours for each unlock. Remember, I have 3x chem and 3x electronics and 4x stuff like inductor
+
+======
+
+and a 2x buffer for one thing to avoid machines in the future feels both lazy and slow
+
+======
+
+i think i like the other task/session plan better. can you please revert the flowworks plan to what was in the docs before the last turn where you over-rotated on buffers?
+
+======
+
+That sounds much more right.
+
+======
+
+Can you show me the visulization again? the html doc?
+
+======
+
+Please give me a full list of every prompt I have typed here, seperated by ====== and newlines so it is clear they are seperate prompts.

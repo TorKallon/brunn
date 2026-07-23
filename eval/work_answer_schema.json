@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "answer": {
+      "type": "string"
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "value": {"type": "string"},
+          "source_paths": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          }
+        },
+        "required": ["id", "value", "source_paths", "confidence"]
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "objective": {"type": "string"},
+        "current_state": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "decisions": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "open_questions": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "next_actions": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      },
+      "required": ["objective", "current_state", "decisions", "open_questions", "next_actions", "artifacts"]
+    }
+  },
+  "required": ["answer", "claims", "checkpoint"]
+}

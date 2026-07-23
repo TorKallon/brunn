@@ -1,0 +1,3 @@
+relation_id,participant_id,participant_name,occurrence_id,role,requiredness,response,response_source
+participation:501,person:p-501,Jules Hart,event-occurrence:field-lab-2026-08-16,equipment lead,required,tentative,source:signup-form-r3
+participation:502,person:p-502,Remy Cole,event-occurrence:field-lab-2026-08-16,helper,optional,accepted,source:signup-form-r3

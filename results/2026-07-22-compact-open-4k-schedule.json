@@ -1,0 +1,945 @@
+{
+  "benchmark_version": "personal-coordination-v0.1",
+  "run_at": "2026-07-22T12:53:55-07:00",
+  "run_id": "20260722-compact-open-4k-schedule",
+  "harness_sha256": "7a05f290daff4510b4c4352f01b9844b095dbe9bfc370c25242057aaecad01a2",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "c303b60e18a008e300a9d5442a929d6923241a7bf2e857106bb145b533db874e",
+  "manifest_sha256": "af92c68c6ac5abefb0d93d42d4445ab3cd3616b8b1283292125cc5a946aa77a6",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-personal-coordination-v0.1",
+    "sha256": "1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18",
+    "artifact_tree_sha256": "1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18",
+    "documents": 29,
+    "chunks": 36,
+    "characters": 29352
+  },
+  "manifest": {
+    "benchmark_version": "personal-coordination-v0.1",
+    "name": "Straylight personal coordination evaluation",
+    "report_title": "Straylight personal coordination evaluation",
+    "report_date": "2026-07-11",
+    "evaluation_model": "generalized_personal_coordination",
+    "grading_mode": "concept_tokens_v1",
+    "fixture_domain": "Synthetic personal coordination",
+    "generalization": {
+      "purpose": "Evaluate source-faithful coordination across identity, relationships, events, arrangements, obligations, authority, sensitivity, and resumable work.",
+      "kernel": [
+        "stable objects",
+        "source-bearing claims",
+        "qualified relations",
+        "temporal revisions",
+        "checkpoints"
+      ],
+      "profile_types": [
+        "person",
+        "organization",
+        "group",
+        "place",
+        "event",
+        "arrangement",
+        "resource",
+        "work-item",
+        "artifact"
+      ],
+      "fixture_rule": "Vacation and game examples use the same corpus primitives; fixture vocabulary is not privileged runner schema."
+    },
+    "corpus_root": "eval/corpus-personal-coordination-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "coord-schedule-supersession",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "authoritative_temporal_supersession",
+        "task": "Reconcile Field Lab schedule snapshots r1 and r2. State the original and current time, the still-unknown actual time, why r2 supersedes r1, and why the stale family copy cannot rewrite the organizer schedule.",
+        "claim_slots": {
+          "c1": "original official schedule",
+          "c2": "authoritative superseding revision",
+          "c3": "original current and actual time",
+          "c4": "family-copy authority boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "artifact:organizer-field-lab-r1",
+                  "Organizer snapshot r1",
+                  "organizer revision r1"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-16T09:00:00-07:00",
+                  "2026-08-16 at 09:00",
+                  "09:00 America/Los_Angeles"
+                ]
+              },
+              {
+                "any": [
+                  "America/Los_Angeles"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/schedule-snapshot-r1.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "artifact:organizer-field-lab-r2",
+                  "organizer revision r2",
+                  "revision r2"
+                ]
+              },
+              {
+                "any": [
+                  "supersedes r1"
+                ]
+              },
+              {
+                "any": [
+                  "authority:schedule-401"
+                ]
+              },
+              {
+                "any": [
+                  "event-series:field-lab schedule",
+                  "Field Lab schedule"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/schedule-snapshot-r2.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "original time remains 2026-08-16T09:00:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "current time is 2026-08-16T11:30:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "Actual time remains `null`"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/schedule-snapshot-r2.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "family copy"
+                ]
+              },
+              {
+                "any": [
+                  "stale"
+                ]
+              },
+              {
+                "any": [
+                  "schedule_authority: none"
+                ]
+              },
+              {
+                "any": [
+                  "cannot rewrite the official schedule"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/schedule-snapshot-r1.md",
+              "Events/schedule-snapshot-r2.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "09:00 is the current official time",
+          "the family copy controls the schedule",
+          "11:30 is the actual start"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "coord-schedule-supersession": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:20260722-compact-open-4k-schedule/coord-schedule-supersession",
+      "display_scope": "Personal Coordination",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZTFlNTQxNmQtMjAxNC00ZTJjLWE0NGMtNmU5NDI4NmYwZWE1IiwiY3JlZGVudGlhbF9pZCI6IjQyZGUxOWIyLTIzZGYtNDc3Mi1iZTZjLTNjZmVlM2I2MWE5YSIsInNjb3BlX2lkIjoiNzMyMzY0NjYtYWM3Yy00OWJlLWEzYjktN2U3MTUyNDNhNjE5IiwicmVjZWlwdF9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjMjZhYWZhZWI2OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjNDRkYzJkNzdhOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.SL_mbLdWn8n_9wDJa8cLMFq4SBXVSm_R-JHAEh2VoPk",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f8b6397c47d538f274c44dc2d77a9",
+      "corpus_revision": "revision:019f8b6397c47d538f274c44dc2d77a9",
+      "provisioning": {
+        "documents": 29,
+        "delta_documents": 0,
+        "characters": 29352,
+        "import_http_status": 200,
+        "import_elapsed_ms": 2947.052,
+        "ready_elapsed_ms": 2947.052,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZTFlNTQxNmQtMjAxNC00ZTJjLWE0NGMtNmU5NDI4NmYwZWE1IiwiY3JlZGVudGlhbF9pZCI6IjQyZGUxOWIyLTIzZGYtNDc3Mi1iZTZjLTNjZmVlM2I2MWE5YSIsInNjb3BlX2lkIjoiNzMyMzY0NjYtYWM3Yy00OWJlLWEzYjktN2U3MTUyNDNhNjE5IiwicmVjZWlwdF9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjMjZhYWZhZWI2OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjNDRkYzJkNzdhOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.SL_mbLdWn8n_9wDJa8cLMFq4SBXVSm_R-JHAEh2VoPk",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZTFlNTQxNmQtMjAxNC00ZTJjLWE0NGMtNmU5NDI4NmYwZWE1IiwiY3JlZGVudGlhbF9pZCI6IjQyZGUxOWIyLTIzZGYtNDc3Mi1iZTZjLTNjZmVlM2I2MWE5YSIsInNjb3BlX2lkIjoiNzMyMzY0NjYtYWM3Yy00OWJlLWEzYjktN2U3MTUyNDNhNjE5IiwicmVjZWlwdF9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjMjZhYWZhZWI2OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjNDRkYzJkNzdhOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.SL_mbLdWn8n_9wDJa8cLMFq4SBXVSm_R-JHAEh2VoPk",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260722-compact-open-4k-schedule/coord-schedule-supersession",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:e1e5416d20144e2ca44c6e94286f0ea5",
+          "scope_id": "scope:73236466ac7c49bea3b97e715243a619",
+          "credential_id": "credential:42de19b223df4772be6c3cfee3b61a9a",
+          "base_corpus_revision": "revision:019f8b6397c47d538f274c44dc2d77a9",
+          "corpus_revision": "revision:019f8b6397c47d538f274c44dc2d77a9",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZTFlNTQxNmQtMjAxNC00ZTJjLWE0NGMtNmU5NDI4NmYwZWE1IiwiY3JlZGVudGlhbF9pZCI6IjQyZGUxOWIyLTIzZGYtNDc3Mi1iZTZjLTNjZmVlM2I2MWE5YSIsInNjb3BlX2lkIjoiNzMyMzY0NjYtYWM3Yy00OWJlLWEzYjktN2U3MTUyNDNhNjE5IiwicmVjZWlwdF9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjMjZhYWZhZWI2OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjNDRkYzJkNzdhOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.SL_mbLdWn8n_9wDJa8cLMFq4SBXVSm_R-JHAEh2VoPk",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZTFlNTQxNmQtMjAxNC00ZTJjLWE0NGMtNmU5NDI4NmYwZWE1IiwiY3JlZGVudGlhbF9pZCI6IjQyZGUxOWIyLTIzZGYtNDc3Mi1iZTZjLTNjZmVlM2I2MWE5YSIsInNjb3BlX2lkIjoiNzMyMzY0NjYtYWM3Yy00OWJlLWEzYjktN2U3MTUyNDNhNjE5IiwicmVjZWlwdF9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjMjZhYWZhZWI2OSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY4YjYzLTk3YzQtN2Q1My04ZjI3LTRjNDRkYzJkNzdhOSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.SL_mbLdWn8n_9wDJa8cLMFq4SBXVSm_R-JHAEh2VoPk",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260722-compact-open-4k-schedule/coord-schedule-supersession",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:e1e5416d20144e2ca44c6e94286f0ea5",
+          "scope_id": "scope:73236466ac7c49bea3b97e715243a619",
+          "credential_id": "credential:42de19b223df4772be6c3cfee3b61a9a",
+          "base_corpus_revision": "revision:019f8b6397c47d538f274c44dc2d77a9",
+          "corpus_revision": "revision:019f8b6397c47d538f274c44dc2d77a9",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "coord-schedule-supersession",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 47.581,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260722-compact-open-4k-schedule/service_api/coord-schedule-supersession/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Field Lab was originally scheduled for August 16, 2026 at 9:00 AM PDT. Organizer revision r2 moved the current scheduled time to 11:30 AM PDT because of a facility delay and supersedes r1 for the Field Lab schedule fact scope. The actual time remains unknown. The stale family copy preserves the old 9:00 AM value only as historical, derivative evidence; family/guardian authority governs participation consent and sharing/export, while organizer authority alone controls the official schedule.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The original official organizer schedule, r1, recorded both the original and then-current Field Lab time as 2026-08-16T09:00:00-07:00 in America/Los_Angeles, with actual time null.",
+            "source_paths": [
+              "Events/schedule-snapshot-r1.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Organizer revision r2, published under authority:schedule-401, supersedes r1 for the Field Lab schedule fact scope because of a facility delay and sets the current time to 2026-08-16T11:30:00-07:00.",
+            "source_paths": [
+              "Events/schedule-snapshot-r2.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Original time is 2026-08-16T09:00:00-07:00; current scheduled time is 2026-08-16T11:30:00-07:00; actual time remains unknown/null.",
+            "source_paths": [
+              "Events/schedule-snapshot-r1.md",
+              "Events/schedule-snapshot-r2.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The stale 09:00 family copy cannot rewrite the organizer schedule because it is derivative and has no schedule authority. Guardian/family authority controls participation consent and sharing/export decisions, whereas organizer authority controls schedule facts.",
+            "source_paths": [
+              "Events/schedule-snapshot-r1.md",
+              "Policy/minor-sharing-policy.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Reconcile Field Lab schedule snapshots r1 and r2, including original/current/actual time and the family-copy authority boundary.",
+          "current_state": [
+            "Verified historical r1 organizer schedule: original and then-current time were 2026-08-16T09:00:00-07:00; actual time was null.",
+            "Verified superseding current r2 organizer schedule: original remains 09:00, current scheduled time is 2026-08-16T11:30:00-07:00, and actual time remains null.",
+            "Verified r2 supersedes r1 for the Field Lab schedule fact scope because of a facility delay.",
+            "Verified the stale family copy is derivative and has no schedule authority; guardian/family authority covers participation consent and sharing/export, not official schedule facts.",
+            "Checkpoint committed as checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08."
+          ],
+          "decisions": [
+            "Treat r1 as historical evidence rather than current schedule state.",
+            "Treat r2 as the authoritative superseding organizer state under authority:schedule-401.",
+            "Use the original policy source to characterize the family/guardian authority boundary."
+          ],
+          "open_questions": [
+            "The actual occurrence time remains unknown until an authoritative actual-time record is added."
+          ],
+          "next_actions": [
+            "After the event, retrieve an authoritative occurrence or actual-time record if needed.",
+            "Do not infer actual time from either scheduled time or the stale family copy."
+          ],
+          "artifacts": [
+            "Events/schedule-snapshot-r1.md",
+            "Events/schedule-snapshot-r2.md",
+            "Policy/minor-sharing-policy.md",
+            "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 6,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "artifact:organizer-field-lab-r1",
+                  "Organizer snapshot r1",
+                  "organizer revision r1"
+                ],
+                "matched": "organizer revision r1"
+              },
+              {
+                "alternatives": [
+                  "2026-08-16T09:00:00-07:00",
+                  "2026-08-16 at 09:00",
+                  "09:00 America/Los_Angeles"
+                ],
+                "matched": "2026-08-16T09:00:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "America/Los_Angeles"
+                ],
+                "matched": "America/Los_Angeles"
+              }
+            ],
+            "citations": [
+              "Events/schedule-snapshot-r1.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "artifact:organizer-field-lab-r2",
+                  "organizer revision r2",
+                  "revision r2"
+                ],
+                "matched": "organizer revision r2"
+              },
+              {
+                "alternatives": [
+                  "supersedes r1"
+                ],
+                "matched": "supersedes r1"
+              },
+              {
+                "alternatives": [
+                  "authority:schedule-401"
+                ],
+                "matched": "authority:schedule-401"
+              },
+              {
+                "alternatives": [
+                  "event-series:field-lab schedule",
+                  "Field Lab schedule"
+                ],
+                "matched": "Field Lab schedule"
+              }
+            ],
+            "citations": [
+              "Events/schedule-snapshot-r2.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "original time remains 2026-08-16T09:00:00-07:00"
+                ],
+                "matched": "original time remains 2026-08-16T09:00:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "current time is 2026-08-16T11:30:00-07:00"
+                ],
+                "matched": "current time is 2026-08-16T11:30:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "Actual time remains `null`"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Events/schedule-snapshot-r1.md",
+              "Events/schedule-snapshot-r2.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "family copy"
+                ],
+                "matched": "family copy"
+              },
+              {
+                "alternatives": [
+                  "stale"
+                ],
+                "matched": "stale"
+              },
+              {
+                "alternatives": [
+                  "schedule_authority: none"
+                ],
+                "matched": "schedule_authority: none"
+              },
+              {
+                "alternatives": [
+                  "cannot rewrite the official schedule"
+                ],
+                "matched": "cannot rewrite the official schedule"
+              }
+            ],
+            "citations": [
+              "Events/schedule-snapshot-r1.md",
+              "Policy/minor-sharing-policy.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 14,
+        "commands": 4,
+        "command_output_chars": 116752,
+        "tokens": {
+          "input_tokens": 135060,
+          "cached_input_tokens": 108288,
+          "output_tokens": 2058
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-22T12:53:15.056-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b63b42d7aa1aad90dd5217e9cc7",
+          "elapsed_ms": 253.067,
+          "result_chars": 39367
+        },
+        {
+          "at": "2026-07-22T12:53:20.468-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b63c9527d03a5626814ea3dd383",
+          "elapsed_ms": 436.774,
+          "result_chars": 73484
+        },
+        {
+          "at": "2026-07-22T12:53:38.736-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f8b6410af7bd3a77f4204bb97703c",
+          "elapsed_ms": 28.323,
+          "result_chars": 2964
+        }
+      ],
+      "service_calls": 3,
+      "service_result_chars": 115815,
+      "service_latency_ms": 718.164,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f8b63-97c4-7d53-8f27-4c44dc2d77a9",
+        "checkpoint_id": "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08",
+        "corpus_revision": "revision:019f8b64-10a2-74b0-b199-b89dda91afa8",
+        "created": [
+          {
+            "id": "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "42de19b2-23df-4772-be6c-3cfee3b61a9a",
+        "deduplicated": [],
+        "id": "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08",
+        "idempotency_key": "eval-checkpoint:session:019f8b63b3427a62a95a2c3d4329ebe8:fddc06ae2290e3c7a0d65f8fcafc9516fb90e878b8248e27179af908edbf353d",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f8b64-10a2-74b0-b199-b89dda91afa8",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f8b64-10a2-74b0-b199-b87fd8d8bade"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:903c13ceb299023a5a6927023b34378a8dd728cec9293845c315e882588a637b",
+        "operation_id": "operation:019f8b64-10a1-7970-806c-101f8a858fa7",
+        "policy": {
+          "policy_id": "f8cb5f1d-f6f4-4519-926a-a7ac9d0cbe86",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f8b64-10a1-7970-806c-101f8a858fa7",
+        "replayed": false,
+        "request_hash": "sha256:15168ab521b76b6a9c30368ee259d4b744827ffe59a093c2a08bf3343cbc13f1",
+        "resulting_corpus_revision": "revision:019f8b64-10a2-74b0-b199-b89dda91afa8",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f8b63b3427a62a95a2c3d4329ebe8",
+        "status": "committed",
+        "user_id": "user:e1e5416d20144e2ca44c6e94286f0ea5"
+      },
+      "service_session_id": "session:019f8b63b3427a62a95a2c3d4329ebe8",
+      "service_corpus_revision": "revision:019f8b64-10a2-74b0-b199-b89dda91afa8",
+      "workspace_operations": [
+        {
+          "at": "2026-07-22T12:53:15.056-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b63b42d7aa1aad90dd5217e9cc7",
+          "elapsed_ms": 253.067,
+          "result_chars": 39367
+        },
+        {
+          "at": "2026-07-22T12:53:20.468-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f8b63c9527d03a5626814ea3dd383",
+          "elapsed_ms": 436.774,
+          "result_chars": 73484
+        },
+        {
+          "at": "2026-07-22T12:53:38.736-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f8b6410af7bd3a77f4204bb97703c",
+          "elapsed_ms": 28.323,
+          "result_chars": 2964
+        }
+      ],
+      "workspace_result_chars": 115815,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f8b63-97c4-7d53-8f27-4c44dc2d77a9",
+        "checkpoint_id": "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08",
+        "corpus_revision": "revision:019f8b64-10a2-74b0-b199-b89dda91afa8",
+        "created": [
+          {
+            "id": "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "42de19b2-23df-4772-be6c-3cfee3b61a9a",
+        "deduplicated": [],
+        "id": "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08",
+        "idempotency_key": "eval-checkpoint:session:019f8b63b3427a62a95a2c3d4329ebe8:fddc06ae2290e3c7a0d65f8fcafc9516fb90e878b8248e27179af908edbf353d",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f8b64-10a2-74b0-b199-b89dda91afa8",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f8b64-10a2-74b0-b199-b87fd8d8bade"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:903c13ceb299023a5a6927023b34378a8dd728cec9293845c315e882588a637b",
+        "operation_id": "operation:019f8b64-10a1-7970-806c-101f8a858fa7",
+        "policy": {
+          "policy_id": "f8cb5f1d-f6f4-4519-926a-a7ac9d0cbe86",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f8b64-10a1-7970-806c-101f8a858fa7",
+        "replayed": false,
+        "request_hash": "sha256:15168ab521b76b6a9c30368ee259d4b744827ffe59a093c2a08bf3343cbc13f1",
+        "resulting_corpus_revision": "revision:019f8b64-10a2-74b0-b199-b89dda91afa8",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f8b64-10a2-74b0-b199-b888d8074e08"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f8b63b3427a62a95a2c3d4329ebe8",
+        "status": "committed",
+        "user_id": "user:e1e5416d20144e2ca44c6e94286f0ea5"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 1,
+        "case_pass_rate": 1.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_pass_rate": 1.0,
+        "mean_score": 0.9433,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 47.58,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 115815.0,
+        "persisted_checkpoints": 1,
+        "checkpoint_eligible_runs": 1,
+        "mean_service_calls": 3.0,
+        "mean_service_result_chars": 115815.0,
+        "mean_service_latency_ms": 718.164,
+        "mean_completed_commands": 4.0,
+        "mean_command_output_chars": 116752.0,
+        "mean_tokens": {
+          "input_tokens": 135060.0,
+          "output_tokens": 2058.0,
+          "cached_input_tokens": 108288.0,
+          "uncached_input_tokens": 26772.0
+        }
+      }
+    },
+    "by_workload": {
+      "Personal Coordination": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 47.58,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 115815.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 3.0,
+          "mean_service_result_chars": 115815.0,
+          "mean_service_latency_ms": 718.164,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 116752.0,
+          "mean_tokens": {
+            "input_tokens": 135060.0,
+            "output_tokens": 2058.0,
+            "cached_input_tokens": 108288.0,
+            "uncached_input_tokens": 26772.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "authoritative_temporal_supersession": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 47.58,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 115815.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 3.0,
+          "mean_service_result_chars": 115815.0,
+          "mean_service_latency_ms": 718.164,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 116752.0,
+          "mean_tokens": {
+            "input_tokens": 135060.0,
+            "output_tokens": 2058.0,
+            "cached_input_tokens": 108288.0,
+            "uncached_input_tokens": 26772.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "coord-schedule-supersession": {
+        "id": "coord-schedule-supersession",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "authoritative_temporal_supersession",
+        "task": "Reconcile Field Lab schedule snapshots r1 and r2. State the original and current time, the still-unknown actual time, why r2 supersedes r1, and why the stale family copy cannot rewrite the organizer schedule.",
+        "claim_slots": {
+          "c1": "original official schedule",
+          "c2": "authoritative superseding revision",
+          "c3": "original current and actual time",
+          "c4": "family-copy authority boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "artifact:organizer-field-lab-r1",
+                  "Organizer snapshot r1",
+                  "organizer revision r1"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-16T09:00:00-07:00",
+                  "2026-08-16 at 09:00",
+                  "09:00 America/Los_Angeles"
+                ]
+              },
+              {
+                "any": [
+                  "America/Los_Angeles"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/schedule-snapshot-r1.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "artifact:organizer-field-lab-r2",
+                  "organizer revision r2",
+                  "revision r2"
+                ]
+              },
+              {
+                "any": [
+                  "supersedes r1"
+                ]
+              },
+              {
+                "any": [
+                  "authority:schedule-401"
+                ]
+              },
+              {
+                "any": [
+                  "event-series:field-lab schedule",
+                  "Field Lab schedule"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/schedule-snapshot-r2.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "original time remains 2026-08-16T09:00:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "current time is 2026-08-16T11:30:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "Actual time remains `null`"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/schedule-snapshot-r2.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "family copy"
+                ]
+              },
+              {
+                "any": [
+                  "stale"
+                ]
+              },
+              {
+                "any": [
+                  "schedule_authority: none"
+                ]
+              },
+              {
+                "any": [
+                  "cannot rewrite the official schedule"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Events/schedule-snapshot-r1.md",
+              "Events/schedule-snapshot-r2.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "09:00 is the current official time",
+          "the family copy controls the schedule",
+          "11:30 is the actual start"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    }
+  }
+}

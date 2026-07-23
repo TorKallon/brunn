@@ -1,0 +1,7 @@
+claim_id,subject_id,field,value,source_id,asserted_at,sensitivity
+identity-claim-101,person:p-101,name,Avery Lin,source:club-intake-r1,2026-07-01T09:00:00-07:00,personal
+identity-claim-102,person:p-101,email,avery.lin@example.com,source:club-intake-r1,2026-07-01T09:00:00-07:00,restricted
+identity-claim-103,person:p-102,name,Avery Lin,source:volunteer-roster-r1,2026-07-02T12:00:00-07:00,personal
+identity-claim-104,person:p-102,email,avery.lin@example.com,source:volunteer-roster-r1,2026-07-02T12:00:00-07:00,restricted
+identity-claim-105,person:p-103,name,A. Lin,source:signup-card-r2,2026-07-03T15:00:00-07:00,personal
+identity-claim-106,person:p-103,alias,Avery Lin,source:signup-card-r2,2026-07-03T15:00:00-07:00,personal

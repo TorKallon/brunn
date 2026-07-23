@@ -1,0 +1,788 @@
+{
+  "benchmark_version": "0.2",
+  "name": "Straylight agent-work evaluation",
+  "corpus_root": "eval/corpus-v0.2",
+  "model": "gpt-5.6-sol",
+  "conditions": ["fixed_pack", "filesystem", "workspace"],
+  "fixed_pack_chars": 24000,
+  "fixed_pack_chunks": 16,
+  "cases": [
+    {
+      "id": "warmind-parser-learning",
+      "workload": "Warmind",
+      "capability": "learning_and_supersession",
+      "task": "Resume the D1 parser performance and autonomy work. Reconcile the older 10M Nyx tuning checkpoint with the later durable autonomy summary. Explain what the PVE34 result established, what later evidence changed the operating model, the integrity rules that remain non-negotiable, and the next safe experiment. Leave a concise durable checkpoint for the next agent.",
+      "claim_slots": {
+        "c1": "historical 10M tuning checkpoint",
+        "c2": "later autonomy evidence and supersession",
+        "c3": "non-negotiable integrity and recovery model",
+        "c4": "next safe work"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["PVE34", "34 PVE"]},
+            {"any": ["10M", "10,000,000", "10 million"]},
+            {"any": ["DB/write", "write path", "MySQL", "write coordination"]}
+          ],
+          "sources_any": ["Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["1083.1", "1122.9", "over 1k", ">1k", "more than 1,000", "exceeded 1,000", "over 1,000", "more than 1k", "above 1k"]},
+            {"any": ["fully autonomous", "autonomous parsing", "autoscaler", "adaptive", "learned priors"]},
+            {"any": ["evidence, not identity", "not identity", "not identities", "not a fixed", "no magic worker", "no policy status", "not a policy", "fixed operating policy", "observations", "universal targets", "rather than identities", "global defaults"]}
+          ],
+          "sources_any": ["Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["DB rows are truth", "DB truth", "database truth", "database rows are truth"]},
+            {"any": ["normal parser restart", "ordinary parser restart", "restart recovery", "restart from DB"]},
+            {"any": ["optimization state", "never correctness state", "not correctness state", "cannot define correctness", "no correctness path", "no rebuild/recompute correctness path", "parser-state correctness"]}
+          ],
+          "sources_any": ["Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["longer alpha", "beta recovery", "delta", "gamma", "small reviewable commits"]},
+            {"any": ["host pressure", "decision loop", "validation gate", "integrity", "host/MySQL", "controller changes"]}
+          ],
+          "sources_any": ["Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"]
+        }
+      ],
+      "forbidden": ["112 is the fixed", "PVE34 is the universal"]
+    },
+    {
+      "id": "warmind-final-validation-handoff",
+      "workload": "Warmind",
+      "capability": "durable_handoff",
+      "task": "Take over the final parser validation work from its long handoff. Report the latest recorded target, distinguish completed performance rows from unfinished validation, identify the known failing scenario, and state the next safe execution boundary. Do not collapse code cleanup, scorecard evidence, and full validation into one status.",
+      "claim_slots": {
+        "c1": "latest recorded target",
+        "c2": "performance scorecard state",
+        "c3": "full validation state",
+        "c4": "safe next boundary"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["6c5153d5063137ef16fc9bc4872c9b5f01f5831f", "6c5153d506"]},
+            {"any": ["master", "origin/master"]}
+          ],
+          "sources_any": ["Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["alpha", "eta"]},
+            {"any": ["theta", "FAIL", "failed"]},
+            {"any": ["D2", "cache repair", "S3 repair"]}
+          ],
+          "sources_any": ["Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["Stage 3", "full data integrity"]},
+            {"any": ["not run", "unfinished", "pending"]},
+            {"any": ["S3", "restart", "oracle"]}
+          ],
+          "sources_any": ["Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["latest merged", "current target", "ground", "lock and prove", "confirm the target", "confirm where", "pin the final target", "target/bundle proof"]},
+            {"any": ["do not touch production", "no production", "dev-S3", "validation-safe", "production side effects off"]},
+            {"any": ["do not claim", "not complete", "until", "do not enter", "before", "only after"]}
+          ],
+          "sources_any": ["Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"]
+        }
+      ],
+      "forbidden": ["final validation is complete", "all validation passed"]
+    },
+    {
+      "id": "charlemagne-storage-current-state",
+      "workload": "Charlemagne",
+      "capability": "temporal_state_and_planning",
+      "task": "Resume the rhea storage investigation using the May, June 16, and June 24 records. State the current durable growth story, separate it from the transient free-space drop and rebound, explain what is and is not still receiving writes, and propose the next safe actions without treating large legacy tables as disposable.",
+      "claim_slots": {
+        "c1": "current disk and schema state",
+        "c2": "durable versus transient cause",
+        "c3": "legacy versus active writes",
+        "c4": "safe next actions"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["496G", "496 G"]},
+            {"any": ["87%", "87 percent"]},
+            {"any": ["273.95", "273.9"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["legacy session", "_legacy"]},
+            {"any": ["196 GiB", "196G", "196 Gi"]},
+            {"any": ["temporary", "transient", "GROUP BY", "skill_rating_match_audits"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["compact replacement", "replacement tables", "active writes"]},
+            {"any": ["0/s", "zero writes", "not current write"]},
+            {"any": ["retained", "durable retained"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["monitor", "watch", "df"]},
+            {"any": ["replay", "rollback", "cutover acceptance"]},
+            {"any": ["physical reclaim", "separate decision", "maintenance"]}
+          ],
+          "sources_any": [
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+          ]
+        }
+      ],
+      "forbidden": ["drop the legacy tables immediately", "turn off session tracking"]
+    },
+    {
+      "id": "charlemagne-performance-priority",
+      "workload": "Charlemagne",
+      "capability": "evidence_backed_investigation",
+      "task": "Prepare the next Warmind/Charlemagne performance work package. Choose the highest-value non-profile intervention from the saved RUM/APM evidence, explain the code-path reason, and separately state what should change on the raid profile route. Include what to measure after each change.",
+      "claim_slots": {
+        "c1": "highest-value non-profile target",
+        "c2": "recommended intervention",
+        "c3": "raid route bottleneck and change",
+        "c4": "post-change verification"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["/in/playerActivity", "playerActivity"]},
+            {"any": ["13,210", "13210"]},
+            {"any": ["12.03", "12 s", "12 seconds"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["stale-while-revalidate", "stale while revalidate", "longer stale TTL"]},
+            {"any": ["background refresh", "lock"]},
+            {"any": ["Redis scan", "foreground rebuild"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["Bungie", "ProfileWCollectibles", "collectibles"]},
+            {"any": ["split", "defer", "lazy-load", "share/cache"]},
+            {"any": ["Pantheon", "raid cards", "local raid"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["p95", "RUM", "APM"]},
+            {"any": ["cache miss", "foreground rebuild", "Bungie source"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md"]
+        }
+      ],
+      "forbidden": ["images are the 3-4 second blocker"]
+    },
+    {
+      "id": "warmind-production-cpu-mitigation",
+      "workload": "Warmind",
+      "capability": "incident_continuation",
+      "task": "Continue the June 20 production CPU incident from the saved evidence. Give the causal story, explain why parser throughput alone is misleading, choose the first low-blast-radius mitigation, and define the immediate remeasurement gate. Do not invent a deploy or restart as the cause.",
+      "claim_slots": {
+        "c1": "causal story",
+        "c2": "why parser rate misleads",
+        "c3": "first mitigation",
+        "c4": "remeasurement gate"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["global_profile_leaderboards"]},
+            {"any": ["MaxConcurrency: 0", "MaxConcurrency 0", "unbounded"]},
+            {"any": ["MySQL", "Cortex", "DB pressure"]}
+          ],
+          "sources_any": ["Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["85", "84"]},
+            {"any": ["transaction", "tx duration", "DB queue wait"]},
+            {"any": ["unit cost", "more expensive", "misleading"]}
+          ],
+          "sources_any": ["Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["pause"]},
+            {"any": ["sweeperbot:jobs:global_profile_leaderboards:paused"]},
+            {"any": ["in-flight", "finish", "drain"]}
+          ],
+          "sources_any": ["Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["MySQL CPU", "mysqld"]},
+            {"any": ["parser DB wait", "session_pgcr_seen"]},
+            {"any": ["session_finalize_due", "drain"]}
+          ],
+          "sources_any": ["Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md"]
+        }
+      ],
+      "forbidden": ["an overnight deploy caused", "restart all services"]
+    },
+    {
+      "id": "charlemagne-index-artifact-review",
+      "workload": "Charlemagne",
+      "capability": "artifact_computation_and_safety",
+      "task": "Inspect the saved unused-index TSV and SQL artifacts as a maintenance-planning task. Identify the three largest rough index estimates, compute their combined rough GiB, and explain why the generated DROP script is not an execution plan. Leave the exact verification and maintenance gates for a future operator.",
+      "claim_slots": {
+        "c1": "three largest rough estimates",
+        "c2": "combined rough size",
+        "c3": "why the SQL is not ready to execute",
+        "c4": "verification and maintenance gates"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["summary_weapon_meta_daily"]},
+            {"any": ["45.67"]},
+            {"any": ["raw_raids"]},
+            {"any": ["characterId", "membershipId"]},
+            {"any": ["32.31"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["110.29", "110.3"]},
+            {"any": ["rough", "estimate"]}
+          ],
+          "sources_any": ["Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["zero operations", "collected stats", "ops=0"]},
+            {"any": ["FULLTEXT", "review-fulltext"]},
+            {"any": ["not proof", "not execute", "not ready to execute", "not an execution"]}
+          ],
+          "sources_any": [
+            "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-drop-candidates.tsv",
+            "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["mysql.innodb_index_stats", "exact pages", "real query usage"]},
+            {"any": ["maintenance window"]},
+            {"any": ["rollback", "backup", "monitor"]}
+          ],
+          "sources_any": [
+            "Projects/Charlemagne/Database/db_schema_2026-04-25/unused-index-rough-size-estimates.tsv",
+            "Projects/Charlemagne/Database/db_schema_2026-04-25/drop-unused-index-candidates.sql"
+          ]
+        }
+      ],
+      "forbidden": ["run the drop script now", "safe to drop all"]
+    },
+    {
+      "id": "star-rupture-rail-and-heat-plan",
+      "workload": "Star Rupture",
+      "capability": "quantitative_planning",
+      "task": "Design an Update 1 logistics plan for one Pure Ore Excavator v.2 and two Helium-3 Extractors, then check whether a level-0 Base Core can also host one Constructorizer and one Facturer. Show the throughput and heat arithmetic, use only currently available rails, and leave a safe layout decision.",
+      "claim_slots": {
+        "c1": "ore rail sizing",
+        "c2": "helium rail sizing",
+        "c3": "core heat arithmetic",
+        "c4": "safe layout decision"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["480/min", "480 items/min", "480 per minute"]},
+            {"any": ["Rail v.3", "v3 rail"]},
+            {"any": ["exactly", "saturates", "100%"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture logistics.md",
+            "Topics/Star Rupture/Star Rupture production.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["240/min", "240 per minute"]},
+            {"any": ["480/min", "480 per minute"]},
+            {"any": ["one Rail v.3", "share a Rail v.3", "pair"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture logistics.md",
+            "Topics/Star Rupture/Star Rupture production.md"
+          ]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["500"]},
+            {"any": ["650"]},
+            {"any": ["1,150", "1150", "1,288", "1288"]},
+            {"any": ["1,000", "1000"]},
+            {"any": ["disables Fire Wave protection", "exceeds", "over capacity"]}
+          ],
+          "sources_any": ["Topics/Star Rupture/Star Rupture production.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["distributed", "satellite", "outpost", "core upgrade"]},
+            {"any": ["rails conduct", "power grid", "backbone", "rail-connected", "trunk", "spurs"]},
+            {"any": ["v.1", "v.2", "v.3"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture.md",
+            "Topics/Star Rupture/Star Rupture logistics.md",
+            "Topics/Star Rupture/Star Rupture production.md"
+          ]
+        }
+      ],
+      "forbidden": ["Rail v.4 is available", "Rail v.5 is available"]
+    },
+    {
+      "id": "star-rupture-source-authority",
+      "workload": "Star Rupture",
+      "capability": "authority_and_missing_artifacts",
+      "task": "A new agent is about to extend the StarRupture factory plan. Establish the current-version and source-authority rules, list examples of future or hidden content that must not enter the live plan, and check whether the referenced structured game database is actually present in this workspace. State how to proceed without fabricating data.",
+      "claim_slots": {
+        "c1": "current game version context",
+        "c2": "source authority hierarchy",
+        "c3": "future or hidden exclusions",
+        "c4": "structured artifact availability and response"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["Update 1"]},
+            {"any": ["0.2.x", "0.2.8"]},
+            {"any": ["playtest", "outdated"]}
+          ],
+          "sources_any": ["Topics/Star Rupture/Star Rupture.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["Steam", "Creepy Jar"]},
+            {"any": ["authoritative", "actually in the build"]},
+            {"any": ["starrupture.tools", "caveat"]}
+          ],
+          "sources_any": ["Topics/Star Rupture/Star Rupture.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["Rail v.4", "v.4"]},
+            {"any": ["Rail v.5", "v.5"]},
+            {"any": ["hidden", "Chemical Processor", "Chimeran Power Generator"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture.md",
+            "Topics/Star Rupture/Star Rupture logistics.md"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["not present", "missing", "unavailable"]},
+            {"any": ["starrupture.sqlite", "data/"]},
+            {"any": ["do not fabricate", "cannot claim", "use the saved tables"]}
+          ],
+          "sources_any": ["Topics/Star Rupture/Star Rupture.md"]
+        }
+      ],
+      "forbidden": ["I queried starrupture.sqlite", "the database confirms"]
+    },
+    {
+      "id": "star-rupture-plan-revision",
+      "workload": "Star Rupture",
+      "capability": "iterative_workspace_revision",
+      "task": "Revise an earlier mega-base idea after learning that the save is still on a level-0 Base Core and only Update 1 content may be used. Produce a durable factory checkpoint with the revised architecture, live logistics choices, buffers and exports, one defense provision, and the open in-game questions that should be tested next.",
+      "claim_slots": {
+        "c1": "revised architecture",
+        "c2": "live logistics and buffering",
+        "c3": "exports and defense",
+        "c4": "open verification questions"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["distributed", "satellite", "outpost"]},
+            {"any": ["level-0", "level 0", "1,000", "1000"]},
+            {"any": ["heat", "capacity"]}
+          ],
+          "sources_any": [
+            "Topics/Star Rupture/Star Rupture logistics.md",
+            "Topics/Star Rupture/Star Rupture production.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["v.1", "v.2", "v.3"]},
+            {"any": ["match rail tier", "120/240/480", "120", "240", "480"]},
+            {"any": ["Storage Depot", "Multistorage", "buffer"]}
+          ],
+          "sources_any": ["Topics/Star Rupture/Star Rupture logistics.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["Orbital Cargo Launcher", "Exporter"]},
+            {"any": ["one input", "dedicate one"]},
+            {"any": ["Defense Tower", "ammo spur", "Rail v.1 loop"]}
+          ],
+          "sources_any": ["Topics/Star Rupture/Star Rupture logistics.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["queue", "round-robin", "priority"]},
+            {"any": ["Multirail", "Drone Station", "Delivery Storage"]},
+            {"any": ["verify", "in-game"]}
+          ],
+          "sources_any": ["Topics/Star Rupture/Star Rupture logistics.md"]
+        }
+      ],
+      "forbidden": ["Rail v.4", "Rail v.5"]
+    },
+    {
+      "id": "switzerland-resume-truth",
+      "workload": "Switzerland",
+      "capability": "planning_state_and_corrections",
+      "task": "Resume the Switzerland family trip planning without mistaking ideas for bookings. Summarize the athlete camp facts, the latest family-meeting correction, the altitude and lodging constraints, and the current status of the family itinerary. Clearly separate confirmed source facts from planning assumptions.",
+      "claim_slots": {
+        "c1": "camp facts",
+        "c2": "latest family-meeting correction",
+        "c3": "altitude and lodging constraints",
+        "c4": "booking and planning status"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["August 5-10", "Aug 5-10", "August 5 to 10"]},
+            {"any": ["August 10-22", "Aug 10-22", "August 10 to 22"]},
+            {"any": ["Belgium", "Saas Fee", "Saas-Fee"]}
+          ],
+          "sources_any": ["Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["after both camps", "after Saas", "Aug 21", "Aug 22"]},
+            {"any": ["3 to 4 days", "3-4 days", "Italy"]},
+            {"any": ["not at the end of Belgium", "correction"]}
+          ],
+          "sources_any": ["Trips/Switzerland/Switzerland trip planning.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["serious altitude", "altitude issues", "altitude problems"]},
+            {"any": ["low altitude", "relatively low", "avoid unnecessarily high", "go down in elevation", "descend"]},
+            {"any": ["pull-out sofa", "room for Radley", "enough room"]}
+          ],
+          "sources_any": ["Trips/Switzerland/Switzerland trip planning.md"]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["active research", "in progress", "not booked", "no booking"]},
+            {"any": ["option", "proposal", "shortlist"]},
+            {"any": ["two weeks", "14 days"]}
+          ],
+          "sources_any": [
+            "Trips/Switzerland/Switzerland trip planning.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ]
+        }
+      ],
+      "forbidden": ["the family has booked", "meet him after Belgium"]
+    },
+    {
+      "id": "switzerland-itinerary-revision",
+      "workload": "Switzerland",
+      "capability": "constraint_driven_iteration",
+      "task": "New planning scenario: Radley pickup is now assumed at Milano Malpensa on August 21. Revise the family plan while keeping the family trip at no more than about two weeks, preserving a low-altitude fallback during the first Saas-Fee days, avoiding repetitive mountain-town travel, and giving the reunited family a 3-4 day Italy finish. This is a scenario, not a booking.",
+      "claim_slots": {
+        "c1": "Swiss-side base",
+        "c2": "pickup and Italy sequence",
+        "c3": "trip rhythm and constraints",
+        "c4": "status and next booking work"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["Vevey", "Montreux", "Lausanne"]},
+            {"any": ["low altitude", "lakefront"]},
+            {"any": ["Saas-Fee", "Saas Fee", "return"]}
+          ],
+          "sources_any": ["Trips/Switzerland/Nearby family options menu.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["Malpensa", "MXP"]},
+            {"any": ["August 21", "Aug 21"]},
+            {"any": ["Stresa", "Baveno", "Lake Maggiore"]},
+            {"any": ["3-4", "3 to 4"]}
+          ],
+          "sources_any": [
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["two weeks", "14 days", "14 nights"]},
+            {"any": ["one anchor", "breathing room", "transfer day", "two principal", "two settings", "two bases"]},
+            {"any": ["not mountain", "lake", "city"]}
+          ],
+          "sources_any": [
+            "Trips/Switzerland/Switzerland trip planning.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["scenario", "proposed", "not booked"]},
+            {"any": ["availability", "lodging", "flight", "handoff"]}
+          ],
+          "sources_any": [
+            "Trips/Switzerland/Switzerland trip planning.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ]
+        }
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "switzerland-authority-and-next-actions",
+      "workload": "Switzerland",
+      "capability": "authority_and_actionability",
+      "task": "Build a source-aware planning checkpoint for the Switzerland trip. Explain what authority each of the four notes carries, which details must not be promoted into booked facts, and the next concrete research or booking decisions needed to advance the trip safely.",
+      "claim_slots": {
+        "c1": "coach brief authority",
+        "c2": "user constraint authority",
+        "c3": "options and inspiration authority",
+        "c4": "next concrete decisions"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["coach", "camp brief"]},
+            {"any": ["camp dates", "camp logistics"]},
+            {"any": ["example itinerary", "not a family booking", "confirmation numbers"]}
+          ],
+          "sources_any": ["Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["user-provided", "family constraints", "correction"]},
+            {"any": ["after both camps", "altitude", "two weeks"]}
+          ],
+          "sources_any": ["Trips/Switzerland/Switzerland trip planning.md"]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["shortlist", "options", "recommendation"]},
+            {"any": ["inspiration", "A&K", "rhythm"]},
+            {"any": ["not booked", "not a reservation", "proposal"]}
+          ],
+          "sources_any": [
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["arrival", "departure", "flight"]},
+            {"any": ["lodging", "room", "availability"]},
+            {"any": ["pickup", "handoff", "Malpensa"]},
+            {"any": ["verify", "before booking"]}
+          ],
+          "sources_any": [
+            "Trips/Switzerland/Switzerland trip planning.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ]
+        }
+      ],
+      "forbidden": ["family flights are booked", "hotel is booked"]
+    },
+    {
+      "id": "straylight-product-resume",
+      "workload": "Straylight",
+      "capability": "project_continuation",
+      "task": "Resume Straylight after the product-framing correction. State what the product is, what durable state it must preserve beyond learned memory, why Obsidian is not the product boundary, why the first benchmark was too narrow, and what the expanded evaluation must now prove.",
+      "claim_slots": {
+        "c1": "correct product category",
+        "c2": "durable work state",
+        "c3": "relationship to Obsidian",
+        "c4": "new evaluation gate"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["agent context", "durable-work", "durable work"]},
+            {"any": ["agent-first", "agent first"]},
+            {"any": ["learn", "continue", "advance"]}
+          ],
+          "sources_any": ["Projects/Straylight/Straylight.md"]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["goals", "evidence"]},
+            {"any": ["hypotheses", "plans"]},
+            {"any": ["artifacts", "computations"]},
+            {"any": ["open questions", "rejected", "checkpoints", "next actions"]}
+          ],
+          "sources_any": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md"
+          ]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["projection", "prototype input", "export"]},
+            {"any": ["not the product", "not canonical", "not the boundary"]},
+            {"any": ["Markdown", "Obsidian"]}
+          ],
+          "sources_any": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["resume", "continuation"]},
+            {"any": ["iterate", "planning", "constraints"]},
+            {"any": ["compute", "verify", "checkpoint", "next-state"]},
+            {"any": ["Warmind", "StarRupture", "Switzerland"]}
+          ],
+          "sources_any": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md"
+          ]
+        }
+      ],
+      "forbidden": []
+    },
+    {
+      "id": "straylight-trust-handoff",
+      "workload": "Straylight",
+      "capability": "trust_aware_workspace_design",
+      "task": "Create a safe implementation checkpoint for connecting personal Straylight context to a work agent. State the physical trust boundary, allowed automated direction, prohibited return data, and the only allowed path for a work-generated recommendation to enter personal context. Preserve the distinction between a read interface and versioned workspace writes.",
+      "claim_slots": {
+        "c1": "physical trust boundary",
+        "c2": "allowed automated direction",
+        "c3": "prohibited return flow",
+        "c4": "human-reviewed return path and write model"
+      },
+      "rubric": [
+        {
+          "id": "c1",
+          "checks": [
+            {"any": ["physically separate"]},
+            {"any": ["personal", "work"]},
+            {"any": ["not namespace", "separate instance", "trust domain"]}
+          ],
+          "sources_any": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "checks": [
+            {"any": ["personal to work", "personal -> work", "one-way"]},
+            {"any": ["signed", "encrypted"]},
+            {"any": ["snapshot", "delta", "importer"]}
+          ],
+          "sources_any": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md"
+          ]
+        },
+        {
+          "id": "c3",
+          "checks": [
+            {"any": ["prompt", "query", "prompts", "queries"]},
+            {"any": ["outputs", "telemetry", "embeddings"]},
+            {"any": ["must never", "no flow back", "prohibited", "no work-generated", "cannot flow"]}
+          ],
+          "sources_any": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md"
+          ]
+        },
+        {
+          "id": "c4",
+          "checks": [
+            {"any": ["human-reviewed", "human reviewed"]},
+            {"any": ["declassification"]},
+            {"any": ["versioned", "checkpoint", "revision"]}
+          ],
+          "sources_any": ["Projects/Straylight/Decisions.md"]
+        }
+      ],
+      "forbidden": ["bidirectional sync", "work telemetry returns"]
+    }
+  ]
+}

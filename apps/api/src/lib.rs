@@ -1,0 +1,31 @@
+#![recursion_limit = "512"]
+
+pub mod api;
+pub mod auth;
+pub mod capture_service;
+pub mod config;
+pub mod continuation;
+pub mod control_service;
+pub mod db;
+pub mod dream_service;
+pub mod dreams;
+pub mod embeddings;
+pub mod error;
+pub mod eval_service;
+pub mod ingest;
+pub mod models;
+pub mod object_store;
+pub mod policy;
+pub mod read_service;
+pub mod recurrence;
+pub mod refs;
+pub mod retrieval;
+pub mod service;
+pub mod session_service;
+pub mod worker;
+pub mod write_service;
+
+pub use api::router;
+pub use config::Config;
+pub use db::AppState;
+pub use error::{ApiError, ApiResult};
