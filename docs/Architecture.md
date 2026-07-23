@@ -115,6 +115,14 @@ sharp relevance drop instead of filling every result slot, and groups multiple
 relevant sections from the strongest source before broadening. Ordinary query
 keeps the source-diverse ranking used for discovery.
 
+After selection, open groups candidates by source and hydrates sources in rank
+order. Up to four sources may be loaded completely under one 32,000-character
+source budget; the strongest source may consume the shared budget instead of
+being rejected by an arbitrary per-file cap. A source that does not fit keeps
+its selected exact sections, ranges, and references. `likely_sufficient`
+requires both task-anchor coverage and a complete primary source; it is a
+retrieval hint, not proof that every requested output facet is supported.
+
 `memory.query` combines independent exact, structured, PostgreSQL FTS,
 pgvector semantic, temporal, and relation lanes. Reciprocal-rank fusion merges
 candidates while preserving lane scores and `why_selected`. Authority,
@@ -139,10 +147,15 @@ The HTTP API retains detailed candidates, coverage, rank receipts, and policy
 audit data. Agent adapters expose a compact reasoning view by default: they
 remove corpus inventory samples, duplicated envelope fields and candidate
 aliases, and ranking mechanics while preserving evidence text, exact paths and
-references, source versions, authority, currentness, checkpoints, deltas,
-learned context, gaps, conflicts, and policy receipts. Agents start with open,
-query only unresolved gaps, and batch exact path, reference, or range reads
-when several sources are needed.
+references needed to reopen excerpts, authority, currentness, checkpoints,
+deltas, learned context, gaps, conflicts, and policy receipts. Agents start
+with open, query only unresolved gaps, and batch exact path, reference, or
+range reads when several sources are needed. The transport carries up to twelve hydrated
+source entries under a 32,000-character source-text budget, marks overflow
+sources as pointers, and never asks an agent to reread a complete source. It
+records source-text, metadata, complete-source, pointer, and sufficiency metrics
+for evaluation. MCP emits one textual JSON representation by default so the
+same payload is not duplicated as `structuredContent`.
 
 ## Write Path
 

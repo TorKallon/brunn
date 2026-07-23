@@ -45,6 +45,12 @@ docker compose down
 `docker compose down` preserves named Postgres and MinIO volumes. Do not use
 `down -v` unless intentionally destroying all local Straylight data.
 
+The native agent adapter emits minified JSON by default. Use
+`./memory --pretty <operation>` only for human inspection. MCP emits textual
+JSON without a second `structuredContent` copy by default; set
+`STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT=1` only for a client that explicitly
+requires it.
+
 ## Health
 
 ```bash
@@ -158,7 +164,15 @@ one. Native agents should treat `memory.open` as their first evidence packet,
 query only unresolved gaps, and batch repeated `--path` or `--ref` reads in one
 call when several exact sources are required. Agent adapters default a focused
 query to eight source leads. Use `--neighbors N` for symmetric context around a
-chunk reference and `--range START:END` for exact source lines.
+chunk reference and `--range START:END` for exact source lines. A
+`complete_source` already contains the full source and must not be read again.
+Treat `likely_sufficient` as primary-source and anchor coverage, then inspect
+each requested task facet before deciding whether a focused query is needed.
+
+Evaluation operation records split `result_chars` into `source_text_chars` and
+`metadata_chars`, and also record complete sources, pointer sources,
+sufficiency status, and replay-weighted characters. Compare uncached input
+separately from cumulative cached-history replay.
 
 The active agent-work manifests use `concept_tokens_v1`: exact phrases still
 match, while conservative token-set matching accepts reordered paraphrases,
@@ -166,7 +180,9 @@ equivalent negation forms, and rate notation while preserving negation and
 exact identifier/date components. This prevents harmless wording differences
 from being reported as retrieval losses; source-path checks, forbidden
 conclusions, checkpoint structure, and every claim's concept requirements
-remain deterministic.
+remain deterministic. The matcher treats `remove` and `exclude` as equivalent
+boundary operations and does not count an explicitly negated forbidden phrase
+as an asserted conclusion.
 
 ## Migration Discipline
 

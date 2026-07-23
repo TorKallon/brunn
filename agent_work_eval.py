@@ -96,6 +96,10 @@ CONCEPT_IRREGULAR = {
     "changes": "change",
     "claims": "claim",
     "dossiers": "dossier",
+    "exclude": "remove",
+    "excluded": "remove",
+    "excludes": "remove",
+    "excluding": "remove",
     "ids": "id",
     "moved": "move",
     "moves": "move",
@@ -178,6 +182,23 @@ def candidate_matches(candidate: str, value: str, mode: str) -> bool:
     return bool(candidate_concepts) and candidate_concepts <= concept_tokens(value)
 
 
+def forbidden_is_asserted(forbidden: str, rendered: str) -> bool:
+    phrase = normalize(forbidden)
+    start = 0
+    while (match_at := rendered.find(phrase, start)) >= 0:
+        prefix = rendered[max(0, match_at - 240):match_at]
+        clause = re.split(r"[.!?;]", prefix)[-1]
+        negated = re.search(
+            r"\b(?:cannot|can't|do not|does not|did not|must not|never|no|should not|without)\b",
+            clause,
+        )
+        contrast = re.search(r"\b(?:but|except|however|instead)\b", clause)
+        if not negated or (contrast and contrast.start() > negated.start()):
+            return True
+        start = match_at + len(phrase)
+    return False
+
+
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -232,7 +253,11 @@ def render_prompt(case: dict, condition: str) -> str:
         access = (
             "Use the read-only native Straylight service through ./memory only. Do not inspect the wrapper or any corpus path. "
             "Run `./memory open` and treat its initial evidence, learned context, checkpoint, and revision delta as the first "
-            "answer packet. Do not query again for facts that packet already establishes. For unresolved gaps, use one focused "
+            "answer packet. A `complete_source` item is already the full source and must not be read again. Pointer-only "
+            "`evidence_leads` identify additional sources to read only when a requested task facet is absent. Treat "
+            "`retrieval_sufficiency.status=likely_sufficient` as evidence that the primary source is complete and task anchors "
+            "are covered, not as proof that every requested output facet is established. Build a facet checklist from the task "
+            "and claim slots; do not query again for facts that packet directly establishes. For unresolved checklist gaps, use one focused "
             f"`./memory query --scope {json.dumps(scope)} \"question\"`, or `--batch` only for independent gaps. Follow a "
             "candidate into its source with `./memory read --ref \"chunk:...\" --neighbors 4` or an exact line range. A candidate "
             "excerpt is a source lead, not proof that the displayed section is complete: if its path clearly owns an unresolved "
@@ -245,7 +270,11 @@ def render_prompt(case: dict, condition: str) -> str:
         access = (
             "Use the native Straylight service through ./memory only. Do not inspect the wrapper or any corpus path. "
             "Run `./memory open` and treat its initial evidence, learned context, checkpoint, and revision delta as the first "
-            "answer packet. Do not query again for facts that packet already establishes. For unresolved gaps, use one focused "
+            "answer packet. A `complete_source` item is already the full source and must not be read again. Pointer-only "
+            "`evidence_leads` identify additional sources to read only when a requested task facet is absent. Treat "
+            "`retrieval_sufficiency.status=likely_sufficient` as evidence that the primary source is complete and task anchors "
+            "are covered, not as proof that every requested output facet is established. Build a facet checklist from the task "
+            "and claim slots; do not query again for facts that packet directly establishes. For unresolved checklist gaps, use one focused "
             f"`./memory query --scope {json.dumps(scope)} \"question\"`, or `--batch` only for independent gaps. Follow a "
             "candidate into its source with `./memory read --ref \"chunk:...\" --neighbors 4` or an exact line range. A candidate "
             "excerpt is a source lead, not proof that the displayed section is complete: if its path clearly owns an unresolved "
@@ -289,6 +318,7 @@ Return the required JSON object. The `claims` array must contain exactly one ent
 For service retrieval, cite only exact `path` values returned with candidates, never a path merely mentioned inside candidate content.
 When a claim characterizes a source's authority, cite that original source, not only an index or summary that discusses it.
 Copy stable IDs, ISO-8601 timestamps, timezones, hashes, quantities, and measurements exactly from authoritative evidence. Do not silently normalize or reconstruct exact values from memory.
+Before checkpointing, check every task facet against the claim slot responsible for it. Keep every claim slot self-contained; repeat a fact when it is needed in more than one slot, and do not rely on details stated only in another claim, the answer summary, or the checkpoint. When reporting an inventory, implementation state, public/private boundary, or operational behavior, preserve the concrete names, thresholds, state transitions, and failure or recovery rules that establish the conclusion rather than replacing them with counts, symbolic IDs, or broad categories. Cite the source that directly supports each slot's details, even when another source elsewhere in the answer covers adjacent context.
 {slot_lines}
 
 {checkpoint_instruction} Record the objective, current state, decisions, unresolved questions, concrete next actions, and the source or output artifacts that matter. Distinguish current fact from proposal, historical evidence from superseding state, and verified results from incomplete work. Use only evidence available under this condition.
@@ -443,7 +473,10 @@ def grade_answer(case: dict, answer: dict, corpus_paths: set[str]) -> dict:
     }
     checkpoint_score = sum(checkpoint_fields.values()) / len(required_checkpoint)
     rendered = normalize(json.dumps(answer, ensure_ascii=False))
-    forbidden_hits = [item for item in case.get("forbidden", []) if normalize(item) in rendered]
+    forbidden_hits = [
+        item for item in case.get("forbidden", [])
+        if forbidden_is_asserted(item, rendered)
+    ]
     valid_citations = [
         citation for citation in all_citations
         if normalize_citation_path(citation) in corpus_paths
@@ -476,6 +509,9 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     record["service_operations"] = []
     record["service_calls"] = 0
     record["service_result_chars"] = 0
+    record["service_source_text_chars"] = 0
+    record["service_metadata_chars"] = 0
+    record["service_replay_weighted_chars"] = 0
     record["service_latency_ms"] = 0.0
     record["service_checkpoint"] = None
     record["service_session_id"] = None
@@ -509,6 +545,16 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     record["service_operations"] = operations
     record["service_calls"] = len(operations)
     record["service_result_chars"] = sum(operation.get("result_chars", 0) for operation in operations)
+    record["service_source_text_chars"] = sum(
+        operation.get("source_text_chars", 0) for operation in operations
+    )
+    record["service_metadata_chars"] = sum(
+        operation.get("metadata_chars", 0) for operation in operations
+    )
+    record["service_replay_weighted_chars"] = sum(
+        operation.get("result_chars", 0) * (len(operations) - index)
+        for index, operation in enumerate(operations)
+    )
     record["service_latency_ms"] = round(
         sum(float(operation.get("elapsed_ms", 0)) for operation in operations),
         3,
@@ -708,6 +754,15 @@ def summarize(manifest: dict, records: Sequence[dict]) -> dict:
             ) if rows else 0,
             "mean_service_result_chars": round(
                 statistics.fmean(row.get("service_result_chars", 0) for row in rows), 1
+            ) if rows else 0,
+            "mean_service_source_text_chars": round(
+                statistics.fmean(row.get("service_source_text_chars", 0) for row in rows), 1
+            ) if rows else 0,
+            "mean_service_metadata_chars": round(
+                statistics.fmean(row.get("service_metadata_chars", 0) for row in rows), 1
+            ) if rows else 0,
+            "mean_service_replay_weighted_chars": round(
+                statistics.fmean(row.get("service_replay_weighted_chars", 0) for row in rows), 1
             ) if rows else 0,
             "mean_service_latency_ms": round(
                 statistics.fmean(row.get("service_latency_ms", 0.0) for row in rows), 3
@@ -922,6 +977,9 @@ def render_report(run: dict) -> str:
         lines.extend([
             f"- Native service calls averaged {service['mean_service_calls']:.1f} per case and returned "
             f"{service['mean_service_result_chars']:,.0f} characters in {service['mean_service_latency_ms']:,.1f} ms of measured API time.",
+            f"- Of that model-visible service output, {service['mean_service_source_text_chars']:,.0f} characters were evidence text and "
+            f"{service['mean_service_metadata_chars']:,.0f} were transport metadata; replay-weighted output was "
+            f"{service['mean_service_replay_weighted_chars']:,.0f} characters per case.",
             f"- Native uncached model input was {service_uncached / max(1, filesystem_uncached):.2f}x the filesystem baseline.",
         ])
 

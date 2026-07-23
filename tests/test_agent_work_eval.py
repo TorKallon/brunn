@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agent_work_eval import (  # noqa: E402
     build_codex_command,
     candidate_matches,
+    forbidden_is_asserted,
     grade_answer,
     normalize,
     parse_event_metrics,
@@ -126,6 +127,8 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertIn("treat its initial evidence", service_prompt)
         self.assertIn("repeat `--path` or `--ref`", service_prompt)
         self.assertIn("exactly from authoritative evidence", service_prompt)
+        self.assertIn("Build a facet checklist", service_prompt)
+        self.assertIn("repeat a fact when it is needed in more than one slot", service_prompt)
 
     def test_retired_cases_are_excluded_by_default_but_remain_reproducible(self):
         active = select_cases(self.manifest, None, include_retired=False)
@@ -389,6 +392,25 @@ class AgentWorkEvalTests(unittest.TestCase):
             "does not change the tentative response",
             "The update changes the tentative response.",
             "concept_tokens_v1",
+        ))
+        self.assertTrue(candidate_matches(
+            "exclude",
+            "Remove all dependencies on private source data.",
+            "concept_tokens_v1",
+        ))
+
+    def test_forbidden_conclusions_ignore_explicit_negation(self):
+        forbidden = "rewrite relation:participation-103 to person:p-101"
+        self.assertFalse(forbidden_is_asserted(
+            forbidden,
+            normalize(
+                "Do not delete or merge either person, select a survivor, "
+                "or rewrite relation:participation-103 to person:p-101."
+            ),
+        ))
+        self.assertTrue(forbidden_is_asserted(
+            forbidden,
+            normalize("Rewrite relation:participation-103 to person:p-101."),
         ))
 
     def test_read_only_workspace_allows_reasoning_and_denies_mutation(self):

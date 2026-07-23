@@ -133,6 +133,9 @@ returns:
 - checkpoint and exact revision delta when resuming
 - complete bounded materialization when it fits
 - initial hybrid evidence
+- ranked hydrated sources: complete source text when it fits the shared open
+  budget, otherwise selected exact sections and references
+- retrieval sufficiency with covered and unresolved task anchors
 - the latest fresh, hard-gated, non-authoritative learned context for the exact
   pinned revision, or explicit pending/stale/unavailable status
 - freshness, coverage, conflicts, gaps, and ambiguities
@@ -141,7 +144,17 @@ The initial evidence selector prioritizes exact stable references and titles,
 then current temporal evidence, groups relevant sections from the strongest
 source, and may return fewer than the maximum when fused relevance has a sharp
 drop. This source-coherent policy applies only to `memory.open`; explicit
-queries remain source-diverse discovery operations.
+queries remain source-diverse discovery operations. Source hydration follows
+that ranked order and may load at most four complete sources under a shared
+32,000-character source-text budget. The primary source is not subject to a
+smaller per-file cap. Sources that do not fit retain selected sections, exact
+ranges, and read references.
+
+`retrieval_sufficiency.status` is `likely_sufficient` only when the primary
+hydrated source is complete and at least 75% of deterministic task anchors are
+present in the packet. Otherwise the caller receives
+`inspect_then_query_gaps` or `no_evidence`. This signal guides inspection; it
+does not certify that every task facet has evidence.
 
 Sessions are credential-bound, expiring, and immutable. Refresh creates a new
 session over an explicit newer revision and exposes the delta; it never mutates
@@ -168,14 +181,20 @@ time, evidence references, lane scores, and `why_selected`.
 
 The detailed HTTP representation above is the audit view. MCP and evaluation
 adapters use a compact reasoning representation by default. It must preserve
-candidate content, path, stable reference, source version, authority,
-canonicality, recorded and valid time, selection reason, nonempty diagnostics,
+candidate content, path, a stable reference for excerpts and pointers,
+authority, canonicality, recorded and valid time, nonempty diagnostics,
 checkpoint and revision delta, learned context, and a compact policy receipt.
 It may omit corpus inventory samples, duplicate envelope fields, duplicate
 single-query aliases, complete per-item coverage, content hashes used only for
-ranking integrity, lane scores, and fused scores. Exact source reads and the
-HTTP audit representation remain available when those omitted fields are the
-subject of the task.
+ranking integrity, redundant source versions, selection reasons, lane scores,
+and fused scores when exact source content/path or an excerpt reference is
+already present. Exact source reads and the HTTP audit representation retain
+those fields and remain available when they are the subject of the task. The
+default open reasoning view may expose up to twelve
+hydrated entries and 32,000 source-text characters. Complete sources omit
+redundant chunk handles; overflow sources remain pointer entries. Minified JSON
+is the default agent transport, while human-readable pretty printing is
+optional.
 
 ## Read
 

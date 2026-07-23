@@ -61,8 +61,9 @@ def record_state(
     request_id: str | None,
     service_status: str | None,
     response: NativeResponse | None = None,
+    result_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    state["operations"].append({
+    operation_record = {
         "at": datetime.now().astimezone().isoformat(timespec="milliseconds"),
         "operation": operation,
         "http_status": http_status,
@@ -70,7 +71,10 @@ def record_state(
         "request_id": request_id,
         "elapsed_ms": round(elapsed_ms, 3),
         "result_chars": result_chars,
-    })
+    }
+    if result_metrics:
+        operation_record.update(result_metrics)
+    state["operations"].append(operation_record)
     if response is not None:
         session_id = response_field(response, "session_id")
         corpus_revision = response_field(response, "corpus_revision", "revision_id")
@@ -84,6 +88,55 @@ def record_state(
             state["checkpoint"] = response.data
     save_state(path, state)
     return state
+
+
+def response_payload_metrics(rendered: str) -> dict[str, Any]:
+    try:
+        body = json.loads(rendered)
+    except json.JSONDecodeError:
+        return {}
+    source_text_chars = 0
+    evidence_items = 0
+    complete_sources = 0
+    pointer_sources = 0
+
+    def visit(value: Any, parent_key: str | None = None) -> None:
+        nonlocal source_text_chars, evidence_items, complete_sources, pointer_sources
+        if isinstance(value, dict):
+            scope = value.get("content_scope")
+            if scope == "complete_source":
+                complete_sources += 1
+            elif scope == "source_lead":
+                pointer_sources += 1
+            if isinstance(value.get("content"), str):
+                source_text_chars += len(value["content"])
+                evidence_items += 1
+            if isinstance(value.get("text"), str):
+                source_text_chars += len(value["text"])
+                evidence_items += 1
+            for key, child in value.items():
+                if key not in {"content", "text"}:
+                    visit(child, key)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child, parent_key)
+
+    visit(body)
+    sufficiency = (
+        body.get("data", {}).get("retrieval_sufficiency")
+        if isinstance(body, dict) and isinstance(body.get("data"), dict)
+        else None
+    )
+    return {
+        "source_text_chars": source_text_chars,
+        "metadata_chars": max(0, len(rendered) - source_text_chars),
+        "evidence_items": evidence_items,
+        "complete_sources": complete_sources,
+        "pointer_sources": pointer_sources,
+        "sufficiency_status": (
+            sufficiency.get("status") if isinstance(sufficiency, dict) else None
+        ),
+    }
 
 
 def initialization_marker(path: Path) -> Path:
@@ -179,14 +232,37 @@ def query_scope(args: argparse.Namespace) -> str | dict[str, Any]:
     return requested
 
 
-def render_native_response(command: str, response: NativeResponse) -> str:
-    if command not in {"open", "resume", "query", "read", "compute", "verify"}:
-        return json.dumps(response.body, indent=2, ensure_ascii=False)
-    return json.dumps(
-        compact_reasoning_response(command, response.body),
-        indent=2,
-        ensure_ascii=False,
+REASONING_COMMANDS = {
+    "open",
+    "resume",
+    "query",
+    "read",
+    "compute",
+    "verify",
+    "checkpoint",
+}
+OPEN_TEXT_SOURCE_LIMIT = 12
+OPEN_TEXT_TOTAL_CHARS = 32_000
+
+
+def render_json(value: Any, *, pretty: bool) -> str:
+    if pretty:
+        return json.dumps(value, indent=2, ensure_ascii=False)
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def render_native_response(
+    command: str,
+    response: NativeResponse,
+    *,
+    pretty: bool = False,
+) -> str:
+    body = (
+        compact_reasoning_response(command, response.body)
+        if command in REASONING_COMMANDS
+        else response.body
     )
+    return render_json(body, pretty=pretty)
 
 
 def compact_reasoning_response(command: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -219,6 +295,8 @@ def compact_reasoning_response(command: str, body: dict[str, Any]) -> dict[str, 
         compact_data = compact_read_data(data)
     elif command == "verify":
         compact_data = compact_verify_data(data)
+    elif command == "checkpoint":
+        compact_data = compact_checkpoint_data(data)
     else:
         compact_data = compact_generic_data(data, ("steps", "rows_returned", "estimated_tokens"))
     compact["data"] = compact_data
@@ -229,18 +307,57 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
     compact = compact_generic_data(
         data,
         (
-            "resolved_scope",
             "resume_checkpoint",
             "revision_delta",
-            "learned_context",
             "initial_case_file",
         ),
     )
+    resolved_scope = compact_resolved_scope(data.get("resolved_scope"))
+    if resolved_scope:
+        compact["resolved_scope"] = resolved_scope
+    learned_context = compact_learned_context(data.get("learned_context"))
+    if learned_context:
+        compact["learned_context"] = learned_context
+
+    hydrated = data.get("hydrated_sources")
+    represented_sources: set[str] = set()
+    text_sources: list[dict[str, Any]] = []
+    leads: list[dict[str, Any]] = []
+    if isinstance(hydrated, list) and hydrated:
+        source_rows = [item for item in hydrated if isinstance(item, dict)]
+        text_sources, leads = partition_open_sources(source_rows)
+        compact["initial_evidence"] = [
+            compact_hydrated_source(item, include_text=True)
+            for item in text_sources
+        ]
+        represented_sources = {
+            str(item.get("source_ref") or item.get("path") or "")
+            for item in source_rows
+        }
+        if leads:
+            compact["evidence_leads"] = [
+                compact_hydrated_source(item, include_text=False)
+                for item in leads
+            ]
+
     evidence = data.get("initial_evidence")
     if isinstance(evidence, list) and evidence:
-        compact["initial_evidence"] = [
-            compact_candidate(item) for item in evidence if isinstance(item, dict)
+        remaining = [
+            compact_candidate(item)
+            for item in evidence
+            if isinstance(item, dict)
+            and str(item.get("source_ref") or item.get("path") or "") not in represented_sources
         ]
+        if remaining:
+            compact.setdefault("initial_evidence", []).extend(remaining)
+
+    sufficiency = data.get("retrieval_sufficiency")
+    if isinstance(sufficiency, dict):
+        compact["retrieval_sufficiency"] = {
+            **sufficiency,
+            "returned_text_sources": len(text_sources) if isinstance(hydrated, list) else 0,
+            "pointer_only_sources": len(leads) if isinstance(hydrated, list) else 0,
+        }
     corpus_map = data.get("corpus_map")
     if isinstance(corpus_map, dict):
         compact["corpus_map"] = {
@@ -249,6 +366,25 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
             if key in corpus_map
         }
     return compact
+
+
+def partition_open_sources(
+    sources: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    text_sources: list[dict[str, Any]] = []
+    leads: list[dict[str, Any]] = []
+    text_chars = 0
+    for source in sources:
+        text = source.get("text")
+        source_chars = len(text) if isinstance(text, str) else 0
+        within_count = len(text_sources) < OPEN_TEXT_SOURCE_LIMIT
+        within_budget = text_chars + source_chars <= OPEN_TEXT_TOTAL_CHARS
+        if within_count and (within_budget or not text_sources):
+            text_sources.append(source)
+            text_chars += source_chars
+        else:
+            leads.append(source)
+    return text_sources, leads
 
 
 def compact_query_data(data: dict[str, Any]) -> dict[str, Any]:
@@ -290,13 +426,122 @@ def compact_query_item(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def compact_read_data(data: dict[str, Any]) -> dict[str, Any]:
-    compact = compact_generic_data(data, ("items",))
+    compact = compact_generic_data(data, ())
+    items = data.get("items")
+    if isinstance(items, list):
+        compact["items"] = [
+            compact_read_item(item) for item in items if isinstance(item, dict)
+        ]
+    return compact
+
+
+def compact_read_item(item: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        key: item[key]
+        for key in ("reference", "view", "status")
+        if item.get(key) is not None
+    }
+    error = item.get("error")
+    if isinstance(error, dict) and error:
+        compact["error"] = error
+    data = item.get("data")
+    if isinstance(data, dict) and "text" in data:
+        metadata = data.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        locator = metadata.get("native_locator")
+        locator = locator if isinstance(locator, dict) else {}
+        source = {
+            key: value
+            for key, value in {
+                "reference": metadata.get("ref"),
+                "path": locator.get("path") or metadata.get("source_ref"),
+                "title": metadata.get("title"),
+                "version": metadata.get("source_version") or metadata.get("version"),
+                "media_type": metadata.get("media_type"),
+                "representation": metadata.get("representation"),
+            }.items()
+            if value not in (None, "", [], {})
+        }
+        if source:
+            compact["source"] = source
+        range_value = data.get("range")
+        if isinstance(range_value, dict):
+            compact["lines"] = [
+                range_value.get("start_line"),
+                range_value.get("end_line"),
+            ]
+        compact["text"] = data.get("text", "")
+    elif isinstance(data, dict) and isinstance(data.get("chunks"), list):
+        compact["anchor_reference"] = data.get("anchor_ref")
+        compact["chunks"] = [
+            compact_neighbor_chunk(chunk)
+            for chunk in data["chunks"]
+            if isinstance(chunk, dict)
+        ]
+    elif data not in (None, {}, []):
+        compact["data"] = data
+
+    truncation = item.get("truncation")
+    if isinstance(truncation, dict) and truncation.get("truncated"):
+        compact["truncation"] = {
+            key: truncation[key]
+            for key in ("truncated", "continuation_token")
+            if truncation.get(key) is not None
+        }
+    return compact
+
+
+def compact_neighbor_chunk(chunk: dict[str, Any]) -> dict[str, Any]:
+    locator = chunk.get("locator")
+    locator = locator if isinstance(locator, dict) else {}
+    compact = {
+        key: chunk[key]
+        for key in ("ref", "ordinal", "heading_path", "content", "is_anchor")
+        if chunk.get(key) not in (None, [], {})
+    }
+    if locator:
+        compact["lines"] = [locator.get("start_line"), locator.get("end_line")]
     return compact
 
 
 def compact_verify_data(data: dict[str, Any]) -> dict[str, Any]:
     keys = ("results",) if isinstance(data.get("results"), list) else ("claims",)
     return compact_generic_data(data, keys)
+
+
+def compact_checkpoint_data(data: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        key: data[key]
+        for key in (
+            "checkpoint_id",
+            "id",
+            "base_corpus_revision",
+            "resulting_corpus_revision",
+            "receipt",
+            "replayed",
+            "review_required",
+            "search_status",
+            "indexing",
+        )
+        if key in data and data[key] not in (None, [], {})
+    }
+    parent_checkpoint = None
+    source_refs: list[str] = []
+    for item in data.get("items", []) if isinstance(data.get("items"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        details = item.get("details")
+        if not isinstance(details, dict):
+            continue
+        parent_checkpoint = parent_checkpoint or details.get("parent_checkpoint_id")
+        for source_ref in details.get("source_refs", []):
+            if isinstance(source_ref, str) and source_ref not in source_refs:
+                source_refs.append(source_ref)
+    if parent_checkpoint:
+        compact["parent_checkpoint_id"] = parent_checkpoint
+    if source_refs:
+        compact["source_refs"] = source_refs
+    return compact
 
 
 def compact_generic_data(data: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
@@ -312,22 +557,103 @@ def compact_generic_data(data: dict[str, Any], keys: tuple[str, ...]) -> dict[st
 
 
 def compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
-    return {
+    compact = {
         key: candidate[key]
         for key in (
             "reference",
-            "source_ref",
             "path",
             "heading",
             "content",
-            "source_version",
             "authority",
             "canonicality",
             "recorded_at",
             "valid_time",
-            "why_selected",
         )
         if key in candidate and candidate[key] not in (None, [], {})
+    }
+    source_ref = candidate.get("source_ref")
+    if source_ref and source_ref != candidate.get("path"):
+        compact["source_ref"] = source_ref
+    return compact
+
+
+def compact_hydrated_source(
+    source: dict[str, Any],
+    *,
+    include_text: bool,
+) -> dict[str, Any]:
+    selected = source.get("selected_references")
+    selected = selected if isinstance(selected, list) else []
+    compact = {
+        key: source[key]
+        for key in (
+            "path",
+            "title",
+            "authority",
+            "canonicality",
+            "recorded_at",
+        )
+        if key in source and source[key] not in (None, [], {})
+    }
+    source_ref = source.get("source_ref")
+    if source_ref and source_ref != source.get("path"):
+        compact["source_ref"] = source_ref
+    if selected and not source.get("complete"):
+        compact["reference"] = selected[0]
+    ranges = source.get("ranges")
+    if not source.get("complete") and isinstance(ranges, list) and ranges:
+        compact["ranges"] = [
+            compact_source_range(item) for item in ranges if isinstance(item, dict)
+        ]
+    if include_text:
+        compact["content"] = source.get("text", "")
+        compact["content_scope"] = (
+            "complete_source" if source.get("complete") else "selected_source_sections"
+        )
+    else:
+        compact["content_scope"] = "source_lead"
+    return compact
+
+
+def compact_source_range(value: dict[str, Any]) -> list[int | None]:
+    return [value.get("start_line"), value.get("end_line")]
+
+
+def compact_resolved_scope(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: value[key]
+        for key in (
+            "authorization_scope",
+            "root_objects",
+            "requested_lenses",
+            "ambiguities",
+        )
+        if value.get(key) not in (None, [], {})
+    }
+
+
+def compact_learned_context(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    items = value.get("items")
+    if not isinstance(items, list) or not items:
+        return {
+            key: value[key]
+            for key in ("status", "reason")
+            if value.get(key) not in (None, "")
+        }
+    return {
+        key: value[key]
+        for key in (
+            "status",
+            "authority",
+            "pinned_corpus_revision",
+            "items",
+            "latest_candidate",
+        )
+        if value.get(key) not in (None, [], {})
     }
 
 
@@ -341,7 +667,6 @@ def compact_projection(value: Any) -> dict[str, Any]:
             "policy_version",
             "audience",
             "purpose",
-            "output_hash",
             "audit_receipt",
             "withheld",
             "transforms",
@@ -368,7 +693,7 @@ def compact_coverage(value: Any) -> dict[str, Any]:
         rows = value.get(partition)
         if not isinstance(rows, list) or not rows:
             continue
-        compact[partition] = [
+        compact_rows = [
             {
                 key: row[key]
                 for key in ("lane", "completeness", "candidate_count", "failure_reason")
@@ -376,7 +701,15 @@ def compact_coverage(value: Any) -> dict[str, Any]:
             }
             for row in rows
             if isinstance(row, dict)
+            and (
+                row.get("candidate_count", 0) > 0
+                or row.get("failure_reason")
+                or row.get("completeness")
+                in {"degraded", "failed", "partial", "unsearched"}
+            )
         ]
+        if compact_rows:
+            compact[partition] = compact_rows
     return compact
 
 
@@ -567,6 +900,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-id")
     parser.add_argument("--run-id")
     parser.add_argument("--case-id")
+    parser.add_argument(
+        "--pretty",
+        action="store_true",
+        help="pretty-print responses for a human instead of the compact agent transport",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("open")
@@ -643,17 +981,17 @@ def execute_locked(args: argparse.Namespace) -> tuple[str, int]:
 
 def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple[str, int]:
     if args.command in {"open", "resume"} and state.get("session_id"):
-        return json.dumps({
+        return render_json({
             "status": "already_open",
             "session_id": state["session_id"],
             "corpus_revision": state.get("corpus_revision"),
             "message": "This adapter state is already open; no service call was made.",
-        }, indent=2), 0
+        }, pretty=args.pretty), 0
     try:
         method, path, payload = operation_request(args, state)
         client = NativeApiClient(run_id=args.run_id, case_id=args.case_id)
         response = client.request(method, path, payload)
-        rendered = render_native_response(args.command, response)
+        rendered = render_native_response(args.command, response, pretty=args.pretty)
         record_state(
             args.state,
             state,
@@ -664,10 +1002,11 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
             request_id=str(response.body.get("request_id") or response.headers.get("x-request-id") or "") or None,
             service_status=str(response.body.get("status") or "") or None,
             response=response,
+            result_metrics=response_payload_metrics(rendered),
         )
         return rendered, 0
     except NativeApiError as exc:
-        rendered = json.dumps(exc.body, indent=2, ensure_ascii=False)
+        rendered = render_json(exc.body, pretty=args.pretty)
         record_state(
             args.state,
             state,
@@ -677,12 +1016,13 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
             http_status=exc.status,
             request_id=None,
             service_status=error_code(exc.body),
+            result_metrics=response_payload_metrics(rendered),
         )
         exit_code = 77 if exc.status == 403 or error_code(exc.body) == "capability_denied" else 1
         return rendered, exit_code
     except (ValueError, json.JSONDecodeError, OSError) as exc:
         body = {"error": {"code": "invalid_request", "message": str(exc)}}
-        rendered = json.dumps(body, indent=2)
+        rendered = render_json(body, pretty=args.pretty)
         record_state(
             args.state,
             state,
@@ -692,6 +1032,7 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
             http_status=0,
             request_id=None,
             service_status="invalid_request",
+            result_metrics=response_payload_metrics(rendered),
         )
         return rendered, 2
 

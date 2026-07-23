@@ -67,53 +67,59 @@ receive safe fresh learned context, recover canonical knowledge, resume complex
 work, inspect artifacts, reason across superseded state, revise plans, verify
 claims, and leave a useful durable checkpoint.
 
-### 2026-07-22 retrieval simplification evaluation
+### 2026-07-22 token-efficiency and source-hydration evaluation
 
-The current implementation keeps the canonical write and dreaming contracts
-unchanged while simplifying the agent-facing read path. `memory.open` is the
-first evidence packet, open retrieval keeps related source sections coherent,
-targeted query defaults to eight source leads, and exact reads support natural
-range and neighbor forms. MCP and evaluation adapters return a compact
-reasoning view while the HTTP audit representation remains complete.
+The final implementation keeps the canonical write and dreaming contracts
+unchanged. It gives `memory.open` a bounded, source-complete reasoning packet,
+uses a shared source-text budget instead of a per-file cutoff, keeps overflow
+sources as exact pointers, reports retrieval sufficiency, compacts agent-only
+transport, and records source-text, metadata, and replay-weighted character
+mix. The full HTTP representation remains the audit view.
 
-The fresh comparison below excludes the retired personal/work-boundary card.
-Scores are deterministic regrades of the original frozen answers after the
-same conservative concept matcher was applied to both conditions. Raw run
-files remain alongside the regraded results.
+The pre-change state is commit `10787b1`. Its API and web images, exact API
+executable, deployed web bundle, MCP distribution, Compose file, checksums, and
+image archive are preserved under
+`/Users/Shared/projects/straylight-baselines/20260722T222352-0700-10787b1`.
 
-| Suite | Filesystem | Native Straylight | Interpretation |
-| --- | ---: | ---: | --- |
-| Main active work | 12/13 cases, 51/52 claims | **13/13, 52/52** | Native wins one case and one claim; mean score is also higher, 0.978 vs 0.971. |
-| Rupture Ops | 10/12, 45/48 | **10/12, 46/48** | Cases tie; native wins one claim and mean score, 0.955 vs 0.940. |
-| Personal coordination | 14/15, 59/60 | **15/15, 60/60** | Native wins one case and one claim; filesystem retains the higher mean detail score, 0.975 vs 0.966. |
-| Changed-evidence transitions | 5/5, 20/20 | **5/5, 20/20** | Quality ties; native commits five parent-, revision-, and source-linked children. |
+| Suite | Filesystem | Native Straylight |
+| --- | ---: | ---: |
+| Main active work | 13/13 cases, 52/52 claims | **13/13, 52/52** |
+| Personal coordination | 14/15, 59/60 | **15/15, 60/60** |
+| Rupture Ops | 12/12, 48/48 | **12/12, 48/48** |
+| Changed-evidence transitions | 5/5, 20/20 | **5/5, 20/20** |
 
-Across all four suites, native passes 43/45 cases and 178/180 claims versus
-41/45 and 175/180 for flat files. Native reduces uncached input on Rupture Ops
-by 12% and on transitions by 49%; it remains 12% higher on main one-shot work
-and 38% higher on the small personal corpus. Mean elapsed time is also still
-higher for native one-shot work, so retrieval latency and compact personal
-responses remain explicit optimization targets. On main and Rupture Ops,
-native service output is about 80% and 64% smaller than filesystem command
-output respectively.
+Across the 40 ordinary cards, final Straylight passes 40/40 cases and 160/160
+claims. Regraded with the same matcher, the saved pre-change service run passed
+38/40 and 158/160. Average API calls fell from 3.53 to 2.72 (-23%),
+model-visible service output from 47,177
+to 32,623 characters (-31%), cumulative input from 138,414 to 115,319 tokens
+(-17%), and uncached input from 31,137 to 24,491 (-21%). These are separate
+fresh-agent runs, so they establish the aggregate outcome rather than assigning
+every individual movement to one retrieval change.
 
-The last pre-change service answers, regraded with the same matcher and with
-the retired boundary card removed, passed 41/45 cases and 174/180 claims. The
-new run therefore gains two cases and four claims overall. Main improves from
-12/13 and 51/52 to 13/13 and 52/52; personal improves from 13/15 and 57/60 to
-15/15 and 60/60; transitions remain perfect. Rupture Ops keeps 46/48 claims
-and raises mean score from 0.950 to 0.955, but moves from 11/12 to 10/12 whole
-cases. Service output falls by 53% on main, 70% on personal, and 60% on Rupture
-Ops versus those pre-change runs. These are separate stochastic agent runs, so
-the aggregate and audited claim changes are more meaningful than attributing
-every individual case movement to retrieval alone.
+Against the fresh filesystem run, final Straylight uses 10.7% more cumulative
+input because tool-result history is replayed into later cached turns, but
+12.3% less uncached input. Its model-visible service output is 79.5% exact
+source text and 20.5% metadata. The filesystem personal miss is a mechanically
+strict shorthand miss in an otherwise correct answer; it is retained rather
+than hand-scored away.
+
+The changed-evidence transition suite is perfect in both conditions.
+Checkpoint resume uses 22.7% less cumulative input, 10.4% less uncached input,
+and 26.3% fewer calls than filesystem reconstruction while committing all five
+parent-, revision-, and source-linked child checkpoints.
+
+The deterministic regrade accepts `remove`/`exclude` as the same boundary
+operation and no longer treats an explicitly negated forbidden conclusion as
+asserted. Answers were not regenerated, citation requirements and thresholds
+were not relaxed, and both conditions use the same matcher.
 
 Current result files:
 
-- `results/2026-07-22-simplification-full-main-regraded.json`
-- `results/2026-07-22-simplification-full-rupture-regraded.json`
-- `results/2026-07-22-simplification-full-personal-regraded.json`
-- `results/2026-07-22-simplification-full-transitions.json`
+- `results/2026-07-22-efficiency-final-main.json`
+- `results/2026-07-22-efficiency-final-personal.json`
+- `results/2026-07-22-efficiency-final-rupture.json`
+- `results/2026-07-22-efficiency-final-transitions.json`
 
 ## Checkpoint transition evaluation
 
@@ -130,23 +136,20 @@ python3 transition_eval.py run \
   --filesystem-native \
   --concurrency 2 \
   --timeout 420 \
-  --out results/2026-07-12-native-transitions-optimized.json \
-  --report "/Users/aether/obsidian/notes/Projects/Straylight/Native checkpoint transition evaluation results - 2026-07-12.md"
+  --out results/2026-07-22-efficiency-final-transitions.json \
+  --report results/2026-07-22-efficiency-final-transitions.md
 ```
 
-Result:
+Current result:
 
-- The raw deterministic score tied at 4/5 cards and 19/20 claims. Manual review
-  found both condition-specific misses were narrow phrase-grader misses rather
-  than contradictory answers.
-- Native Straylight committed 5/5 correctly linked, source-preserving child
-  checkpoints and stayed within the four-call gate on every card.
-- Native resume reduced cumulative input 38%, uncached input 29%, shell calls
-  44%, and mean elapsed time 15% versus filesystem reconstruction.
-- Complete bounded N-to-N+1 source deltas are returned inline. Four cards used
-  `resume -> checkpoint`; one used `resume -> query -> read -> checkpoint`.
-- A live immediate post-index probe completed in 110 ms without an embedding
-  dependency on the continuation critical path.
+- Both conditions pass 5/5 cards and 20/20 claims.
+- Native Straylight commits 5/5 correctly linked, source-preserving child
+  checkpoints.
+- Native resume averages 75,013 cumulative input tokens versus 97,105 for
+  filesystem reconstruction, 20,126 uncached tokens versus 22,456, and 2.8
+  service calls versus 3.8 filesystem calls.
+- Complete bounded N-to-N+1 source deltas remain on the continuation-critical
+  path without requiring semantic re-indexing before the fresh agent can resume.
 
 Primary v0.3 files:
 
@@ -155,7 +158,7 @@ Primary v0.3 files:
 - `eval/transition_cases.json`
 - `eval/transition-deltas`
 - `apps/api/src/read_service.rs`
-- `results/2026-07-12-native-transitions-optimized.json`
+- `results/2026-07-22-efficiency-final-transitions.json`
 
 ## Agent-work evaluation
 

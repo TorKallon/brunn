@@ -7,6 +7,9 @@ import { z } from "zod/v4";
 import { StraylightApiClient, StraylightApiError } from "./api-client.js";
 import { compactReasoningResponse } from "./reasoning-view.js";
 
+const includeStructuredContent =
+  process.env.STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT === "1";
+
 const reference = z.string().min(1);
 const jsonObject = z.record(z.string(), z.unknown());
 
@@ -248,7 +251,7 @@ function registerJsonTool<Shape extends z.ZodRawShape>(
       const body = compactReasoningResponse(name, response.body);
       return {
         content: [{ type: "text" as const, text: JSON.stringify(body) }],
-        structuredContent: body,
+        ...(includeStructuredContent ? { structuredContent: body } : {}),
       };
     } catch (error) {
       const body = error instanceof StraylightApiError
@@ -257,7 +260,7 @@ function registerJsonTool<Shape extends z.ZodRawShape>(
       return {
         isError: true,
         content: [{ type: "text" as const, text: JSON.stringify(body) }],
-        structuredContent: body,
+        ...(includeStructuredContent ? { structuredContent: body } : {}),
       };
     }
   };

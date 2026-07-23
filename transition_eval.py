@@ -510,6 +510,16 @@ def attach_native_lineage(
     record["service_operations"] = operations
     record["service_calls"] = operation_summary["completed_calls"]
     record["service_result_chars"] = operation_summary["result_chars"]
+    record["service_source_text_chars"] = sum(
+        operation.get("source_text_chars", 0) for operation in operations
+    )
+    record["service_metadata_chars"] = sum(
+        operation.get("metadata_chars", 0) for operation in operations
+    )
+    record["service_replay_weighted_chars"] = sum(
+        operation.get("result_chars", 0) * (len(operations) - index)
+        for index, operation in enumerate(operations)
+    )
     record["service_latency_ms"] = operation_summary["elapsed_ms"]
 
     session_id = state.get("session_id")
@@ -668,6 +678,22 @@ def summarize(records: Sequence[dict[str, Any]], conditions: Sequence[str]) -> d
             row.get("service_latency_ms", 0.0)
             for row in rows if row["condition"] == "service_api_resume"
         ]
+        service_result_chars = [
+            row.get("service_result_chars", 0)
+            for row in rows if row["condition"] == "service_api_resume"
+        ]
+        service_source_text_chars = [
+            row.get("service_source_text_chars", 0)
+            for row in rows if row["condition"] == "service_api_resume"
+        ]
+        service_metadata_chars = [
+            row.get("service_metadata_chars", 0)
+            for row in rows if row["condition"] == "service_api_resume"
+        ]
+        service_replay_chars = [
+            row.get("service_replay_weighted_chars", 0)
+            for row in rows if row["condition"] == "service_api_resume"
+        ]
         summary[condition] = {
             "runs": len(rows),
             "cases_passed": sum(bool(row.get("transition_pass")) for row in rows),
@@ -679,6 +705,10 @@ def summarize(records: Sequence[dict[str, Any]], conditions: Sequence[str]) -> d
             "mean_shell_calls": round(statistics.fmean(shell_calls), 1) if shell_calls else 0,
             "mean_workspace_calls": round(statistics.fmean(workspace_calls), 1) if workspace_calls else None,
             "mean_service_latency_ms": round(statistics.fmean(service_latencies), 3) if service_latencies else None,
+            "mean_service_result_chars": round(statistics.fmean(service_result_chars), 1) if service_result_chars else None,
+            "mean_service_source_text_chars": round(statistics.fmean(service_source_text_chars), 1) if service_source_text_chars else None,
+            "mean_service_metadata_chars": round(statistics.fmean(service_metadata_chars), 1) if service_metadata_chars else None,
+            "mean_service_replay_weighted_chars": round(statistics.fmean(service_replay_chars), 1) if service_replay_chars else None,
             "mean_elapsed_seconds": round(statistics.fmean(row["elapsed_seconds"] for row in rows), 2) if rows else 0,
         }
     return summary
@@ -750,17 +780,25 @@ def render_report(run: dict[str, Any]) -> str:
         uncached_reduction = 1 - workspace["mean_uncached_input_tokens"] / max(1, filesystem["mean_uncached_input_tokens"])
         call_reduction = 1 - workspace["mean_shell_calls"] / max(1, filesystem["mean_shell_calls"])
         continuation_label = LABELS[continuation_key]
-        lines.extend([
+        finding_lines = [
             "",
             "## Findings",
             f"- Filesystem reconstruction recovered {filesystem['claims_passed']}/{filesystem['claims_total']} claims; {continuation_label} recovered {workspace['claims_passed']}/{workspace['claims_total']}.",
-            "- Claim-level review found the native Switzerland miss said the family meeting `follows both camps` and preserved altitude in its checkpoint, while the filesystem Straylight miss described a `portable agent context`; both are narrow deterministic phrase-matcher misses rather than contradictory answers.",
             f"- Checkpoint resume reduced mean cumulative input by {cumulative_reduction:.0%}, uncached input by {uncached_reduction:.0%}, and shell calls by {call_reduction:.0%} versus rebuilding from the filesystem.",
             f"- {continuation_label} committed {child_checkpoints}/{len(workspace_records)} immutable child checkpoints with exact parent, pinned input revision, prior-source, and delta-source lineage.",
             f"- Four cards completed with `open -> checkpoint`; one used `open -> read -> checkpoint`. Mean service calls were {workspace['mean_workspace_calls']:.1f}, below the four-call gate.",
             f"- Mean elapsed time was {workspace['mean_elapsed_seconds']:.1f}s for checkpoint resume versus {filesystem['mean_elapsed_seconds']:.1f}s for filesystem reconstruction.",
             f"- The OpenAI embedding index was built and available, but agents issued {operation_names.count('query')} semantic/lexical query calls in this suite because the parent checkpoint and explicit delta were sufficient. Semantic hit-rate improvement remains a separate evaluation gate.",
-        ])
+        ]
+        if continuation_key == "service_api_resume":
+            finding_lines.insert(
+                2,
+                f"- {continuation_label} returned {workspace['mean_service_result_chars']:,.0f} model-visible service characters per card: "
+                f"{workspace['mean_service_source_text_chars']:,.0f} evidence text and "
+                f"{workspace['mean_service_metadata_chars']:,.0f} transport metadata. Replay-weighted output was "
+                f"{workspace['mean_service_replay_weighted_chars']:,.0f} characters.",
+            )
+        lines.extend(finding_lines)
     lines.extend([
         "",
         "## Gate",

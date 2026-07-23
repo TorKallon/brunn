@@ -6,7 +6,10 @@ const REASONING_OPERATIONS = new Set([
   "memory.read",
   "memory.compute",
   "memory.verify",
+  "memory.checkpoint",
 ]);
+const OPEN_TEXT_SOURCE_LIMIT = 12;
+const OPEN_TEXT_TOTAL_CHARS = 32_000;
 
 export function compactReasoningResponse(operation: string, body: JsonObject): JsonObject {
   if (!REASONING_OPERATIONS.has(operation)) return body;
@@ -33,10 +36,13 @@ export function compactReasoningResponse(operation: string, body: JsonObject): J
       compact.data = compactQueryData(data);
       break;
     case "memory.read":
-      compact.data = compactGenericData(data, ["items"]);
+      compact.data = compactReadData(data);
       break;
     case "memory.verify":
       compact.data = compactGenericData(data, Array.isArray(data.results) ? ["results"] : ["claims"]);
+      break;
+    case "memory.checkpoint":
+      compact.data = compactCheckpointData(data);
       break;
     default:
       compact.data = compactGenericData(data, ["steps", "rows_returned", "estimated_tokens"]);
@@ -46,17 +52,56 @@ export function compactReasoningResponse(operation: string, body: JsonObject): J
 
 function compactOpenData(data: JsonObject): JsonObject {
   const compact = compactGenericData(data, [
-    "resolved_scope",
     "resume_checkpoint",
     "revision_delta",
-    "learned_context",
     "initial_case_file",
   ]);
-  if (Array.isArray(data.initial_evidence)) {
-    compact.initial_evidence = data.initial_evidence
+  const resolvedScope = compactResolvedScope(data.resolved_scope);
+  if (hasKeys(resolvedScope)) compact.resolved_scope = resolvedScope;
+  const learnedContext = compactLearnedContext(data.learned_context);
+  if (hasKeys(learnedContext)) compact.learned_context = learnedContext;
+
+  const hydrated = Array.isArray(data.hydrated_sources)
+    ? data.hydrated_sources
       .map(asObject)
       .filter((item): item is JsonObject => item !== undefined)
+    : [];
+  const representedSources = new Set<string>();
+  let textSourceCount = 0;
+  let pointerSourceCount = 0;
+  if (hydrated.length > 0) {
+    const [textSources, leads] = partitionOpenSources(hydrated);
+    textSourceCount = textSources.length;
+    pointerSourceCount = leads.length;
+    compact.initial_evidence = textSources.map((item) => compactHydratedSource(item, true));
+    for (const item of hydrated) {
+      representedSources.add(String(item.source_ref ?? item.path ?? ""));
+    }
+    if (leads.length > 0) {
+      compact.evidence_leads = leads.map((item) => compactHydratedSource(item, false));
+    }
+  }
+
+  if (Array.isArray(data.initial_evidence)) {
+    const remaining = data.initial_evidence
+      .map(asObject)
+      .filter((item): item is JsonObject => item !== undefined)
+      .filter((item) => !representedSources.has(String(item.source_ref ?? item.path ?? "")))
       .map(compactCandidate);
+    if (remaining.length > 0) {
+      compact.initial_evidence = [
+        ...(Array.isArray(compact.initial_evidence) ? compact.initial_evidence : []),
+        ...remaining,
+      ];
+    }
+  }
+  const sufficiency = asObject(data.retrieval_sufficiency);
+  if (sufficiency) {
+    compact.retrieval_sufficiency = {
+      ...sufficiency,
+      returned_text_sources: textSourceCount,
+      pointer_only_sources: pointerSourceCount,
+    };
   }
   const corpusMap = asObject(data.corpus_map);
   if (corpusMap) {
@@ -68,6 +113,24 @@ function compactOpenData(data: JsonObject): JsonObject {
     ]);
   }
   return compact;
+}
+
+function partitionOpenSources(sources: JsonObject[]): [JsonObject[], JsonObject[]] {
+  const textSources: JsonObject[] = [];
+  const leads: JsonObject[] = [];
+  let textChars = 0;
+  for (const source of sources) {
+    const sourceChars = typeof source.text === "string" ? source.text.length : 0;
+    const withinCount = textSources.length < OPEN_TEXT_SOURCE_LIMIT;
+    const withinBudget = textChars + sourceChars <= OPEN_TEXT_TOTAL_CHARS;
+    if (withinCount && (withinBudget || textSources.length === 0)) {
+      textSources.push(source);
+      textChars += sourceChars;
+    } else {
+      leads.push(source);
+    }
+  }
+  return [textSources, leads];
 }
 
 function compactQueryData(data: JsonObject): JsonObject {
@@ -104,19 +167,168 @@ function compactQueryItem(item: JsonObject): JsonObject {
   return compact;
 }
 
+function compactReadData(data: JsonObject): JsonObject {
+  const compact = compactGenericData(data, []);
+  if (Array.isArray(data.items)) {
+    compact.items = data.items
+      .map(asObject)
+      .filter((item): item is JsonObject => item !== undefined)
+      .map(compactReadItem);
+  }
+  return compact;
+}
+
+function compactReadItem(item: JsonObject): JsonObject {
+  const compact = pick(item, ["reference", "view", "status"]);
+  const error = asObject(item.error);
+  if (error && hasKeys(error)) compact.error = error;
+  const data = asObject(item.data);
+  if (data && typeof data.text === "string") {
+    const metadata = asObject(data.metadata) ?? {};
+    const locator = asObject(metadata.native_locator) ?? {};
+    const source: JsonObject = {};
+    const sourceValues: Record<string, unknown> = {
+      reference: metadata.ref,
+      path: locator.path ?? metadata.source_ref,
+      title: metadata.title,
+      version: metadata.source_version ?? metadata.version,
+      media_type: metadata.media_type,
+      representation: metadata.representation,
+    };
+    for (const [key, value] of Object.entries(sourceValues)) {
+      if (isPresent(value)) source[key] = value;
+    }
+    if (hasKeys(source)) compact.source = source;
+    const range = asObject(data.range);
+    if (range) compact.lines = [range.start_line, range.end_line];
+    compact.text = data.text;
+  } else if (data && Array.isArray(data.chunks)) {
+    if (isPresent(data.anchor_ref)) compact.anchor_reference = data.anchor_ref;
+    compact.chunks = data.chunks
+      .map(asObject)
+      .filter((chunk): chunk is JsonObject => chunk !== undefined)
+      .map(compactNeighborChunk);
+  } else if (data && hasKeys(data)) {
+    compact.data = data;
+  }
+  const truncation = asObject(item.truncation);
+  if (truncation?.truncated === true) {
+    compact.truncation = pick(truncation, ["truncated", "continuation_token"]);
+  }
+  return compact;
+}
+
+function compactNeighborChunk(chunk: JsonObject): JsonObject {
+  const compact = pick(chunk, ["ref", "ordinal", "heading_path", "content", "is_anchor"]);
+  const locator = asObject(chunk.locator);
+  if (locator) compact.lines = [locator.start_line, locator.end_line];
+  return compact;
+}
+
+function compactCheckpointData(data: JsonObject): JsonObject {
+  const compact = pick(data, [
+    "checkpoint_id",
+    "id",
+    "base_corpus_revision",
+    "resulting_corpus_revision",
+    "receipt",
+    "replayed",
+    "review_required",
+    "search_status",
+    "indexing",
+  ]);
+  let parentCheckpoint: unknown;
+  const sourceRefs: string[] = [];
+  if (Array.isArray(data.items)) {
+    for (const rawItem of data.items) {
+      const item = asObject(rawItem);
+      const details = item ? asObject(item.details) : undefined;
+      if (!details) continue;
+      parentCheckpoint ??= details.parent_checkpoint_id;
+      if (!Array.isArray(details.source_refs)) continue;
+      for (const sourceRef of details.source_refs) {
+        if (typeof sourceRef === "string" && !sourceRefs.includes(sourceRef)) {
+          sourceRefs.push(sourceRef);
+        }
+      }
+    }
+  }
+  if (isPresent(parentCheckpoint)) compact.parent_checkpoint_id = parentCheckpoint;
+  if (sourceRefs.length > 0) compact.source_refs = sourceRefs;
+  return compact;
+}
+
 function compactCandidate(candidate: JsonObject): JsonObject {
-  return pick(candidate, [
+  const compact = pick(candidate, [
     "reference",
-    "source_ref",
     "path",
     "heading",
     "content",
-    "source_version",
     "authority",
     "canonicality",
     "recorded_at",
     "valid_time",
-    "why_selected",
+  ]);
+  if (isPresent(candidate.source_ref) && candidate.source_ref !== candidate.path) {
+    compact.source_ref = candidate.source_ref;
+  }
+  return compact;
+}
+
+function compactHydratedSource(source: JsonObject, includeText: boolean): JsonObject {
+  const compact = pick(source, [
+    "path",
+    "title",
+    "authority",
+    "canonicality",
+    "recorded_at",
+  ]);
+  if (isPresent(source.source_ref) && source.source_ref !== source.path) {
+    compact.source_ref = source.source_ref;
+  }
+  if (
+    source.complete !== true
+    && Array.isArray(source.selected_references)
+    && source.selected_references.length > 0
+  ) {
+    compact.reference = source.selected_references[0];
+  }
+  if (source.complete !== true && Array.isArray(source.ranges) && source.ranges.length > 0) {
+    compact.ranges = source.ranges
+      .map(asObject)
+      .filter((range): range is JsonObject => range !== undefined)
+      .map((range) => [range.start_line, range.end_line]);
+  }
+  if (includeText) {
+    compact.content = typeof source.text === "string" ? source.text : "";
+    compact.content_scope = source.complete === true
+      ? "complete_source"
+      : "selected_source_sections";
+  } else {
+    compact.content_scope = "source_lead";
+  }
+  return compact;
+}
+
+function compactResolvedScope(value: unknown): JsonObject {
+  const scope = asObject(value);
+  return scope
+    ? pick(scope, ["authorization_scope", "root_objects", "requested_lenses", "ambiguities"])
+    : {};
+}
+
+function compactLearnedContext(value: unknown): JsonObject {
+  const learned = asObject(value);
+  if (!learned) return {};
+  if (!Array.isArray(learned.items) || learned.items.length === 0) {
+    return pick(learned, ["status", "reason"]);
+  }
+  return pick(learned, [
+    "status",
+    "authority",
+    "pinned_corpus_revision",
+    "items",
+    "latest_candidate",
   ]);
 }
 
@@ -135,7 +347,6 @@ function compactProjection(value: unknown): JsonObject {
       "policy_version",
       "audience",
       "purpose",
-      "output_hash",
       "audit_receipt",
       "withheld",
       "transforms",
@@ -156,10 +367,19 @@ function compactCoverage(value: unknown): JsonObject {
   const compact: JsonObject = { absence_safe: coverage.absence_safe === true };
   for (const key of ["searched", "unsearched"] as const) {
     if (!Array.isArray(coverage[key]) || coverage[key].length === 0) continue;
-    compact[key] = coverage[key]
+    const rows = coverage[key]
       .map(asObject)
       .filter((row): row is JsonObject => row !== undefined)
+      .filter((row) => {
+        const candidateCount = typeof row.candidate_count === "number"
+          ? row.candidate_count
+          : 0;
+        return candidateCount > 0
+          || isPresent(row.failure_reason)
+          || ["degraded", "failed", "partial", "unsearched"].includes(String(row.completeness));
+      })
       .map((row) => pick(row, ["lane", "completeness", "candidate_count", "failure_reason"]));
+    if (rows.length > 0) compact[key] = rows;
   }
   return compact;
 }

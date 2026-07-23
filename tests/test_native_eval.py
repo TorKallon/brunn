@@ -24,7 +24,7 @@ from native_eval import (
     text_documents,
     write_native_memory_wrapper,
 )
-from native_memory import build_parser, render_native_response
+from native_memory import build_parser, render_native_response, response_payload_metrics
 from transition_eval import (
     attach_native_lineage,
     build_codex_command as build_transition_codex_command,
@@ -314,9 +314,12 @@ class NativeEvaluationTests(unittest.TestCase):
     def test_query_projection_removes_flattened_candidate_duplicate(self):
         candidate = {
             "reference": "chunk:1",
+            "source_ref": "Source.md",
             "path": "Source.md",
             "content": "Exact evidence.",
             "content_hash": "sha256:noise",
+            "source_version": "sha256:source-version",
+            "why_selected": ["semantic_recall"],
         }
         response = NativeResponse(
             body={
@@ -333,6 +336,192 @@ class NativeEvaluationTests(unittest.TestCase):
         rendered = json.loads(render_native_response("query", response))
         self.assertNotIn("results", rendered["data"])
         self.assertEqual(len(rendered["data"]["items"]), 1)
+        compact_candidate = rendered["data"]["items"][0]["results"][0]
+        self.assertEqual(compact_candidate["reference"], "chunk:1")
+        self.assertNotIn("source_ref", compact_candidate)
+        self.assertNotIn("source_version", compact_candidate)
+        self.assertNotIn("why_selected", compact_candidate)
+
+    def test_open_projection_returns_complete_sources_and_pointer_tail(self):
+        response = NativeResponse(
+            body={
+                "status": "complete",
+                "data": {
+                    "hydrated_sources": [
+                        {
+                            "source_ref": f"Source-{index}.md",
+                            "path": f"Source-{index}.md",
+                            "text": f"Evidence {index}",
+                            "complete": index < 4,
+                            "ranges": [{"start_line": 1, "end_line": 2}],
+                            "selected_references": [f"chunk:{index}"],
+                        }
+                        for index in range(13)
+                    ],
+                    "retrieval_sufficiency": {
+                        "status": "likely_sufficient",
+                        "complete_source_count": 4,
+                    },
+                    "initial_evidence": [],
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+        rendered_text = render_native_response("open", response)
+        rendered = json.loads(rendered_text)
+        self.assertNotIn("\n", rendered_text)
+        self.assertEqual(len(rendered["data"]["initial_evidence"]), 12)
+        self.assertEqual(
+            rendered["data"]["initial_evidence"][0]["content_scope"],
+            "complete_source",
+        )
+        complete_source = rendered["data"]["initial_evidence"][0]
+        self.assertEqual(complete_source["path"], "Source-0.md")
+        self.assertNotIn("source_ref", complete_source)
+        self.assertNotIn("reference", complete_source)
+        self.assertNotIn("ranges", complete_source)
+        self.assertNotIn("complete", complete_source)
+        self.assertEqual(len(rendered["data"]["evidence_leads"]), 1)
+        self.assertEqual(
+            rendered["data"]["evidence_leads"][0]["content_scope"],
+            "source_lead",
+        )
+        self.assertNotIn("content", rendered["data"]["evidence_leads"][0])
+
+    def test_open_projection_applies_total_evidence_text_budget(self):
+        response = NativeResponse(
+            body={
+                "status": "complete",
+                "data": {
+                    "hydrated_sources": [
+                        {
+                            "source_ref": f"Large-{index}.md",
+                            "text": character * 20_000,
+                            "complete": True,
+                        }
+                        for index, character in enumerate(("a", "b"))
+                    ],
+                    "retrieval_sufficiency": {"status": "likely_sufficient"},
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+        rendered = json.loads(render_native_response("open", response))
+        self.assertEqual(len(rendered["data"]["initial_evidence"]), 1)
+        self.assertEqual(len(rendered["data"]["evidence_leads"]), 1)
+        self.assertEqual(
+            rendered["data"]["retrieval_sufficiency"]["pointer_only_sources"],
+            1,
+        )
+
+    def test_response_metrics_separate_evidence_text_from_transport_metadata(self):
+        rendered = json.dumps({
+            "status": "complete",
+            "data": {
+                "initial_evidence": [{
+                    "content": "Exact evidence.",
+                    "content_scope": "complete_source",
+                }],
+                "evidence_leads": [{
+                    "source_ref": "Later.md",
+                    "content_scope": "source_lead",
+                }],
+                "retrieval_sufficiency": {"status": "likely_sufficient"},
+            },
+        }, separators=(",", ":"))
+        metrics = response_payload_metrics(rendered)
+        self.assertEqual(metrics["source_text_chars"], len("Exact evidence."))
+        self.assertEqual(metrics["metadata_chars"], len(rendered) - len("Exact evidence."))
+        self.assertEqual(metrics["evidence_items"], 1)
+        self.assertEqual(metrics["complete_sources"], 1)
+        self.assertEqual(metrics["pointer_sources"], 1)
+        self.assertEqual(metrics["sufficiency_status"], "likely_sufficient")
+
+    def test_read_projection_preserves_text_lines_and_continuation(self):
+        response = NativeResponse(
+            body={
+                "status": "partial",
+                "data": {
+                    "items": [{
+                        "reference": "Source.md",
+                        "view": "range",
+                        "status": "partial",
+                        "data": {
+                            "metadata": {
+                                "ref": "document:1",
+                                "source_ref": "Source.md",
+                                "source_version": "v2",
+                                "content_hash": "sha256:noise",
+                                "native_locator": {"path": "Source.md"},
+                            },
+                            "range": {
+                                "start_byte": 0,
+                                "end_byte_exclusive": 12,
+                                "start_line": 1,
+                                "end_line": 2,
+                            },
+                            "text": "Exact text.",
+                            "instruction_boundary": "evidence",
+                        },
+                        "error": None,
+                        "truncation": {
+                            "truncated": True,
+                            "returned_tokens": 3,
+                            "limit_tokens": 3,
+                            "continuation_token": "opaque",
+                        },
+                    }],
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+        item = json.loads(render_native_response("read", response))["data"]["items"][0]
+        self.assertEqual(item["text"], "Exact text.")
+        self.assertEqual(item["lines"], [1, 2])
+        self.assertEqual(
+            item["truncation"],
+            {"truncated": True, "continuation_token": "opaque"},
+        )
+        self.assertNotIn("content_hash", json.dumps(item))
+        self.assertNotIn("start_byte", json.dumps(item))
+
+    def test_checkpoint_projection_keeps_lineage_and_compacts_receipt(self):
+        response = NativeResponse(
+            body={
+                "session_id": "session:1",
+                "corpus_revision": "revision:2",
+                "status": "committed",
+                "data": {
+                    "checkpoint_id": "checkpoint:2",
+                    "base_corpus_revision": "revision:1",
+                    "resulting_corpus_revision": "revision:2",
+                    "receipt": "commit:1",
+                    "request_hash": "sha256:noise",
+                    "credential_id": "credential:noise",
+                    "items": [{
+                        "details": {
+                            "parent_checkpoint_id": "checkpoint:1",
+                            "source_refs": ["source:1"],
+                        },
+                    }],
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+        rendered = json.loads(render_native_response("checkpoint", response))
+        self.assertEqual(rendered["data"]["checkpoint_id"], "checkpoint:2")
+        self.assertEqual(rendered["data"]["parent_checkpoint_id"], "checkpoint:1")
+        self.assertEqual(rendered["data"]["source_refs"], ["source:1"])
+        self.assertNotIn("request_hash", rendered["data"])
+        self.assertNotIn("credential_id", rendered["data"])
 
     def test_provision_retries_transient_embedding_dependency_failure(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server(import_failures=1) as (url, handler):
@@ -432,6 +621,8 @@ class NativeEvaluationTests(unittest.TestCase):
             self.assertEqual(saved["checkpoint_id"], "checkpoint:child")
             self.assertTrue(all(item["result_chars"] > 0 for item in saved["operations"]))
             self.assertTrue(all(item["elapsed_ms"] >= 0 for item in saved["operations"]))
+            self.assertTrue(all("source_text_chars" in item for item in saved["operations"]))
+            self.assertTrue(all("metadata_chars" in item for item in saved["operations"]))
             self.assertNotIn("case-token", state.read_text())
             query = next(item for item in handler.requests if item["path"] == "/v1/memory/query")
             self.assertEqual(len(query["body"]["queries"]), 2)

@@ -61,9 +61,12 @@ test("open removes corpus samples and ranking mechanics while preserving evidenc
 test("query keeps one candidate list instead of the flattened duplicate", () => {
   const candidate = {
     reference: "chunk:1",
+    source_ref: "Source.md",
     path: "Source.md",
     content: "Evidence.",
     content_hash: "sha256:noise",
+    source_version: "sha256:source-version",
+    why_selected: ["semantic_recall"],
   };
   const compact = compactReasoningResponse("memory.query", {
     status: "complete",
@@ -75,9 +78,142 @@ test("query keeps one candidate list instead of the flattened duplicate", () => 
   const data = compact.data as Record<string, unknown>;
   assert.equal(data.results, undefined);
   assert.equal((data.items as unknown[]).length, 1);
+  const item = (data.items as Array<Record<string, unknown>>)[0];
+  const compactCandidate = (item?.results as Array<Record<string, unknown>>)[0];
+  assert.equal(compactCandidate?.reference, "chunk:1");
+  assert.equal(compactCandidate?.source_ref, undefined);
+  assert.equal(compactCandidate?.source_version, undefined);
+  assert.equal(compactCandidate?.why_selected, undefined);
 });
 
-test("write receipts remain complete", () => {
+test("open returns complete source text with pointer-only tail leads", () => {
+  const compact = compactReasoningResponse("memory.open", {
+    status: "complete",
+    data: {
+      hydrated_sources: Array.from({ length: 13 }, (_, index) => ({
+        source_ref: `Source-${index}.md`,
+        path: `Source-${index}.md`,
+        text: `Evidence ${index}`,
+        complete: index < 4,
+        ranges: [{ start_line: 1, end_line: 2 }],
+        selected_references: [`chunk:${index}`],
+      })),
+      retrieval_sufficiency: {
+        status: "likely_sufficient",
+        complete_source_count: 4,
+      },
+      initial_evidence: [],
+    },
+  });
+  const data = compact.data as Record<string, unknown>;
+  const evidence = data.initial_evidence as Array<Record<string, unknown>>;
+  const leads = data.evidence_leads as Array<Record<string, unknown>>;
+  assert.equal(evidence.length, 12);
+  assert.equal(evidence[0]?.content_scope, "complete_source");
+  assert.equal(evidence[0]?.content, "Evidence 0");
+  assert.equal(evidence[0]?.path, "Source-0.md");
+  assert.equal(evidence[0]?.source_ref, undefined);
+  assert.equal(evidence[0]?.reference, undefined);
+  assert.equal(evidence[0]?.ranges, undefined);
+  assert.equal(evidence[0]?.complete, undefined);
+  assert.equal(leads.length, 1);
+  assert.equal(leads[0]?.content_scope, "source_lead");
+  assert.equal(leads[0]?.content, undefined);
+});
+
+test("open caps returned evidence text before adding pointer leads", () => {
+  const compact = compactReasoningResponse("memory.open", {
+    status: "complete",
+    data: {
+      hydrated_sources: [
+        { source_ref: "Large-0.md", text: "a".repeat(20_000), complete: true },
+        { source_ref: "Large-1.md", text: "b".repeat(20_000), complete: true },
+      ],
+      retrieval_sufficiency: { status: "likely_sufficient" },
+    },
+  });
+  const data = compact.data as Record<string, unknown>;
+  assert.equal((data.initial_evidence as unknown[]).length, 1);
+  assert.equal((data.evidence_leads as unknown[]).length, 1);
+  const sufficiency = data.retrieval_sufficiency as Record<string, unknown>;
+  assert.equal(sufficiency.pointer_only_sources, 1);
+});
+
+test("read keeps exact source text and continuation without audit-only duplication", () => {
+  const compact = compactReasoningResponse("memory.read", {
+    status: "partial",
+    data: {
+      items: [{
+        reference: "Source.md",
+        view: "range",
+        status: "partial",
+        data: {
+          metadata: {
+            ref: "document:1",
+            source_ref: "Source.md",
+            source_version: "v2",
+            content_hash: "sha256:noise",
+            native_locator: { path: "Source.md" },
+          },
+          range: {
+            start_byte: 0,
+            end_byte_exclusive: 12,
+            start_line: 1,
+            end_line: 2,
+          },
+          text: "Exact text.",
+          instruction_boundary: "evidence",
+        },
+        error: null,
+        truncation: {
+          truncated: true,
+          returned_tokens: 3,
+          limit_tokens: 3,
+          continuation_token: "opaque",
+        },
+      }],
+    },
+  });
+  const item = ((compact.data as Record<string, unknown>).items as Array<Record<string, unknown>>)[0];
+  assert.equal(item?.text, "Exact text.");
+  assert.deepEqual(item?.lines, [1, 2]);
+  assert.deepEqual(item?.truncation, {
+    truncated: true,
+    continuation_token: "opaque",
+  });
+  assert.equal(JSON.stringify(item).includes("content_hash"), false);
+  assert.equal(JSON.stringify(item).includes("start_byte"), false);
+});
+
+test("checkpoint receipts keep lineage but drop duplicated write machinery", () => {
+  const compact = compactReasoningResponse("memory.checkpoint", {
+    session_id: "session:1",
+    corpus_revision: "revision:2",
+    status: "committed",
+    data: {
+      checkpoint_id: "checkpoint:2",
+      base_corpus_revision: "revision:1",
+      resulting_corpus_revision: "revision:2",
+      receipt: "commit:1",
+      request_hash: "sha256:noise",
+      credential_id: "credential:noise",
+      items: [{
+        details: {
+          parent_checkpoint_id: "checkpoint:1",
+          source_refs: ["source:1"],
+        },
+      }],
+    },
+  });
+  const data = compact.data as Record<string, unknown>;
+  assert.equal(data.checkpoint_id, "checkpoint:2");
+  assert.equal(data.parent_checkpoint_id, "checkpoint:1");
+  assert.deepEqual(data.source_refs, ["source:1"]);
+  assert.equal(data.request_hash, undefined);
+  assert.equal(data.credential_id, undefined);
+});
+
+test("non-checkpoint write receipts remain complete", () => {
   const body = { status: "committed", data: { receipt: "commit:1", items: [1, 2] } };
-  assert.equal(compactReasoningResponse("memory.checkpoint", body), body);
+  assert.equal(compactReasoningResponse("memory.save", body), body);
 });

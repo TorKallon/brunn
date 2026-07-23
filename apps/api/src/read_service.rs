@@ -42,6 +42,8 @@ const MAX_MATERIALIZED_GENERIC_RECORDS: usize = 1_000;
 const CORPUS_MAP_SAMPLE_PER_KIND: usize = 12;
 const MAX_REVISION_SOURCE_CHANGES: usize = 8;
 const MAX_REVISION_SOURCE_CONTENT_CHARS: usize = 12_000;
+const OPEN_COMPLETE_SOURCE_LIMIT: usize = 4;
+const OPEN_COMPLETE_SOURCE_TOTAL_CHARS: usize = 32_000;
 
 #[derive(Clone, Copy)]
 enum QuerySelection {
@@ -84,12 +86,31 @@ pub struct OpenResult {
     pub revision_delta: Option<Value>,
     pub learned_context: Value,
     pub initial_evidence: Vec<RetrievalCandidate>,
+    pub hydrated_sources: Vec<HydratedSource>,
+    pub retrieval_sufficiency: Value,
     pub initial_case_file: Option<Value>,
     pub freshness: Freshness,
     pub coverage: Coverage,
     pub conflicts: Vec<Value>,
     pub gaps: Vec<Value>,
     pub ambiguities: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct HydratedSource {
+    pub source_ref: String,
+    pub path: Option<String>,
+    pub title: Option<String>,
+    pub source_version: Option<String>,
+    pub content_hash: Option<String>,
+    pub authority: Option<String>,
+    pub canonicality: Option<String>,
+    pub recorded_at: Option<String>,
+    pub text: String,
+    pub ranges: Vec<Value>,
+    pub complete: bool,
+    pub selected_references: Vec<String>,
+    pub why_selected: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -479,6 +500,13 @@ pub async fn open(
         failure_reason: (learned_status != "fresh")
             .then(|| "no fresh hard-gated derived view matches the pinned revision".to_owned()),
     });
+    let hydrated_sources = if self_contained_continuation {
+        Vec::new()
+    } else {
+        hydrate_open_sources(state, auth, &session, &initial_evidence).await?
+    };
+    let retrieval_sufficiency =
+        open_retrieval_sufficiency(&request.task, &initial_evidence, &hydrated_sources);
     Ok(OpenResult {
         session_id: session.session_ref.clone(),
         corpus_revision: session.corpus_revision_ref.clone(),
@@ -488,6 +516,8 @@ pub async fn open(
         revision_delta,
         learned_context,
         initial_evidence,
+        hydrated_sources,
+        retrieval_sufficiency,
         initial_case_file,
         freshness: session.freshness,
         coverage,
@@ -495,6 +525,294 @@ pub async fn open(
         gaps,
         ambiguities,
     })
+}
+
+async fn hydrate_open_sources(
+    state: &AppState,
+    auth: &AuthContext,
+    session: &PinnedSession,
+    candidates: &[RetrievalCandidate],
+) -> ApiResult<Vec<HydratedSource>> {
+    let mut groups = Vec::<(String, Vec<&RetrievalCandidate>)>::new();
+    for candidate in candidates {
+        let Some(path) = candidate.path.as_deref() else {
+            continue;
+        };
+        if let Some((_, grouped)) = groups.iter_mut().find(|(key, _)| key == path) {
+            grouped.push(candidate);
+        } else {
+            groups.push((path.to_owned(), vec![candidate]));
+        }
+    }
+
+    let mut complete_chars = 0usize;
+    let mut sources = Vec::with_capacity(groups.len());
+    for (index, (path, grouped)) in groups.into_iter().enumerate() {
+        let remaining = OPEN_COMPLETE_SOURCE_TOTAL_CHARS.saturating_sub(complete_chars);
+        let complete = if index < OPEN_COMPLETE_SOURCE_LIMIT
+            && remaining > 0
+            && let Some(loaded) = try_load_complete_open_source(state, auth, session, &path).await
+        {
+            let chars = loaded.text.chars().count();
+            (chars <= remaining).then_some(loaded)
+        } else {
+            None
+        };
+
+        if let Some(loaded) = complete {
+            complete_chars = complete_chars.saturating_add(loaded.text.chars().count());
+            sources.push(complete_hydrated_source(&path, &grouped, loaded));
+        } else {
+            sources.push(section_hydrated_source(&path, &grouped));
+        }
+    }
+    Ok(sources)
+}
+
+async fn try_load_complete_open_source(
+    state: &AppState,
+    auth: &AuthContext,
+    session: &PinnedSession,
+    path: &str,
+) -> Option<LoadedText> {
+    let mut tx = state.begin_read(auth).await.ok()?;
+    let loaded = match resolve_record_tx(&mut tx, session, path).await {
+        Ok(record) => load_text_tx(&mut tx, state, session, &record, None).await,
+        Err(error) => Err(error),
+    };
+    match loaded {
+        Ok(loaded) => {
+            if tx.commit().await.is_ok() {
+                Some(loaded)
+            } else {
+                None
+            }
+        }
+        Err(_) => {
+            let _ = tx.rollback().await;
+            None
+        }
+    }
+}
+
+fn complete_hydrated_source(
+    path: &str,
+    candidates: &[&RetrievalCandidate],
+    loaded: LoadedText,
+) -> HydratedSource {
+    let line_count = loaded.text.lines().count().max(1);
+    let why_selected = hydration_reasons(candidates, "complete_source_hydration");
+    HydratedSource {
+        source_ref: loaded
+            .metadata
+            .get("source_ref")
+            .and_then(Value::as_str)
+            .unwrap_or(&candidates[0].source_ref)
+            .to_owned(),
+        path: Some(path.to_owned()),
+        title: loaded
+            .metadata
+            .get("title")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find_map(|candidate| candidate.heading.clone())
+            }),
+        source_version: loaded
+            .metadata
+            .get("source_version")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find_map(|candidate| candidate.source_version.clone())
+            }),
+        content_hash: loaded
+            .metadata
+            .get("content_hash")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        authority: candidates
+            .iter()
+            .find_map(|candidate| candidate.authority.clone()),
+        canonicality: candidates
+            .iter()
+            .find_map(|candidate| candidate.canonicality.clone()),
+        recorded_at: candidates
+            .iter()
+            .find_map(|candidate| candidate.recorded_at.clone()),
+        text: loaded.text,
+        ranges: vec![json!({
+            "path": path,
+            "start_line": 1,
+            "end_line": line_count,
+        })],
+        complete: true,
+        selected_references: candidates
+            .iter()
+            .map(|candidate| candidate.reference.clone())
+            .collect(),
+        why_selected,
+    }
+}
+
+fn section_hydrated_source(path: &str, candidates: &[&RetrievalCandidate]) -> HydratedSource {
+    let mut seen_content = HashSet::new();
+    let mut sections = Vec::new();
+    let mut ranges = Vec::new();
+    for candidate in candidates {
+        if seen_content.insert(candidate.content.clone()) {
+            sections.push(candidate.content.clone());
+        }
+        if let Some(range) = candidate
+            .valid_time
+            .as_ref()
+            .filter(|range| !range.is_null())
+        {
+            ranges.push(range.clone());
+        }
+    }
+    HydratedSource {
+        source_ref: candidates[0].source_ref.clone(),
+        path: Some(path.to_owned()),
+        title: candidates
+            .iter()
+            .find_map(|candidate| candidate.heading.clone()),
+        source_version: candidates
+            .iter()
+            .find_map(|candidate| candidate.source_version.clone()),
+        content_hash: (candidates.len() == 1).then(|| candidates[0].content_hash.clone()),
+        authority: candidates
+            .iter()
+            .find_map(|candidate| candidate.authority.clone()),
+        canonicality: candidates
+            .iter()
+            .find_map(|candidate| candidate.canonicality.clone()),
+        recorded_at: candidates
+            .iter()
+            .find_map(|candidate| candidate.recorded_at.clone()),
+        text: sections.join("\n\n"),
+        ranges,
+        complete: false,
+        selected_references: candidates
+            .iter()
+            .map(|candidate| candidate.reference.clone())
+            .collect(),
+        why_selected: hydration_reasons(candidates, "selected_source_sections"),
+    }
+}
+
+fn hydration_reasons(candidates: &[&RetrievalCandidate], hydration_reason: &str) -> Vec<String> {
+    let mut reasons = BTreeSet::new();
+    for candidate in candidates {
+        reasons.extend(candidate.why_selected.iter().cloned());
+    }
+    reasons.insert(hydration_reason.to_owned());
+    reasons.into_iter().collect()
+}
+
+fn open_retrieval_sufficiency(
+    task: &str,
+    candidates: &[RetrievalCandidate],
+    sources: &[HydratedSource],
+) -> Value {
+    let mut seen_anchors = HashSet::new();
+    let anchors = lexical_discovery_terms(task)
+        .into_iter()
+        .map(|term| match term.as_str() {
+            "latest" | "newest" => "current".to_owned(),
+            _ => term,
+        })
+        .filter(|term| !sufficiency_instruction_word(term) && seen_anchors.insert(term.clone()))
+        .take(20)
+        .collect::<Vec<_>>();
+    let mut searchable = String::new();
+    for source in sources {
+        searchable.push_str(&source.source_ref);
+        searchable.push(' ');
+        if let Some(path) = &source.path {
+            searchable.push_str(path);
+            searchable.push(' ');
+        }
+        if let Some(title) = &source.title {
+            searchable.push_str(title);
+            searchable.push(' ');
+        }
+        searchable.push_str(&source.text);
+        searchable.push(' ');
+    }
+    for candidate in candidates
+        .iter()
+        .filter(|candidate| candidate.path.is_none())
+    {
+        searchable.push_str(&candidate.source_ref);
+        searchable.push(' ');
+        searchable.push_str(&candidate.content);
+        searchable.push(' ');
+    }
+    let searchable = searchable.to_lowercase();
+    let unresolved = anchors
+        .iter()
+        .filter(|anchor| !searchable.contains(anchor.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let complete_sources = sources.iter().filter(|source| source.complete).count();
+    let primary_source_complete = sources.first().is_some_and(|source| source.complete);
+    let covered = anchors.len().saturating_sub(unresolved.len());
+    let coverage_ratio = if anchors.is_empty() {
+        1.0
+    } else {
+        covered as f64 / anchors.len() as f64
+    };
+    let status = if candidates.is_empty() {
+        "no_evidence"
+    } else if primary_source_complete && coverage_ratio >= 0.75 {
+        "likely_sufficient"
+    } else {
+        "inspect_then_query_gaps"
+    };
+    json!({
+        "status": status,
+        "basis": "task_anchor_coverage_and_source_completeness",
+        "anchor_count": anchors.len(),
+        "covered_anchor_count": covered,
+        "unresolved_anchors": unresolved.into_iter().take(12).collect::<Vec<_>>(),
+        "selected_source_count": sources.len(),
+        "complete_source_count": complete_sources,
+    })
+}
+
+fn sufficiency_instruction_word(term: &str) -> bool {
+    matches!(
+        term,
+        "answer"
+            | "assess"
+            | "brief"
+            | "compact"
+            | "create"
+            | "decide"
+            | "describe"
+            | "distinguish"
+            | "explain"
+            | "give"
+            | "identify"
+            | "include"
+            | "leave"
+            | "list"
+            | "name"
+            | "prepare"
+            | "preserve"
+            | "report"
+            | "required"
+            | "return"
+            | "state"
+            | "task"
+            | "tell"
+            | "without"
+    )
 }
 
 /// Return only a snapshot-matching, non-authoritative dream view whose hard
@@ -8598,6 +8916,99 @@ mod tests {
         assert!(terms.contains(&"pgcr".to_owned()));
         assert!(terms.contains(&"archive".to_owned()));
         assert!(!terms.contains(&"starrupture".to_owned()));
+    }
+
+    fn retrieval_candidate(path: &str, content: &str) -> RetrievalCandidate {
+        RetrievalCandidate {
+            reference: "chunk:018f0f3d8c2d7a2bb5077d5f6e5e0001".to_owned(),
+            source_ref: path.to_owned(),
+            path: Some(path.to_owned()),
+            heading: Some("Current schedule".to_owned()),
+            content: content.to_owned(),
+            content_hash: "sha256:chunk".to_owned(),
+            source_version: Some("source-v1".to_owned()),
+            authority: Some("owner_confirmed".to_owned()),
+            canonicality: Some("canonical_at_revision".to_owned()),
+            recorded_at: Some("2026-07-22T00:00:00Z".to_owned()),
+            valid_time: Some(json!({"path": path, "start_line": 1, "end_line": 3})),
+            evidence_refs: Vec::new(),
+            why_selected: vec!["exact_phrase_match".to_owned()],
+            lane_scores: HashMap::new(),
+            score: 1.0,
+        }
+    }
+
+    #[test]
+    fn complete_open_hydration_preserves_source_identity_and_exact_text() {
+        let candidate = retrieval_candidate(
+            "Schedule/current.md",
+            "Practice starts at 09:00 America/Los_Angeles.",
+        );
+        let loaded = LoadedText {
+            metadata: json!({
+                "title": "Current schedule",
+                "content_hash": "sha256:source",
+                "source_ref": "Schedule/current.md",
+                "source_version": "source-v2"
+            }),
+            text: "# Current schedule\n\nPractice starts at 09:00 America/Los_Angeles.\n"
+                .to_owned(),
+        };
+        let hydrated = complete_hydrated_source("Schedule/current.md", &[&candidate], loaded);
+        assert!(hydrated.complete);
+        assert_eq!(hydrated.source_version.as_deref(), Some("source-v2"));
+        assert_eq!(hydrated.content_hash.as_deref(), Some("sha256:source"));
+        assert!(hydrated.text.contains("America/Los_Angeles"));
+        assert!(
+            hydrated
+                .why_selected
+                .contains(&"complete_source_hydration".to_owned())
+        );
+    }
+
+    #[test]
+    fn retrieval_sufficiency_is_deterministic_and_reports_missing_anchors() {
+        let candidate = retrieval_candidate(
+            "Schedule/current.md",
+            "Practice starts at 09:00 America/Los_Angeles.",
+        );
+        let source = section_hydrated_source("Schedule/current.md", &[&candidate]);
+        let sufficient = open_retrieval_sufficiency(
+            "State the current practice schedule and timezone",
+            &[candidate.clone()],
+            &[HydratedSource {
+                complete: true,
+                ..source.clone()
+            }],
+        );
+        assert_eq!(sufficient["status"], "likely_sufficient");
+
+        let complete_secondary = HydratedSource {
+            path: Some("Schedule/archive.md".to_owned()),
+            complete: true,
+            ..source.clone()
+        };
+        let partial_primary = open_retrieval_sufficiency(
+            "State the current practice schedule and timezone",
+            &[candidate.clone()],
+            &[source.clone(), complete_secondary],
+        );
+        assert_eq!(
+            partial_primary["status"], "inspect_then_query_gaps",
+            "a complete secondary source must not mask a partial primary source"
+        );
+
+        let incomplete = open_retrieval_sufficiency(
+            "State the current practice schedule and missing delegation",
+            &[candidate],
+            &[source],
+        );
+        assert_eq!(incomplete["status"], "inspect_then_query_gaps");
+        assert!(
+            incomplete["unresolved_anchors"]
+                .as_array()
+                .is_some_and(|items| items.contains(&json!("delegation")))
+        );
     }
 
     #[test]

@@ -53,4 +53,14 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   } | undefined;
   assert.ok(requests?.items?.properties?.before);
   assert.ok(requests?.items?.properties?.after);
+
+  const call = await client.callTool({ name: "memory.status", arguments: {} });
+  assert.equal(call.isError, true);
+  assert.equal(call.structuredContent, undefined);
+  assert.equal(Array.isArray(call.content), true);
+  const text = (call.content as Array<{ type: string; text?: string }>)[0];
+  assert.equal(text?.type, "text");
+  if (text?.type === "text" && text.text) {
+    assert.equal(JSON.parse(text.text).error.code, "adapter_error");
+  }
 });
