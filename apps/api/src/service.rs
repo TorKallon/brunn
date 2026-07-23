@@ -7,8 +7,9 @@ use serde_json::{Value, json};
 
 use crate::{
     auth::AuthContext,
+    capture_service,
     continuation::ContinuationCodec,
-    capture_service, control_service,
+    control_service,
     db::AppState,
     error::{ApiError, ApiResult},
     models::{
@@ -100,7 +101,7 @@ pub async fn open(
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let session_id = session_service::provision(&state, &auth, &request).await?;
     let result = read_service::open(&state, &auth, &session_id, &request).await?;
-    let data = session_service::project_response(
+    let mut data = session_service::project_response(
         &state,
         &auth,
         &session_id,
@@ -124,6 +125,7 @@ pub async fn open(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    remove_envelope_duplicates(&mut data, true);
     let mut envelope = ApiEnvelope::complete(data);
     envelope.session_id = Some(result.session_id);
     envelope.corpus_revision = Some(result.corpus_revision);
@@ -156,7 +158,7 @@ pub async fn query(
             .collect();
         object.insert("results".to_owned(), Value::Array(flattened));
     }
-    let data = session_service::project_response(
+    let mut data = session_service::project_response(
         &state,
         &auth,
         &request.session_id,
@@ -165,6 +167,7 @@ pub async fn query(
         data,
     )
     .await?;
+    remove_envelope_duplicates(&mut data, false);
     let mut envelope = ApiEnvelope::complete(data);
     envelope.session_id = Some(result.session_id);
     envelope.corpus_revision = Some(result.corpus_revision);
@@ -181,7 +184,7 @@ pub async fn read(
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let codec = ContinuationCodec::new(&state.config.continuation_secret);
     let result = read_service::read(&state, &auth, &codec, &request).await?;
-    let data = session_service::project_response(
+    let mut data = session_service::project_response(
         &state,
         &auth,
         &request.session_id,
@@ -190,6 +193,7 @@ pub async fn read(
         serde_json::to_value(&result)?,
     )
     .await?;
+    remove_envelope_duplicates(&mut data, false);
     let mut envelope = ApiEnvelope::complete(data);
     envelope.session_id = Some(result.session_id);
     envelope.corpus_revision = Some(result.corpus_revision);
@@ -206,7 +210,7 @@ pub async fn compute(
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let codec = ContinuationCodec::new(&state.config.continuation_secret);
     let result = read_service::compute(&state, &auth, &codec, &request).await?;
-    let data = session_service::project_response(
+    let mut data = session_service::project_response(
         &state,
         &auth,
         &request.session_id,
@@ -215,6 +219,7 @@ pub async fn compute(
         serde_json::to_value(&result)?,
     )
     .await?;
+    remove_envelope_duplicates(&mut data, false);
     let mut envelope = ApiEnvelope::complete(data);
     envelope.session_id = Some(result.session_id);
     envelope.corpus_revision = Some(result.corpus_revision);
@@ -233,7 +238,7 @@ pub async fn verify(
     if let Some(object) = data.as_object_mut() {
         object.insert("results".to_owned(), serde_json::to_value(&result.claims)?);
     }
-    let data = session_service::project_response(
+    let mut data = session_service::project_response(
         &state,
         &auth,
         &request.session_id,
@@ -242,6 +247,7 @@ pub async fn verify(
         data,
     )
     .await?;
+    remove_envelope_duplicates(&mut data, false);
     let mut envelope = ApiEnvelope::complete(data);
     envelope.session_id = Some(result.session_id);
     envelope.corpus_revision = Some(result.corpus_revision);
@@ -328,6 +334,26 @@ fn add_write_receipt_aliases(receipt: &mut Value) {
             })
             .collect();
         object.insert(alias.to_owned(), Value::Array(selected));
+    }
+}
+
+fn remove_envelope_duplicates(data: &mut Value, include_diagnostics: bool) {
+    let Some(object) = data.as_object_mut() else {
+        return;
+    };
+    for field in [
+        "session_id",
+        "corpus_revision",
+        "status",
+        "freshness",
+        "coverage",
+    ] {
+        object.remove(field);
+    }
+    if include_diagnostics {
+        for field in ["conflicts", "gaps", "ambiguities"] {
+            object.remove(field);
+        }
     }
 }
 
@@ -584,4 +610,43 @@ pub async fn revoke_credential(
     Ok(Json(
         control_service::revoke_credential(&state, &auth, &credential_ref).await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn envelope_metadata_is_not_repeated_inside_data() {
+        let mut data = json!({
+            "session_id": "session:1",
+            "corpus_revision": "revision:1",
+            "status": "complete",
+            "freshness": {"source_updated_at": "now"},
+            "coverage": {"searched": []},
+            "conflicts": [{"kind": "conflict"}],
+            "gaps": [],
+            "ambiguities": [],
+            "initial_evidence": [{"content": "evidence"}],
+            "projection": {"audit_receipt": "audit:1"}
+        });
+
+        remove_envelope_duplicates(&mut data, true);
+
+        let object = data.as_object().expect("object");
+        for key in [
+            "session_id",
+            "corpus_revision",
+            "status",
+            "freshness",
+            "coverage",
+            "conflicts",
+            "gaps",
+            "ambiguities",
+        ] {
+            assert!(!object.contains_key(key), "duplicate field {key}");
+        }
+        assert!(object.contains_key("initial_evidence"));
+        assert!(object.contains_key("projection"));
+    }
 }

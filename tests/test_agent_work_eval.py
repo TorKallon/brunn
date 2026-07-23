@@ -20,6 +20,7 @@ from agent_work_eval import (  # noqa: E402
     render_fixed_context,
     render_prompt,
     resolve_codex_path,
+    select_cases,
     load_native_provisioning_state,
     validate,
     write_native_provisioning_state,
@@ -122,8 +123,22 @@ class AgentWorkEvalTests(unittest.TestCase):
             render_prompt(case, "workspace"),
         )
         service_prompt = render_prompt(case, "service_api")
-        self.assertIn("only when one complete source is needed", service_prompt)
-        self.assertNotIn("repeat `--path`", service_prompt)
+        self.assertIn("treat its initial evidence", service_prompt)
+        self.assertIn("repeat `--path` or `--ref`", service_prompt)
+        self.assertIn("exactly from authoritative evidence", service_prompt)
+
+    def test_retired_cases_are_excluded_by_default_but_remain_reproducible(self):
+        active = select_cases(self.manifest, None, include_retired=False)
+        all_cases = select_cases(self.manifest, None, include_retired=True)
+        explicit = select_cases(
+            self.manifest,
+            ["straylight-trust-handoff"],
+            include_retired=False,
+        )
+
+        self.assertEqual(len(all_cases), len(active) + 1)
+        self.assertNotIn("straylight-trust-handoff", {case["id"] for case in active})
+        self.assertEqual([case["id"] for case in explicit], ["straylight-trust-handoff"])
 
     def test_rupture_ops_rubrics_are_satisfiable_and_fixed_packs_are_fair(self):
         manifest = json.loads((ROOT / "eval" / "rupture_ops_cases.json").read_text())
@@ -358,6 +373,16 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertTrue(candidate_matches(
             "schedule_authority: none",
             "The family copy has no schedule authority.",
+            "concept_tokens_v1",
+        ))
+        self.assertTrue(candidate_matches(
+            "no references are rewritten to person:p-101",
+            "Do not rewrite references; relation:participation-103 stays on person:p-103, not person:p-101.",
+            "concept_tokens_v1",
+        ))
+        self.assertTrue(candidate_matches(
+            "240/min",
+            "Each extractor produces 240 items/min.",
             "concept_tokens_v1",
         ))
         self.assertFalse(candidate_matches(

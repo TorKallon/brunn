@@ -67,41 +67,53 @@ receive safe fresh learned context, recover canonical knowledge, resume complex
 work, inspect artifacts, reason across superseded state, revise plans, verify
 claims, and leave a useful durable checkpoint.
 
-### 2026-07-22 capture and learning evaluation
+### 2026-07-22 retrieval simplification evaluation
 
-The current implementation adds source-backed automatic capture and default
-shadow learned context without changing the locked canonical write or dreaming
-authority contracts. Ordinary source input compiles to exact-span evidence and
-canonical `memory.save`; low-risk captures auto-commit, while identity or other
-consequential ambiguity remains a draft. `memory.open` includes only fresh,
-hard-gated, source-linked, non-authoritative learned views.
+The current implementation keeps the canonical write and dreaming contracts
+unchanged while simplifying the agent-facing read path. `memory.open` is the
+first evidence packet, open retrieval keeps related source sections coherent,
+targeted query defaults to eight source leads, and exact reads support natural
+range and neighbor forms. MCP and evaluation adapters return a compact
+reasoning view while the HTTP audit representation remains complete.
 
-Preferred comparison runs use normal rich query results and targeted
-single-source or chunk-neighbor reads. An experimental cross-query evidence
-deduplication reduced output but regressed the complex Rupture suite and was
-reverted.
+The fresh comparison below excludes the retired personal/work-boundary card.
+Scores are deterministic regrades of the original frozen answers after the
+same conservative concept matcher was applied to both conditions. Raw run
+files remain alongside the regraded results.
 
 | Suite | Filesystem | Native Straylight | Interpretation |
 | --- | ---: | ---: | --- |
-| Broad, full frozen set | 12/14 cases, 54/56 claims | 10/14, 49/56 | Four native misses are in a retired personal/work topology card; on the 13 active cards the raw result is 50/52 vs 49/52, with two native paraphrase false negatives and one real telemetry omission. |
-| Rupture Ops | 7/12, 41/48 | 8/12, 43/48 | Native is ahead raw; claim audit found four further equivalent paraphrases and one genuine public-artifact detail miss. |
-| Personal coordination | 15/15, 60/60 | 13/15, 57/60 | All three native misses preserve the correct state but omit exact timestamp or stable-ID strings; 14/14 eligible checkpoints persisted and read-only persisted none. |
-| Changed-evidence transitions | 4/5, 19/20 | 5/5, 20/20 | Native committed 5/5 parent-, revision-, and source-linked children. |
+| Main active work | 12/13 cases, 51/52 claims | **13/13, 52/52** | Native wins one case and one claim; mean score is also higher, 0.978 vs 0.971. |
+| Rupture Ops | 10/12, 45/48 | **10/12, 46/48** | Cases tie; native wins one claim and mean score, 0.955 vs 0.940. |
+| Personal coordination | 14/15, 59/60 | **15/15, 60/60** | Native wins one case and one claim; filesystem retains the higher mean detail score, 0.975 vs 0.966. |
+| Changed-evidence transitions | 5/5, 20/20 | **5/5, 20/20** | Quality ties; native commits five parent-, revision-, and source-linked children. |
 
-On transitions, native cut mean total input from 111.6K to 55.7K, uncached
-input from 26.9K to 13.0K, shell calls from 4.2 to 2.2, and elapsed time from
-61.5s to 47.1s. On broad and personal one-shot work, native context is still
-larger than files and remains an explicit optimization target. These are
-single stochastic runs; raw deterministic scores and claim-level substantive
-audits are both retained rather than silently rewriting the frozen rubrics.
+Across all four suites, native passes 43/45 cases and 178/180 claims versus
+41/45 and 175/180 for flat files. Native reduces uncached input on Rupture Ops
+by 12% and on transitions by 49%; it remains 12% higher on main one-shot work
+and 38% higher on the small personal corpus. Mean elapsed time is also still
+higher for native one-shot work, so retrieval latency and compact personal
+responses remain explicit optimization targets. On main and Rupture Ops,
+native service output is about 80% and 64% smaller than filesystem command
+output respectively.
+
+The last pre-change service answers, regraded with the same matcher and with
+the retired boundary card removed, passed 41/45 cases and 174/180 claims. The
+new run therefore gains two cases and four claims overall. Main improves from
+12/13 and 51/52 to 13/13 and 52/52; personal improves from 13/15 and 57/60 to
+15/15 and 60/60; transitions remain perfect. Rupture Ops keeps 46/48 claims
+and raises mean score from 0.950 to 0.955, but moves from 11/12 to 10/12 whole
+cases. Service output falls by 53% on main, 70% on personal, and 60% on Rupture
+Ops versus those pre-change runs. These are separate stochastic agent runs, so
+the aggregate and audited claim changes are more meaningful than attributing
+every individual case movement to retrieval alone.
 
 Current result files:
 
-- `results/2026-07-22-native-main-targeted-read.json`
-- `results/2026-07-22-native-rupture-targeted-read.json`
-- `results/2026-07-22-native-personal-capture-learning.json`
-- `results/2026-07-22-native-transitions-capture-learning.json`
-- `results/2026-07-22-retrieval-regression-capture-learning.json`
+- `results/2026-07-22-simplification-full-main-regraded.json`
+- `results/2026-07-22-simplification-full-rupture-regraded.json`
+- `results/2026-07-22-simplification-full-personal-regraded.json`
+- `results/2026-07-22-simplification-full-transitions.json`
 
 ## Checkpoint transition evaluation
 

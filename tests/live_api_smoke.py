@@ -543,10 +543,11 @@ class LiveApiSmoke:
                     "token_budget": 4_000,
                 },
             ).body
-            _, opened_data_value = envelope(opened_body, "RO memory.open", "complete")
+            opened_envelope, opened_data_value = envelope(opened_body, "RO memory.open", "complete")
             opened_data = mapping(opened_data_value, "RO open data")
-            session_id = opened_data.get("session_id")
+            session_id = opened_envelope.get("session_id")
             check(isinstance(session_id, str), "RO open lacks session", opened_body)
+            check("session_id" not in opened_data, "RO open repeats envelope session_id", opened_data)
             check(isinstance(opened_data.get("projection"), dict), "RO open lacks projection", opened_data)
 
             queried_body = self.ro.request(
@@ -898,9 +899,13 @@ class LiveApiSmoke:
                     "token_budget": 4_000,
                 },
             ).body
-            _, opened_data_value = envelope(opened_body, "capture retrieval open", "complete")
+            opened_envelope, opened_data_value = envelope(
+                opened_body,
+                "capture retrieval open",
+                "complete",
+            )
             opened_data = mapping(opened_data_value, "capture retrieval open data")
-            session_id = opened_data.get("session_id")
+            session_id = opened_envelope.get("session_id")
             check(isinstance(session_id, str), "capture retrieval open lacks session", opened_data)
             queried_body = self.rw.request(
                 "POST",
@@ -1020,10 +1025,14 @@ class LiveApiSmoke:
             ).body
             opened_envelope, opened_data_value = envelope(opened_body, "memory.open", "complete")
             opened_data = mapping(opened_data_value, "memory.open data")
-            session_id = opened_data.get("session_id")
+            session_id = opened_envelope.get("session_id")
             check(isinstance(session_id, str) and session_id.startswith("session:"), "open lacks session_id", opened_body)
-            check(same_ref(opened_data.get("corpus_revision"), save_revision), "open is not pinned to requested revision", opened_body)
             check(same_ref(opened_envelope.get("corpus_revision"), save_revision), "open envelope revision mismatch", opened_body)
+            check(
+                "session_id" not in opened_data and "corpus_revision" not in opened_data,
+                "open repeats envelope metadata inside data",
+                opened_data,
+            )
 
             query_body = self.rw.request(
                 "POST",
@@ -1207,9 +1216,9 @@ class LiveApiSmoke:
                     "token_budget": 8_000,
                 },
             ).body
-            _, resume_data_value = envelope(resume_body, "resume open", "complete")
+            resume_envelope, resume_data_value = envelope(resume_body, "resume open", "complete")
             resume_data = mapping(resume_data_value, "resume open data")
-            resumed_session = resume_data.get("session_id")
+            resumed_session = resume_envelope.get("session_id")
             check(
                 isinstance(resumed_session, str)
                 and resumed_session.startswith("session:")
@@ -1217,7 +1226,11 @@ class LiveApiSmoke:
                 "resume must create a fresh session",
                 resume_body,
             )
-            check(same_ref(resume_data.get("corpus_revision"), parent_revision), "resume revision is not pinned", resume_body)
+            check(
+                same_ref(resume_envelope.get("corpus_revision"), parent_revision),
+                "resume revision is not pinned",
+                resume_body,
+            )
             resume_checkpoint = mapping(resume_data.get("resume_checkpoint"), "resume checkpoint")
             check(
                 same_ref(resume_checkpoint.get("checkpoint_ref"), parent_checkpoint),
@@ -1441,8 +1454,13 @@ class LiveApiSmoke:
                     "token_budget": 4_000,
                 },
             ).body
-            _, opened_data_value = envelope(opened_body, "recurrence open", "complete")
-            session_id = mapping(opened_data_value, "recurrence open data").get("session_id")
+            opened_envelope, opened_data_value = envelope(
+                opened_body,
+                "recurrence open",
+                "complete",
+            )
+            mapping(opened_data_value, "recurrence open data")
+            session_id = opened_envelope.get("session_id")
             check(isinstance(session_id, str), "recurrence open lacks session", opened_body)
 
             computed_body = self.rw.request(
@@ -1793,7 +1811,7 @@ class LiveApiSmoke:
                         "token_budget": 4_000,
                     },
                 ).body
-                _, learned_open_value = envelope(
+                learned_open_envelope, learned_open_value = envelope(
                     learned_open_body,
                     "automatic learned-context open",
                     "complete",
@@ -1827,7 +1845,10 @@ class LiveApiSmoke:
                         "learned item lacks direct source links",
                         item,
                     )
-                coverage = mapping(learned_open.get("coverage"), "learned open coverage")
+                coverage = mapping(
+                    learned_open_envelope.get("coverage"),
+                    "learned open coverage",
+                )
                 searched = sequence(coverage.get("searched"), "learned open searched coverage")
                 check(
                     any(
@@ -2112,9 +2133,13 @@ class LiveApiSmoke:
                     "token_budget": 4_000,
                 },
             ).body
-            _, isolated_open_data_value = envelope(isolated_open_body, "isolated memory.open", "complete")
-            isolated_open_data = mapping(isolated_open_data_value, "isolated open data")
-            isolated_session = isolated_open_data.get("session_id")
+            isolated_open_envelope, isolated_open_data_value = envelope(
+                isolated_open_body,
+                "isolated memory.open",
+                "complete",
+            )
+            mapping(isolated_open_data_value, "isolated open data")
+            isolated_session = isolated_open_envelope.get("session_id")
             check(isinstance(isolated_session, str), "isolated open lacks session", isolated_open_body)
 
             isolated_query_body = isolated.request(

@@ -24,7 +24,7 @@ from native_eval import (
     text_documents,
     write_native_memory_wrapper,
 )
-from native_memory import render_native_response
+from native_memory import build_parser, render_native_response
 from transition_eval import (
     attach_native_lineage,
     build_codex_command as build_transition_codex_command,
@@ -252,6 +252,88 @@ class NativeEvaluationTests(unittest.TestCase):
         )
         self.assertNotIn("records", rendered["data"]["corpus_map"])
 
+    def test_one_shot_open_uses_the_same_compact_reasoning_projection(self):
+        response = NativeResponse(
+            body={
+                "request_id": "request:1",
+                "session_id": "session:s1",
+                "corpus_revision": "revision:1",
+                "status": "complete",
+                "freshness": {
+                    "source_updated_at": "2026-07-22T00:00:00Z",
+                    "normalized_at": "2026-07-22T00:00:01Z",
+                },
+                "coverage": {
+                    "searched": [{
+                        "lane": "lexical",
+                        "completeness": "best_effort",
+                        "candidate_count": 12,
+                        "searched_count": 1000,
+                        "index_revision": "revision:1",
+                    }],
+                    "unsearched": [],
+                    "absence_safe": False,
+                },
+                "data": {
+                    "session_id": "session:s1",
+                    "corpus_revision": "revision:1",
+                    "corpus_map": {
+                        "record_counts": {"chunk": 1000},
+                        "records": {"chunk": [{"ref": "chunk:noise"}]},
+                        "truncated": True,
+                    },
+                    "initial_evidence": [{
+                        "reference": "chunk:1",
+                        "path": "Source.md",
+                        "content": "Exact evidence.",
+                        "content_hash": "sha256:noise",
+                        "lane_scores": {"lexical": 10},
+                        "score": 0.4,
+                    }],
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+        rendered = json.loads(render_native_response("open", response))
+        self.assertNotIn("records", rendered["data"]["corpus_map"])
+        candidate = rendered["data"]["initial_evidence"][0]
+        self.assertEqual(candidate["content"], "Exact evidence.")
+        self.assertNotIn("content_hash", candidate)
+        self.assertNotIn("lane_scores", candidate)
+        self.assertEqual(
+            rendered["coverage"]["searched"],
+            [{
+                "lane": "lexical",
+                "completeness": "best_effort",
+                "candidate_count": 12,
+            }],
+        )
+
+    def test_query_projection_removes_flattened_candidate_duplicate(self):
+        candidate = {
+            "reference": "chunk:1",
+            "path": "Source.md",
+            "content": "Exact evidence.",
+            "content_hash": "sha256:noise",
+        }
+        response = NativeResponse(
+            body={
+                "status": "complete",
+                "data": {
+                    "results": [candidate],
+                    "items": [{"id": "q0", "status": "complete", "results": [candidate]}],
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+        rendered = json.loads(render_native_response("query", response))
+        self.assertNotIn("results", rendered["data"])
+        self.assertEqual(len(rendered["data"]["items"]), 1)
+
     def test_provision_retries_transient_embedding_dependency_failure(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server(import_failures=1) as (url, handler):
             corpus = Path(temporary) / "corpus"
@@ -382,6 +464,51 @@ class NativeEvaluationTests(unittest.TestCase):
                 "max_chars": 20_000,
                 "before": 1,
                 "after": 8,
+            }])
+
+            natural_neighbor = subprocess.run(
+                [*base, "read", "--ref", "chunk:one", "--path", "one.md", "--neighbors", "4"],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                natural_neighbor.returncode,
+                0,
+                natural_neighbor.stdout + natural_neighbor.stderr,
+            )
+            natural_request = [
+                item for item in handler.requests if item["path"] == "/v1/memory/read"
+            ][-1]
+            self.assertEqual(natural_request["body"]["requests"], [
+                {
+                    "ref": "chunk:one",
+                    "view": "neighbors",
+                    "max_chars": 20_000,
+                    "before": 4,
+                    "after": 4,
+                },
+                {"ref": "one.md", "view": "full", "max_chars": 20_000},
+            ])
+
+            natural_range = subprocess.run(
+                [*base, "read", "--path", "one.md", "--range", "1:140"],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(natural_range.returncode, 0, natural_range.stdout + natural_range.stderr)
+            range_request = [
+                item for item in handler.requests if item["path"] == "/v1/memory/read"
+            ][-1]
+            self.assertEqual(range_request["body"]["requests"], [{
+                "ref": "one.md",
+                "view": "range",
+                "max_chars": 20_000,
+                "start": 1,
+                "end": 140,
             }])
 
             multiple = subprocess.run(
@@ -526,6 +653,17 @@ class NativeEvaluationTests(unittest.TestCase):
         )
         self.assertEqual(transition, ["filesystem_rebuild", "service_api_resume"])
         self.assertEqual(transition_manifest["conditions"], ["filesystem_rebuild", "workspace_resume"])
+
+    def test_native_query_defaults_to_bounded_eight_result_packet(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "--state", "/tmp/state.json",
+            "--task-file", "/tmp/task.txt",
+            "--scope", "Alpha",
+            "--authorization-scope", "eval:run/case",
+            "query", "find evidence",
+        ])
+        self.assertEqual(args.limit, 8)
 
     def test_native_transition_enables_network_only_for_service_resume(self):
         common = {

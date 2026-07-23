@@ -137,6 +137,12 @@ returns:
   pinned revision, or explicit pending/stale/unavailable status
 - freshness, coverage, conflicts, gaps, and ambiguities
 
+The initial evidence selector prioritizes exact stable references and titles,
+then current temporal evidence, groups relevant sections from the strongest
+source, and may return fewer than the maximum when fused relevance has a sharp
+drop. This source-coherent policy applies only to `memory.open`; explicit
+queries remain source-diverse discovery operations.
+
 Sessions are credential-bound, expiring, and immutable. Refresh creates a new
 session over an explicit newer revision and exposes the delta; it never mutates
 the old session.
@@ -159,6 +165,17 @@ widen the session authorization scope.
 Each candidate returns typed reference, source reference and version, content
 hash, optional path and heading, authority, canonicality, recorded and valid
 time, evidence references, lane scores, and `why_selected`.
+
+The detailed HTTP representation above is the audit view. MCP and evaluation
+adapters use a compact reasoning representation by default. It must preserve
+candidate content, path, stable reference, source version, authority,
+canonicality, recorded and valid time, selection reason, nonempty diagnostics,
+checkpoint and revision delta, learned context, and a compact policy receipt.
+It may omit corpus inventory samples, duplicate envelope fields, duplicate
+single-query aliases, complete per-item coverage, content hashes used only for
+ranking integrity, lane scores, and fused scores. Exact source reads and the
+HTTP audit representation remain available when those omitted fields are the
+subject of the task.
 
 ## Read
 
@@ -303,6 +320,10 @@ truncation. Status values distinguish complete, partial, ambiguous, stale,
 inconsistent, degraded, committed, no-op, accepted processing, needs review,
 conflict, and policy rejection.
 
+Fields carried by the common envelope are not repeated at the top level of
+`data`. Policy projection occurs before this transport de-duplication, so the
+audit receipt still describes the complete projected response.
+
 Coverage names searched and unsearched partitions. Missing results are not
 absence proof unless `absence_safe` is true for a maintained-complete set.
 
@@ -319,8 +340,9 @@ The alpha is releasable for inspection when all of the following hold:
    automatic learned-context inclusion, deep shadow dreaming, and deletion
    propagation pass live tests.
 5. The native service matches or beats the unchanged local Markdown baseline
-   on the main, Rupture Ops, personal coordination, and checkpoint-transition
-   suites.
+   on every active card in the main, Rupture Ops, personal coordination, and
+   checkpoint-transition suites. Retired cards remain reproducible historical
+   fixtures but do not count toward the current product gate.
 6. Failures are reported honestly; no path claims complete coverage, policy
    application, validation, or cleanup that did not occur.
 

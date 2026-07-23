@@ -27,6 +27,34 @@ pub fn reciprocal_rank_fusion(
     limit: usize,
     per_source_limit: usize,
 ) -> Vec<RetrievalCandidate> {
+    rank_fusion(lanes, limit, per_source_limit, SelectionStyle::Diversified)
+}
+
+pub fn source_coherent_rank_fusion(
+    lanes: Vec<(&str, Vec<RetrievalCandidate>)>,
+    limit: usize,
+    per_source_limit: usize,
+) -> Vec<RetrievalCandidate> {
+    rank_fusion(
+        lanes,
+        limit,
+        per_source_limit,
+        SelectionStyle::SourceCoherent,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SelectionStyle {
+    Diversified,
+    SourceCoherent,
+}
+
+fn rank_fusion(
+    lanes: Vec<(&str, Vec<RetrievalCandidate>)>,
+    limit: usize,
+    per_source_limit: usize,
+    style: SelectionStyle,
+) -> Vec<RetrievalCandidate> {
     let mut candidates: HashMap<String, RetrievalCandidate> = HashMap::new();
     let mut scores: HashMap<String, f64> = HashMap::new();
     let mut reasons: HashMap<String, HashSet<String>> = HashMap::new();
@@ -35,12 +63,13 @@ pub fn reciprocal_rank_fusion(
         .iter()
         .filter(|(_, results)| !results.is_empty())
         .count();
-    let per_lane_guarantee = match active_lane_count {
-        0 => 0,
+    let per_lane_guarantee = match (style, active_lane_count) {
+        (_, 0) => 0,
+        (SelectionStyle::SourceCoherent, _) => 1,
         // With one lane, guarantee its leader and leave the remaining slots
         // available for source diversity.
-        1 => 1,
-        _ => usize::max(1, limit / active_lane_count),
+        (SelectionStyle::Diversified, 1) => 1,
+        (SelectionStyle::Diversified, _) => usize::max(1, limit / active_lane_count),
     };
     let mut lane_guarantees = HashSet::new();
 
@@ -48,7 +77,7 @@ pub fn reciprocal_rank_fusion(
         for candidate in results.iter().take(per_lane_guarantee) {
             lane_guarantees.insert(candidate.reference.clone());
         }
-        let weight = lane_weight(lane);
+        let weight = lane_weight(lane, style);
         for (rank, candidate) in results.into_iter().enumerate() {
             let reference = candidate.reference.clone();
             let native_score = candidate.score;
@@ -75,28 +104,20 @@ pub fn reciprocal_rank_fusion(
             .then_with(|| left.reference.cmp(&right.reference))
     });
 
-    // Initial retrieval should expose breadth across source documents. Agents can
-    // then read the selected source in full or fetch neighboring chunks.
-    let mut first_from_source = Vec::new();
-    let mut repeated_source = Vec::new();
-    let mut seen_chunk_sources = HashSet::new();
-    for candidate in ranked {
-        if candidate.reference.starts_with("chunk:")
-            && !seen_chunk_sources.insert(candidate.source_ref.clone())
-        {
-            repeated_source.push(candidate);
-        } else {
-            first_from_source.push(candidate);
+    let ranked = match style {
+        SelectionStyle::Diversified => diversify_sources(ranked),
+        SelectionStyle::SourceCoherent => {
+            let ranked = trim_at_relevance_gap(ranked, &scores, &lane_guarantees, limit);
+            group_coherent_sources(ranked)
         }
-    }
-    first_from_source.extend(repeated_source);
+    };
 
     // A hybrid query must preserve the strongest candidate from every lane;
     // otherwise a broad cross-lane coincidence can erase a precise lexical,
     // temporal, or structured hit before the agent can inspect it.
     let mut guaranteed = Vec::new();
     let mut fused_remainder = Vec::new();
-    for candidate in first_from_source {
+    for candidate in ranked {
         if lane_guarantees.contains(&candidate.reference) {
             guaranteed.push(candidate);
         } else {
@@ -129,10 +150,81 @@ pub fn reciprocal_rank_fusion(
     selected
 }
 
-fn lane_weight(lane: &str) -> f64 {
-    match lane {
+fn diversify_sources(ranked: Vec<RetrievalCandidate>) -> Vec<RetrievalCandidate> {
+    // General queries expose breadth first. Agents can then read a selected
+    // source in full or fetch neighboring chunks.
+    let mut first_from_source = Vec::new();
+    let mut repeated_source = Vec::new();
+    let mut seen_chunk_sources = HashSet::new();
+    for candidate in ranked {
+        if candidate.reference.starts_with("chunk:")
+            && !seen_chunk_sources.insert(candidate.source_ref.clone())
+        {
+            repeated_source.push(candidate);
+        } else {
+            first_from_source.push(candidate);
+        }
+    }
+    first_from_source.extend(repeated_source);
+    first_from_source
+}
+
+fn trim_at_relevance_gap(
+    ranked: Vec<RetrievalCandidate>,
+    scores: &HashMap<String, f64>,
+    guarantees: &HashSet<String>,
+    limit: usize,
+) -> Vec<RetrievalCandidate> {
+    let minimum = usize::min(4, limit);
+    let mut cutoff = usize::min(limit, ranked.len());
+    for index in minimum..cutoff {
+        let previous = scores
+            .get(&ranked[index - 1].reference)
+            .copied()
+            .unwrap_or(0.0);
+        let next = scores.get(&ranked[index].reference).copied().unwrap_or(0.0);
+        if previous > 0.0 && next / previous < 0.62 {
+            cutoff = index;
+            break;
+        }
+    }
+    ranked
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, candidate)| {
+            (index < cutoff || guarantees.contains(&candidate.reference)).then_some(candidate)
+        })
+        .collect()
+}
+
+fn group_coherent_sources(ranked: Vec<RetrievalCandidate>) -> Vec<RetrievalCandidate> {
+    let mut source_order = Vec::new();
+    let mut groups = HashMap::<String, Vec<RetrievalCandidate>>::new();
+    for candidate in ranked {
+        if !groups.contains_key(&candidate.source_ref) {
+            source_order.push(candidate.source_ref.clone());
+        }
+        groups
+            .entry(candidate.source_ref.clone())
+            .or_default()
+            .push(candidate);
+    }
+    let mut ordered = Vec::new();
+    for source in source_order {
+        if let Some(candidates) = groups.remove(&source) {
+            ordered.extend(candidates);
+        }
+    }
+    ordered
+}
+
+fn lane_weight(lane: &str, style: SelectionStyle) -> f64 {
+    match (style, lane) {
+        // Open should trust an exact stable reference or title before broad
+        // similarity, while ordinary query retains its existing balance.
+        (SelectionStyle::SourceCoherent, "exact") => 3.0,
         // A temporal match can establish currentness; semantic similarity cannot.
-        "temporal" => 2.25,
+        (_, "temporal") => 2.25,
         _ => 1.0,
     }
 }
@@ -266,5 +358,64 @@ mod tests {
         ] {
             assert!(references.contains(reference));
         }
+    }
+
+    #[test]
+    fn source_coherent_fusion_keeps_related_sections_together() {
+        let lexical = vec![
+            candidate("chunk:a", "source:primary", 1.0),
+            candidate("chunk:b", "source:primary", 0.9),
+            candidate("chunk:c", "source:primary", 0.8),
+            candidate("chunk:d", "source:secondary", 0.7),
+        ];
+        let semantic = lexical.clone();
+        let results =
+            source_coherent_rank_fusion(vec![("lexical", lexical), ("semantic", semantic)], 4, 3);
+        assert_eq!(
+            results
+                .iter()
+                .map(|candidate| candidate.reference.as_str())
+                .collect::<Vec<_>>(),
+            vec!["chunk:a", "chunk:b", "chunk:c", "chunk:d"]
+        );
+    }
+
+    #[test]
+    fn source_coherent_fusion_drops_a_sharply_weaker_tail() {
+        let lexical = vec![
+            candidate("chunk:a", "source:a", 1.0),
+            candidate("chunk:b", "source:b", 0.9),
+            candidate("chunk:c", "source:c", 0.8),
+            candidate("chunk:d", "source:d", 0.7),
+            candidate("chunk:e", "source:e", 0.6),
+            candidate("chunk:f", "source:f", 0.5),
+        ];
+        let semantic = lexical[..4].to_vec();
+        let results =
+            source_coherent_rank_fusion(vec![("lexical", lexical), ("semantic", semantic)], 6, 3);
+        assert_eq!(results.len(), 4);
+        assert!(results.iter().all(|candidate| {
+            matches!(
+                candidate.reference.as_str(),
+                "chunk:a" | "chunk:b" | "chunk:c" | "chunk:d"
+            )
+        }));
+    }
+
+    #[test]
+    fn source_coherent_fusion_prioritizes_an_exact_title_or_reference() {
+        let exact = vec![candidate("chunk:exact", "source:exact", 1.0)];
+        let lexical = vec![candidate("chunk:broad", "source:broad", 1.0)];
+        let semantic = lexical.clone();
+        let results = source_coherent_rank_fusion(
+            vec![
+                ("exact", exact),
+                ("lexical", lexical),
+                ("semantic", semantic),
+            ],
+            2,
+            3,
+        );
+        assert_eq!(results[0].reference, "chunk:exact");
     }
 }

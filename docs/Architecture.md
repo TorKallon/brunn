@@ -109,6 +109,12 @@ are labeled `derived_non_authoritative`, retain direct source links, and are
 omitted rather than served stale when no candidate exactly matches the pinned
 revision. They never replace source evidence or alter absence guarantees.
 
+Open is optimized as the first reasoning packet, not merely as a session
+handshake. Its selector gives exact references and titles priority, detects a
+sharp relevance drop instead of filling every result slot, and groups multiple
+relevant sections from the strongest source before broadening. Ordinary query
+keeps the source-diverse ranking used for discovery.
+
 `memory.query` combines independent exact, structured, PostgreSQL FTS,
 pgvector semantic, temporal, and relation lanes. Reciprocal-rank fusion merges
 candidates while preserving lane scores and `why_selected`. Authority,
@@ -128,6 +134,15 @@ Every result carries evidence references or an explicit unsupported status.
 and classifies them as supported, contradicted, insufficient, superseded, or
 temporally ambiguous. It may discover relevant evidence, but it never treats
 arbitrary retrieved text as support without a claim match.
+
+The HTTP API retains detailed candidates, coverage, rank receipts, and policy
+audit data. Agent adapters expose a compact reasoning view by default: they
+remove corpus inventory samples, duplicated envelope fields and candidate
+aliases, and ranking mechanics while preserving evidence text, exact paths and
+references, source versions, authority, currentness, checkpoints, deltas,
+learned context, gaps, conflicts, and policy receipts. Agents start with open,
+query only unresolved gaps, and batch exact path, reference, or range reads
+when several sources are needed.
 
 ## Write Path
 
@@ -210,7 +225,7 @@ the bypass themselves.
 | MinIO | versioned user-scoped source and artifact blobs |
 | OpenAI | `text-embedding-3-small`, structured online capture, and bounded Phase 0 consolidation |
 | TypeScript SPA | capture, exploration, work, dreaming, audit, settings |
-| TypeScript MCP | typed batch-first agent operations over HTTP |
+| TypeScript MCP | typed open-first agent operations and compact reasoning views over HTTP |
 
 ## Failure Semantics
 

@@ -31,7 +31,7 @@ use crate::{
         VerificationClassification, VerifyClaim, VerifyRequest,
     },
     recurrence,
-    retrieval::{RetrievalCandidate, reciprocal_rank_fusion},
+    retrieval::{RetrievalCandidate, reciprocal_rank_fusion, source_coherent_rank_fusion},
 };
 
 const DEFAULT_TOKEN_BUDGET: usize = 24_000;
@@ -42,6 +42,12 @@ const MAX_MATERIALIZED_GENERIC_RECORDS: usize = 1_000;
 const CORPUS_MAP_SAMPLE_PER_KIND: usize = 12;
 const MAX_REVISION_SOURCE_CHANGES: usize = 8;
 const MAX_REVISION_SOURCE_CONTENT_CHARS: usize = 12_000;
+
+#[derive(Clone, Copy)]
+enum QuerySelection {
+    Diversified,
+    SourceCoherent,
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct PinnedSession {
@@ -400,7 +406,8 @@ pub async fn open(
             limit: Some(12),
         };
         let specs = initial_request.normalized_queries()?;
-        let initial = run_query_batch(state, auth, &session, specs).await?;
+        let initial =
+            run_query_batch(state, auth, &session, specs, QuerySelection::SourceCoherent).await?;
         let initial_item = initial.items.into_iter().next();
         let initial_evidence = initial_item
             .as_ref()
@@ -714,7 +721,7 @@ pub async fn query(
         return run_staged_query_batch(state, auth, &stage, specs).await;
     }
     let session = load_session(state, auth, &request.session_id, Capability::Query).await?;
-    run_query_batch(state, auth, &session, specs).await
+    run_query_batch(state, auth, &session, specs, QuerySelection::Diversified).await
 }
 
 async fn run_query_batch(
@@ -722,6 +729,7 @@ async fn run_query_batch(
     auth: &AuthContext,
     session: &PinnedSession,
     specs: Vec<QuerySpec>,
+    selection: QuerySelection,
 ) -> ApiResult<QueryBatchResult> {
     let semantic_indices: Vec<usize> = specs
         .iter()
@@ -769,6 +777,7 @@ async fn run_query_batch(
             semantic_vectors.get(&index),
             embedding_failure.as_deref(),
             state.embedder.model(),
+            selection,
         )
         .await
         {
@@ -849,6 +858,7 @@ async fn query_item_tx(
     semantic_vector: Option<&Vec<f32>>,
     embedding_failure: Option<&str>,
     embedding_model: &str,
+    selection: QuerySelection,
 ) -> ApiResult<QueryItemResult> {
     validate_query_scope(session, spec.scope.as_ref())?;
     let root_ids = query_root_ids_tx(tx, session, spec).await?;
@@ -973,7 +983,10 @@ async fn query_item_tx(
         }
     }
 
-    let mut selected = reciprocal_rank_fusion(lanes, spec.limit, 3);
+    let mut selected = match selection {
+        QuerySelection::Diversified => reciprocal_rank_fusion(lanes, spec.limit, 3),
+        QuerySelection::SourceCoherent => source_coherent_rank_fusion(lanes, spec.limit, 3),
+    };
     normalize_selection_reasons(&mut selected);
     expand_selected_tx(tx, session, spec, &mut selected).await?;
     selected.truncate(spec.limit);
@@ -5323,7 +5336,14 @@ async fn execute_compute_step(
                     RetrievalMode::Semantic,
                 ];
             }
-            let result = run_query_batch(state, auth, session, vec![spec]).await?;
+            let result = run_query_batch(
+                state,
+                auth,
+                session,
+                vec![spec],
+                QuerySelection::Diversified,
+            )
+            .await?;
             let evidence = result
                 .items
                 .iter()

@@ -135,6 +135,13 @@ next case. Resume an interrupted run with `--resume-run-id <run-id>`; the
 public JSON result contains only redacted provisioning metadata. Transition
 runs use the same private state and resume option.
 
+Provision full suites serially when they use OpenAI embeddings. Each case is an
+isolated user and intentionally reimports the frozen corpus; launching several
+fresh suites together can exhaust the account embedding-token-per-minute limit
+even though ordinary query traffic is healthy. Once a suite's private
+provisioning state is complete, agent runs may execute concurrently. An
+interrupted provision resumes from the already committed case imports.
+
 Every `/v1/admin/eval/import` scope is created with automatic dreaming disabled
 and paused. This prevents synthetic benchmark corpora from consuming dream
 work or changing retrieval during a comparison; ordinary user scopes retain
@@ -143,6 +150,23 @@ the configured automatic scheduler behavior.
 Always pass `--filesystem-native` for the product gate. The legacy `workspace`
 condition intentionally exercises the frozen Python/SQLite reference harness,
 not the Rust service.
+
+Cases marked `active: false` are retained for historical reproducibility but
+are excluded from normal runs because their product premise has been retired.
+Pass `--include-retired` or select the case explicitly with `--case` to replay
+one. Native agents should treat `memory.open` as their first evidence packet,
+query only unresolved gaps, and batch repeated `--path` or `--ref` reads in one
+call when several exact sources are required. Agent adapters default a focused
+query to eight source leads. Use `--neighbors N` for symmetric context around a
+chunk reference and `--range START:END` for exact source lines.
+
+The active agent-work manifests use `concept_tokens_v1`: exact phrases still
+match, while conservative token-set matching accepts reordered paraphrases,
+equivalent negation forms, and rate notation while preserving negation and
+exact identifier/date components. This prevents harmless wording differences
+from being reported as retrieval losses; source-path checks, forbidden
+conclusions, checkpoint structure, and every claim's concept requirements
+remain deterministic.
 
 ## Migration Discipline
 

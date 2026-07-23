@@ -40,4 +40,17 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     "memory.verify",
   ]);
   assert.equal(response.tools.every((tool) => tool.inputSchema.type === "object"), true);
+  const query = response.tools.find((tool) => tool.name === "memory.query");
+  assert.ok(query);
+  const queries = query.inputSchema.properties?.queries as {
+    items?: { properties?: { limit?: { default?: number } } };
+  } | undefined;
+  assert.equal(queries?.items?.properties?.limit?.default, 8);
+  const read = response.tools.find((tool) => tool.name === "memory.read");
+  assert.ok(read);
+  const requests = read.inputSchema.properties?.requests as {
+    items?: { properties?: Record<string, unknown> };
+  } | undefined;
+  assert.ok(requests?.items?.properties?.before);
+  assert.ok(requests?.items?.properties?.after);
 });

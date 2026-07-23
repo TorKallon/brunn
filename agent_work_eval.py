@@ -100,6 +100,7 @@ CONCEPT_IRREGULAR = {
     "moved": "move",
     "moves": "move",
     "names": "name",
+    "not": "no",
     "none": "no",
     "rebuilt": "rebuild",
     "retained": "retain",
@@ -150,7 +151,14 @@ def concept_stem(token: str) -> str:
 def concept_tokens(value: str) -> set[str]:
     result: set[str] = set()
     for raw in re.findall(r"[a-z0-9]+(?:[._/+:-][a-z0-9]+)*", value.casefold()):
-        if ":" in raw or "/" in raw or re.match(r"^\d{4}-\d{2}-", raw):
+        rate = re.fullmatch(
+            r"(?:\d+(?:\.\d+)?|[a-z]+)/"
+            r"(?:s|sec|second|min|minute|h|hr|hour|day)",
+            raw,
+        )
+        if rate:
+            parts = raw.split("/")
+        elif ":" in raw or "/" in raw or re.match(r"^\d{4}-\d{2}-", raw):
             parts = [raw]
         else:
             parts = re.split(r"[._+-]+", raw)
@@ -223,22 +231,26 @@ def render_prompt(case: dict, condition: str) -> str:
     elif condition == "service_api" and case.get("workspace_access") == "read_only":
         access = (
             "Use the read-only native Straylight service through ./memory only. Do not inspect the wrapper or any corpus path. "
-            f"Run `./memory open` and wait for it to finish before starting retrieval. Batch retrieval as "
-            f"`./memory query --scope {json.dumps(scope)} --batch \"first question\" "
-            "\"second question\"`; omit `--batch` for one question. If a returned table, list, or section is incomplete, "
-            "spend the next call on `./memory read --ref \"chunk:...\" --view neighbors --before 1 --after 8` instead of "
-            "repeating the query. Use `./memory read --path \"exact returned path\"` only when one complete source is needed. "
+            "Run `./memory open` and treat its initial evidence, learned context, checkpoint, and revision delta as the first "
+            "answer packet. Do not query again for facts that packet already establishes. For unresolved gaps, use one focused "
+            f"`./memory query --scope {json.dumps(scope)} \"question\"`, or `--batch` only for independent gaps. Follow a "
+            "candidate into its source with `./memory read --ref \"chunk:...\" --neighbors 4` or an exact line range. A candidate "
+            "excerpt is a source lead, not proof that the displayed section is complete: if its path clearly owns an unresolved "
+            "claim, read that exact path before searching globally again. A single read call can repeat `--path` or `--ref` to "
+            "fetch several exact sources or ranges together. "
             "This credential cannot checkpoint, save, or mutate corpus or staged state. Keep the whole run to four service calls "
             "when the evidence permits. Do not browse or use filesystem search outside this service surface."
         )
     elif condition == "service_api":
         access = (
             "Use the native Straylight service through ./memory only. Do not inspect the wrapper or any corpus path. "
-            f"Run `./memory open` and wait for it to finish before starting retrieval. Batch retrieval as "
-            f"`./memory query --scope {json.dumps(scope)} --batch \"first question\" "
-            "\"second question\"`; omit `--batch` for one question. If a returned table, list, or section is incomplete, "
-            "spend the next call on `./memory read --ref \"chunk:...\" --view neighbors --before 1 --after 8` instead of "
-            "repeating the query. Use `./memory read --path \"exact returned path\"` only when one complete source is needed. "
+            "Run `./memory open` and treat its initial evidence, learned context, checkpoint, and revision delta as the first "
+            "answer packet. Do not query again for facts that packet already establishes. For unresolved gaps, use one focused "
+            f"`./memory query --scope {json.dumps(scope)} \"question\"`, or `--batch` only for independent gaps. Follow a "
+            "candidate into its source with `./memory read --ref \"chunk:...\" --neighbors 4` or an exact line range. A candidate "
+            "excerpt is a source lead, not proof that the displayed section is complete: if its path clearly owns an unresolved "
+            "claim, read that exact path before searching globally again. A single read call can repeat `--path` or `--ref` to "
+            "fetch several exact sources or ranges together. "
             "Use one typed compute or combined verify call only when useful. Before answering, persist one checkpoint through "
             "./memory checkpoint. Keep the whole run to four service calls when the evidence permits. Do not browse or use "
             "filesystem search outside this service surface."
@@ -276,6 +288,7 @@ Task:
 Return the required JSON object. The `claims` array must contain exactly one entry for each claim slot below, using the exact ID. Put the factual answer for that slot in `value` and cite relative corpus paths in `source_paths`.
 For service retrieval, cite only exact `path` values returned with candidates, never a path merely mentioned inside candidate content.
 When a claim characterizes a source's authority, cite that original source, not only an index or summary that discusses it.
+Copy stable IDs, ISO-8601 timestamps, timezones, hashes, quantities, and measurements exactly from authoritative evidence. Do not silently normalize or reconstruct exact values from memory.
 {slot_lines}
 
 {checkpoint_instruction} Record the objective, current state, decisions, unresolved questions, concrete next actions, and the source or output artifacts that matter. Distinguish current fact from proposal, historical evidence from superseding state, and verified results from incomplete work. Use only evidence available under this condition.
@@ -1059,6 +1072,22 @@ def select_conditions(manifest: dict, args: argparse.Namespace) -> list[str]:
     return requested
 
 
+def select_cases(
+    manifest: dict,
+    requested: Sequence[str] | None,
+    *,
+    include_retired: bool,
+) -> list[dict[str, Any]]:
+    if requested:
+        requested_ids = set(requested)
+        return [case for case in manifest["cases"] if case["id"] in requested_ids]
+    return [
+        case
+        for case in manifest["cases"]
+        if include_retired or case.get("active", True)
+    ]
+
+
 async def run_all(args: argparse.Namespace) -> dict:
     validated = validate(args.manifest, args.schema)
     if validated["errors"]:
@@ -1076,10 +1105,11 @@ async def run_all(args: argparse.Namespace) -> dict:
     else:
         run_root.mkdir(parents=True, exist_ok=False)
     corpus_paths = {document.path for document in documents}
-    selected_cases = [
-        case for case in manifest["cases"]
-        if not args.case or case["id"] in args.case
-    ]
+    selected_cases = select_cases(
+        manifest,
+        args.case,
+        include_retired=args.include_retired,
+    )
     selected_conditions = select_conditions(manifest, args)
     native_metadata: dict[str, dict[str, Any]] = {}
     if "service_api" in selected_conditions:
@@ -1220,6 +1250,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--run-id")
     run_parser.add_argument("--resume-run-id")
     run_parser.add_argument("--case", action="append")
+    run_parser.add_argument(
+        "--include-retired",
+        action="store_true",
+        help="include cases retired because their product premise is no longer current",
+    )
     run_parser.add_argument("--condition", action="append", choices=tuple(CONDITION_LABELS))
     run_parser.add_argument(
         "--filesystem-native",

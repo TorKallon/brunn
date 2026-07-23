@@ -134,6 +134,18 @@ def require_session(state: dict[str, Any]) -> str:
     return str(session_id)
 
 
+def parse_read_range(value: str | None) -> tuple[int | None, int | None]:
+    if value is None:
+        return None, None
+    match = re.fullmatch(r"\s*(\d+)\s*[:-]\s*(\d+)\s*", value)
+    if not match:
+        raise ValueError("read --range must be START:END or START-END")
+    start, end = (int(part) for part in match.groups())
+    if start < 1 or end < start:
+        raise ValueError("read --range requires 1 <= START <= END")
+    return start, end
+
+
 def display_scope_query(args: argparse.Namespace, query: str) -> str:
     scope = args.query_scope or args.scope
     if not scope or scope == args.authorization_scope or scope.startswith("scope:"):
@@ -168,50 +180,204 @@ def query_scope(args: argparse.Namespace) -> str | dict[str, Any]:
 
 
 def render_native_response(command: str, response: NativeResponse) -> str:
-    body = response.body
-    data = response.data
-    if command not in {"open", "resume"} or not data.get("resume_checkpoint"):
-        return json.dumps(body, indent=2, ensure_ascii=False)
+    if command not in {"open", "resume", "query", "read", "compute", "verify"}:
+        return json.dumps(response.body, indent=2, ensure_ascii=False)
+    return json.dumps(
+        compact_reasoning_response(command, response.body),
+        indent=2,
+        ensure_ascii=False,
+    )
 
-    compact_data = {
-        key: data[key]
-        for key in (
-            "session_id",
-            "corpus_revision",
+
+def compact_reasoning_response(command: str, body: dict[str, Any]) -> dict[str, Any]:
+    data = body.get("data")
+    data = data if isinstance(data, dict) else {}
+    compact: dict[str, Any] = {
+        key: body[key]
+        for key in ("request_id", "session_id", "corpus_revision", "status")
+        if body.get(key) is not None
+    }
+    if command in {"open", "resume"}:
+        freshness = compact_freshness(body.get("freshness"))
+        coverage = compact_coverage(body.get("coverage"))
+        if freshness:
+            compact["freshness"] = freshness
+        if coverage:
+            compact["coverage"] = coverage
+    for key in ("conflicts", "gaps", "ambiguities"):
+        if body.get(key):
+            compact[key] = body[key]
+    truncation = body.get("truncation")
+    if isinstance(truncation, dict) and truncation.get("truncated"):
+        compact["truncation"] = truncation
+
+    if command in {"open", "resume"}:
+        compact_data = compact_open_data(data)
+    elif command == "query":
+        compact_data = compact_query_data(data)
+    elif command == "read":
+        compact_data = compact_read_data(data)
+    elif command == "verify":
+        compact_data = compact_verify_data(data)
+    else:
+        compact_data = compact_generic_data(data, ("steps", "rows_returned", "estimated_tokens"))
+    compact["data"] = compact_data
+    return compact
+
+
+def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
+    compact = compact_generic_data(
+        data,
+        (
             "resolved_scope",
-            "projection",
             "resume_checkpoint",
             "revision_delta",
+            "learned_context",
             "initial_case_file",
-            "initial_evidence",
-        )
-        if key in data and data[key] not in (None, [], {})
-    }
+        ),
+    )
+    evidence = data.get("initial_evidence")
+    if isinstance(evidence, list) and evidence:
+        compact["initial_evidence"] = [
+            compact_candidate(item) for item in evidence if isinstance(item, dict)
+        ]
     corpus_map = data.get("corpus_map")
     if isinstance(corpus_map, dict):
-        compact_data["corpus_map"] = {
+        compact["corpus_map"] = {
             key: corpus_map[key]
             for key in ("record_counts", "profile_counts", "available_views", "truncated")
             if key in corpus_map
         }
+    return compact
+
+
+def compact_query_data(data: dict[str, Any]) -> dict[str, Any]:
+    compact = compact_generic_data(data, ())
+    items = data.get("items")
+    if isinstance(items, list):
+        compact["items"] = [
+            compact_query_item(item) for item in items if isinstance(item, dict)
+        ]
+    elif isinstance(data.get("results"), list):
+        compact["results"] = [
+            compact_candidate(item)
+            for item in data["results"]
+            if isinstance(item, dict)
+        ]
+    return compact
+
+
+def compact_query_item(item: dict[str, Any]) -> dict[str, Any]:
     compact = {
-        key: body[key]
-        for key in (
-            "request_id",
-            "session_id",
-            "corpus_revision",
-            "status",
-            "freshness",
-            "coverage",
-            "conflicts",
-            "gaps",
-            "ambiguities",
-            "truncation",
-        )
-        if key in body
+        key: item[key]
+        for key in ("id", "status")
+        if item.get(key) is not None
     }
-    compact["data"] = compact_data
-    return json.dumps(compact, indent=2, ensure_ascii=False)
+    results = item.get("results")
+    if isinstance(results, list):
+        compact["results"] = [
+            compact_candidate(candidate)
+            for candidate in results
+            if isinstance(candidate, dict)
+        ]
+    for key in ("conflicts", "gaps", "ambiguities"):
+        if item.get(key):
+            compact[key] = item[key]
+    coverage = compact_coverage(item.get("coverage"))
+    if coverage and (item.get("status") != "complete" or coverage.get("unsearched")):
+        compact["coverage"] = coverage
+    return compact
+
+
+def compact_read_data(data: dict[str, Any]) -> dict[str, Any]:
+    compact = compact_generic_data(data, ("items",))
+    return compact
+
+
+def compact_verify_data(data: dict[str, Any]) -> dict[str, Any]:
+    keys = ("results",) if isinstance(data.get("results"), list) else ("claims",)
+    return compact_generic_data(data, keys)
+
+
+def compact_generic_data(data: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    compact = {
+        key: data[key]
+        for key in keys
+        if key in data and data[key] not in (None, [], {})
+    }
+    projection = compact_projection(data.get("projection"))
+    if projection:
+        compact["projection"] = projection
+    return compact
+
+
+def compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: candidate[key]
+        for key in (
+            "reference",
+            "source_ref",
+            "path",
+            "heading",
+            "content",
+            "source_version",
+            "authority",
+            "canonicality",
+            "recorded_at",
+            "valid_time",
+            "why_selected",
+        )
+        if key in candidate and candidate[key] not in (None, [], {})
+    }
+
+
+def compact_projection(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: value[key]
+        for key in (
+            "policy_ref",
+            "policy_version",
+            "audience",
+            "purpose",
+            "output_hash",
+            "audit_receipt",
+            "withheld",
+            "transforms",
+        )
+        if key in value and value[key] not in (None, [], {})
+    }
+
+
+def compact_freshness(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: value[key]
+        for key in ("source_updated_at", "lexical_index_updated_at", "semantic_index_updated_at")
+        if value.get(key) is not None
+    }
+
+
+def compact_coverage(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact: dict[str, Any] = {"absence_safe": bool(value.get("absence_safe", False))}
+    for partition in ("searched", "unsearched"):
+        rows = value.get(partition)
+        if not isinstance(rows, list) or not rows:
+            continue
+        compact[partition] = [
+            {
+                key: row[key]
+                for key in ("lane", "completeness", "candidate_count", "failure_reason")
+                if key in row and row[key] is not None
+            }
+            for row in rows
+            if isinstance(row, dict)
+        ]
+    return compact
 
 
 def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[str, str, dict[str, Any] | None]:
@@ -273,26 +439,41 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
     if args.command == "read":
         payload = optional_json(args.payload)
         if payload is None:
-            references = [*(args.reference or []), *(args.path or [])]
+            references = [
+                *((reference, False) for reference in (args.reference or [])),
+                *((path, True) for path in (args.path or [])),
+            ]
             if not references:
                 raise ValueError("read requires JSON or --ref/--path")
+            range_start, range_end = parse_read_range(args.range_spec)
+            start = args.start if args.start is not None else range_start
+            end = args.end if args.end is not None else range_end
             requests = []
-            for reference in references:
+            for reference, is_path in references:
+                view = args.view
+                if view is None:
+                    if start is not None or end is not None:
+                        view = "range"
+                    elif args.neighbors is not None and not is_path:
+                        view = "neighbors"
+                    else:
+                        view = "full"
                 request: dict[str, Any] = {
                     "ref": reference,
-                    "view": args.view or (
-                        "range" if args.start is not None or args.end is not None else "full"
-                    ),
+                    "view": view,
                     "max_chars": args.max_chars,
                 }
-                if args.start is not None:
-                    request["start"] = args.start
-                if args.end is not None:
-                    request["end"] = args.end
-                if args.before is not None:
-                    request["before"] = args.before
-                if args.after is not None:
-                    request["after"] = args.after
+                if start is not None:
+                    request["start"] = start
+                if end is not None:
+                    request["end"] = end
+                if view == "neighbors":
+                    before = args.before if args.before is not None else args.neighbors
+                    after = args.after if args.after is not None else args.neighbors
+                    if before is not None:
+                        request["before"] = before
+                    if after is not None:
+                        request["after"] = after
                 requests.append(request)
             payload = {"requests": requests}
         payload["session_id"] = session_id
@@ -396,7 +577,7 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument("--scope", dest="query_scope")
     query.add_argument("--goal")
     query.add_argument("--mode", action="append")
-    query.add_argument("--limit", type=int, default=6)
+    query.add_argument("--limit", type=int, default=8)
     query.add_argument("--batch", nargs="+")
 
     read = subparsers.add_parser("read")
@@ -409,8 +590,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     read.add_argument("--start", type=int)
     read.add_argument("--end", type=int)
+    read.add_argument("--range", dest="range_spec")
     read.add_argument("--before", type=int)
     read.add_argument("--after", type=int)
+    read.add_argument(
+        "--neighbors",
+        type=int,
+        help="shortcut for symmetric neighbor reads on chunk refs; exact paths remain full reads",
+    )
     read.add_argument("--max-chars", type=int, default=20_000)
 
     compute = subparsers.add_parser("compute")

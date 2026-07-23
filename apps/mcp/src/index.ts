@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod/v4";
 
 import { StraylightApiClient, StraylightApiError } from "./api-client.js";
+import { compactReasoningResponse } from "./reasoning-view.js";
 
 const reference = z.string().min(1);
 const jsonObject = z.record(z.string(), z.unknown());
@@ -18,7 +19,7 @@ const queryItem = z.object({
   where: jsonObject.optional(),
   state_filter: jsonObject.optional(),
   expand: jsonObject.optional(),
-  limit: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().min(1).max(100).default(8),
 });
 
 const readItem = z.object({
@@ -39,6 +40,8 @@ const readItem = z.object({
   ]).optional(),
   start: z.number().int().min(1).optional(),
   end: z.number().int().min(1).optional(),
+  before: z.number().int().min(0).max(20).optional(),
+  after: z.number().int().min(0).max(20).optional(),
   max_chars: z.number().int().min(1).max(500_000).optional(),
 }).refine((value) => value.ref !== undefined || value.path !== undefined, {
   message: "read request requires ref or path",
@@ -84,7 +87,7 @@ registerJsonTool(
 
 registerJsonTool(
   "memory.read",
-  "Read exact source, evidence, object, relation, claim, checkpoint, or revision ranges by stable reference.",
+  "Batch exact source, evidence, object, relation, claim, checkpoint, or revision reads; use range or neighbors when a candidate excerpt is incomplete.",
   {
     session_id: reference,
     requests: z.array(readItem).min(1).max(32),
@@ -242,9 +245,10 @@ function registerJsonTool<Shape extends z.ZodRawShape>(
   const callback = async (input: z.infer<z.ZodObject<Shape>>) => {
     try {
       const response = await invoke(input);
+      const body = compactReasoningResponse(name, response.body);
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(response.body) }],
-        structuredContent: response.body,
+        content: [{ type: "text" as const, text: JSON.stringify(body) }],
+        structuredContent: body,
       };
     } catch (error) {
       const body = error instanceof StraylightApiError
