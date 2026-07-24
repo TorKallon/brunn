@@ -38,7 +38,7 @@ on an unsettled provider or public identity.
 | Object storage | Architecture approved; exact qualification pending | Production uses a managed, versioned cloud S3 store. AWS S3 is the recommended first provider. MinIO is development and destructive-test infrastructure only. |
 | Recovery | Explicitly deferred | Off-host backup destination, key custody, RPO, and RTO remain a launch blocker and will be decided after deployment selection. |
 | Monitoring | Approved in part | Datadog metrics and structured logs are approved. Alert recipients, escalation path, and retention still need exact values. Browser RUM remains outside the alpha. |
-| Source control | Approved | Private GitHub repository under `TorKallon` for now. Public GitHub hosting is acceptable later. |
+| Source control | Created; plan-limited protections pending | Private `TorKallon/straylight` repository on GitHub with `main`, CI, Dependabot alerts, and automated security fixes. The current GitHub plan does not provide branch protection or secret scanning for a private repository; do not make it public without separate identity and launch approval. |
 | Alpha cohort | Approved | Owner first, then only people the owner explicitly invites. No public signup. Every person receives a separate user account and credential. |
 | Operating visibility | Approved | Begin with the owner's real usage. Keep source-use rankings visible in the Control UI and aggregate model, embedding, storage, and request consumption prominent in Datadog. Set hard spend limits only after observing the initial workload. |
 | Policy and support | Pending | Final retention, privacy wording, and support expectations are not yet selected. |
