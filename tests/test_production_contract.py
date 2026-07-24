@@ -147,6 +147,11 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("datlocale = 'C.UTF-8'", healthcheck)
         self.assertIn("current_setting('data_checksums') = 'on'", healthcheck)
 
+    def test_database_image_declares_the_postgres_runtime_user(self):
+        dockerfile = (ROOT / "infra/postgres/Dockerfile").read_text()
+        final_stage = dockerfile.rsplit("\nFROM ", maxsplit=1)[-1]
+        self.assertRegex(final_stage, r"(?m)^USER postgres:postgres$")
+
     def test_object_store_policy_supports_the_qualified_versioning_contract(self):
         policy = json.loads((ROOT / "infra/minio/app-policy.json").read_text())
         actions = {

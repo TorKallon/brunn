@@ -51,7 +51,7 @@ files or secret stores, never pasted into chat or committed to the repository.
 
 The autonomous candidate passed:
 
-- 76 Python tests;
+- 77 Python tests;
 - 128 Rust unit tests and one concurrency integration test, with formatting,
   Clippy, and RustSec audit gates;
 - 14 SPA tests plus production build and zero npm audit findings;
@@ -72,14 +72,15 @@ source but placed two facts in adjacent claim slots; the exact result and
 targeted rerun are retained in
 `results/2026-07-23-alpha-candidate-comparison.md`.
 
-The final coordinated backup is:
+The final coordinated backup after the non-root PostgreSQL hardening is:
 
-`/tmp/straylight-alpha-final-client-20260724T011613Z/20260724T011613Z-7f94c429-2d81-4df2-9fa6-93efd293463d`
+`/tmp/straylight-alpha-final-nonroot-tBJjCI6P/20260724T020519Z-2271caa1-a30e-43eb-be8b-4dfdbb69a24a`
 
 It passed checksum, database inventory, database invariant, object-version,
 runtime image, and Compose hash verification. Its isolated restore passed
 exact inventory comparison, no-op migrations, authenticated API health, and
-operator credential-loss and compromise recovery in 1,092 seconds.
+operator credential-loss and compromise recovery in 1,098 seconds. The
+restored database ran as the unprivileged `postgres` user.
 
 Application, SPA, MCP, PostgreSQL, Caddy, and the hardened object-store client
 images scan at zero critical and zero high findings. Community MinIO still has

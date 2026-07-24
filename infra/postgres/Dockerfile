@@ -33,3 +33,5 @@ COPY --from=pgvector-build /usr/local/lib/postgresql/vector.so /usr/local/lib/po
 COPY --from=pgvector-build /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
 COPY --from=gosu-build /out/gosu /usr/local/bin/gosu
 COPY healthcheck.sh /usr/local/bin/straylight-postgres-healthcheck
+
+USER postgres:postgres
