@@ -3,6 +3,9 @@ export interface ApiResponse {
   body: Record<string, unknown>;
 }
 
+const MAX_STAGE_FILES = 2_000;
+const MAX_STAGE_BYTES = 64 * 1024 * 1024;
+
 export class StraylightApiError extends Error {
   constructor(
     readonly status: number,
@@ -59,12 +62,31 @@ export class StraylightApiClient {
     const importRoot = await realpath(
       process.env.STRAYLIGHT_MCP_IMPORT_ROOT ?? "/imports",
     );
+    if (files.length > MAX_STAGE_FILES) {
+      throw new Error(`staging is limited to ${MAX_STAGE_FILES} files per request`);
+    }
+    const resolvedFiles = [];
+    let totalBytes = 0;
     for (const file of files) {
       const filePath = await realpath(resolve(importRoot, file.path));
       const insideRoot = relative(importRoot, filePath);
       if (insideRoot.startsWith("..") || insideRoot.includes("/../")) {
         throw new Error("staged paths must remain inside STRAYLIGHT_MCP_IMPORT_ROOT");
       }
+      const metadata = await stat(filePath);
+      if (!metadata.isFile()) {
+        throw new Error(`staged path is not a regular file: ${file.path}`);
+      }
+      if (metadata.size > MAX_STAGE_BYTES) {
+        throw new Error(`staged files are limited to ${MAX_STAGE_BYTES} bytes each`);
+      }
+      totalBytes += metadata.size;
+      if (totalBytes > MAX_STAGE_BYTES) {
+        throw new Error(`staged requests are limited to ${MAX_STAGE_BYTES} bytes`);
+      }
+      resolvedFiles.push({ file, filePath });
+    }
+    for (const { file, filePath } of resolvedFiles) {
       const bytes = await readFile(filePath);
       form.append(
         "file",
@@ -102,5 +124,5 @@ async function parseJson(response: Response): Promise<Record<string, unknown>> {
     return { error: { code: "invalid_upstream_response", message: text.slice(0, 2_000) } };
   }
 }
-import { readFile, realpath } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, relative, resolve } from "node:path";

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, truncate, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { StraylightApiClient, StraylightApiError } from "./api-client.js";
@@ -40,4 +43,35 @@ test("API client preserves structured service failures", async () => {
       && error.status === 403
       && (error.body.error as { code: string }).code === "capability_denied",
   );
+});
+
+test("staging rejects oversized files before reading or sending them", async () => {
+  const importRoot = await mkdtemp(join(tmpdir(), "straylight-mcp-stage-"));
+  const oversizedPath = join(importRoot, "oversized.bin");
+  const previousImportRoot = process.env.STRAYLIGHT_MCP_IMPORT_ROOT;
+  let fetchCalls = 0;
+
+  try {
+    await writeFile(oversizedPath, "");
+    await truncate(oversizedPath, (64 * 1024 * 1024) + 1);
+    process.env.STRAYLIGHT_MCP_IMPORT_ROOT = importRoot;
+    const fakeFetch: typeof fetch = async () => {
+      fetchCalls += 1;
+      throw new Error("fetch must not run for an invalid stage request");
+    };
+    const client = new StraylightApiClient("http://straylight.test", "write-token", fakeFetch);
+
+    await assert.rejects(
+      client.stage("scope:primary", undefined, [{ path: "oversized.bin" }]),
+      /staged files are limited to 67108864 bytes each/,
+    );
+    assert.equal(fetchCalls, 0);
+  } finally {
+    if (previousImportRoot === undefined) {
+      delete process.env.STRAYLIGHT_MCP_IMPORT_ROOT;
+    } else {
+      process.env.STRAYLIGHT_MCP_IMPORT_ROOT = previousImportRoot;
+    }
+    await rm(importRoot, { recursive: true, force: true });
+  }
 });

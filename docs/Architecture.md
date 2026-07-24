@@ -18,7 +18,7 @@ flowchart LR
     A[Agent or SPA] -->|Bearer token| M[MCP or HTTP API]
     M --> R[Rust service]
     R --> P[(Postgres and pgvector)]
-    R --> O[(MinIO object storage)]
+    R --> O[(Versioned S3 object storage)]
     R --> E[OpenAI embeddings]
     R --> D[OpenAI Responses API]
     W[Background worker] --> P
@@ -27,9 +27,9 @@ flowchart LR
     S[TypeScript SPA] -->|same-origin /api| R
 ```
 
-All components run in Docker. Postgres, MinIO, and the API are bound to
-localhost by default. Only the SPA is deliberately reachable from the local
-network.
+All components run in Docker. Postgres, the object store, and the API are bound
+to localhost by default. Only the SPA is deliberately reachable from the
+local network.
 
 ## Product Boundaries
 
@@ -60,7 +60,7 @@ Isolation is enforced at several layers:
 3. Postgres row-level security independently checks the context on every
    protected table.
 4. Queries also constrain user, scope, and immutable corpus revision directly.
-5. MinIO keys begin with the owning user ID.
+5. Object keys begin with the owning user ID.
 6. Embeddings, caches, jobs, audit events, continuation tokens, and import
    receipts never deduplicate across users.
 
@@ -157,6 +157,67 @@ records source-text, metadata, complete-source, pointer, and sufficiency metrics
 for evaluation. MCP emits one textual JSON representation by default so the
 same payload is not duplicated as `structuredContent`.
 
+## Usage Telemetry
+
+Agent read operations append content-free access telemetry after policy
+projection. This does not change any `memory.open`, `memory.query`,
+`memory.read`, `memory.compute`, or `memory.verify` request or response field,
+and telemetry does not affect retrieval rank, authority, dreaming, retention,
+or corpus state.
+
+The post-policy collector inspects only reasoning-bearing fields:
+
+- open evidence, hydrated sources, bounded materialization, checkpoint and
+  revision deltas, and learned context
+- query results
+- successful or partial exact reads
+- compute outputs and their evidence
+- verification claims and evidence
+
+Corpus-map inventory samples, projection metadata, failed exact-read targets,
+write receipts, stages, audit browsing, and control-plane reads do not count as
+reasoning use. Every projected response writes at most one immutable event per
+distinct visible record, with a reference-occurrence count for diagnostics.
+
+## Production Observability
+
+The API and worker emit bounded, content-free DogStatsD metrics through a
+fail-open in-process exporter. Counters are aggregated before transmission and
+latency, size, token, candidate, and queue-age histograms are sent as Datadog
+distributions so percentiles remain meaningful across replicas.
+
+The metric surface covers HTTP traffic and structured failures, authentication
+and capability denial, database transactions and pool pressure, object
+storage, embedding and model dependencies, retrieval lanes and coverage,
+exact reads, deterministic compute, verification, writes, capture, policy
+projection, usage tracking, dreaming, queue health, deletion propagation, and
+worker liveness. All series carry unified `env`, `service`, and `version` tags
+plus a bounded `component` tag.
+
+Identifiers and content never become metric tags. User, credential, session,
+scope, record, source, path, query, title, request ID, model output, and error
+message detail remains in audited records or structured logs. The Datadog
+Agent is an optional deployment dependency: telemetry failure is visible in
+logs and exporter self-telemetry but cannot fail a memory operation.
+Events retain user, scope, credential, session, pinned revision, projection
+receipt, operation, record ID, and timestamp, but no source text, task text, or
+query text.
+
+`GET /v1/usage` rolls chunk, evidence, document, claim, object, relation, and
+asset access up to the source episode that supported it. A source use is one
+source in one projected response, even when several records from the source
+were present. The response includes active, used, and never-used source counts,
+operation totals, and bounded most-used, least-used, and least-recently-used
+lists. Never-used sources are derived by left joining telemetry against the
+active corpus, so absence of an event remains visible.
+
+Telemetry is append-only, user- and scope-isolated with forced RLS, and
+queryable by authorized read credentials. Read-only credentials still cannot
+mutate corpus or workspace state; the trusted service writes telemetry in the
+same way it already writes projection and audit receipts. Telemetry failure is
+logged after the projection transaction and cannot fail or alter the read that
+produced it.
+
 ## Write Path
 
 `memory.capture` is the ordinary source-bearing write surface. It accepts one
@@ -233,9 +294,9 @@ the bypass themselves.
 | --- | --- |
 | Rust API | contracts, authorization, transactions, retrieval, control plane |
 | Rust worker | embeddings, dream jobs, deletion propagation, background repair |
-| PostgreSQL 17 | canonical records, immutable revisions, RLS, FTS, jobs, audit |
+| PostgreSQL 17 | canonical records, immutable revisions, RLS, FTS, jobs, audit; built-in `C.UTF-8` collation and page checksums |
 | pgvector | user-filtered 1536-dimensional semantic embeddings |
-| MinIO | versioned user-scoped source and artifact blobs |
+| Versioned S3 store | user-scoped source and artifact blobs; qualified for conditional create, metadata, versions, delete markers, and exact purge |
 | OpenAI | `text-embedding-3-small`, structured online capture, and bounded Phase 0 consolidation |
 | TypeScript SPA | capture, exploration, work, dreaming, audit, settings |
 | TypeScript MCP | typed open-first agent operations and compact reasoning views over HTTP |
@@ -257,8 +318,16 @@ the bypass themselves.
 
 ## Deployment Boundary
 
-The local alpha is a faithful reference service, not the final public cloud.
-Identity provider selection, account recovery, quotas, rate limits, backup
-policy, collaborative ownership, production observability, and commercial
-packaging remain deployment decisions. They may not weaken the user, scope,
-revision, evidence, or capability contracts above.
+The alpha deployment uses one multi-user service, one PostgreSQL/pgvector
+database, and one S3-compatible versioned object store. Production Compose
+consumes prebuilt candidate images, exposes only the TLS edge, uses file-backed
+secrets, forbids development bootstrap credentials, and provisions owners
+through a one-shot database-operator command. Quotas, request limiting,
+complete export, account deletion, coordinated backup/restore, release
+fingerprinting, and bounded production metrics are implemented.
+
+Final hostname and brand, deployment host and exposure, object-store product,
+off-host backup destination and key custody, alert recipients, alpha cohort,
+token delivery, spend limits, policy wording, and go/no-go remain owner
+decisions. They may not weaken the user, scope, revision, evidence, capability,
+metric-privacy, reasoning-quality, or token-efficiency contracts above.

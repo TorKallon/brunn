@@ -45,6 +45,12 @@ docker compose down
 `docker compose down` preserves named Postgres and MinIO volumes. Do not use
 `down -v` unless intentionally destroying all local Straylight data.
 
+The repository builds its own pinned PostgreSQL 17 plus pgvector 0.8.5 image.
+New clusters use PostgreSQL's built-in `C.UTF-8` collation and page checksums;
+the database healthcheck rejects an OS-dependent or checksum-disabled cluster.
+An older libc-backed cluster must be moved with the coordinated logical
+backup/restore path, not mounted into the Alpine runtime.
+
 The native agent adapter emits minified JSON by default. Use
 `./memory --pretty <operation>` only for human inspection. MCP emits textual
 JSON without a second `structuredContent` copy by default; set
@@ -69,6 +75,9 @@ python3 -m unittest discover -s tests -v
 python3 tests/live_api_smoke.py \
   --base-url http://127.0.0.1:18110 \
   --env-file .env
+python3 tests/live_alpha_safety.py --env-file .env
+python3 tests/live_runtime_safety.py --env-file .env
+make object-store-check
 
 cd apps/web
 npm run build
@@ -86,12 +95,13 @@ docker build -f apps/api/Dockerfile --target builder .
 docker compose run --rm migrate
 ```
 
-The live smoke is destructive within uniquely provisioned evaluation users. It
-leaves those isolated users and corpora because the alpha does not expose a
-user-delete endpoint. Temporary credentials are revoked and dream jobs are
-reviewed or rejected during cleanup. It also performs a real automatic capture,
-proves replay and source-integrity failure semantics, retrieves the committed
-fact, and opens one fresh hard-gated learned view before review.
+The live smoke is destructive only within uniquely provisioned evaluation
+users. Temporary credentials are revoked and dream jobs are reviewed or
+rejected during cleanup. The separate alpha-safety test exercises complete
+export and retention-gated account deletion. The live smoke also performs a
+real automatic capture, proves replay and source-integrity failure semantics,
+retrieves the committed fact, and opens one fresh hard-gated learned view
+before review.
 
 Capture and scheduler tuning is explicit in `.env`:
 
@@ -105,6 +115,77 @@ STRAYLIGHT_DREAM_COOLDOWN_SECONDS=900
 
 The scheduler remains shadow-only. These intervals control refresh latency,
 not authority or active-corpus promotion.
+
+## Production Observability
+
+Straylight emits production metrics through DogStatsD when
+`STRAYLIGHT_METRICS_ENABLED=true`. The exporter aggregates counters and
+histograms in process, sends histograms as Datadog distributions, and fails
+open: an unavailable Agent must never make the API or worker unavailable.
+
+Set the deployment identity and Agent credentials in `.env`:
+
+```bash
+STRAYLIGHT_METRICS_ENABLED=true
+STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125
+STRAYLIGHT_METRICS_FLUSH_SECONDS=3
+DD_API_KEY=<Datadog API key>
+DD_SITE=datadoghq.com
+DD_ENV=production
+DD_SERVICE=straylight
+DD_VERSION=<immutable release version>
+```
+
+Start or inspect the opt-in Agent profile:
+
+```bash
+make observability-up
+make observability-status
+make observability-logs
+```
+
+An externally managed Datadog Agent is also supported. Point
+`STRAYLIGHT_DOGSTATSD_ADDR` at its reachable UDP address and omit the Compose
+profile. API and worker metrics share `env`, `service`, and `version`; the
+bounded `component` tag distinguishes them.
+
+The checked-in dashboard is
+`infra/datadog/straylight-production-dashboard.json`. It covers HTTP demand and
+errors, retrieval quality and lane behavior, reads and deterministic compute,
+writes and capture, model and embedding usage, dreaming, background queues,
+deletion propagation, database pools, and object storage. Dashboard queries
+use the exact emitted metric names.
+
+Metric tags are deliberately content-free and bounded. Never add user, tenant,
+credential, session, record, scope, source, path, query, title, request ID,
+model output, error message, or arbitrary input as a metric tag. Use logs and
+audited database records for individual-event investigation. High-cardinality
+identifiers would both leak context and make custom metrics unbounded.
+
+Quick validation:
+
+```bash
+docker compose --env-file .env --profile observability config --quiet
+docker compose --env-file .env exec datadog-agent agent status
+python3 tests/dogstatsd_wire_smoke.py --env-file .env
+```
+
+After first production traffic, confirm `straylight.http.requests`,
+`straylight.runtime.alive`, and `straylight.worker.cycles` are reporting for
+the expected `env`, `service`, `version`, and `component` tags.
+
+Datadog stores distributions immediately but does not enable p50/p95/p99
+aggregation automatically. Once representative traffic has created the metric
+names, apply the bounded queryable-tag allowlists and enable percentiles:
+
+```bash
+make datadog-configure
+python3 infra/datadog/configure_percentiles.py --strict
+```
+
+The non-strict command skips distributions that have not reported yet and is
+safe to rerun. The strict form is the release gate for every percentile widget
+in the production dashboard.
 
 ## Evaluation
 
@@ -200,14 +281,18 @@ Postgres is canonical for records, revisions, manifests, credentials, jobs,
 and audit. MinIO is canonical for source and artifact blobs. A usable backup
 must capture both stores and preserve their shared revision point.
 
-Before public deployment, define and test:
+`scripts/backup.sh` implements a quiesced, coordinated, checksummed backup of a
+serializable PostgreSQL dump and every object-store version. The v2 manifest
+records retention, deletion expiry, exact runtime images, Compose hashes, and
+the database collation/checksum invariants; `scripts/prune-backups.sh` refuses
+unknown or unverifiable bundles. `scripts/restore-drill.sh` streams the dump
+into a resource-bounded isolated Compose project and verifies database/object
+inventories, storage invariants, migrations, API health, and operator
+onboarding/recovery.
 
-- Postgres physical or logical backup schedule
-- MinIO versioned-bucket replication
-- coordinated restore procedure
-- recovery point and recovery time objectives
-- encryption and key rotation
-- deletion propagation across backups and replicas
+Use `make production-backup` with the production overlay and an approved
+backup root. The schedule, off-host encrypted destination, key custody, and
+final RPO/RTO are launch-owner decisions. See `Alpha Launch Runbook.md`.
 
 ## Security Notes
 

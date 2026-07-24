@@ -1,0 +1,243 @@
+services:
+  db:
+    build: !reset null
+    image: ${STRAYLIGHT_DATABASE_IMAGE:?set STRAYLIGHT_DATABASE_IMAGE}
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ""
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      APP_RW_PASSWORD: ""
+      APP_RW_PASSWORD_FILE: /run/secrets/postgres_app_rw_password
+      APP_RO_PASSWORD: ""
+      APP_RO_PASSWORD_FILE: /run/secrets/postgres_app_ro_password
+    secrets:
+      - postgres_admin_password
+      - postgres_app_rw_password
+      - postgres_app_ro_password
+
+  minio:
+    build: !reset null
+    image: ${STRAYLIGHT_OBJECT_STORE_IMAGE:-straylight-object-store:release-blocked}
+    ports: !reset []
+    environment:
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_ROOT_PASSWORD: ""
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+    secrets:
+      - minio_root_user
+      - minio_root_password
+
+  minio-init:
+    build: !reset null
+    image: ${STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE:-straylight-object-store-client:release-blocked}
+    environment:
+      MINIO_ROOT_USER: ""
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_ROOT_PASSWORD: ""
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+      STRAYLIGHT_MINIO_ACCESS_KEY: ""
+      STRAYLIGHT_MINIO_ACCESS_KEY_FILE: /run/secrets/minio_app_access_key
+      STRAYLIGHT_MINIO_SECRET_KEY: ""
+      STRAYLIGHT_MINIO_SECRET_KEY_FILE: /run/secrets/minio_app_secret_key
+    secrets:
+      - minio_root_user
+      - minio_root_password
+      - minio_app_access_key
+      - minio_app_secret_key
+
+  migrate:
+    build: !reset null
+    image: ${STRAYLIGHT_API_IMAGE:-straylight-api:release-blocked}
+    environment: &production-app-environment
+      STRAYLIGHT_ENV: production
+      DD_ENV: production
+      DD_VERSION: ${STRAYLIGHT_RELEASE_REVISION:-unreleased}
+      DATABASE_URL_RW: ""
+      STRAYLIGHT_DATABASE_URL: ""
+      DATABASE_URL_RW_FILE: /run/secrets/database_url_rw
+      DATABASE_URL_RO: ""
+      STRAYLIGHT_READ_ONLY_DATABASE_URL: ""
+      DATABASE_URL_RO_FILE: /run/secrets/database_url_ro
+      DATABASE_URL_ADMIN: ""
+      STRAYLIGHT_ADMIN_DATABASE_URL: ""
+      DATABASE_URL_ADMIN_FILE: /run/secrets/database_url_admin
+      STRAYLIGHT_S3_ACCESS_KEY: ""
+      STRAYLIGHT_MINIO_ACCESS_KEY: ""
+      STRAYLIGHT_S3_ACCESS_KEY_FILE: /run/secrets/minio_app_access_key
+      STRAYLIGHT_S3_SECRET_KEY: ""
+      STRAYLIGHT_MINIO_SECRET_KEY: ""
+      STRAYLIGHT_S3_SECRET_KEY_FILE: /run/secrets/minio_app_secret_key
+      STRAYLIGHT_CONTINUATION_SECRET: ""
+      STRAYLIGHT_CONTINUATION_SIGNING_KEY: ""
+      STRAYLIGHT_CONTINUATION_SECRET_FILE: /run/secrets/continuation_signing_key
+      OPENAI_API_KEY: ""
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      STRAYLIGHT_DEV_READ_WRITE_TOKEN: ""
+      STRAYLIGHT_DEV_READ_ONLY_TOKEN: ""
+    secrets: &production-app-secrets
+      - database_url_rw
+      - database_url_ro
+      - database_url_admin
+      - minio_app_access_key
+      - minio_app_secret_key
+      - continuation_signing_key
+      - openai_api_key
+
+  api:
+    build: !reset null
+    image: ${STRAYLIGHT_API_IMAGE:-straylight-api:release-blocked}
+    ports: !reset []
+    environment:
+      <<: *production-app-environment
+      DATABASE_URL_ADMIN_FILE: ""
+    labels:
+      com.datadoghq.tags.env: production
+      com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
+      com.datadoghq.tags.version: ${STRAYLIGHT_RELEASE_REVISION:-unreleased}
+      com.straylight.component: api
+      com.datadoghq.ad.logs: >-
+        [{"source":"rust","service":"straylight"}]
+    secrets:
+      - database_url_rw
+      - database_url_ro
+      - minio_app_access_key
+      - minio_app_secret_key
+      - continuation_signing_key
+      - openai_api_key
+
+  worker:
+    build: !reset null
+    image: ${STRAYLIGHT_API_IMAGE:-straylight-api:release-blocked}
+    environment: *production-app-environment
+    secrets: *production-app-secrets
+    labels:
+      com.datadoghq.tags.env: production
+      com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
+      com.datadoghq.tags.version: ${STRAYLIGHT_RELEASE_REVISION:-unreleased}
+      com.straylight.component: worker
+      com.datadoghq.ad.logs: >-
+        [{"source":"rust","service":"straylight"}]
+
+  web:
+    build: !reset null
+    image: ${STRAYLIGHT_WEB_IMAGE:-straylight-web:release-blocked}
+    ports: !reset []
+
+  mcp:
+    build: !reset null
+    image: ${STRAYLIGHT_MCP_IMAGE:-straylight-mcp:release-blocked}
+
+  datadog-agent:
+    environment:
+      DD_API_KEY: ENC[dd_api_key]
+      DD_SECRET_BACKEND_TYPE: docker.secrets
+      DD_ENV: production
+      DD_LOGS_ENABLED: "false"
+      DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL: "false"
+      DD_PROCESS_CONFIG_PROCESS_COLLECTION_ENABLED: "false"
+    secrets:
+      - dd_api_key
+    volumes: !reset []
+
+  edge-permissions:
+    image: alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        for directory in /data /config; do
+          marker="$${directory}/.straylight-owner-10001"
+          if [ ! -e "$${marker}" ]; then
+            chown -R 10001:10001 "$${directory}"
+            : > "$${marker}"
+            chown 10001:10001 "$${marker}"
+          fi
+        done
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    mem_limit: 128m
+    cpus: 1
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+
+  edge:
+    image: ${STRAYLIGHT_EDGE_IMAGE:-straylight-caddy:release-blocked}
+    environment:
+      STRAYLIGHT_PUBLIC_HOST: ${STRAYLIGHT_PUBLIC_HOST:?set STRAYLIGHT_PUBLIC_HOST}
+      STRAYLIGHT_ACME_EMAIL: ${STRAYLIGHT_ACME_EMAIL:?set STRAYLIGHT_ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      edge-permissions:
+        condition: service_completed_successfully
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  postgres_admin_password:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/postgres_admin_password
+  postgres_app_rw_password:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/postgres_app_rw_password
+  postgres_app_ro_password:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/postgres_app_ro_password
+  database_url_rw:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/database_url_rw
+  database_url_ro:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/database_url_ro
+  database_url_admin:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/database_url_admin
+  minio_root_user:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_root_user
+  minio_root_password:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_root_password
+  minio_app_access_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_app_access_key
+  minio_app_secret_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_app_secret_key
+  continuation_signing_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/continuation_signing_key
+  openai_api_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/openai_api_key
+  dd_api_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/dd_api_key

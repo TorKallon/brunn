@@ -11,6 +11,7 @@ use crate::{
     dream_service::{self, DreamRollbackRequest, DreamSchedulerControlRequest},
     error::ApiResult,
     models::{DreamCreateRequest, DreamReviewRequest, ListQuery},
+    telemetry,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -37,9 +38,9 @@ async fn create(
     Extension(auth): Extension<AuthContext>,
     Json(request): Json<DreamCreateRequest>,
 ) -> ApiResult<Json<Value>> {
-    Ok(Json(
-        dream_service::create_job(&state, &auth, request).await?,
-    ))
+    let result = dream_service::create_job(&state, &auth, request).await?;
+    telemetry::record_dream_action("create", &result);
+    Ok(Json(result))
 }
 
 async fn run_now(
@@ -47,9 +48,9 @@ async fn run_now(
     Extension(auth): Extension<AuthContext>,
     Json(request): Json<DreamCreateRequest>,
 ) -> ApiResult<Json<Value>> {
-    Ok(Json(
-        dream_service::run_now_job(&state, &auth, request).await?,
-    ))
+    let result = dream_service::run_now_job(&state, &auth, request).await?;
+    telemetry::record_dream_action("run_now", &result);
+    Ok(Json(result))
 }
 
 async fn scheduler(
@@ -67,9 +68,9 @@ async fn update_scheduler(
     Extension(auth): Extension<AuthContext>,
     Json(request): Json<DreamSchedulerControlRequest>,
 ) -> ApiResult<Json<Value>> {
-    Ok(Json(
-        dream_service::update_scheduler_control(&state, &auth, request).await?,
-    ))
+    let result = dream_service::update_scheduler_control(&state, &auth, request).await?;
+    telemetry::record_dream_action("update_scheduler", &result);
+    Ok(Json(result))
 }
 
 async fn get_dream(
@@ -87,9 +88,9 @@ async fn cancel(
     Extension(auth): Extension<AuthContext>,
     Path(dream_id): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    Ok(Json(
-        dream_service::cancel_job(&state, &auth, &dream_id).await?,
-    ))
+    let result = dream_service::cancel_job(&state, &auth, &dream_id).await?;
+    telemetry::record_dream_action("cancel", &result);
+    Ok(Json(result))
 }
 
 async fn review(
@@ -98,9 +99,9 @@ async fn review(
     Path(dream_id): Path<String>,
     Json(request): Json<DreamReviewRequest>,
 ) -> ApiResult<Json<Value>> {
-    Ok(Json(
-        dream_service::review_job(&state, &auth, &dream_id, request).await?,
-    ))
+    let result = dream_service::review_job(&state, &auth, &dream_id, request).await?;
+    telemetry::record_dream_action("review", &result);
+    Ok(Json(result))
 }
 
 async fn rollback(
@@ -109,7 +110,7 @@ async fn rollback(
     Path(dream_id): Path<String>,
     Json(request): Json<DreamRollbackRequest>,
 ) -> ApiResult<Json<Value>> {
-    Ok(Json(
-        dream_service::rollback_job(&state, &auth, &dream_id, request).await?,
-    ))
+    let result = dream_service::rollback_job(&state, &auth, &dream_id, request).await?;
+    telemetry::record_dream_action("rollback", &result);
+    Ok(Json(result))
 }

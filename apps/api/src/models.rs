@@ -506,7 +506,7 @@ pub struct ApiEnvelope<T> {
 impl<T> ApiEnvelope<T> {
     pub fn complete(data: T) -> Self {
         Self {
-            request_id: format!("req_{}", Uuid::now_v7().simple()),
+            request_id: crate::request_context::current_request_id(),
             session_id: None,
             corpus_revision: None,
             status: ResponseStatus::Complete,

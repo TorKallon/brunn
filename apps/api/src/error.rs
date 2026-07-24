@@ -1,3 +1,4 @@
+use crate::request_context;
 use axum::{
     Json,
     http::StatusCode,
@@ -7,8 +8,6 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use thiserror::Error;
 use tracing::error;
-use uuid::Uuid;
-
 pub type ApiResult<T> = Result<T, ApiError>;
 
 #[derive(Debug, Error)]
@@ -109,7 +108,14 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let request_id = format!("req_{}", Uuid::now_v7().simple());
+        let request_id = request_context::current_request_id();
+        let error_kind = match &self {
+            Self::Public { .. } => "public",
+            Self::Database(_) => "database",
+            Self::Migration(_) => "migration",
+            Self::Json(_) => "json",
+            Self::Internal(_) => "internal",
+        };
         let (status, code, message, details) = match self {
             Self::Public {
                 status,
@@ -127,6 +133,13 @@ impl IntoResponse for ApiError {
                 )
             }
         };
+        metrics::counter!(
+            "api.errors",
+            "code" => code,
+            "error_kind" => error_kind,
+            "status_code" => status.as_u16().to_string()
+        )
+        .increment(1);
         (
             status,
             Json(ErrorBody {

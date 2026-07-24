@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Check, GitCompareArrows, RefreshCw, Save, ShieldQuestion } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { DataTable } from "../components/DataTable";
 import { JsonView } from "../components/JsonView";
 import { DefinitionList, Metric, Page, PageHeader, Section } from "../components/Page";
@@ -16,15 +16,26 @@ import {
 import { useApi } from "../lib/auth";
 import { useReadOnly } from "../lib/current";
 import { formatDate, shortId } from "../lib/format";
-import type { OperationSummary, VerificationResult } from "../lib/types";
+import type {
+  JsonValue,
+  OperationSummary,
+  SessionDetail,
+  VerificationResult,
+} from "../lib/types";
 
 export function WorkspacePage() {
   const { sessionId } = useParams({ from: "/sessions/$sessionId" });
   const api = useApi();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const readOnly = useReadOnly();
   const [checkpointTitle, setCheckpointTitle] = useState("");
   const [checkpointObjective, setCheckpointObjective] = useState("");
+  const [checkpointCurrentState, setCheckpointCurrentState] = useState("");
+  const [checkpointDecisions, setCheckpointDecisions] = useState("");
+  const [checkpointQuestions, setCheckpointQuestions] = useState("");
+  const [checkpointActions, setCheckpointActions] = useState("");
+  const [checkpointArtifacts, setCheckpointArtifacts] = useState("");
   const [verificationClaim, setVerificationClaim] = useState("");
   const sessionQuery = useQuery({
     queryKey: ["session", sessionId],
@@ -34,25 +45,50 @@ export function WorkspacePage() {
     mutationFn: () => api.refreshSession(sessionId),
     onSuccess: (result) => {
       queryClient.setQueryData(["session", result.data.id], result);
+      void navigate({
+        to: "/sessions/$sessionId",
+        params: { sessionId: result.data.id },
+      });
     },
   });
   const checkpointMutation = useMutation({
-    mutationFn: () =>
-      api.checkpoint({
+    mutationFn: () => {
+      const currentSession = sessionQuery.data?.data;
+      const currentCheckpoint = currentSession?.checkpoint;
+      return api.checkpoint({
         session_id: sessionId,
-        parent_checkpoint_id: sessionQuery.data?.data.resumed_checkpoint_id ?? null,
+        parent_checkpoint_id:
+          currentCheckpoint?.id ?? currentSession?.resumed_checkpoint_id ?? null,
         state: {
+          ...(currentCheckpoint?.state ?? {}),
           title: checkpointTitle,
           objective: checkpointObjective || checkpointTitle,
-          current_state: [],
-          decisions: [],
-          open_questions: [],
-          next_actions: [],
-          artifacts: [],
+          current_state: preserveOrParseLines(
+            checkpointCurrentState,
+            currentCheckpoint?.state?.current_state,
+          ),
+          decisions: preserveOrParseLines(
+            checkpointDecisions,
+            currentCheckpoint?.state?.decisions,
+          ),
+          open_questions: preserveOrParseLines(
+            checkpointQuestions,
+            currentCheckpoint?.state?.open_questions
+              ?? currentCheckpoint?.state?.unresolved_gaps,
+          ),
+          next_actions: preserveOrParseLines(
+            checkpointActions,
+            currentCheckpoint?.state?.next_actions,
+          ),
+          artifacts: preserveOrParseLines(
+            checkpointArtifacts,
+            currentCheckpoint?.state?.artifacts,
+          ),
         },
-        source_refs: sessionQuery.data?.data.checkpoint?.source_refs ?? [],
+        source_refs: checkpointSourceRefs(currentSession),
         idempotency_key: `ui-checkpoint:${sessionId}:${checkpointTitle}:${checkpointObjective}`.slice(0, 240),
-      }),
+      });
+    },
     onSuccess: () => {
       setCheckpointTitle("");
       setCheckpointObjective("");
@@ -60,6 +96,20 @@ export function WorkspacePage() {
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
     },
   });
+
+  useEffect(() => {
+    const checkpoint = sessionQuery.data?.data.checkpoint;
+    if (!checkpoint) return;
+    setCheckpointTitle(checkpoint.title ?? "");
+    setCheckpointObjective(checkpoint.objective ?? "");
+    setCheckpointCurrentState(formatLines(checkpoint.state?.current_state));
+    setCheckpointDecisions(formatLines(checkpoint.state?.decisions));
+    setCheckpointQuestions(
+      formatLines(checkpoint.state?.open_questions ?? checkpoint.state?.unresolved_gaps),
+    );
+    setCheckpointActions(formatLines(checkpoint.state?.next_actions));
+    setCheckpointArtifacts(formatLines(checkpoint.state?.artifacts));
+  }, [sessionQuery.data?.data.checkpoint?.id]);
   const verifyMutation = useMutation({
     mutationFn: () =>
       api.verify({
@@ -158,6 +208,11 @@ export function WorkspacePage() {
           <form className="stacked-form" onSubmit={submitCheckpoint}>
             <label className="field"><span>Title</span><input value={checkpointTitle} onChange={(event) => setCheckpointTitle(event.target.value)} disabled={readOnly} required /></label>
             <label className="field"><span>Objective</span><textarea rows={4} value={checkpointObjective} onChange={(event) => setCheckpointObjective(event.target.value)} disabled={readOnly} /></label>
+            <label className="field"><span>Current state</span><textarea rows={5} value={checkpointCurrentState} onChange={(event) => setCheckpointCurrentState(event.target.value)} disabled={readOnly} /></label>
+            <label className="field"><span>Decisions</span><textarea rows={4} value={checkpointDecisions} onChange={(event) => setCheckpointDecisions(event.target.value)} disabled={readOnly} /></label>
+            <label className="field"><span>Open questions</span><textarea rows={4} value={checkpointQuestions} onChange={(event) => setCheckpointQuestions(event.target.value)} disabled={readOnly} /></label>
+            <label className="field"><span>Next actions</span><textarea rows={4} value={checkpointActions} onChange={(event) => setCheckpointActions(event.target.value)} disabled={readOnly} /></label>
+            <label className="field"><span>Artifacts</span><textarea rows={3} value={checkpointArtifacts} onChange={(event) => setCheckpointArtifacts(event.target.value)} disabled={readOnly} /></label>
             <label className="field"><span>Expected revision</span><input value={session.corpus_revision ?? ""} readOnly /></label>
             <button className="button primary" type="submit" disabled={readOnly || !checkpointTitle.trim() || checkpointMutation.isPending} title={readOnly ? "Requires a read/write credential" : undefined}>
               <Save size={17} />
@@ -238,4 +293,49 @@ export function WorkspacePage() {
       </Section>
     </Page>
   );
+}
+
+function parseLines(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function formatLines(value: JsonValue | undefined): string {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((item) => {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        for (const key of ["text", "title", "description", "action"]) {
+          const candidate = item[key];
+          if (typeof candidate === "string") return candidate;
+        }
+      }
+      return JSON.stringify(item);
+    })
+    .join("\n");
+}
+
+function preserveOrParseLines(value: string, current: JsonValue | undefined): JsonValue {
+  return current !== undefined && formatLines(current) === value
+    ? current
+    : parseLines(value);
+}
+
+function checkpointSourceRefs(session: SessionDetail | undefined): string[] {
+  const refs = new Set<string>(session?.checkpoint?.source_refs ?? []);
+  for (const evidence of session?.initial_evidence ?? []) {
+    for (const candidate of [
+      evidence.source_id,
+      evidence.source_ref,
+      evidence.reference,
+    ]) {
+      if (candidate && /^(source|source_episode|document|chunk|object|claim|artifact):/.test(candidate)) {
+        refs.add(candidate);
+      }
+    }
+  }
+  return [...refs];
 }

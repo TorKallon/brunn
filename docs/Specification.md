@@ -331,6 +331,46 @@ lexical search, embeddings, caches, derived views, exports/replicas when
 configured, and unreferenced assets. Per-surface receipts are required. A job
 cannot report completion while required cleanup is pending or failed.
 
+## Data Usage Telemetry
+
+Usage tracking is transparent to the five reasoning APIs. Their request and
+response contracts remain unchanged.
+
+A tracked access is a durable, content-free event for one distinct record
+visible in the post-policy reasoning payload of one `open`, `query`, `read`,
+`compute`, or `verify` response. The event records user, scope, credential,
+session, pinned corpus revision, projection receipt, operation, target record,
+reference-occurrence count, and time. It must not store task text, query text,
+source text, excerpts, claim values, or model output.
+
+The collector must:
+
+- run after policy projection
+- exclude withheld data, corpus inventory samples, projection metadata, failed
+  read targets, writes, stage inspection, and control-plane browsing
+- include array-carried evidence and selected references
+- deduplicate the same record within one response while retaining its visible
+  occurrence count
+- fail open after the projection receipt commits, without changing the
+  successful reasoning response
+- have no effect on ranking, dreaming, authority, canonicality, corpus
+  membership, or retention decisions
+
+Source usage rolls supported record access up through immutable provenance. One
+source use is one source in one projection receipt, regardless of how many of
+its chunks, evidence items, or structured records were visible. The usage
+summary enumerates current active source episodes and reports all-time most
+used, least used, and least recently used sources. Never-used sources have zero
+events and a null last-use time; they sort first in least-recently-used output.
+Telemetry begins at migration activation and is not retroactively inferred
+from historical audit or retrieval rows.
+
+`GET /v1/usage` requires read capability, respects credential scope grants and
+forced RLS, supports the standard scope, text-query, and bounded-limit filters,
+and is itself untracked. Read-only credentials may inspect usage and may cause
+system telemetry through ordinary reasoning calls, but cannot directly insert,
+update, or delete access rows.
+
 ## Response Contract
 
 Reasoning responses use a common envelope with request ID, session, corpus
@@ -358,16 +398,28 @@ The alpha is releasable for inspection when all of the following hold:
 4. Automatic capture, staging, archive-member promotion, checkpoint resume,
    automatic learned-context inclusion, deep shadow dreaming, and deletion
    propagation pass live tests.
-5. The native service matches or beats the unchanged local Markdown baseline
+5. Post-policy usage telemetry proves read-only open/query tracking, does not
+   count corpus inventory or failed reads, does not recursively count usage
+   inspection, and preserves every reasoning response contract.
+6. Production metrics pass a DogStatsD wire test, use only bounded content-free
+   tags, preserve API behavior when the exporter is disabled or unavailable,
+   and the checked-in Datadog dashboard validates against the emitted names.
+7. The native service matches or beats the unchanged local Markdown baseline
    on every active card in the main, Rupture Ops, personal coordination, and
    checkpoint-transition suites. Retired cards remain reproducible historical
    fixtures but do not count toward the current product gate.
-6. Failures are reported honestly; no path claims complete coverage, policy
+8. Failures are reported honestly; no path claims complete coverage, policy
    application, validation, or cleanup that did not occur.
 
 ## Deferred Public-Service Decisions
 
-Identity provider, account recovery, quotas, abuse controls, collaborative
-ownership, billing, production backup and restore objectives, final retention
-periods, and public descriptor are outside the local alpha. They must preserve
-the contracts above.
+The alpha implements token administration and operator recovery, per-user
+quotas, request limiting, complete export and deletion, coordinated
+backup/restore, production metrics, and immutable candidate deployment.
+
+Owner approval is still required for the final hostname and brand,
+deployment host and network exposure, object-store product, off-host backup
+destination and key custody, alert recipients, alpha cohort and token-delivery
+method, spend limits, final retention/support/privacy wording, and launch
+go/no-go. Future identity-provider, collaborative-ownership, billing, and
+commercial packaging work must preserve the contracts above.

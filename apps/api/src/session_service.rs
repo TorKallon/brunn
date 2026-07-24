@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Instant,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
@@ -13,6 +16,7 @@ use crate::{
     models::{Capability, OpenRequest},
     policy::{self, PolicyDocument, ProjectionReceipt, ScopedPolicy},
     refs::RecordRef,
+    telemetry, usage_service,
 };
 
 const SESSION_TTL_HOURS: i64 = 24;
@@ -48,6 +52,7 @@ pub async fn project_response(
     action: &'static str,
     data: Value,
 ) -> ApiResult<Value> {
+    let started = Instant::now();
     if data.get("projection").is_some() {
         return Err(ApiError::Internal(
             "memory response already contains a top-level projection field".to_owned(),
@@ -128,6 +133,65 @@ pub async fn project_response(
         generated_at,
     )?;
     tx.commit().await?;
+
+    metrics::counter!(
+        "projection.responses",
+        "operation" => operation,
+        "action" => action
+    )
+    .increment(1);
+    metrics::histogram!(
+        "projection.duration_ms",
+        "operation" => operation,
+        "action" => action
+    )
+    .record(telemetry::elapsed_ms(started));
+    metrics::histogram!(
+        "projection.input_record_occurrences",
+        "operation" => operation
+    )
+    .record(occurrences.len() as f64);
+    metrics::histogram!(
+        "projection.included_paths",
+        "operation" => operation
+    )
+    .record(projection.receipt.included_paths.len() as f64);
+    metrics::histogram!(
+        "projection.withheld_paths",
+        "operation" => operation
+    )
+    .record(projection.receipt.withheld.len() as f64);
+    metrics::histogram!(
+        "projection.transforms",
+        "operation" => operation
+    )
+    .record(projection.receipt.transforms.len() as f64);
+
+    if let Ok(session_id) = parse_session_ref(&context.subject_ref)
+        && let Err(error) = usage_service::record_projection_accesses(
+            state,
+            auth,
+            context.scope_id,
+            session_id,
+            context.source_corpus_revision_id,
+            receipt_id,
+            operation,
+            &data,
+        )
+        .await
+    {
+        metrics::counter!(
+            "usage_tracking.errors",
+            "operation" => operation
+        )
+        .increment(1);
+        tracing::warn!(
+            operation,
+            projection_receipt = %receipt_id,
+            error = %error,
+            "post-policy record access telemetry was not persisted"
+        );
+    }
     Ok(data)
 }
 
@@ -263,6 +327,14 @@ pub async fn provision(
     .await?;
 
     tx.commit().await?;
+    metrics::counter!(
+        "session.created",
+        "mode" => mode,
+        "resumed" => if resumed_checkpoint_id.is_some() { "true" } else { "false" }
+    )
+    .increment(1);
+    metrics::histogram!("session.root_count", "mode" => mode).record(roots.len() as f64);
+    metrics::histogram!("session.task_bytes", "mode" => mode).record(request.task.len() as f64);
     Ok(format!("session:{session_id}"))
 }
 
@@ -280,12 +352,13 @@ pub async fn refresh(state: &AppState, auth: &AuthContext, session_ref: &str) ->
         FROM straylight.sessions AS session
         JOIN straylight.scopes AS scope
           ON scope.user_id=session.user_id AND scope.id=session.scope_id
-        WHERE session.user_id=$1 AND session.id=$2 AND session.credential_id=$3
+        WHERE session.user_id=$1 AND session.id=$2
+          AND scope.scope_ref=ANY($3::text[])
         "#,
     )
     .bind(auth.user_id.0)
     .bind(previous_session_id)
-    .bind(auth.credential_id.0)
+    .bind(&auth.scope_refs)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::not_found("session_not_found", session_ref))?;
@@ -377,6 +450,17 @@ pub async fn refresh(state: &AppState, auth: &AuthContext, session_ref: &str) ->
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    metrics::counter!(
+        "session.refreshed",
+        "mode" => mode,
+        "revision_changed" => if previous_revision_id != latest_revision_id {
+            "true"
+        } else {
+            "false"
+        },
+        "checkpoint_resumed" => if latest_checkpoint.is_some() { "true" } else { "false" }
+    )
+    .increment(1);
     Ok(format!("session:{new_session_id}"))
 }
 
@@ -405,14 +489,13 @@ async fn load_session_projection_context(
         FROM straylight.sessions AS session
         JOIN straylight.scopes AS scope
           ON scope.user_id=session.user_id AND scope.id=session.scope_id
-        WHERE session.user_id=$1 AND session.id=$2 AND session.credential_id=$3
-          AND scope.scope_ref=ANY($4::text[])
+        WHERE session.user_id=$1 AND session.id=$2
+          AND scope.scope_ref=ANY($3::text[])
           AND session.expires_at > clock_timestamp()
         "#,
     )
     .bind(auth.user_id.0)
     .bind(session_id)
-    .bind(auth.credential_id.0)
     .bind(&auth.scope_refs)
     .fetch_optional(&mut **tx)
     .await?
@@ -452,8 +535,8 @@ async fn load_stage_projection_context(
           ON revision.user_id=stage.user_id
          AND revision.policy_id=stage.policy_id
          AND revision.version=stage.policy_version
-        WHERE stage.user_id=$1 AND stage.id=$2 AND stage.credential_id=$3
-          AND scope.scope_ref=ANY($4::text[])
+        WHERE stage.user_id=$1 AND stage.id=$2
+          AND scope.scope_ref=ANY($3::text[])
           AND stage.inventory_hash IS NOT NULL
           AND stage.status IN ('ready','promoted')
           AND stage.expires_at > clock_timestamp()
@@ -461,7 +544,6 @@ async fn load_stage_projection_context(
     )
     .bind(auth.user_id.0)
     .bind(stage_id)
-    .bind(auth.credential_id.0)
     .bind(&auth.scope_refs)
     .fetch_optional(&mut **tx)
     .await?

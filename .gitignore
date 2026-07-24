@@ -1,4 +1,5 @@
 .env
+/production.env
 .DS_Store
 __pycache__/
 *.py[cod]
@@ -13,5 +14,10 @@ apps/mcp/node_modules/
 apps/mcp/dist/
 
 runs/
+backups/
+release-artifacts/
+secrets/
+operator-output/
+deployment-records/
 *.sqlite
 *.sqlite3

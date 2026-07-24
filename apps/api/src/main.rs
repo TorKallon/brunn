@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
-use straylight::{AppState, Config, db, router, worker};
+use straylight::{
+    AppState, Config, db, object_store::ObjectStore, operator_service, router, telemetry, worker,
+};
 use tokio::net::TcpListener;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -16,12 +18,52 @@ enum Command {
     Worker,
     Migrate,
     Healthcheck,
+    ObjectStoreCheck,
+    Operator {
+        #[command(subcommand)]
+        command: OperatorCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum OperatorCommand {
+    ProvisionUser {
+        #[arg(long)]
+        external_ref: String,
+        #[arg(long)]
+        display_name: String,
+        #[arg(long, default_value = "Initial owner")]
+        credential_name: String,
+    },
+    RecoverUser {
+        #[arg(long)]
+        user_id: String,
+        #[arg(long, default_value = "Recovered owner")]
+        credential_name: String,
+        #[arg(long)]
+        revoke_existing_owner_credentials: bool,
+    },
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
     let cli = Cli::parse();
+    let component = match &cli.command {
+        Command::Serve => "api",
+        Command::Worker => "worker",
+        Command::Migrate => "migrate",
+        Command::Healthcheck => "healthcheck",
+        Command::ObjectStoreCheck => "operator",
+        Command::Operator { .. } => "operator",
+    };
+    let metrics_enabled = match telemetry::init(component) {
+        Ok(enabled) => enabled,
+        Err(error) => {
+            tracing::warn!(%error, component, "Datadog metrics exporter is disabled");
+            false
+        }
+    };
     if matches!(&cli.command, Command::Healthcheck) {
         let url = std::env::var("STRAYLIGHT_HEALTHCHECK_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:8080/health".to_owned());
@@ -40,13 +82,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Serve => {
             let bind = config.bind;
             let state = AppState::connect(config).await?;
+            if metrics_enabled {
+                telemetry::spawn_runtime_metrics(state.clone());
+            }
             let listener = TcpListener::bind(bind).await?;
             tracing::info!(%bind, "Straylight API listening");
             axum::serve(listener, router(state)).await?;
         }
         Command::Worker => {
             let state = AppState::connect(config).await?;
+            if metrics_enabled {
+                telemetry::spawn_runtime_metrics(state.clone());
+            }
             worker::run(state).await?;
+        }
+        Command::ObjectStoreCheck => {
+            let result = ObjectStore::new(&config).await?.qualify().await?;
+            println!("{}", serde_json::to_string(&result)?);
+        }
+        Command::Operator { command } => {
+            let database_url = Config::admin_database_url_from_env()?;
+            let result = match command {
+                OperatorCommand::ProvisionUser {
+                    external_ref,
+                    display_name,
+                    credential_name,
+                } => {
+                    operator_service::provision_user(
+                        &database_url,
+                        &external_ref,
+                        &display_name,
+                        &credential_name,
+                    )
+                    .await?
+                }
+                OperatorCommand::RecoverUser {
+                    user_id,
+                    credential_name,
+                    revoke_existing_owner_credentials,
+                } => {
+                    operator_service::recover_user(
+                        &database_url,
+                        &user_id,
+                        &credential_name,
+                        revoke_existing_owner_credentials,
+                    )
+                    .await?
+                }
+            };
+            println!("{}", serde_json::to_string(&result)?);
         }
         Command::Healthcheck => unreachable!(),
     }

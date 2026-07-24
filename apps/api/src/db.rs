@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Instant};
 
 use sha2::Digest;
 use sqlx::{
@@ -13,6 +13,7 @@ use crate::{
     embeddings::{SharedEmbedder, from_config as embedder_from_config},
     error::{ApiError, ApiResult},
     object_store::ObjectStore,
+    quota::{PreauthRateLimiter, RequestRateLimiter},
 };
 
 #[derive(Clone)]
@@ -24,6 +25,8 @@ pub struct AppState {
     pub admin_pool: Option<PgPool>,
     pub embedder: SharedEmbedder,
     pub object_store: ObjectStore,
+    pub preauth_rate_limiter: PreauthRateLimiter,
+    pub request_rate_limiter: RequestRateLimiter,
 }
 
 impl AppState {
@@ -53,6 +56,9 @@ impl AppState {
         let embedder = embedder_from_config(&config)?;
         let object_store = ObjectStore::new(&config).await?;
         object_store.ensure_bucket().await?;
+        let preauth_rate_limiter =
+            PreauthRateLimiter::new(config.requests_per_minute.saturating_mul(10));
+        let request_rate_limiter = RequestRateLimiter::new(config.requests_per_minute);
         Ok(Self {
             config,
             auth_pool,
@@ -61,37 +67,82 @@ impl AppState {
             admin_pool,
             embedder,
             object_store,
+            preauth_rate_limiter,
+            request_rate_limiter,
         })
     }
 
     pub async fn begin_read(&self, auth: &AuthContext) -> ApiResult<Transaction<'_, Postgres>> {
-        let mut transaction = self.ro_pool.begin().await?;
+        let started = Instant::now();
+        let result = self.ro_pool.begin().await;
+        metrics::histogram!(
+            "db.transaction.begin.duration_ms",
+            "access" => "read",
+            "result" => if result.is_ok() { "success" } else { "error" }
+        )
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
+        let mut transaction = result?;
         set_context(&mut transaction, auth).await?;
         Ok(transaction)
     }
 
     pub async fn begin_write(&self, auth: &AuthContext) -> ApiResult<Transaction<'_, Postgres>> {
-        let mut transaction = self.rw_pool.begin().await?;
+        let started = Instant::now();
+        let result = self.rw_pool.begin().await;
+        metrics::histogram!(
+            "db.transaction.begin.duration_ms",
+            "access" => "write",
+            "result" => if result.is_ok() { "success" } else { "error" }
+        )
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
+        let mut transaction = result?;
         set_context(&mut transaction, auth).await?;
+        let status = sqlx::query_scalar::<_, String>(
+            "SELECT account_status FROM straylight.users WHERE id=$1",
+        )
+        .bind(auth.user_id.0)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if status != "active" {
+            return Err(ApiError::with_details(
+                http::StatusCode::LOCKED,
+                "account_locked",
+                "the account is not accepting new mutations",
+                serde_json::json!({"account_status": status}),
+            ));
+        }
         Ok(transaction)
     }
 }
 
 async fn pool(url: &str, max: u32, application_name: &str) -> ApiResult<PgPool> {
+    let started = Instant::now();
     let options = PgConnectOptions::from_str(url)
         .map_err(|error| ApiError::configuration(format!("invalid database URL: {error}")))?
         .application_name(application_name);
-    Ok(PgPoolOptions::new()
+    let result = PgPoolOptions::new()
         .max_connections(max)
         .acquire_timeout(std::time::Duration::from_secs(15))
         .connect_with(options)
-        .await?)
+        .await;
+    metrics::histogram!(
+        "db.pool.connect.duration_ms",
+        "pool" => application_name.to_owned(),
+        "result" => if result.is_ok() { "success" } else { "error" }
+    )
+    .record(started.elapsed().as_secs_f64() * 1_000.0);
+    Ok(result?)
+}
+
+pub async fn operator_pool(url: &str) -> ApiResult<PgPool> {
+    pool(url, 1, "straylight-operator").await
 }
 
 pub async fn set_context(
     transaction: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
 ) -> ApiResult<()> {
+    let started = Instant::now();
     let mut capabilities: Vec<_> = auth.capabilities.iter().cloned().collect();
     capabilities.sort();
     let row = sqlx::query(
@@ -134,6 +185,7 @@ pub async fn set_context(
     )
     .execute(&mut **transaction)
     .await?;
+    metrics::histogram!("db.context.duration_ms").record(started.elapsed().as_secs_f64() * 1_000.0);
     Ok(())
 }
 
@@ -170,6 +222,7 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
         "delete",
         "dream",
         "credential:manage",
+        "admin",
     ];
     let (user_id, _, scope_id, _): (Uuid, Uuid, Uuid, Uuid) =
         sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
@@ -194,6 +247,26 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
                 .await?;
     }
 
+    ensure_initial_manifest_from_pool(pool, user_id, scope_id).await?;
+    Ok(())
+}
+
+async fn ensure_initial_manifest_from_pool(
+    pool: &PgPool,
+    user_id: Uuid,
+    scope_id: Uuid,
+) -> ApiResult<Uuid> {
+    let mut tx = pool.begin().await?;
+    let revision_id = ensure_initial_manifest(&mut tx, user_id, scope_id).await?;
+    tx.commit().await?;
+    Ok(revision_id)
+}
+
+pub async fn ensure_initial_manifest(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    scope_id: Uuid,
+) -> ApiResult<Uuid> {
     let empty_manifest_hash = hex::encode(sha2::Sha256::digest(b"straylight:empty-corpus@v1"));
     let initial_revision_id = Uuid::now_v7();
     sqlx::query(
@@ -214,14 +287,14 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
     .bind(user_id)
     .bind(scope_id)
     .bind(&empty_manifest_hash)
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
     let initial_revision_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM straylight.corpus_revisions WHERE user_id = $1 AND scope_id = $2 AND revision_number = 1",
     )
     .bind(user_id)
     .bind(scope_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await?;
     sqlx::query(
         r#"
@@ -236,14 +309,14 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
     .bind(scope_id)
     .bind(initial_revision_id)
     .bind(&empty_manifest_hash)
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
     let manifest_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM straylight.active_manifests WHERE user_id = $1 AND scope_id = $2",
     )
     .bind(user_id)
     .bind(scope_id)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await?;
     sqlx::query(
         r#"
@@ -260,7 +333,7 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
     .bind(manifest_id)
     .bind(initial_revision_id)
     .bind(empty_manifest_hash)
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
-    Ok(())
+    Ok(initial_revision_id)
 }

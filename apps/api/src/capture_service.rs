@@ -1,6 +1,6 @@
 //! High-level, source-preserving capture compiled into the canonical save path.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, time::Instant};
 
 use axum::http::StatusCode;
 use hmac::{Hmac, Mac};
@@ -19,8 +19,9 @@ use crate::{
         Capability, CaptureMode, CaptureRequest, CaptureSourceOrigin, ResponseStatus, SaveAction,
         SaveItem, SaveKind, SaveRequest, SourceReference, canonical_json,
     },
+    quota::{self, UsageReservation},
     refs::{RecordKind, RecordRef},
-    write_service,
+    telemetry, write_service,
 };
 
 const CAPTURE_PROMPT_VERSION: &str = "prompt:source-bearing-capture-v1";
@@ -160,6 +161,8 @@ pub async fn capture(
                 json!({"idempotency_key_reused": true}),
             ));
         }
+    }
+    if let Some(row) = replay_rows.first() {
         if let Some(mut receipt) = row.try_get::<Option<Value>, _>("receipt")? {
             annotate_receipt(
                 &mut receipt,
@@ -204,8 +207,9 @@ pub async fn capture(
         }
     }
     if let Some(reference) = request.source.reference.as_deref() {
-        let source = RecordRef::parse(reference)
-            .map_err(|_| ApiError::invalid("capture source ref must be a typed source reference"))?;
+        let source = RecordRef::parse(reference).map_err(|_| {
+            ApiError::invalid("capture source ref must be a typed source reference")
+        })?;
         if source.kind != RecordKind::SourceEpisode {
             return Err(ApiError::invalid(
                 "capture source ref must identify a source episode",
@@ -261,6 +265,20 @@ pub async fn capture(
     .await?;
     tx.commit().await?;
 
+    if state.config.openai_api_key.is_some() {
+        quota::reserve_for_auth(
+            state,
+            auth,
+            UsageReservation {
+                model_input_chars: (request.content.len()
+                    + serde_json::to_vec(&context)?.len()
+                    + CAPTURE_INSTRUCTIONS.len()) as u64,
+                model_output_tokens: state.config.capture_max_output_tokens.clamp(512, 32_768),
+                ..UsageReservation::default()
+            },
+        )
+        .await?;
+    }
     let model_run = run_capture_model(state, auth, &request, &context).await;
     let model_receipt = model_receipt(&model_run, &state.config.capture_model);
     let Some(model_output) = model_run.output.as_ref() else {
@@ -341,17 +359,9 @@ pub async fn capture(
     }
 
     let mut receipt = write_service::save(state, auth, compilation.save_request).await?;
-    let committed_source_ref = committed_source_ref(
-        &receipt,
-        request.source.reference.as_deref(),
-    )
-    .unwrap_or(compilation.source_ref);
-    annotate_receipt(
-        &mut receipt,
-        &model_output.summary,
-        &request_hash,
-        false,
-    );
+    let committed_source_ref = committed_source_ref(&receipt, request.source.reference.as_deref())
+        .unwrap_or(compilation.source_ref);
+    annotate_receipt(&mut receipt, &model_output.summary, &request_hash, false);
     if let Some(object) = receipt.as_object_mut() {
         object.insert("source_ref".to_owned(), Value::String(committed_source_ref));
         object.insert("model".to_owned(), model_receipt);
@@ -571,6 +581,24 @@ async fn run_capture_model(
     request: &CaptureRequest,
     context: &Value,
 ) -> ModelRun {
+    let started = Instant::now();
+    let result = run_capture_model_inner(state, auth, request, context).await;
+    telemetry::record_model_run(
+        "capture",
+        &state.config.capture_model,
+        &result.status,
+        &result.usage,
+        started,
+    );
+    result
+}
+
+async fn run_capture_model_inner(
+    state: &AppState,
+    auth: &AuthContext,
+    request: &CaptureRequest,
+    context: &Value,
+) -> ModelRun {
     let Some(api_key) = state.config.openai_api_key.as_deref() else {
         return degraded_model_run("OPENAI_API_KEY is unavailable");
     };
@@ -579,7 +607,9 @@ async fn run_capture_model(
         .build()
     {
         Ok(client) => client,
-        Err(error) => return degraded_model_run(&format!("could not create OpenAI client: {error}")),
+        Err(error) => {
+            return degraded_model_run(&format!("could not create OpenAI client: {error}"));
+        }
     };
     let input = json!({
         "intent": request.intent,
@@ -632,7 +662,9 @@ async fn run_capture_model(
     let status = response.status();
     let body = match response.bytes().await {
         Ok(body) => body,
-        Err(error) => return degraded_model_run(&format!("could not read OpenAI response: {error}")),
+        Err(error) => {
+            return degraded_model_run(&format!("could not read OpenAI response: {error}"));
+        }
     };
     if !status.is_success() {
         let error_body = serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null);
@@ -647,14 +679,24 @@ async fn run_capture_model(
             .chars()
             .take(1_000)
             .collect::<String>();
-        return degraded_model_run(&format!("OpenAI returned HTTP {status} ({code}): {message}"));
+        return degraded_model_run(&format!(
+            "OpenAI returned HTTP {status} ({code}): {message}"
+        ));
     }
     let response: Value = match serde_json::from_slice(&body) {
         Ok(response) => response,
-        Err(error) => return degraded_model_run(&format!("OpenAI response was invalid JSON: {error}")),
+        Err(error) => {
+            return degraded_model_run(&format!("OpenAI response was invalid JSON: {error}"));
+        }
     };
-    let returned_model = response.get("model").and_then(Value::as_str).map(str::to_owned);
-    let response_id = response.get("id").and_then(Value::as_str).map(str::to_owned);
+    let returned_model = response
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let response_id = response
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
     let usage = response.get("usage").cloned().unwrap_or_else(|| json!({}));
     let mut refusal = None;
     let mut output_text = None;
@@ -668,10 +710,16 @@ async fn run_capture_model(
     {
         match content.get("type").and_then(Value::as_str) {
             Some("output_text") => {
-                output_text = content.get("text").and_then(Value::as_str).map(str::to_owned)
+                output_text = content
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
             }
             Some("refusal") => {
-                refusal = content.get("refusal").and_then(Value::as_str).map(str::to_owned)
+                refusal = content
+                    .get("refusal")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
             }
             _ => {}
         }
@@ -901,8 +949,7 @@ fn compile_capture(
                 "item": index
             }));
         }
-        if !model_item.confidence.is_finite()
-            || model_item.confidence < MIN_AUTO_COMMIT_CONFIDENCE
+        if !model_item.confidence.is_finite() || model_item.confidence < MIN_AUTO_COMMIT_CONFIDENCE
         {
             issues.push(json!({
                 "code": "capture_confidence_below_auto_commit",
@@ -940,7 +987,10 @@ fn compile_capture(
             }));
         }
 
-        let span = request.content.find(quote).map(|start| [start, start + quote.len()]);
+        let span = request
+            .content
+            .find(quote)
+            .map(|start| [start, start + quote.len()]);
         normalize_payload(
             &mut payload,
             kind,
@@ -1036,12 +1086,21 @@ fn normalize_payload(
     if kind == SaveKind::Object {
         normalize_object_profiles(payload);
     }
-    payload.insert("source_ref".to_owned(), Value::String(source_ref.to_owned()));
-    payload.insert("source_text".to_owned(), Value::String(source_quote.to_owned()));
+    payload.insert(
+        "source_ref".to_owned(),
+        Value::String(source_ref.to_owned()),
+    );
+    payload.insert(
+        "source_text".to_owned(),
+        Value::String(source_quote.to_owned()),
+    );
     if let Some(span) = source_span {
         payload.insert("source_span".to_owned(), json!(span));
     }
-    if matches!(kind, SaveKind::Claim | SaveKind::StateAssignment | SaveKind::StateTransition) {
+    if matches!(
+        kind,
+        SaveKind::Claim | SaveKind::StateAssignment | SaveKind::StateTransition
+    ) {
         normalize_claim_mode(payload, kind);
         payload.insert(
             "producer_ref".to_owned(),
@@ -1068,7 +1127,10 @@ fn normalize_payload(
             CaptureSourceOrigin::Tool => ("action_result", "tool_output", "reported"),
             CaptureSourceOrigin::System => ("observed", "system_observed", "reported"),
         };
-        payload.insert("formation_method".to_owned(), Value::String(formation.to_owned()));
+        payload.insert(
+            "formation_method".to_owned(),
+            Value::String(formation.to_owned()),
+        );
         payload.insert("authority".to_owned(), Value::String(authority.to_owned()));
         payload.insert(
             "canonicality".to_owned(),
@@ -1113,9 +1175,7 @@ fn normalize_object_profiles(payload: &mut Map<String, Value>) {
             "arrangement" | "reservation" | "booking" => "core.arrangement",
             "resource" => "core.resource",
             "work_item" | "task" | "todo" | "action_item" => "core.work_item",
-            "artifact" | "document" | "file" | "decision" | "decision_record" => {
-                "core.artifact"
-            }
+            "artifact" | "document" | "file" | "decision" | "decision_record" => "core.artifact",
             "event_series" => "core.event_series",
             "event_occurrence" => "core.event_occurrence",
             _ => "core.domain_object",
@@ -1142,8 +1202,7 @@ fn normalize_claim_mode(payload: &mut Map<String, Value>, kind: SaveKind) {
         SaveKind::StateAssignment => Some("state_assignment"),
         SaveKind::StateTransition => Some("state_transition"),
         SaveKind::Claim => match payload.get("claim_mode").and_then(Value::as_str) {
-            None
-            | Some("asserted" | "extracted" | "observed" | "inferred" | "synthesized") => {
+            None | Some("asserted" | "extracted" | "observed" | "inferred" | "synthesized") => {
                 Some("descriptive")
             }
             _ => None,
@@ -1232,8 +1291,14 @@ fn completion_without_evidence(content: &str, payload: &Map<String, Value>) -> b
 
 fn annotate_receipt(receipt: &mut Value, summary: &str, request_hash: &str, replayed: bool) {
     if let Some(object) = receipt.as_object_mut() {
-        object.insert("capture_status".to_owned(), Value::String("committed".to_owned()));
-        object.insert("capture_summary".to_owned(), Value::String(summary.to_owned()));
+        object.insert(
+            "capture_status".to_owned(),
+            Value::String("committed".to_owned()),
+        );
+        object.insert(
+            "capture_summary".to_owned(),
+            Value::String(summary.to_owned()),
+        );
         object.insert(
             "capture_request_hash".to_owned(),
             Value::String(format!("sha256:{request_hash}")),
@@ -1262,7 +1327,9 @@ fn parse_revision_ref(value: &str) -> ApiResult<Uuid> {
 }
 
 fn hash_value(value: &Value) -> ApiResult<String> {
-    Ok(hex::encode(Sha256::digest(canonical_json(value)?.as_bytes())))
+    Ok(hex::encode(Sha256::digest(
+        canonical_json(value)?.as_bytes(),
+    )))
 }
 
 fn safety_identifier(secret: &str, user_id: Uuid) -> String {
@@ -1310,7 +1377,10 @@ mod tests {
 
     #[test]
     fn low_risk_user_capture_compiles_to_source_evidence_and_canonical_items() {
-        let request = request("The Switzerland trip starts on August 12.", CaptureSourceOrigin::User);
+        let request = request(
+            "The Switzerland trip starts on August 12.",
+            CaptureSourceOrigin::User,
+        );
         let output = ModelCaptureOutput {
             decision: "commit".to_owned(),
             summary: "Trip start date".to_owned(),
@@ -1414,7 +1484,10 @@ mod tests {
 
     #[test]
     fn identity_equivalence_never_auto_commits() {
-        let request = request("Pat Lee may be the same person as P. Lee.", CaptureSourceOrigin::User);
+        let request = request(
+            "Pat Lee may be the same person as P. Lee.",
+            CaptureSourceOrigin::User,
+        );
         let output = ModelCaptureOutput {
             decision: "commit".to_owned(),
             summary: "Possible identity".to_owned(),
@@ -1490,7 +1563,10 @@ mod tests {
     #[test]
     fn external_sources_cannot_assign_user_authority() {
         let mut payload = Map::new();
-        payload.insert("claim_mode".to_owned(), Value::String("descriptive".to_owned()));
+        payload.insert(
+            "claim_mode".to_owned(),
+            Value::String("descriptive".to_owned()),
+        );
         normalize_payload(
             &mut payload,
             SaveKind::Claim,

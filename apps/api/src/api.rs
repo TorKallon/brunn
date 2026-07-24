@@ -1,24 +1,26 @@
 use axum::{
     Router,
     extract::DefaultBodyLimit,
-    http::{HeaderName, Method, StatusCode},
+    http::{HeaderName, HeaderValue, Method, StatusCode},
     middleware,
     routing::{delete, get, post},
 };
 use tower::ServiceBuilder;
 use tower_http::{
-    catch_panic::CatchPanicLayer,
-    compression::CompressionLayer,
-    cors::{Any, CorsLayer},
-    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
-    timeout::TimeoutLayer,
-    trace::TraceLayer,
+    catch_panic::CatchPanicLayer, compression::CompressionLayer, cors::CorsLayer,
+    timeout::TimeoutLayer, trace::TraceLayer,
 };
 
-use crate::{auth, db::AppState, dreams, eval_service, service};
+use crate::{auth, db::AppState, dreams, eval_service, request_context, service, telemetry};
 
 pub fn router(state: AppState) -> Router {
     let request_id = HeaderName::from_static("x-request-id");
+    let allowed_origins: Vec<HeaderValue> = state
+        .config
+        .allowed_origins
+        .iter()
+        .filter_map(|origin| HeaderValue::from_str(origin).ok())
+        .collect();
     let protected = Router::new()
         .route("/me", get(service::me))
         .route("/status", get(service::status))
@@ -31,7 +33,7 @@ pub fn router(state: AppState) -> Router {
         .route("/memory/save", post(service::save))
         .route(
             "/memory/stage",
-            post(service::stage).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
+            post(service::stage).layer(DefaultBodyLimit::max(72 * 1024 * 1024)),
         )
         .route("/memory/checkpoint", post(service::checkpoint))
         .route(
@@ -41,6 +43,11 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/admin/eval/imports/{import_id}",
             get(eval_service::get_evaluation_import),
+        )
+        .route("/admin/users", post(service::admin_provision_user))
+        .route(
+            "/admin/users/{user_ref}/recover",
+            post(service::admin_recover_credential),
         )
         .route("/sessions", get(service::list_sessions))
         .route("/sessions/{session_id}", get(service::get_session))
@@ -61,6 +68,7 @@ pub fn router(state: AppState) -> Router {
             get(service::get_source_content),
         )
         .route("/audit", get(service::list_audit))
+        .route("/usage", get(service::data_usage))
         .route("/deletions/{deletion_ref}", get(service::get_deletion))
         .route("/scopes", get(service::list_scopes))
         .route("/policies", get(service::list_policies))
@@ -71,6 +79,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/credentials/{credential_ref}",
             delete(service::revoke_credential),
+        )
+        .route(
+            "/account/exports",
+            get(service::list_account_exports).post(service::request_account_export),
+        )
+        .route(
+            "/account/exports/{export_ref}",
+            get(service::get_account_export).delete(service::delete_account_export),
+        )
+        .route(
+            "/account/exports/{export_ref}/content",
+            get(service::download_account_export),
+        )
+        .route(
+            "/account/deletion",
+            get(service::get_latest_account_deletion).post(service::request_account_deletion),
+        )
+        .route(
+            "/account/deletions/{request_ref}",
+            get(service::get_account_deletion),
         )
         .merge(dreams::routes())
         .route_layer(middleware::from_fn_with_state(
@@ -86,8 +114,8 @@ pub fn router(state: AppState) -> Router {
         .with_state(state.clone())
         .layer(
             ServiceBuilder::new()
-                .layer(SetRequestIdLayer::new(request_id.clone(), MakeRequestUuid))
-                .layer(PropagateRequestIdLayer::new(request_id))
+                .layer(middleware::from_fn(request_context::middleware))
+                .layer(middleware::from_fn(telemetry::http_middleware))
                 .layer(TraceLayer::new_for_http())
                 .layer(CompressionLayer::new())
                 .layer(TimeoutLayer::with_status_code(
@@ -97,8 +125,13 @@ pub fn router(state: AppState) -> Router {
                 .layer(CatchPanicLayer::new())
                 .layer(
                     CorsLayer::new()
-                        .allow_origin(Any)
-                        .allow_headers(Any)
+                        .allow_origin(allowed_origins)
+                        .allow_headers([
+                            http::header::AUTHORIZATION,
+                            http::header::CONTENT_TYPE,
+                            request_id.clone(),
+                        ])
+                        .expose_headers([request_id])
                         .allow_methods([Method::GET, Method::POST, Method::DELETE]),
                 ),
         )

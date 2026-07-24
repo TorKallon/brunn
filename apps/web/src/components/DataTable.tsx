@@ -61,7 +61,14 @@ export function DataTable<T>({
               aria-label={getRowLabel?.(row.original)}
             >
               {row.getVisibleCells().map((cell) => (
-                <td key={cell.id}>
+                <td
+                  key={cell.id}
+                  data-label={
+                    typeof cell.column.columnDef.header === "string"
+                      ? cell.column.columnDef.header
+                      : undefined
+                  }
+                >
                   {flexRender(cell.column.columnDef.cell, cell.getContext()) as ReactNode}
                 </td>
               ))}

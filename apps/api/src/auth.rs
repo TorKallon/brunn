@@ -1,4 +1,4 @@
-use std::{collections::HashSet, str::FromStr};
+use std::{collections::HashSet, str::FromStr, time::Instant};
 
 use axum::{
     extract::{Request, State},
@@ -35,6 +35,11 @@ impl AuthContext {
         if self.can(capability) {
             Ok(())
         } else {
+            metrics::counter!(
+                "auth.capability_denied",
+                "capability" => capability.as_str()
+            )
+            .increment(1);
             Err(ApiError::capability(capability.as_str()))
         }
     }
@@ -55,14 +60,48 @@ pub async fn middleware(
     mut request: Request,
     next: Next,
 ) -> Result<Response, ApiError> {
-    let token = request
+    let started = Instant::now();
+    let token = match request
         .headers()
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(ApiError::unauthenticated)?;
-    let auth = authenticate(&state, token).await?;
+    {
+        Some(token) => token,
+        None => {
+            metrics::counter!("auth.attempts", "result" => "missing").increment(1);
+            metrics::histogram!("auth.duration_ms", "result" => "missing")
+                .record(started.elapsed().as_secs_f64() * 1_000.0);
+            return Err(ApiError::unauthenticated());
+        }
+    };
+    state.preauth_rate_limiter.check()?;
+    let auth = match authenticate(&state, token).await {
+        Ok(auth) => auth,
+        Err(error) => {
+            metrics::counter!("auth.attempts", "result" => "failed").increment(1);
+            metrics::histogram!("auth.duration_ms", "result" => "failed")
+                .record(started.elapsed().as_secs_f64() * 1_000.0);
+            return Err(error);
+        }
+    };
+    let access = if auth.read_only {
+        "read_only"
+    } else {
+        "read_write"
+    };
+    state.request_rate_limiter.check(auth.credential_id.0)?;
+    metrics::counter!(
+        "auth.attempts",
+        "result" => "success",
+        "access" => access
+    )
+    .increment(1);
+    metrics::histogram!("auth.duration_ms", "result" => "success")
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
+    metrics::histogram!("auth.scope_count", "access" => access)
+        .record(auth.scope_refs.len() as f64);
     request.extensions_mut().insert(auth);
     Ok(next.run(request).await)
 }

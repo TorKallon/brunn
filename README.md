@@ -6,10 +6,10 @@ reason across changing state, verify claims, and leave useful durable
 checkpoints. It is more than retrieval or memory: the core product is a
 multi-user, snapshot-pinned workspace that later agents can safely advance.
 
-The product stack is Rust, PostgreSQL with pgvector, MinIO, OpenAI text
-embeddings, a TypeScript SPA, and a typed TypeScript MCP server. Every component
-runs in Docker. Python and SQLite remain only in the frozen evaluation harness
-and do not define product behavior.
+The product stack is Rust, PostgreSQL with pgvector, versioned S3-compatible
+object storage, OpenAI text embeddings, a TypeScript SPA, and a typed
+TypeScript MCP server. Every component runs in Docker. Python and SQLite remain
+only in the frozen evaluation harness and do not define product behavior.
 
 ## Start the local alpha
 
@@ -36,13 +36,17 @@ tailnet-accessible human surface.
 ## Repository map
 
 - `apps/api`: Rust API, worker, domain contracts, migrations, retrieval,
-  automatic capture, canonical writes, staging, checkpoints, deletion, and
-  Phase 0 dreaming
+  post-policy usage telemetry, automatic capture, canonical writes, staging,
+  checkpoints, deletion, and Phase 0 dreaming
 - `apps/web`: TypeScript/React audit and control SPA
 - `apps/mcp`: typed stdio MCP adapter
 - `infra`: Postgres role initialization and pinned MinIO build/policy
 - `docs/Architecture.md`: system design and trust boundaries
 - `docs/Specification.md`: alpha behavior and acceptance contract
+- `docs/Alpha Launch Runbook.md`: production candidate, deployment, recovery,
+  backup, rollback, and incident procedure
+- `docs/Alpha Readiness.md`: release-gate evidence and owner decision register
+- `docs/Object Store Evaluation.md`: required S3 contract and provider evidence
 - `docs/Operations.md`: local operation, verification, and evaluation
 - `eval`: frozen main, Rupture Ops, personal coordination, and transition suites
 - `tests`: deterministic harness tests and destructive live API smoke
@@ -57,8 +61,9 @@ python3 tests/live_api_smoke.py --base-url http://127.0.0.1:18110 --env-file .en
 (cd apps/mcp && npm run build && npm test)
 ```
 
-See `docs/Operations.md` for migrations, MCP, comparative evaluation, and
-storage notes.
+See `docs/Operations.md` for migrations, MCP, comparative evaluation, storage
+notes, and the opt-in Datadog Agent profile and production dashboard. The
+launch runbook is intentionally stricter than the local-development path.
 
 ## Evaluations
 
@@ -66,6 +71,24 @@ The harnesses test whether a fresh agent can capture ordinary source material,
 receive safe fresh learned context, recover canonical knowledge, resume complex
 work, inspect artifacts, reason across superseded state, revise plans, verify
 claims, and leave a useful durable checkpoint.
+
+### 2026-07-23 alpha hardening candidate
+
+The complete post-hardening run recovered 179/180 deterministic claims through
+Straylight versus 175/180 through direct files. Across 45 paired cases,
+Straylight used 0.7% more cumulative input, 11.8% less uncached input, and
+15.1% fewer agent tool calls. The single strict miss contained every required
+fact and source but placed two facts in adjacent claim slots.
+
+Deterministic, destructive live API, read-only, account lifecycle, dependency
+failure, database, object-store behavior, backup/restore, current/N-1 rollback,
+browser, and real GPT-5.6 shadow-dream gates pass. Public alpha remains blocked
+on owner decisions and exact production-provider qualification; Community
+MinIO is not an acceptable production store because its image retains critical
+and high vulnerabilities.
+
+See `results/2026-07-23-alpha-candidate-comparison.md` and
+`docs/Alpha Readiness.md` for the evidence and remaining decision boundary.
 
 ### 2026-07-22 token-efficiency and source-hydration evaluation
 

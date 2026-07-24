@@ -11,6 +11,7 @@ use crate::{
     db::AppState,
     error::{ApiError, ApiResult},
     models::{Capability, ListQuery},
+    pagination,
 };
 
 pub async fn me(state: &AppState, auth: &AuthContext) -> ApiResult<Value> {
@@ -71,7 +72,29 @@ pub async fn list_sessions(
 ) -> ApiResult<Value> {
     auth.require(Capability::Open)?;
     let limit = list_limit(query);
+    validate_session_status(query.status.as_deref())?;
+    let filter_hash = list_filter_hash("sessions", query);
+    let cursor = decode_page_cursor(state, auth, query, "sessions", &filter_hash)?;
     let mut tx = state.begin_read(auth).await?;
+    let total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM straylight.sessions AS s
+        JOIN straylight.scopes AS sc ON sc.user_id=s.user_id AND sc.id=s.scope_id
+        WHERE s.user_id=$1
+          AND ($2::text IS NULL OR sc.scope_ref=$2)
+          AND (
+            $3::text IS NULL
+            OR ($3='open' AND s.expires_at > clock_timestamp())
+            OR ($3='expired' AND s.expires_at <= clock_timestamp())
+          )
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(query.scope.as_deref())
+    .bind(query.status.as_deref())
+    .fetch_one(&mut *tx)
+    .await?;
     let rows = sqlx::query(
         r#"
         SELECT s.id,s.task_hash,s.mode,s.created_at,s.expires_at,s.resumed_checkpoint_id,
@@ -89,16 +112,42 @@ pub async fn list_sessions(
         ) AS latest ON true
         WHERE s.user_id=$1
           AND ($2::text IS NULL OR sc.scope_ref=$2)
+          AND (
+            $3::text IS NULL
+            OR ($3='open' AND s.expires_at > clock_timestamp())
+            OR ($3='expired' AND s.expires_at <= clock_timestamp())
+          )
+          AND ($4::timestamptz IS NULL OR (s.created_at,s.id) < ($4,$5))
         ORDER BY s.created_at DESC,s.id DESC
-        LIMIT $3
+        LIMIT $6
         "#,
     )
     .bind(auth.user_id.0)
     .bind(query.scope.as_deref())
-    .bind(limit as i64)
+    .bind(query.status.as_deref())
+    .bind(cursor.as_ref().map(|value| value.sort_time))
+    .bind(cursor.as_ref().map(|value| value.sort_id))
+    .bind((limit + 1) as i64)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
+    let has_more = rows.len() > limit;
+    let rows: Vec<_> = rows.into_iter().take(limit).collect();
+    let next_cursor = if has_more {
+        let last = rows
+            .last()
+            .expect("a page with more results contains a visible item");
+        Some(pagination::issue(
+            &state.config.continuation_secret,
+            auth.user_id.0,
+            "sessions",
+            &filter_hash,
+            last.try_get("created_at")?,
+            last.try_get("id")?,
+        )?)
+    } else {
+        None
+    };
     let items: Vec<_> = rows
         .into_iter()
         .map(|row| -> ApiResult<Value> {
@@ -110,7 +159,7 @@ pub async fn list_sessions(
                 "session_id": format!("session:{id}"),
                 "title": row.try_get::<Option<String>,_>("checkpoint_title")?,
                 "task_hash": format!("sha256:{}", row.try_get::<String,_>("task_hash")?),
-                "status": "open",
+                "status": if row.try_get::<DateTime<Utc>,_>("expires_at")? > Utc::now() { "open" } else { "expired" },
                 "mode": row.try_get::<String,_>("mode")?,
                 "scope_id": row.try_get::<String,_>("scope_ref")?,
                 "scope_name": row.try_get::<String,_>("scope_name")?,
@@ -123,7 +172,7 @@ pub async fn list_sessions(
             }))
         })
         .collect::<ApiResult<_>>()?;
-    Ok(list_envelope(items, limit))
+    Ok(list_envelope(items, total, next_cursor))
 }
 
 pub async fn get_session(
@@ -144,12 +193,13 @@ pub async fn get_session(
         JOIN straylight.scopes AS sc ON sc.user_id=s.user_id AND sc.id=s.scope_id
         JOIN straylight.corpus_revisions AS cr
           ON cr.user_id=s.user_id AND cr.id=s.corpus_revision_id
-        WHERE s.user_id=$1 AND s.id=$2 AND s.credential_id=$3
+        WHERE s.user_id=$1 AND s.id=$2
+          AND sc.scope_ref=ANY($3::text[])
         "#,
     )
     .bind(auth.user_id.0)
     .bind(session_id)
-    .bind(auth.credential_id.0)
+    .bind(&auth.scope_refs)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::not_found("session_not_found", session_ref))?;
@@ -188,6 +238,7 @@ pub async fn get_session(
         "checkpoint": latest,
         "checkpoints": checkpoints,
         "operations": operations,
+        "status": if row.try_get::<DateTime<Utc>,_>("expires_at")? > Utc::now() { "open" } else { "expired" },
         "created_at": row.try_get::<DateTime<Utc>,_>("created_at")?,
         "expires_at": row.try_get::<DateTime<Utc>,_>("expires_at")?
     }))
@@ -213,7 +264,37 @@ pub async fn list_objects(
 ) -> ApiResult<Value> {
     auth.require(Capability::Read)?;
     let limit = list_limit(query);
+    let filter_hash = list_filter_hash("objects", query);
+    let cursor = decode_page_cursor(state, auth, query, "objects", &filter_hash)?;
     let mut tx = state.begin_read(auth).await?;
+    let total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM straylight.objects AS object
+        JOIN straylight.object_revisions AS revision
+          ON revision.user_id=object.user_id AND revision.object_id=object.id
+         AND revision.version=object.current_version
+        JOIN straylight.scopes AS scope
+          ON scope.user_id=object.user_id AND scope.id=object.scope_id
+        WHERE object.user_id=$1
+          AND ($2::text IS NULL OR scope.scope_ref=$2)
+          AND ($3::text IS NULL OR revision.label ILIKE '%'||$3||'%'
+               OR revision.properties::text ILIKE '%'||$3||'%')
+          AND ($4::text IS NULL OR EXISTS (
+            SELECT 1 FROM straylight.object_revision_profiles AS selected_profile
+            WHERE selected_profile.user_id=object.user_id
+              AND selected_profile.object_id=object.id
+              AND selected_profile.object_version=object.current_version
+              AND selected_profile.profile_ref=$4
+          ))
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(query.scope.as_deref())
+    .bind(query.query.as_deref())
+    .bind(query.type_profile.as_deref())
+    .fetch_one(&mut *tx)
+    .await?;
     let rows = sqlx::query(
         r#"
         SELECT object.id,object.current_version,revision.label,revision.properties,
@@ -240,20 +321,41 @@ pub async fn list_objects(
               AND selected_profile.object_version=object.current_version
               AND selected_profile.profile_ref=$4
           ))
+          AND ($5::timestamptz IS NULL
+               OR (revision.recorded_at,object.id) < ($5,$6))
         GROUP BY object.id,object.current_version,revision.label,revision.properties,
                  revision.recorded_at,scope.scope_ref
         ORDER BY revision.recorded_at DESC,object.id DESC
-        LIMIT $5
+        LIMIT $7
         "#,
     )
     .bind(auth.user_id.0)
     .bind(query.scope.as_deref())
     .bind(query.query.as_deref())
     .bind(query.type_profile.as_deref())
-    .bind(limit as i64)
+    .bind(cursor.as_ref().map(|value| value.sort_time))
+    .bind(cursor.as_ref().map(|value| value.sort_id))
+    .bind((limit + 1) as i64)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
+    let has_more = rows.len() > limit;
+    let rows: Vec<_> = rows.into_iter().take(limit).collect();
+    let next_cursor = if has_more {
+        let last = rows
+            .last()
+            .expect("a page with more results contains a visible item");
+        Some(pagination::issue(
+            &state.config.continuation_secret,
+            auth.user_id.0,
+            "objects",
+            &filter_hash,
+            last.try_get("recorded_at")?,
+            last.try_get("id")?,
+        )?)
+    } else {
+        None
+    };
     let items: Vec<_> = rows.into_iter().map(|row| -> ApiResult<Value> {
         let id: Uuid = row.try_get("id")?;
         Ok(json!({
@@ -266,7 +368,7 @@ pub async fn list_objects(
             "updated_at": row.try_get::<DateTime<Utc>,_>("recorded_at")?
         }))
     }).collect::<ApiResult<_>>()?;
-    Ok(list_envelope(items, limit))
+    Ok(list_envelope(items, total, next_cursor))
 }
 
 pub async fn get_object(
@@ -338,7 +440,26 @@ pub async fn list_sources(
 ) -> ApiResult<Value> {
     auth.require(Capability::Read)?;
     let limit = list_limit(query);
+    let filter_hash = list_filter_hash("sources", query);
+    let cursor = decode_page_cursor(state, auth, query, "sources", &filter_hash)?;
     let mut tx = state.begin_read(auth).await?;
+    let total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM straylight.source_episodes AS source
+        JOIN straylight.scopes AS scope
+          ON scope.user_id=source.user_id AND scope.id=source.scope_id
+        WHERE source.user_id=$1
+          AND ($2::text IS NULL OR scope.scope_ref=$2)
+          AND ($3::text IS NULL OR source.title ILIKE '%'||$3||'%'
+               OR source.source_ref ILIKE '%'||$3||'%')
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(query.scope.as_deref())
+    .bind(query.query.as_deref())
+    .fetch_one(&mut *tx)
+    .await?;
     let rows = sqlx::query(
         r#"
         SELECT source.id,source.source_ref,source.source_kind,source.source_version,
@@ -358,22 +479,43 @@ pub async fn list_sources(
           AND ($2::text IS NULL OR scope.scope_ref=$2)
           AND ($3::text IS NULL OR source.title ILIKE '%'||$3||'%'
                OR source.source_ref ILIKE '%'||$3||'%')
+          AND ($4::timestamptz IS NULL
+               OR (source.captured_at,source.id) < ($4,$5))
         ORDER BY source.captured_at DESC,source.id DESC
-        LIMIT $4
+        LIMIT $6
         "#,
     )
     .bind(auth.user_id.0)
     .bind(query.scope.as_deref())
     .bind(query.query.as_deref())
-    .bind(limit as i64)
+    .bind(cursor.as_ref().map(|value| value.sort_time))
+    .bind(cursor.as_ref().map(|value| value.sort_id))
+    .bind((limit + 1) as i64)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
+    let has_more = rows.len() > limit;
+    let rows: Vec<_> = rows.into_iter().take(limit).collect();
+    let next_cursor = if has_more {
+        let last = rows
+            .last()
+            .expect("a page with more results contains a visible item");
+        Some(pagination::issue(
+            &state.config.continuation_secret,
+            auth.user_id.0,
+            "sources",
+            &filter_hash,
+            last.try_get("captured_at")?,
+            last.try_get("id")?,
+        )?)
+    } else {
+        None
+    };
     let items: Vec<_> = rows
         .into_iter()
         .map(source_row_value)
         .collect::<ApiResult<_>>()?;
-    Ok(list_envelope(items, limit))
+    Ok(list_envelope(items, total, next_cursor))
 }
 
 pub async fn get_source(
@@ -575,7 +717,23 @@ pub async fn list_audit(
 ) -> ApiResult<Value> {
     auth.require(Capability::Status)?;
     let limit = list_limit(query);
+    let filter_hash = list_filter_hash("audit", query);
+    let cursor = decode_page_cursor(state, auth, query, "audit", &filter_hash)?;
     let mut tx = state.begin_read(auth).await?;
+    let total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)
+        FROM straylight.audit_events AS event
+        LEFT JOIN straylight.scopes AS scope
+          ON scope.user_id=event.user_id AND scope.id=event.scope_id
+        WHERE event.user_id=$1
+          AND ($2::text IS NULL OR scope.scope_ref=$2)
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(query.scope.as_deref())
+    .fetch_one(&mut *tx)
+    .await?;
     let rows = sqlx::query(
         r#"
         SELECT event.id,event.action,event.actor_ref,event.target_record_id,
@@ -586,15 +744,36 @@ pub async fn list_audit(
           ON scope.user_id=event.user_id AND scope.id=event.scope_id
         WHERE event.user_id=$1
           AND ($2::text IS NULL OR scope.scope_ref=$2)
-        ORDER BY event.recorded_at DESC,event.id DESC LIMIT $3
+          AND ($3::timestamptz IS NULL
+               OR (event.recorded_at,event.id) < ($3,$4))
+        ORDER BY event.recorded_at DESC,event.id DESC LIMIT $5
         "#,
     )
     .bind(auth.user_id.0)
     .bind(query.scope.as_deref())
-    .bind(limit as i64)
+    .bind(cursor.as_ref().map(|value| value.sort_time))
+    .bind(cursor.as_ref().map(|value| value.sort_id))
+    .bind((limit + 1) as i64)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
+    let has_more = rows.len() > limit;
+    let rows: Vec<_> = rows.into_iter().take(limit).collect();
+    let next_cursor = if has_more {
+        let last = rows
+            .last()
+            .expect("a page with more results contains a visible item");
+        Some(pagination::issue(
+            &state.config.continuation_secret,
+            auth.user_id.0,
+            "audit",
+            &filter_hash,
+            last.try_get("recorded_at")?,
+            last.try_get("id")?,
+        )?)
+    } else {
+        None
+    };
     let items = rows
         .into_iter()
         .map(|row| -> ApiResult<Value> {
@@ -615,7 +794,7 @@ pub async fn list_audit(
             }))
         })
         .collect::<ApiResult<Vec<_>>>()?;
-    Ok(list_envelope(items, limit))
+    Ok(list_envelope(items, total, next_cursor))
 }
 
 pub async fn get_deletion(
@@ -628,7 +807,8 @@ pub async fn get_deletion(
     let mut tx = state.begin_read(auth).await?;
     let row = sqlx::query(
         r#"
-        SELECT job.id,job.status,job.started_at,job.completed_at,
+        SELECT job.id,job.status,job.attempt_count,job.max_attempts,job.available_at,
+               job.started_at,job.completed_at,
                job.terminal_result,job.created_at,job.tombstone_id,
                tombstone.target_record_id,record_key.record_kind,scope.scope_ref
         FROM straylight.deletion_jobs AS job
@@ -702,6 +882,9 @@ pub async fn get_deletion(
     Ok(json!({
         "id": format!("deletion:{deletion_id}"),
         "status": row.try_get::<String,_>("status")?,
+        "attempt_count": row.try_get::<i32,_>("attempt_count")?,
+        "max_attempts": row.try_get::<i32,_>("max_attempts")?,
+        "available_at": row.try_get::<DateTime<Utc>,_>("available_at")?,
         "scope_id": row.try_get::<String,_>("scope_ref")?,
         "tombstone_id": format!("tombstone:{}", row.try_get::<Uuid,_>("tombstone_id")?),
         "target_ref": format!("{}:{target_id}", record_prefix(&target_kind)),
@@ -766,9 +949,24 @@ pub async fn create_credential(
             "delete",
             "dream",
         ],
+        "owner" => vec![
+            "open",
+            "query",
+            "read",
+            "compute",
+            "verify",
+            "status",
+            "checkpoint",
+            "save",
+            "stage",
+            "correct",
+            "delete",
+            "dream",
+            "credential:manage",
+        ],
         _ => {
             return Err(ApiError::invalid(
-                "credential access must be read_only or read_write",
+                "credential access must be read_only, read_write, or owner",
             ));
         }
     };
@@ -817,7 +1015,8 @@ pub async fn create_credential(
             .bind(&capabilities)
             .bind(&scope_refs)
             .fetch_one(&mut *tx)
-            .await?;
+            .await
+            .map_err(map_credential_issue_error)?;
     tx.commit().await?;
     Ok(json!({
         "id": format!("credential:{credential_id}"),
@@ -829,6 +1028,22 @@ pub async fn create_credential(
         "created_at": Utc::now(),
         "revoked_at": null
     }))
+}
+
+fn map_credential_issue_error(error: sqlx::Error) -> ApiError {
+    if error
+        .as_database_error()
+        .and_then(|database| database.code())
+        .as_deref()
+        == Some("42501")
+    {
+        return ApiError::public(
+            http::StatusCode::FORBIDDEN,
+            "credential_delegation_denied",
+            "a credential cannot delegate capabilities or scopes it does not hold",
+        );
+    }
+    ApiError::Database(error)
 }
 
 pub async fn revoke_credential(
@@ -1022,12 +1237,21 @@ async fn checkpoint_value(
         .filter_map(|value| value.get("ref").cloned())
         .collect();
     let parent: Option<Uuid> = row.try_get("parent_checkpoint_id")?;
+    let summary_text: String = row.try_get("summary")?;
+    let state = serde_json::from_str::<Value>(&summary_text)
+        .unwrap_or_else(|_| json!({"objective": summary_text}));
+    let objective = state
+        .get("objective")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     Ok(json!({
         "id": format!("checkpoint:{checkpoint_id}"),
         "checkpoint_id": format!("checkpoint:{checkpoint_id}"),
         "title": row.try_get::<Option<String>,_>("title")?,
-        "objective": row.try_get::<String,_>("summary")?,
-        "summary": row.try_get::<String,_>("summary")?,
+        "objective": objective,
+        "summary": summary_text,
+        "state": state,
         "parent_checkpoint_id": parent.map(|id| format!("checkpoint:{id}")),
         "session_id": format!("session:{}", row.try_get::<Uuid,_>("session_id")?),
         "scope_id": row.try_get::<String,_>("scope_ref")?,
@@ -1213,13 +1437,55 @@ fn list_limit(query: &ListQuery) -> usize {
     query.limit.unwrap_or(50).clamp(1, 100)
 }
 
-fn list_envelope(items: Vec<Value>, limit: usize) -> Value {
-    let has_more = items.len() == limit;
+fn list_envelope(items: Vec<Value>, total: i64, continuation_token: Option<String>) -> Value {
     json!({
-        "total": items.len(),
+        "total": total,
         "items": items,
-        "continuation_token": if has_more { Some("more") } else { None::<&str> }
+        "continuation_token": continuation_token
     })
+}
+
+fn list_filter_hash(resource: &str, query: &ListQuery) -> String {
+    let filters = json!({
+        "resource": resource,
+        "scope": query.scope.as_deref(),
+        "status": query.status.as_deref(),
+        "type_profile": query.type_profile.as_deref(),
+        "query": query.query.as_deref()
+    });
+    hex::encode(Sha256::digest(
+        serde_json::to_vec(&filters).expect("list filters are serializable"),
+    ))
+}
+
+fn decode_page_cursor(
+    state: &AppState,
+    auth: &AuthContext,
+    query: &ListQuery,
+    resource: &str,
+    filter_hash: &str,
+) -> ApiResult<Option<pagination::PageCursor>> {
+    query
+        .cursor
+        .as_deref()
+        .map(|cursor| {
+            pagination::decode(
+                &state.config.continuation_secret,
+                cursor,
+                auth.user_id.0,
+                resource,
+                filter_hash,
+            )
+        })
+        .transpose()
+}
+
+fn validate_session_status(status: Option<&str>) -> ApiResult<()> {
+    if status.is_none() || matches!(status, Some("open" | "expired")) {
+        Ok(())
+    } else {
+        Err(ApiError::invalid("session status must be open or expired"))
+    }
 }
 
 fn parse_uuid_ref(value: &str, expected_prefix: &str) -> ApiResult<Uuid> {

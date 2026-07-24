@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
@@ -35,13 +35,17 @@ pub fn from_config(config: &Config) -> ApiResult<SharedEmbedder> {
                     config.embedding_model.clone(),
                     config.embedding_dimensions,
                 )?))
-            } else {
+            } else if config.allow_degraded_embeddings {
                 tracing::warn!("OPENAI_API_KEY is absent; using deterministic degraded embeddings");
                 Ok(Arc::new(HashingEmbedder::new(
                     config.embedding_model.clone(),
                     config.embedding_dimensions,
                     true,
                 )))
+            } else {
+                Err(ApiError::configuration(
+                    "OPENAI_API_KEY is required when STRAYLIGHT_EMBEDDING_PROVIDER=openai; set STRAYLIGHT_EMBEDDING_PROVIDER=hashing explicitly for an offline degraded deployment",
+                ))
             }
         }
         "hashing" => Ok(Arc::new(HashingEmbedder::new(
@@ -132,55 +136,68 @@ struct OpenAiError {
 #[async_trait]
 impl Embedder for OpenAiEmbedder {
     async fn embed(&self, input: &[String]) -> ApiResult<Vec<Vec<f32>>> {
-        if input.is_empty() {
-            return Ok(vec![]);
-        }
-        let response = self
-            .client
-            .post(&self.endpoint)
-            .bearer_auth(&self.api_key)
-            .json(&EmbeddingRequest {
-                model: &self.model,
-                input,
-                encoding_format: "float",
-                dimensions: self.dimensions,
-            })
-            .send()
-            .await
-            .map_err(|error| embedding_dependency_unavailable("send", error))?;
-        let status = response.status();
-        let body = response
-            .bytes()
-            .await
-            .map_err(|error| embedding_dependency_unavailable("read_response", error))?;
-        if !status.is_success() {
-            let message = serde_json::from_slice::<OpenAiErrorEnvelope>(&body)
-                .map(|error| format!("{} ({})", error.error.message, error.error.r#type))
-                .unwrap_or_else(|_| String::from_utf8_lossy(&body).into_owned());
-            return Err(ApiError::public(
-                http::StatusCode::SERVICE_UNAVAILABLE,
-                "dependency_unavailable",
-                format!("OpenAI embeddings unavailable: {message}"),
-            ));
-        }
-        let mut parsed: EmbeddingResponse = serde_json::from_slice(&body)?;
-        let _ = parsed.mut_data_placeholder.take();
-        parsed.items.sort_by_key(|item| item.index);
-        if parsed.items.len() != input.len()
-            || parsed
+        let started = Instant::now();
+        let result = async {
+            if input.is_empty() {
+                return Ok(vec![]);
+            }
+            let response = self
+                .client
+                .post(&self.endpoint)
+                .bearer_auth(&self.api_key)
+                .json(&EmbeddingRequest {
+                    model: &self.model,
+                    input,
+                    encoding_format: "float",
+                    dimensions: self.dimensions,
+                })
+                .send()
+                .await
+                .map_err(|error| embedding_dependency_unavailable("send", error))?;
+            let status = response.status();
+            let body = response
+                .bytes()
+                .await
+                .map_err(|error| embedding_dependency_unavailable("read_response", error))?;
+            if !status.is_success() {
+                let message = serde_json::from_slice::<OpenAiErrorEnvelope>(&body)
+                    .map(|error| format!("{} ({})", error.error.message, error.error.r#type))
+                    .unwrap_or_else(|_| String::from_utf8_lossy(&body).into_owned());
+                return Err(ApiError::public(
+                    http::StatusCode::SERVICE_UNAVAILABLE,
+                    "dependency_unavailable",
+                    format!("OpenAI embeddings unavailable: {message}"),
+                ));
+            }
+            let mut parsed: EmbeddingResponse = serde_json::from_slice(&body)?;
+            let _ = parsed.mut_data_placeholder.take();
+            parsed.items.sort_by_key(|item| item.index);
+            if parsed.items.len() != input.len()
+                || parsed
+                    .items
+                    .iter()
+                    .any(|item| item.embedding.len() != self.dimensions)
+            {
+                return Err(ApiError::Internal(
+                    "embedding provider returned an unexpected result shape".to_owned(),
+                ));
+            }
+            Ok(parsed
                 .items
-                .iter()
-                .any(|item| item.embedding.len() != self.dimensions)
-        {
-            return Err(ApiError::Internal(
-                "embedding provider returned an unexpected result shape".to_owned(),
-            ));
+                .into_iter()
+                .map(|item| item.embedding)
+                .collect())
         }
-        Ok(parsed
-            .items
-            .into_iter()
-            .map(|item| item.embedding)
-            .collect())
+        .await;
+        record_embedding_call(
+            self.provider(),
+            self.model(),
+            self.is_degraded(),
+            input,
+            &result,
+            started,
+        );
+        result
     }
 
     fn provider(&self) -> &'static str {
@@ -242,7 +259,17 @@ impl HashingEmbedder {
 #[async_trait]
 impl Embedder for HashingEmbedder {
     async fn embed(&self, input: &[String]) -> ApiResult<Vec<Vec<f32>>> {
-        Ok(input.iter().map(|text| self.vector(text)).collect())
+        let started = Instant::now();
+        let result = Ok(input.iter().map(|text| self.vector(text)).collect());
+        record_embedding_call(
+            self.provider(),
+            self.model(),
+            self.is_degraded(),
+            input,
+            &result,
+            started,
+        );
+        result
     }
 
     fn provider(&self) -> &'static str {
@@ -259,6 +286,40 @@ impl Embedder for HashingEmbedder {
 
     fn is_degraded(&self) -> bool {
         self.degraded
+    }
+}
+
+fn record_embedding_call(
+    provider: &str,
+    model: &str,
+    degraded: bool,
+    input: &[String],
+    result: &ApiResult<Vec<Vec<f32>>>,
+    started: Instant,
+) {
+    let outcome = if result.is_ok() { "success" } else { "error" };
+    metrics::counter!(
+        "embedding.requests",
+        "provider" => provider.to_owned(),
+        "model" => model.to_owned(),
+        "degraded" => if degraded { "true" } else { "false" },
+        "result" => outcome
+    )
+    .increment(1);
+    metrics::histogram!(
+        "embedding.duration_ms",
+        "provider" => provider.to_owned(),
+        "model" => model.to_owned(),
+        "result" => outcome
+    )
+    .record(started.elapsed().as_secs_f64() * 1_000.0);
+    metrics::histogram!("embedding.input_items", "provider" => provider.to_owned())
+        .record(input.len() as f64);
+    metrics::histogram!("embedding.input_characters", "provider" => provider.to_owned())
+        .record(input.iter().map(String::len).sum::<usize>() as f64);
+    if let Ok(vectors) = result {
+        metrics::histogram!("embedding.output_vectors", "provider" => provider.to_owned())
+            .record(vectors.len() as f64);
     }
 }
 

@@ -384,6 +384,7 @@ class LiveApiSmoke:
         self.document_ref = ""
         self.evidence_ref = ""
         self.promoted_source_ref = ""
+        self.duplicate_source_ref = ""
         self.final_smoke_revision = ""
         self.eval_user_id = ""
 
@@ -433,9 +434,21 @@ class LiveApiSmoke:
 
             ready = mapping(self.public.request("GET", "/ready").body, "GET /ready")
             check(ready.get("status") == "ready", "ready status must be ready", ready)
-            check(ready.get("database") == "ready", "database must be ready", ready)
-            check(ready.get("object_store") == "ready", "object store must be ready", ready)
-            embedding_status = ready.get("embeddings")
+            dependencies = mapping(
+                ready.get("dependencies"),
+                "GET /ready dependencies",
+            )
+            check(
+                dependencies.get("database") == "ready",
+                "database must be ready",
+                ready,
+            )
+            check(
+                dependencies.get("object_store") == "ready",
+                "object store must be ready",
+                ready,
+            )
+            embedding_status = dependencies.get("embeddings")
             check(
                 embedding_status in {"ready", "degraded"},
                 "embedding readiness may only be ready or contractually degraded",
@@ -594,6 +607,42 @@ class LiveApiSmoke:
                     f"{item.get('id')} lost the source marker",
                     item,
                 )
+
+            usage_path = "/v1/usage?" + urllib.parse.urlencode(
+                {"query": marker, "limit": 10}
+            )
+            usage = mapping(
+                self.ro.request("GET", usage_path).body,
+                "RO source usage",
+            )
+            usage_summary = mapping(usage.get("summary"), "RO usage summary")
+            most_used = sequence(usage.get("most_used"), "RO most-used sources")
+            matching_usage = next(
+                (item for item in most_used if same_ref(item.get("id"), source_ref)),
+                None,
+            )
+            check(matching_usage is not None, "RO retrieval was not tracked", usage)
+            operation_counts = mapping(
+                matching_usage.get("operation_counts"),
+                "RO usage operation counts",
+            )
+            check(
+                matching_usage.get("access_count", 0) >= 2
+                and operation_counts.get("open", 0) >= 1
+                and operation_counts.get("query", 0) >= 1,
+                "RO source usage did not retain open/query counts",
+                matching_usage,
+            )
+            usage_again = mapping(
+                self.ro.request("GET", usage_path).body,
+                "second RO source usage",
+            )
+            check(
+                mapping(usage_again.get("summary"), "second RO usage summary")
+                == usage_summary,
+                "reading usage telemetry recursively changed usage telemetry",
+                {"before": usage_summary, "after": usage_again.get("summary")},
+            )
 
             after = mapping(self.ro.request("GET", "/v1/status").body, "RO status after")
             check(
@@ -1310,6 +1359,12 @@ class LiveApiSmoke:
                 "staged UTF-8 file was not readable",
                 stage_data,
             )
+            first_asset_ref = entries[0].get("asset_ref")
+            check(
+                isinstance(first_asset_ref, str) and first_asset_ref.startswith("asset:"),
+                "staged file lacks an asset identity",
+                stage_data,
+            )
 
             promotion_body = self.rw.request(
                 "POST",
@@ -1352,7 +1407,94 @@ class LiveApiSmoke:
                 "stage promotion returned an invalid source ref",
                 promotion_data,
             )
-            self.final_smoke_revision = str(promotion_data.get("corpus_revision"))
+
+            duplicate_filename = f"live-api-smoke-stage-duplicate-{self.marker}.md"
+            duplicate_media_type, duplicate_multipart = encode_multipart(
+                {
+                    "scope": self.scope_ref,
+                    "stable_import_id": f"live-api-smoke-stage-duplicate:{self.run_id}",
+                },
+                [("file", duplicate_filename, "text/markdown", stage_content)],
+            )
+            duplicate_body = self.rw.request(
+                "POST",
+                "/v1/memory/stage",
+                raw_body=duplicate_multipart,
+                headers={"Content-Type": duplicate_media_type},
+            ).body
+            _, duplicate_data_value = envelope(
+                duplicate_body,
+                "duplicate memory.stage",
+                "complete",
+            )
+            duplicate_data = mapping(
+                duplicate_data_value,
+                "duplicate memory.stage data",
+            )
+            duplicate_entries = sequence(
+                duplicate_data.get("entries"),
+                "duplicate stage entries",
+            )
+            check(
+                len(duplicate_entries) == 1
+                and duplicate_entries[0].get("asset_ref") == first_asset_ref,
+                "identical staged content did not reuse one physical asset",
+                duplicate_data,
+            )
+            duplicate_stage_ref = str(duplicate_data.get("stage_ref", ""))
+            duplicate_promotion_body = self.rw.request(
+                "POST",
+                "/v1/memory/save",
+                json_body={
+                    "intent": "promote a second logical source over shared physical content",
+                    "scope": self.scope_ref,
+                    "root_refs": [],
+                    "source_refs": [],
+                    "items": [
+                        {
+                            "action": "create",
+                            "kind": "import_receipt",
+                            "ref": None,
+                            "payload": {
+                                "stage_ref": duplicate_stage_ref,
+                                "selected_entries": [duplicate_filename],
+                            },
+                        }
+                    ],
+                    "idempotency_key": (
+                        f"live-api-smoke:stage-promote-duplicate:{self.run_id}"
+                    ),
+                },
+            ).body
+            _, duplicate_promotion_value = envelope(
+                duplicate_promotion_body,
+                "duplicate stage promotion",
+                "committed",
+            )
+            duplicate_promotion = mapping(
+                duplicate_promotion_value,
+                "duplicate stage promotion data",
+            )
+            duplicate_items = sequence(
+                duplicate_promotion.get("items"),
+                "duplicate promoted items",
+            )
+            check(
+                len(duplicate_items) == 1
+                and duplicate_items[0].get("kind") == "source",
+                "duplicate stage promotion did not produce a source",
+                duplicate_promotion,
+            )
+            self.duplicate_source_ref = str(duplicate_items[0].get("ref", ""))
+            check(
+                self.duplicate_source_ref.startswith("source:")
+                and self.duplicate_source_ref != self.promoted_source_ref,
+                "shared physical content did not produce distinct logical sources",
+                duplicate_promotion,
+            )
+            self.final_smoke_revision = str(
+                duplicate_promotion.get("corpus_revision")
+            )
 
     def _recurrence_flow(self) -> None:
         with reported_step("atomic recurrence save and DST-safe expansion"):
@@ -1629,6 +1771,19 @@ class LiveApiSmoke:
                     "deleted source content remains readable",
                     content.text,
                 )
+            check(
+                self.duplicate_source_ref.startswith("source:"),
+                "shared-blob deletion fixture is missing",
+            )
+            surviving_content = self.rw.request(
+                "GET",
+                f"/v1/sources/{ref_path(self.duplicate_source_ref)}/content",
+            )
+            check(
+                self.marker in surviving_content.text,
+                "deleting one logical asset destroyed shared physical content",
+                surviving_content.text,
+            )
             self.final_smoke_revision = str(deleted_data.get("corpus_revision"))
 
     def _credential_lifecycle(self) -> None:

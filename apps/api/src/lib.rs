@@ -1,5 +1,9 @@
 #![recursion_limit = "512"]
+#![allow(clippy::too_many_arguments)]
 
+pub mod account_service;
+pub mod account_worker;
+pub mod admin_service;
 pub mod api;
 pub mod auth;
 pub mod capture_service;
@@ -15,13 +19,19 @@ pub mod eval_service;
 pub mod ingest;
 pub mod models;
 pub mod object_store;
+pub mod operator_service;
+pub mod pagination;
 pub mod policy;
+pub mod quota;
 pub mod read_service;
 pub mod recurrence;
 pub mod refs;
+pub mod request_context;
 pub mod retrieval;
 pub mod service;
 pub mod session_service;
+pub mod telemetry;
+pub mod usage_service;
 pub mod worker;
 pub mod write_service;
 

@@ -7,7 +7,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
@@ -30,8 +30,10 @@ use crate::{
         ReadView, ResponseStatus, RetrievalMode, TemporalSpecV1, Truncation,
         VerificationClassification, VerifyClaim, VerifyRequest,
     },
+    quota::{self, UsageReservation},
     recurrence,
     retrieval::{RetrievalCandidate, reciprocal_rank_fusion, source_coherent_rank_fusion},
+    telemetry,
 };
 
 const DEFAULT_TOKEN_BUDGET: usize = 24_000;
@@ -1068,6 +1070,16 @@ async fn run_query_batch(
     let mut semantic_vectors = HashMap::<usize, Vec<f32>>::new();
     let mut embedding_failure = None;
     if !semantic_inputs.is_empty() {
+        quota::reserve_for_auth(
+            state,
+            auth,
+            UsageReservation {
+                embedding_input_chars: semantic_inputs.iter().map(String::len).sum::<usize>()
+                    as u64,
+                ..UsageReservation::default()
+            },
+        )
+        .await?;
         if state.embedder.dimensions() != 1536 {
             embedding_failure = Some(format!(
                 "configured embedding dimensions {} do not match the vector(1536) schema",
@@ -1140,15 +1152,12 @@ async fn run_query_batch(
         .any(|item| item.status == ResponseStatus::Ambiguous)
     {
         ResponseStatus::Ambiguous
-    } else if items
-        .iter()
-        .any(|item| item.status == ResponseStatus::Inconsistent)
-    {
-        ResponseStatus::Partial
-    } else if items
-        .iter()
-        .any(|item| item.status == ResponseStatus::Partial)
-    {
+    } else if items.iter().any(|item| {
+        matches!(
+            item.status,
+            ResponseStatus::Inconsistent | ResponseStatus::Partial
+        )
+    }) {
         ResponseStatus::Partial
     } else {
         ResponseStatus::Complete
@@ -1206,6 +1215,7 @@ async fn query_item_tx(
             });
             continue;
         }
+        let lane_started = Instant::now();
         let (lane_name, results, failure, completeness) = match mode {
             RetrievalMode::Exact => (
                 "exact",
@@ -1280,6 +1290,12 @@ async fn query_item_tx(
             ),
         };
         let candidate_count = results.len();
+        telemetry::record_retrieval_lane(
+            lane_name,
+            candidate_count,
+            failure.is_some(),
+            lane_started,
+        );
         let partition = CoveragePartition {
             partition: lane_name.to_owned(),
             lane: lane_name.to_owned(),
@@ -1369,15 +1385,13 @@ async fn load_session_tx(
           ON cr.user_id = s.user_id AND cr.id = s.corpus_revision_id
         WHERE s.user_id = $1
           AND s.id = $2
-          AND s.credential_id = $3
           AND s.expires_at > clock_timestamp()
-          AND sc.scope_ref = ANY($4::text[])
+          AND sc.scope_ref = ANY($3::text[])
           AND sc.scope_ref = ANY(s.authorization_scope_refs)
         "#,
     )
     .bind(auth.user_id.0)
     .bind(session_id)
-    .bind(auth.credential_id.0)
     .bind(&auth.scope_refs)
     .fetch_optional(&mut **tx)
     .await?
@@ -1437,10 +1451,11 @@ fn validate_open_request(session: &PinnedSession, request: &OpenRequest) -> ApiR
             json!({"task_size_bytes": request.task.len()}),
         ));
     }
-    if request.as_of != "latest"
-        && request.as_of != session.corpus_revision_ref
-        && request.as_of != session.revision_number.to_string()
-    {
+    if !open_revision_matches(
+        &request.as_of,
+        session.corpus_revision_id,
+        session.revision_number,
+    ) {
         return Err(ApiError::conflict(
             "revision_mismatch",
             "open.as_of does not match the immutable session revision",
@@ -1457,6 +1472,12 @@ fn validate_open_request(session: &PinnedSession, request: &OpenRequest) -> ApiR
         ));
     }
     Ok(())
+}
+
+fn open_revision_matches(value: &str, revision_id: Uuid, revision_number: i64) -> bool {
+    value == "latest"
+        || value == revision_number.to_string()
+        || parse_uuid_ref(value, &["revision"]).is_ok_and(|parsed| parsed == revision_id)
 }
 
 fn validate_query_scope(session: &PinnedSession, scope: Option<&QueryScope>) -> ApiResult<()> {
@@ -3956,14 +3977,28 @@ pub async fn read(
     let session = load_session(state, auth, &request.session_id, Capability::Read).await?;
     let mut items = Vec::with_capacity(request.requests.len());
     for spec in &request.requests {
+        let item_started = Instant::now();
+        let view = read_view_name(spec.view);
         let mut tx = state.begin_read(auth).await?;
         match read_item_tx(&mut tx, state, codec, &session, spec).await {
             Ok(item) => {
                 tx.commit().await?;
+                metrics::histogram!(
+                    "read.item.duration_ms",
+                    "view" => view,
+                    "status" => telemetry::item_status(item.status)
+                )
+                .record(telemetry::elapsed_ms(item_started));
                 items.push(item);
             }
             Err(error) => {
                 tx.rollback().await?;
+                metrics::histogram!(
+                    "read.item.duration_ms",
+                    "view" => view,
+                    "status" => "failed"
+                )
+                .record(telemetry::elapsed_ms(item_started));
                 items.push(ReadItemResult {
                     reference: spec.reference.clone(),
                     view: read_view_name(spec.view).to_owned(),
@@ -4240,8 +4275,8 @@ fn text_read_result_for_snapshot(
         error: None,
         truncation: Truncation {
             truncated,
-            returned_tokens: (returned_chars + 3) / 4,
-            limit_tokens: (max_chars + 3) / 4,
+            returned_tokens: returned_chars.div_ceil(4),
+            limit_tokens: max_chars.div_ceil(4),
             continuation_token,
         },
     })
@@ -4252,8 +4287,8 @@ async fn resolve_record_tx(
     session: &PinnedSession,
     reference: &str,
 ) -> ApiResult<ResolvedRecord> {
-    if let Ok(id) = parse_uuid_ref(reference, &[]) {
-        if let Some(row) = sqlx::query(
+    if let Ok(id) = parse_uuid_ref(reference, &[])
+        && let Some(row) = sqlx::query(
             r#"
             SELECT rk.record_kind, cm.record_version
             FROM straylight.record_keys rk
@@ -4269,13 +4304,12 @@ async fn resolve_record_tx(
         .bind(session.corpus_revision_id)
         .fetch_optional(&mut **tx)
         .await?
-        {
-            return Ok(ResolvedRecord {
-                id,
-                kind: row.try_get("record_kind")?,
-                version: row.try_get("record_version")?,
-            });
-        }
+    {
+        return Ok(ResolvedRecord {
+            id,
+            kind: row.try_get("record_kind")?,
+            version: row.try_get("record_version")?,
+        });
     }
     let candidates = resolve_reference_candidates_tx(tx, session, reference).await?;
     if candidates.len() > 1 {
@@ -4448,20 +4482,49 @@ async fn document_text_tx(
     })?;
     let media_type: String = row.try_get("media_type")?;
     let object_key: Option<String> = row.try_get("object_key")?;
+    let asset_hash: Option<String> = row.try_get("asset_hash")?;
     let mut representation = "normalized_chunks";
+    let mut integrity_warning = None;
     let text = if is_text_media_type(&media_type) {
         if let Some(key) = object_key.as_deref() {
             match state.object_store.get(key).await {
-                Ok(bytes) => match String::from_utf8(bytes.to_vec()) {
-                    Ok(text) => {
-                        representation = "native_asset";
-                        text
-                    }
-                    Err(_) => {
+                Ok(bytes) => {
+                    if !native_asset_hash_matches(asset_hash.as_deref(), &bytes) {
+                        metrics::counter!(
+                            "object_store.integrity_failures",
+                            "failure" => "content_hash_mismatch"
+                        )
+                        .increment(1);
+                        integrity_warning = Some("native_asset_hash_mismatch");
                         reconstruct_document_chunks_tx(tx, session, record.id, version).await?
+                    } else {
+                        match String::from_utf8(bytes.to_vec()) {
+                            Ok(text) => {
+                                representation = "native_asset";
+                                text
+                            }
+                            Err(_) => {
+                                metrics::counter!(
+                                    "object_store.integrity_failures",
+                                    "failure" => "invalid_utf8"
+                                )
+                                .increment(1);
+                                integrity_warning = Some("native_asset_invalid_utf8");
+                                reconstruct_document_chunks_tx(tx, session, record.id, version)
+                                    .await?
+                            }
+                        }
                     }
-                },
-                Err(_) => reconstruct_document_chunks_tx(tx, session, record.id, version).await?,
+                }
+                Err(_) => {
+                    metrics::counter!(
+                        "object_store.integrity_failures",
+                        "failure" => "unavailable"
+                    )
+                    .increment(1);
+                    integrity_warning = Some("native_asset_unavailable");
+                    reconstruct_document_chunks_tx(tx, session, record.id, version).await?
+                }
             }
         } else {
             reconstruct_document_chunks_tx(tx, session, record.id, version).await?
@@ -4469,27 +4532,42 @@ async fn document_text_tx(
     } else {
         reconstruct_document_chunks_tx(tx, session, record.id, version).await?
     };
-    Ok(LoadedText {
-        metadata: json!({
-            "ref": record_ref("document", record.id),
-            "version": version,
-            "title": row.try_get::<Option<String>, _>("title")?,
-            "media_type": media_type,
-            "content_hash": prefixed_hash(row.try_get::<String, _>("content_hash")?),
-            "native_locator": row.try_get::<Value, _>("native_locator")?,
-            "byte_size": row.try_get::<i64, _>("byte_size")?,
-            "source_ref": row.try_get::<String, _>("source_ref")?,
-            "source_version": row.try_get::<Option<String>, _>("source_version")?,
-            "representation": representation,
-            "native_asset": object_key.map(|key| json!({
-                "object_key": key,
-                "size_bytes": row.try_get::<Option<i64>, _>("asset_size").ok().flatten(),
-                "content_hash": row.try_get::<Option<String>, _>("asset_hash").ok().flatten().map(prefixed_hash),
-                "inline": is_text_media_type(&media_type)
-            }))
-        }),
-        text,
-    })
+    let mut metadata = json!({
+        "ref": record_ref("document", record.id),
+        "version": version,
+        "title": row.try_get::<Option<String>, _>("title")?,
+        "media_type": media_type,
+        "content_hash": prefixed_hash(row.try_get::<String, _>("content_hash")?),
+        "native_locator": row.try_get::<Value, _>("native_locator")?,
+        "byte_size": row.try_get::<i64, _>("byte_size")?,
+        "source_ref": row.try_get::<String, _>("source_ref")?,
+        "source_version": row.try_get::<Option<String>, _>("source_version")?,
+        "representation": representation,
+        "native_asset": object_key.map(|key| json!({
+            "object_key": key,
+            "size_bytes": row.try_get::<Option<i64>, _>("asset_size").ok().flatten(),
+            "content_hash": asset_hash.map(prefixed_hash),
+            "inline": is_text_media_type(&media_type)
+        }))
+    });
+    if let Some(warning) = integrity_warning {
+        metadata
+            .as_object_mut()
+            .expect("document metadata is an object")
+            .insert(
+                "integrity_warning".to_owned(),
+                Value::String(warning.to_owned()),
+            );
+    }
+    Ok(LoadedText { metadata, text })
+}
+
+fn native_asset_hash_matches(expected_hash: Option<&str>, bytes: &[u8]) -> bool {
+    let Some(expected_hash) = expected_hash else {
+        return false;
+    };
+    let actual_hash = hex::encode(Sha256::digest(bytes));
+    subtle::ConstantTimeEq::ct_eq(expected_hash.as_bytes(), actual_hash.as_bytes()).into()
 }
 
 async fn reconstruct_document_chunks_tx(
@@ -5544,6 +5622,8 @@ async fn compute_inner(
     let mut estimated_tokens = 0usize;
 
     for step in &request.steps {
+        let step_started = Instant::now();
+        let operator = compute_operator_name(step.op);
         let missing_dependency = step
             .depends_on
             .iter()
@@ -5592,9 +5672,15 @@ async fn compute_inner(
         }
         rows_returned += count_json_rows(&execution.output);
         outputs.insert(step.id.clone(), execution.output.clone());
+        metrics::histogram!(
+            "compute.step.duration_ms",
+            "operator" => operator,
+            "status" => telemetry::item_status(execution.status)
+        )
+        .record(telemetry::elapsed_ms(step_started));
         steps.push(ComputeStepResult {
             id: step.id.clone(),
-            operator: compute_operator_name(step.op).to_owned(),
+            operator: operator.to_owned(),
             status: execution.status,
             output: execution.output,
             evidence_refs: dedup_strings(execution.evidence_refs),
@@ -6690,7 +6776,7 @@ fn number_array(value: Option<&Value>) -> Vec<f64> {
 }
 
 fn haversine_km(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
-    let radius = 6_371.0088_f64;
+    let radius = 6_371.008_8_f64;
     let lat1 = lat1.to_radians();
     let lat2 = lat2.to_radians();
     let delta_lat = lat2 - lat1;
@@ -6716,14 +6802,19 @@ pub async fn verify(
     let session = load_session(state, auth, &request.session_id, Capability::Verify).await?;
     let mut claims = Vec::with_capacity(request.claims.len());
     for (index, claim) in request.claims.iter().enumerate() {
+        let claim_started = Instant::now();
         let mut tx = state.begin_read(auth).await?;
         match verify_claim_tx(&mut tx, &session, claim, &request.check_for, index).await {
             Ok(result) => {
                 tx.commit().await?;
+                metrics::histogram!("verify.claim.duration_ms", "result" => "success")
+                    .record(telemetry::elapsed_ms(claim_started));
                 claims.push(result);
             }
             Err(error) => {
                 tx.rollback().await?;
+                metrics::histogram!("verify.claim.duration_ms", "result" => "failed")
+                    .record(telemetry::elapsed_ms(claim_started));
                 claims.push(VerifyItemResult {
                     id: claim.id.clone().unwrap_or_else(|| format!("claim_{index}")),
                     claim: claim.claim.clone(),
@@ -8967,6 +9058,36 @@ mod tests {
     }
 
     #[test]
+    fn native_assets_must_match_the_committed_content_hash() {
+        let bytes = b"durable source evidence";
+        let expected = hex::encode(Sha256::digest(bytes));
+        assert!(native_asset_hash_matches(Some(&expected), bytes));
+        assert!(!native_asset_hash_matches(None, bytes));
+        assert!(!native_asset_hash_matches(
+            Some(&expected),
+            b"altered evidence"
+        ));
+    }
+
+    #[test]
+    fn open_revision_matching_accepts_hyphenated_and_compact_refs() {
+        let revision_id = Uuid::now_v7();
+        assert!(open_revision_matches(
+            &format!("revision:{revision_id}"),
+            revision_id,
+            7
+        ));
+        assert!(open_revision_matches(
+            &format!("revision:{}", revision_id.simple()),
+            revision_id,
+            7
+        ));
+        assert!(open_revision_matches("latest", revision_id, 7));
+        assert!(open_revision_matches("7", revision_id, 7));
+        assert!(!open_revision_matches("8", revision_id, 7));
+    }
+
+    #[test]
     fn retrieval_sufficiency_is_deterministic_and_reports_missing_anchors() {
         let candidate = retrieval_candidate(
             "Schedule/current.md",
@@ -8975,7 +9096,7 @@ mod tests {
         let source = section_hydrated_source("Schedule/current.md", &[&candidate]);
         let sufficient = open_retrieval_sufficiency(
             "State the current practice schedule and timezone",
-            &[candidate.clone()],
+            std::slice::from_ref(&candidate),
             &[HydratedSource {
                 complete: true,
                 ..source.clone()
@@ -8990,7 +9111,7 @@ mod tests {
         };
         let partial_primary = open_retrieval_sufficiency(
             "State the current practice schedule and timezone",
-            &[candidate.clone()],
+            std::slice::from_ref(&candidate),
             &[source.clone(), complete_secondary],
         );
         assert_eq!(

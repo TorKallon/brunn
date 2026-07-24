@@ -5,7 +5,10 @@
 //! review records, but it never advances an active manifest. Rollback is the
 //! sole manifest mutation here and requires an existing promotion receipt.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    time::Instant,
+};
 
 use axum::http::StatusCode;
 use chrono::{DateTime, Utc};
@@ -25,7 +28,9 @@ use crate::{
         Capability, CredentialId, DreamCreateRequest, DreamReviewDecision, DreamReviewRequest,
         ListQuery, UserId,
     },
+    quota::{self, UsageReservation},
     refs::RecordRef,
+    telemetry,
 };
 
 const PHASE: &str = "phase_0_shadow";
@@ -1539,7 +1544,7 @@ pub async fn review_job(
         .unwrap_or(default_reason)
         .to_owned();
 
-    if let Some(existing) = sqlx::query(
+    let existing = sqlx::query(
         r#"
         SELECT decision,reason FROM straylight.dream_reviews
         WHERE user_id=$1 AND candidate_revision_id=$2
@@ -1549,16 +1554,19 @@ pub async fn review_job(
     .bind(auth.user_id.0)
     .bind(candidate_id)
     .fetch_optional(&mut *transaction)
-    .await?
-    {
-        if existing.try_get::<String, _>("decision")? == decision
-            && existing.try_get::<String, _>("reason")? == reason
-        {
-            let mut detail = job_detail_in_tx(&mut transaction, auth.user_id.0, dream_id).await?;
-            detail["review_outcome"] = Value::String("idempotent_replay".to_owned());
-            transaction.commit().await?;
-            return Ok(detail);
+    .await?;
+    let idempotent_replay = match existing {
+        Some(existing) => {
+            existing.try_get::<String, _>("decision")? == decision
+                && existing.try_get::<String, _>("reason")? == reason
         }
+        None => false,
+    };
+    if idempotent_replay {
+        let mut detail = job_detail_in_tx(&mut transaction, auth.user_id.0, dream_id).await?;
+        detail["review_outcome"] = Value::String("idempotent_replay".to_owned());
+        transaction.commit().await?;
+        return Ok(detail);
     }
 
     // The normalized schema requires a record reference for reviewer_ref while
@@ -1881,12 +1889,17 @@ pub async fn process_next_job(state: &AppState, worker_id: &str) -> ApiResult<Op
     let Some(selection) = discover_next_job(state).await? else {
         return Ok(None);
     };
+    let started = Instant::now();
     selection.auth.require(Capability::Dream)?;
     if !claim_job(state, &selection, worker_id).await? {
+        metrics::counter!("worker.job.claim_conflicts", "queue" => "dream").increment(1);
         return Ok(None);
     }
     match process_claimed_job(state, &selection, worker_id).await {
-        Ok(detail) => Ok(Some(detail)),
+        Ok(detail) => {
+            telemetry::record_dream_job(&detail, "succeeded", started);
+            Ok(Some(detail))
+        }
         Err(error) => {
             let failure = sanitized_failure(&error);
             if let Err(mark_error) = mark_job_failed(state, &selection, worker_id, failure).await {
@@ -1897,6 +1910,7 @@ pub async fn process_next_job(state: &AppState, worker_id: &str) -> ApiResult<Op
                     "failed to persist dream failure state"
                 );
             }
+            telemetry::record_dream_job(&json!({"status": "failed"}), "failed", started);
             Err(error)
         }
     }
@@ -3042,6 +3056,55 @@ async fn run_model_consolidation(
     max_candidate_items: usize,
     max_evaluation_queries: usize,
 ) -> ModelRun {
+    let started = Instant::now();
+    let result = run_model_consolidation_inner(
+        state,
+        job_type,
+        user_id,
+        dream_id,
+        base_revision_id,
+        documents,
+        member_ids,
+        allowed_source_refs,
+        expected_query_families,
+        max_input_bytes,
+        max_output_tokens,
+        max_candidate_items,
+        max_evaluation_queries,
+    )
+    .await;
+    telemetry::record_model_run(
+        "dream",
+        &result.requested_model,
+        &result.status,
+        &result.usage,
+        started,
+    );
+    metrics::histogram!("dream.model.candidates", "status" => result.status.clone())
+        .record(result.candidates.len() as f64);
+    metrics::histogram!(
+        "dream.model.validation_errors",
+        "status" => result.status.clone()
+    )
+    .record(result.validation_errors.len() as f64);
+    result
+}
+
+async fn run_model_consolidation_inner(
+    state: &AppState,
+    job_type: &str,
+    user_id: Uuid,
+    dream_id: Uuid,
+    base_revision_id: Uuid,
+    documents: &[SourceDocument],
+    member_ids: &BTreeSet<Uuid>,
+    allowed_source_refs: &BTreeSet<Uuid>,
+    expected_query_families: &[String],
+    max_input_bytes: usize,
+    max_output_tokens: u64,
+    max_candidate_items: usize,
+    max_evaluation_queries: usize,
+) -> ModelRun {
     let requested_model = state.config.dream_model.clone();
     if job_type != "deep_consolidation" {
         return ModelRun {
@@ -3106,6 +3169,32 @@ async fn run_model_consolidation(
                 .to_owned(),
         );
     };
+    let Some(admin_pool) = state.admin_pool.as_ref() else {
+        return degraded_model_run(
+            requested_model,
+            "degraded_unavailable",
+            request_hash,
+            "the worker has no administrative database pool for model quota enforcement".to_owned(),
+        );
+    };
+    if let Err(error) = quota::reserve_for_user(
+        admin_pool,
+        user_id,
+        UsageReservation {
+            model_input_chars: (bundle_bytes.len() + DREAM_INSTRUCTIONS.len()) as u64,
+            model_output_tokens: max_output_tokens,
+            ..UsageReservation::default()
+        },
+    )
+    .await
+    {
+        return degraded_model_run(
+            requested_model,
+            "quota_exceeded",
+            request_hash,
+            error.to_string(),
+        );
+    }
     let client = match Client::builder()
         .timeout(state.config.request_timeout)
         .build()
@@ -5376,7 +5465,7 @@ fn normalize_create(request: DreamCreateRequest) -> ApiResult<NormalizedCreate> 
             Ok((reference.to_owned(), id))
         })
         .collect::<ApiResult<Vec<_>>>()?;
-    root_pairs.sort_by(|left, right| left.1.cmp(&right.1));
+    root_pairs.sort_by_key(|pair| pair.1);
     root_pairs.dedup_by_key(|pair| pair.1);
     let (root_refs, root_ids): (Vec<_>, Vec<_>) = root_pairs.into_iter().unzip();
 

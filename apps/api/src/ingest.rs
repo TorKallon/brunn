@@ -139,7 +139,7 @@ fn split_section(
 }
 
 pub fn estimate_tokens(text: &str) -> usize {
-    (text.chars().count() + 3) / 4
+    text.chars().count().div_ceil(4)
 }
 
 pub fn sha256_prefixed(bytes: &[u8]) -> String {

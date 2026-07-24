@@ -1,11 +1,13 @@
 use axum::{
     Extension, Json,
     extract::{Multipart, Path, Query, State},
+    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde_json::{Value, json};
 
 use crate::{
+    account_service, admin_service,
     auth::AuthContext,
     capture_service,
     continuation::ContinuationCodec,
@@ -16,26 +18,68 @@ use crate::{
         ApiEnvelope, Capability, CaptureRequest, CheckpointRequest, ComputeRequest, ListQuery,
         OpenRequest, QueryRequest, ReadRequest, ResponseStatus, SaveRequest, VerifyRequest,
     },
-    read_service, session_service,
+    quota::{self, UsageReservation},
+    read_service, session_service, telemetry, usage_service,
     write_service::{self, StageUpload},
 };
 
 pub async fn health() -> Json<Value> {
-    Json(json!({"status": "ok", "service": "straylight", "version": env!("CARGO_PKG_VERSION")}))
+    Json(json!({
+        "status": "ok",
+        "service": "straylight",
+        "version": env!("CARGO_PKG_VERSION"),
+        "build_revision": build_revision()
+    }))
 }
 
-pub async fn ready(State(state): State<AppState>) -> ApiResult<Json<Value>> {
-    sqlx::query_scalar::<_, i32>("SELECT 1")
-        .fetch_one(&state.auth_pool)
-        .await?;
-    Ok(Json(json!({
-        "status": "ready",
-        "database": "ready",
-        "object_store": "ready",
-        "embeddings": if state.embedder.is_degraded() { "degraded" } else { "ready" },
-        "embedding_provider": state.embedder.provider(),
-        "embedding_model": state.embedder.model()
-    })))
+pub async fn ready(State(state): State<AppState>) -> Response {
+    let timeout = state.config.readiness_timeout;
+    let (database, object_store) = tokio::join!(
+        tokio::time::timeout(
+            timeout,
+            sqlx::query_scalar::<_, i32>("SELECT 1").fetch_one(&state.auth_pool)
+        ),
+        tokio::time::timeout(timeout, state.object_store.health_check())
+    );
+    let database_ready = matches!(database, Ok(Ok(1)));
+    let object_store_ready = matches!(object_store, Ok(Ok(())));
+    let embeddings_ready = !state.embedder.is_degraded();
+    let embeddings_required = state.config.embedding_provider == "openai";
+    let ready = readiness_is_available(
+        database_ready,
+        object_store_ready,
+        embeddings_ready,
+        embeddings_required,
+    );
+    let status = if ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({
+            "status": if ready { "ready" } else { "unavailable" },
+            "dependencies": {
+                "database": if database_ready { "ready" } else { "unavailable" },
+                "object_store": if object_store_ready { "ready" } else { "unavailable" },
+                "embeddings": if embeddings_ready { "ready" } else { "degraded" }
+            },
+            "embedding_provider": state.embedder.provider(),
+            "embedding_model": state.embedder.model(),
+            "build_revision": build_revision()
+        })),
+    )
+        .into_response()
+}
+
+fn readiness_is_available(
+    database_ready: bool,
+    object_store_ready: bool,
+    embeddings_ready: bool,
+    embeddings_required: bool,
+) -> bool {
+    database_ready && object_store_ready && (embeddings_ready || !embeddings_required)
 }
 
 pub async fn openapi() -> Json<Value> {
@@ -53,6 +97,7 @@ pub async fn openapi() -> Json<Value> {
             "/v1/memory/save": {"post": {"operationId": "memorySave"}},
             "/v1/memory/stage": {"post": {"operationId": "memoryStage"}},
             "/v1/memory/checkpoint": {"post": {"operationId": "memoryCheckpoint"}},
+            "/v1/usage": {"get": {"operationId": "getDataUsage"}},
             "/v1/deletions/{deletion_ref}": {"get": {"operationId": "getDeletion"}}
         },
         "components": {"securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}}},
@@ -82,6 +127,7 @@ pub async fn status(
     tx.commit().await?;
     Ok(Json(json!({
         "status": "ready",
+        "build_revision": build_revision(),
         "corpus_revision": revision.as_ref().map(|value| format!("revision:{}", value.0)),
         "revision_sequence": revision.map(|value| value.1),
         "read_only": auth.read_only,
@@ -94,6 +140,10 @@ pub async fn status(
     })))
 }
 
+fn build_revision() -> &'static str {
+    option_env!("STRAYLIGHT_BUILD_REVISION").unwrap_or("unknown")
+}
+
 pub async fn open(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
@@ -101,6 +151,7 @@ pub async fn open(
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let session_id = session_service::provision(&state, &auth, &request).await?;
     let result = read_service::open(&state, &auth, &session_id, &request).await?;
+    telemetry::record_open(&result);
     let mut data = session_service::project_response(
         &state,
         &auth,
@@ -134,6 +185,7 @@ pub async fn open(
     envelope.conflicts = projected_conflicts;
     envelope.gaps = projected_gaps;
     envelope.ambiguities = projected_ambiguities;
+    telemetry::record_operation("open", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -143,6 +195,7 @@ pub async fn query(
     Json(request): Json<QueryRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let result = read_service::query(&state, &auth, &request).await?;
+    telemetry::record_query(&result);
     let mut data = serde_json::to_value(&result)?;
     if result.items.len() == 1
         && let Some(object) = data.as_object_mut()
@@ -174,6 +227,7 @@ pub async fn query(
     envelope.status = result.status;
     envelope.freshness = result.freshness;
     envelope.coverage = result.coverage;
+    telemetry::record_operation("query", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -184,6 +238,7 @@ pub async fn read(
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let codec = ContinuationCodec::new(&state.config.continuation_secret);
     let result = read_service::read(&state, &auth, &codec, &request).await?;
+    telemetry::record_read(&result);
     let mut data = session_service::project_response(
         &state,
         &auth,
@@ -200,6 +255,7 @@ pub async fn read(
     envelope.status = result.status;
     envelope.freshness = result.freshness;
     envelope.coverage = result.coverage;
+    telemetry::record_operation("read", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -208,8 +264,19 @@ pub async fn compute(
     Extension(auth): Extension<AuthContext>,
     Json(request): Json<ComputeRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
+    request.validate()?;
+    quota::reserve_for_auth(
+        &state,
+        &auth,
+        UsageReservation {
+            compute_rows: request.max_rows.unwrap_or(10_000) as u64,
+            ..UsageReservation::default()
+        },
+    )
+    .await?;
     let codec = ContinuationCodec::new(&state.config.continuation_secret);
     let result = read_service::compute(&state, &auth, &codec, &request).await?;
+    telemetry::record_compute(&result);
     let mut data = session_service::project_response(
         &state,
         &auth,
@@ -225,6 +292,7 @@ pub async fn compute(
     envelope.corpus_revision = Some(result.corpus_revision);
     envelope.status = result.status;
     envelope.freshness = result.freshness;
+    telemetry::record_operation("compute", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -234,6 +302,7 @@ pub async fn verify(
     Json(request): Json<VerifyRequest>,
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let result = read_service::verify(&state, &auth, &request).await?;
+    telemetry::record_verify(&result);
     let mut data = serde_json::to_value(&result)?;
     if let Some(object) = data.as_object_mut() {
         object.insert("results".to_owned(), serde_json::to_value(&result.claims)?);
@@ -254,6 +323,7 @@ pub async fn verify(
     envelope.status = result.status;
     envelope.freshness = result.freshness;
     envelope.coverage = result.coverage;
+    telemetry::record_operation("verify", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -264,12 +334,14 @@ pub async fn save(
 ) -> ApiResult<Json<ApiEnvelope<Value>>> {
     let mut result = write_service::save(&state, &auth, request).await?;
     add_write_receipt_aliases(&mut result);
+    telemetry::record_write("save", &result);
     let mut envelope = ApiEnvelope::complete(result.clone());
     envelope.status = ResponseStatus::Committed;
     envelope.corpus_revision = result
         .get("corpus_revision")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
+    telemetry::record_operation("save", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -282,9 +354,11 @@ pub async fn capture(
     if outcome.status == ResponseStatus::Committed {
         add_write_receipt_aliases(&mut outcome.data);
     }
+    telemetry::record_capture(outcome.status, &outcome.data);
     let mut envelope = ApiEnvelope::complete(outcome.data);
     envelope.status = outcome.status;
     envelope.corpus_revision = outcome.corpus_revision;
+    telemetry::record_operation("capture", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -380,6 +454,7 @@ pub async fn checkpoint(
         object.insert("checkpoint_id".to_owned(), checkpoint_id);
         object.insert("session_id".to_owned(), Value::String(session_id.clone()));
     }
+    telemetry::record_write("checkpoint", &result);
     let mut envelope = ApiEnvelope::complete(result.clone());
     envelope.status = ResponseStatus::Committed;
     envelope.session_id = Some(session_id);
@@ -387,6 +462,7 @@ pub async fn checkpoint(
         .get("corpus_revision")
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
+    telemetry::record_operation("checkpoint", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -435,8 +511,11 @@ pub async fn stage(
     let scope = scope
         .or_else(|| auth.scope_refs.first().cloned())
         .ok_or_else(|| ApiError::invalid("stage requires scope"))?;
+    let upload_count = uploads.len();
+    let upload_bytes = uploads.iter().map(|upload| upload.bytes.len()).sum();
     let result =
         write_service::stage_uploads(&state, &auth, &scope, stable_import_id, uploads).await?;
+    telemetry::record_stage(upload_count, upload_bytes, &result);
     let stage_ref = result
         .get("stage_ref")
         .and_then(Value::as_str)
@@ -453,6 +532,7 @@ pub async fn stage(
     .await?;
     let mut envelope = ApiEnvelope::complete(data);
     envelope.status = ResponseStatus::Complete;
+    telemetry::record_operation("stage", envelope.status, &envelope);
     Ok(Json(envelope))
 }
 
@@ -493,6 +573,16 @@ pub async fn list_audit(
 ) -> ApiResult<Json<Value>> {
     Ok(Json(
         control_service::list_audit(&state, &auth, &query).await?,
+    ))
+}
+
+pub async fn data_usage(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Query(query): Query<ListQuery>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        usage_service::data_usage(&state, &auth, &query).await?,
     ))
 }
 
@@ -602,6 +692,27 @@ pub async fn create_credential(
     ))
 }
 
+pub async fn admin_provision_user(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(request): Json<admin_service::ProvisionUserRequest>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        admin_service::provision_user(&state, &auth, request).await?,
+    ))
+}
+
+pub async fn admin_recover_credential(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(user_ref): Path<String>,
+    Json(request): Json<admin_service::RecoverCredentialRequest>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        admin_service::recover_credential(&state, &auth, &user_ref, request).await?,
+    ))
+}
+
 pub async fn revoke_credential(
     State(state): State<AppState>,
     Extension(auth): Extension<AuthContext>,
@@ -609,6 +720,77 @@ pub async fn revoke_credential(
 ) -> ApiResult<Json<Value>> {
     Ok(Json(
         control_service::revoke_credential(&state, &auth, &credential_ref).await?,
+    ))
+}
+
+pub async fn request_account_export(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(account_service::request_export(&state, &auth).await?))
+}
+
+pub async fn list_account_exports(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(account_service::list_exports(&state, &auth).await?))
+}
+
+pub async fn get_account_export(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(export_ref): Path<String>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        account_service::get_export(&state, &auth, &export_ref).await?,
+    ))
+}
+
+pub async fn download_account_export(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(export_ref): Path<String>,
+) -> ApiResult<Response> {
+    account_service::download_export(&state, &auth, &export_ref).await
+}
+
+pub async fn delete_account_export(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(export_ref): Path<String>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        account_service::delete_export(&state, &auth, &export_ref).await?,
+    ))
+}
+
+pub async fn request_account_deletion(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(request): Json<account_service::DeleteAccountRequest>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        account_service::request_deletion(&state, &auth, request).await?,
+    ))
+}
+
+pub async fn get_latest_account_deletion(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        account_service::get_deletion(&state, &auth, None).await?,
+    ))
+}
+
+pub async fn get_account_deletion(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(request_ref): Path<String>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        account_service::get_deletion(&state, &auth, Some(&request_ref)).await?,
     ))
 }
 
@@ -648,5 +830,14 @@ mod tests {
         }
         assert!(object.contains_key("initial_evidence"));
         assert!(object.contains_key("projection"));
+    }
+
+    #[test]
+    fn readiness_fails_closed_for_canonical_dependencies() {
+        assert!(readiness_is_available(true, true, true, true));
+        assert!(!readiness_is_available(false, true, true, true));
+        assert!(!readiness_is_available(true, false, true, true));
+        assert!(!readiness_is_available(true, true, false, true));
+        assert!(readiness_is_available(true, true, false, false));
     }
 }

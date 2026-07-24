@@ -4,6 +4,18 @@ import { describe, expect, it } from "vitest";
 import { defaultMe, installApiMock, renderApp } from "./renderApp";
 
 describe("read-only capabilities", () => {
+  it("disables workspace creation for a read-only credential", async () => {
+    const me = structuredClone(defaultMe);
+    me.data.read_only = true;
+    me.data.capabilities = ["read", "memory.query", "memory.verify"];
+    me.data.active_scope.access = "read_only";
+    installApiMock({ "GET /api/v1/me": me });
+    renderApp("/work", "readonly-token");
+
+    expect(await screen.findByRole("button", { name: "New workspace" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Open workspace" })).toBeDisabled();
+  });
+
   it("disables all capture mutations for a read-only credential", async () => {
     const me = structuredClone(defaultMe);
     me.data.read_only = true;

@@ -117,6 +117,7 @@ export interface CheckpointSummary {
   gates?: GateSummary[];
   next_actions?: ActionSummary[];
   source_refs?: string[];
+  state?: JsonObject;
 }
 
 export interface SessionSummary {
@@ -436,6 +437,50 @@ export interface AuditEvent {
   created_at: string;
   request_id?: string;
   details?: JsonValue;
+}
+
+export interface DataUsageItem {
+  id: string;
+  source_ref: string;
+  title: string;
+  kind: string;
+  version?: string | null;
+  scope_id: string;
+  captured_at: string;
+  access_count: number;
+  record_exposure_count: number;
+  reference_occurrence_count: number;
+  session_count: number;
+  first_used_at?: string | null;
+  last_used_at?: string | null;
+  never_used: boolean;
+  operation_counts: Record<"open" | "query" | "read" | "compute" | "verify", number>;
+}
+
+export interface OperationUsage {
+  operation: "open" | "query" | "read" | "compute" | "verify";
+  source_uses: number;
+  record_exposures: number;
+  reference_occurrences: number;
+  response_count: number;
+}
+
+export interface DataUsage {
+  summary: {
+    active_source_count: number;
+    used_source_count: number;
+    never_used_source_count: number;
+    source_uses: number;
+    record_exposures: number;
+    reference_occurrences: number;
+    tracked_response_count: number;
+    tracked_since?: string | null;
+    last_used_at?: string | null;
+  };
+  most_used: DataUsageItem[];
+  least_used: DataUsageItem[];
+  least_recently_used: DataUsageItem[];
+  by_operation: OperationUsage[];
 }
 
 export interface ServiceStatus {

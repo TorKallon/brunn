@@ -35,6 +35,7 @@ use crate::{
     error::{ApiError, ApiResult},
     ingest::normalize_document,
     models::{Capability, CredentialId, UserId, canonical_json},
+    quota::{self, UsageReservation},
 };
 
 const EVAL_SCHEMA: &str = "straylight-eval-import@v1";
@@ -277,7 +278,7 @@ pub async fn provision_evaluation(
     caller: &AuthContext,
     request: EvalImportRequest,
 ) -> ApiResult<EvalImportResponse> {
-    caller.require(Capability::Save)?;
+    caller.require(Capability::Admin)?;
     let access_mode = request.validate()?;
     if state.embedder.dimensions() != EMBEDDING_DIMENSIONS {
         return Err(ApiError::public(
@@ -302,6 +303,7 @@ pub async fn provision_evaluation(
         .bind(format!("straylight-eval:{external_ref}"))
         .execute(&mut *tx)
         .await?;
+    set_context(&mut tx, caller).await?;
 
     // Bootstrap with write capabilities so read-only evaluation corpora can be
     // built under ordinary RLS. The credential is atomically reduced to its
@@ -361,6 +363,22 @@ pub async fn provision_evaluation(
         return Ok(replay);
     }
 
+    let embedding_input_chars = prepared
+        .documents
+        .iter()
+        .filter(|document| !document.duplicate)
+        .flat_map(|document| &document.chunks)
+        .map(|chunk| chunk.content.len())
+        .sum::<usize>();
+    quota::reserve_in_tx(
+        &mut tx,
+        user_id,
+        UsageReservation {
+            embedding_input_chars: embedding_input_chars as u64,
+            ..UsageReservation::default()
+        },
+    )
+    .await?;
     let embeddings = embed_prepared_chunks(state, &prepared).await?;
     for document in &prepared.documents {
         insert_prepared_document(
@@ -598,7 +616,7 @@ pub async fn evaluation_import_status(
     caller: &AuthContext,
     import_id: &str,
 ) -> ApiResult<EvalImportResponse> {
-    caller.require(Capability::Save)?;
+    caller.require(Capability::Admin)?;
     let locator = verify_import_locator(&state.config.continuation_secret, import_id)?;
     let access_mode = AccessMode::parse(&locator.access_mode)?;
     let auth = evaluation_auth(
@@ -1062,16 +1080,16 @@ async fn bootstrap_user(
         .iter()
         .map(|value| (*value).to_owned())
         .collect();
-    Ok(
-        sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
-            .bind(external_ref)
-            .bind(display_name)
-            .bind(credential_label)
-            .bind(token_hash)
-            .bind(&capabilities)
-            .fetch_one(&mut **tx)
-            .await?,
+    Ok(sqlx::query_as(
+        "SELECT * FROM straylight_auth.bootstrap_evaluation_user($1, $2, $3, $4, $5)",
     )
+    .bind(external_ref)
+    .bind(display_name)
+    .bind(credential_label)
+    .bind(token_hash)
+    .bind(&capabilities)
+    .fetch_one(&mut **tx)
+    .await?)
 }
 
 async fn finalize_credential(

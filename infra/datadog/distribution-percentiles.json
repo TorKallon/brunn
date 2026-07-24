@@ -1,0 +1,109 @@
+{
+  "straylight.compute.step.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "operator",
+    "status"
+  ],
+  "straylight.db.transaction.begin.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "access",
+    "result"
+  ],
+  "straylight.embedding.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "provider",
+    "model",
+    "result"
+  ],
+  "straylight.http.request.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "method",
+    "route",
+    "status_code"
+  ],
+  "straylight.model.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "purpose",
+    "provider",
+    "model",
+    "status"
+  ],
+  "straylight.object_store.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "operation",
+    "result"
+  ],
+  "straylight.projection.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "operation",
+    "action"
+  ],
+  "straylight.projection.withheld_paths": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "operation"
+  ],
+  "straylight.read.item.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "view",
+    "status"
+  ],
+  "straylight.retrieval.lane.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "lane",
+    "result"
+  ],
+  "straylight.retrieval.lane.raw_candidates": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "lane",
+    "result"
+  ],
+  "straylight.stage.upload_bytes": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.worker.job.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "queue",
+    "job_kind",
+    "result",
+    "status"
+  ]
+}

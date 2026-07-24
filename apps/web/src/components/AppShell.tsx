@@ -122,6 +122,8 @@ export function AppShell({ children }: PropsWithChildren) {
               className="user-menu-trigger"
               type="button"
               onClick={() => setUserOpen((value) => !value)}
+              aria-label={`User menu for ${me.user.display_name}`}
+              aria-haspopup="menu"
               aria-expanded={userOpen}
             >
               <CircleUserRound size={19} aria-hidden="true" />

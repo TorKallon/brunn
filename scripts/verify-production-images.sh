@@ -1,0 +1,50 @@
+#!/bin/sh
+set -eu
+
+usage() {
+  echo "usage: $0 ENV_FILE" >&2
+  exit 64
+}
+
+[ "$#" -eq 1 ] || usage
+env_file=$1
+[ -f "$env_file" ] || {
+  echo "production environment file does not exist: $env_file" >&2
+  exit 1
+}
+
+read_value() {
+  awk -F= -v key="$1" '
+    $1 == key {
+      sub(/^[^=]*=/, "")
+      print
+      exit
+    }
+  ' "$env_file"
+}
+
+revision=$(read_value STRAYLIGHT_RELEASE_REVISION)
+for name in STRAYLIGHT_DATABASE_IMAGE STRAYLIGHT_API_IMAGE \
+  STRAYLIGHT_WEB_IMAGE STRAYLIGHT_MCP_IMAGE STRAYLIGHT_EDGE_IMAGE \
+  STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE; do
+  image=$(read_value "$name")
+  [ -n "$image" ] || {
+    echo "$name is missing" >&2
+    exit 1
+  }
+  docker image inspect "$image" >/dev/null 2>&1 || {
+    echo "$name is not loaded locally: $image" >&2
+    exit 1
+  }
+  image_revision=$(
+    docker image inspect \
+      --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' \
+      "$image"
+  )
+  [ "$image_revision" = "$revision" ] || {
+    echo "$name revision label $image_revision does not match $revision" >&2
+    exit 1
+  }
+done
+
+echo "production image identity valid: revision=$revision"

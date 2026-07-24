@@ -1,0 +1,182 @@
+[
+  {
+    "name": "[Straylight] API heartbeat missing",
+    "type": "metric alert",
+    "query": "avg(last_5m):avg:straylight.runtime.alive{env:__DD_ENV__,service:__DD_SERVICE__,component:api} < 1",
+    "message": "The Straylight API has stopped reporting its runtime heartbeat. Check deployment health, container state, and dependency readiness.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "notify_no_data": true,
+      "no_data_timeframe": 5,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Straylight] Worker heartbeat missing",
+    "type": "metric alert",
+    "query": "avg(last_5m):avg:straylight.runtime.alive{env:__DD_ENV__,service:__DD_SERVICE__,component:worker} < 1",
+    "message": "The Straylight worker has stopped reporting its runtime heartbeat. Durable jobs may no longer be advancing.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "notify_no_data": true,
+      "no_data_timeframe": 5,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Straylight] HTTP 5xx responses",
+    "type": "query alert",
+    "query": "sum(last_5m):sum:straylight.http.requests{env:__DD_ENV__,service:__DD_SERVICE__,status_class:5xx}.as_count() >= 5",
+    "message": "Straylight returned server errors. Correlate request IDs with structured API logs before retrying writes.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"warning": 1, "critical": 5}
+    }
+  },
+  {
+    "name": "[Straylight] Canonical dependency unavailable",
+    "type": "query alert",
+    "query": "max(last_5m):max:straylight.dependency.state{env:__DD_ENV__,service:__DD_SERVICE__,state:unavailable} by {dependency} >= 1",
+    "message": "A canonical Straylight dependency is unavailable. Readiness should be failing closed for the affected dependency.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Straylight] Database pool saturation",
+    "type": "query alert",
+    "query": "avg(last_10m):max:straylight.db.pool.utilization{env:__DD_ENV__,service:__DD_SERVICE__} by {pool} > 0.9",
+    "message": "A Straylight database pool is near saturation. Inspect in-flight requests and database latency before changing pool sizes.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": true,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 0.8, "critical": 0.9}
+    }
+  },
+  {
+    "name": "[Straylight] Durable queue stalled",
+    "type": "query alert",
+    "query": "max(last_5m):max:straylight.worker.queue.oldest_age_seconds{env:__DD_ENV__,service:__DD_SERVICE__} by {queue,status} > 900",
+    "message": "A durable Straylight queue has old unfinished work. Inspect queue state, worker leases, and bounded retry status.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 300, "critical": 900}
+    }
+  },
+  {
+    "name": "[Straylight] Deletion propagation failure",
+    "type": "query alert",
+    "query": "sum(last_5m):sum:straylight.deletion.surfaces{env:__DD_ENV__,service:__DD_SERVICE__,result:failed} by {surface}.as_count() >= 1",
+    "message": "A canonical deletion surface failed. Do not report deletion complete until every surface is terminal and verified.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 15,
+      "new_group_delay": 60,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Straylight] Model request degraded",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:straylight.model.requests{env:__DD_ENV__,service:__DD_SERVICE__,status IN (degraded_unavailable,invalid_output)} by {purpose,model,status}.as_count() >= 1",
+    "message": "A capture or dreaming model request degraded or returned invalid structured output. Canonical writes must remain gated.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Straylight] Embedding request failures",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:straylight.embedding.requests{env:__DD_ENV__,service:__DD_SERVICE__,result:error} by {provider,model}.as_count() >= 3",
+    "message": "Embedding requests are failing. Inspect provider status and indexing backlog; do not silently switch embedding semantics.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 1, "critical": 3}
+    }
+  },
+  {
+    "name": "[Straylight] Object integrity failure",
+    "type": "query alert",
+    "query": "sum(last_5m):sum:straylight.object_store.integrity_failures{env:__DD_ENV__,service:__DD_SERVICE__} by {operation}.as_count() >= 1",
+    "message": "Stored bytes did not match their committed hash. Treat this as a data-integrity incident and preserve the evidence.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 15,
+      "new_group_delay": 60,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Straylight] Telemetry snapshot failure",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:straylight.telemetry.snapshot.errors{env:__DD_ENV__,service:__DD_SERVICE__} by {snapshot}.as_count() >= 3",
+    "message": "Straylight cannot collect an operational snapshot. Runtime behavior may still be healthy, but observability is incomplete.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 1, "critical": 3}
+    }
+  },
+  {
+    "name": "[Straylight] DogStatsD packets dropped",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:datadog.dogstatsd.client.packets_dropped{env:__DD_ENV__,service:__DD_SERVICE__}.as_count() >= 1",
+    "message": "The Straylight metrics exporter dropped DogStatsD packets. Operational telemetry is incomplete.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"critical": 1}
+    }
+  }
+]

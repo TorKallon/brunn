@@ -14,6 +14,7 @@ use aws_sdk_s3::{
 use bytes::Bytes;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use tokio::io::AsyncReadExt;
 
 use crate::{
     config::Config,
@@ -21,9 +22,9 @@ use crate::{
     models::UserId,
 };
 
-const MAX_STAGE_BYTES: usize = 512 * 1024 * 1024;
-const MAX_ARCHIVE_FILES: usize = 10_000;
-const MAX_ARCHIVE_EXPANDED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_STAGE_BYTES: usize = 64 * 1024 * 1024;
+const MAX_ARCHIVE_FILES: usize = 2_000;
+const MAX_ARCHIVE_EXPANDED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_ARCHIVE_RATIO: u64 = 200;
 const MAX_ARCHIVE_PATH_BYTES: usize = 1_024;
 const MAX_ARCHIVE_INSPECTION_TIME: Duration = Duration::from_secs(5);
@@ -39,6 +40,45 @@ pub struct StoredBlob {
     pub sha256: String,
     pub size_bytes: usize,
     pub object_key: String,
+    pub created: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct StoredFile {
+    pub sha256: String,
+    pub size_bytes: u64,
+    pub object_key: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ObjectStoreQualification {
+    pub status: &'static str,
+    pub bucket_versioning: String,
+    pub conditional_create: bool,
+    pub content_deduplication: bool,
+    pub metadata_round_trip: bool,
+    pub object_version_ids: bool,
+    pub delete_markers: bool,
+    pub exact_version_purge: PurgeResult,
+    pub prefix_version_purge: PurgeResult,
+}
+
+pub struct ObjectStream {
+    pub body: ByteStream,
+    pub content_length: Option<i64>,
+    pub content_type: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct PurgeResult {
+    pub versions_deleted: usize,
+    pub delete_markers_deleted: usize,
+}
+
+impl PurgeResult {
+    pub fn total_deleted(self) -> usize {
+        self.versions_deleted + self.delete_markers_deleted
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -97,14 +137,15 @@ impl ObjectStore {
     }
 
     pub async fn ensure_bucket(&self) -> ApiResult<()> {
-        if self
+        let started = Instant::now();
+        let missing = self
             .client
             .head_bucket()
             .bucket(&self.bucket)
             .send()
             .await
-            .is_err()
-        {
+            .is_err();
+        if missing {
             self.client
                 .create_bucket()
                 .bucket(&self.bucket)
@@ -114,6 +155,19 @@ impl ObjectStore {
                     ApiError::Internal(format!("could not create object bucket: {error}"))
                 })?;
         }
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "ensure_bucket",
+            "result" => "success",
+            "created" => if missing { "true" } else { "false" }
+        )
+        .increment(1);
+        metrics::histogram!(
+            "object_store.duration_ms",
+            "operation" => "ensure_bucket",
+            "result" => "success"
+        )
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
         Ok(())
     }
 
@@ -123,11 +177,12 @@ impl ObjectStore {
         content_type: Option<&str>,
         bytes: Bytes,
     ) -> ApiResult<StoredBlob> {
+        let started = Instant::now();
         if bytes.len() > MAX_STAGE_BYTES {
             return Err(ApiError::public(
                 http::StatusCode::PAYLOAD_TOO_LARGE,
                 "stage_limit_exceeded",
-                "staged objects are limited to 512 MiB",
+                "staged objects are limited to 64 MiB",
             ));
         }
         let digest = hex::encode(Sha256::digest(&bytes));
@@ -141,19 +196,118 @@ impl ObjectStore {
         if let Some(content_type) = content_type {
             request = request.content_type(content_type);
         }
-        request
+        let result = request
             .metadata("sha256", &digest)
+            .if_none_match("*")
             .send()
-            .await
-            .map_err(|error| ApiError::Internal(format!("object upload failed: {error}")))?;
+            .await;
+        let created = match result {
+            Ok(_) => true,
+            Err(error)
+                if error
+                    .raw_response()
+                    .is_some_and(|response| response.status().as_u16() == 412) =>
+            {
+                let existing = self
+                    .client
+                    .head_object()
+                    .bucket(&self.bucket)
+                    .key(&key)
+                    .send()
+                    .await
+                    .map_err(|head_error| {
+                        ApiError::Internal(format!(
+                            "could not verify conditionally retained object: {head_error}"
+                        ))
+                    })?;
+                let expected_size = i64::try_from(bytes.len()).unwrap_or(i64::MAX);
+                let stored_digest = existing
+                    .metadata()
+                    .and_then(|metadata| metadata.get("sha256"))
+                    .map(String::as_str);
+                if existing.content_length() != Some(expected_size)
+                    || stored_digest != Some(digest.as_str())
+                {
+                    return Err(ApiError::Internal(
+                        "content-addressed object metadata does not match its key".to_owned(),
+                    ));
+                }
+                false
+            }
+            Err(error) => {
+                metrics::counter!(
+                    "object_store.operations",
+                    "operation" => "put",
+                    "result" => "error"
+                )
+                .increment(1);
+                return Err(ApiError::Internal(format!("object upload failed: {error}")));
+            }
+        };
+        let outcome = if created { "created" } else { "deduplicated" };
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "put",
+            "result" => outcome
+        )
+        .increment(1);
+        metrics::histogram!(
+            "object_store.duration_ms",
+            "operation" => "put",
+            "result" => outcome
+        )
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
+        metrics::histogram!("object_store.bytes", "operation" => "put").record(bytes.len() as f64);
         Ok(StoredBlob {
             sha256: format!("sha256:{digest}"),
             size_bytes: bytes.len(),
             object_key: key,
+            created,
         })
     }
 
     pub async fn get(&self, key: &str) -> ApiResult<Bytes> {
+        let started = Instant::now();
+        let result = async {
+            let output = self
+                .client
+                .get_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .send()
+                .await
+                .map_err(|error| {
+                    ApiError::not_found("asset_not_found", &format!("{key}: {error}"))
+                })?;
+            output
+                .body
+                .collect()
+                .await
+                .map(|body| body.into_bytes())
+                .map_err(|error| ApiError::Internal(format!("object download failed: {error}")))
+        }
+        .await;
+        let outcome = if result.is_ok() { "success" } else { "error" };
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "get",
+            "result" => outcome
+        )
+        .increment(1);
+        metrics::histogram!(
+            "object_store.duration_ms",
+            "operation" => "get",
+            "result" => outcome
+        )
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
+        if let Ok(bytes) = &result {
+            metrics::histogram!("object_store.bytes", "operation" => "get")
+                .record(bytes.len() as f64);
+        }
+        result
+    }
+
+    pub async fn get_stream(&self, key: &str) -> ApiResult<ObjectStream> {
         let output = self
             .client
             .get_object()
@@ -162,24 +316,576 @@ impl ObjectStore {
             .send()
             .await
             .map_err(|error| ApiError::not_found("asset_not_found", &format!("{key}: {error}")))?;
-        output
-            .body
-            .collect()
-            .await
-            .map(|body| body.into_bytes())
-            .map_err(|error| ApiError::Internal(format!("object download failed: {error}")))
+        Ok(ObjectStream {
+            body: output.body,
+            content_length: output.content_length,
+            content_type: output.content_type,
+        })
     }
 
-    pub async fn delete(&self, key: &str) -> ApiResult<()> {
+    pub async fn put_file(
+        &self,
+        key: &str,
+        content_type: &str,
+        path: &Path,
+    ) -> ApiResult<StoredFile> {
+        let (digest, size_bytes) = sha256_file(path).await?;
+        let body = ByteStream::from_path(path).await.map_err(|error| {
+            ApiError::Internal(format!("could not open object upload file: {error}"))
+        })?;
         self.client
-            .delete_object()
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .content_type(content_type)
+            .content_length(i64::try_from(size_bytes).unwrap_or(i64::MAX))
+            .metadata("sha256", &digest)
+            .body(body)
+            .send()
+            .await
+            .map_err(|error| ApiError::Internal(format!("object upload failed: {error}")))?;
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "put_file",
+            "result" => "success"
+        )
+        .increment(1);
+        metrics::histogram!("object_store.bytes", "operation" => "put_file")
+            .record(size_bytes as f64);
+        Ok(StoredFile {
+            sha256: format!("sha256:{digest}"),
+            size_bytes,
+            object_key: key.to_owned(),
+        })
+    }
+
+    pub async fn download_to_path(&self, key: &str, path: &Path) -> ApiResult<StoredFile> {
+        let output = self
+            .client
+            .get_object()
             .bucket(&self.bucket)
             .key(key)
             .send()
             .await
-            .map_err(|error| ApiError::Internal(format!("object deletion failed: {error}")))?;
+            .map_err(|error| ApiError::not_found("asset_not_found", &format!("{key}: {error}")))?;
+        let mut reader = output.body.into_async_read();
+        let mut file = tokio::fs::File::create(path).await.map_err(|error| {
+            ApiError::Internal(format!("could not create export file: {error}"))
+        })?;
+        tokio::io::copy(&mut reader, &mut file)
+            .await
+            .map_err(|error| ApiError::Internal(format!("object download failed: {error}")))?;
+        file.sync_all()
+            .await
+            .map_err(|error| ApiError::Internal(format!("could not sync export file: {error}")))?;
+        let (digest, size_bytes) = sha256_file(path).await?;
+        Ok(StoredFile {
+            sha256: format!("sha256:{digest}"),
+            size_bytes,
+            object_key: key.to_owned(),
+        })
+    }
+
+    pub async fn health_check(&self) -> ApiResult<()> {
+        self.client
+            .head_bucket()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::public(
+                    http::StatusCode::SERVICE_UNAVAILABLE,
+                    "dependency_unavailable",
+                    format!("object storage is unavailable: {error}"),
+                )
+            })?;
         Ok(())
     }
+
+    pub async fn qualify(&self) -> ApiResult<ObjectStoreQualification> {
+        self.ensure_bucket().await?;
+        let versioning = self
+            .client
+            .get_bucket_versioning()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::Internal(format!("could not inspect bucket versioning: {error}"))
+            })?;
+        let versioning_status = versioning
+            .status()
+            .map(|status| status.as_str().to_owned())
+            .unwrap_or_else(|| "Unset".to_owned());
+        if versioning_status != "Enabled" {
+            return Err(ApiError::Internal(format!(
+                "object store qualification requires bucket versioning; status={versioning_status}"
+            )));
+        }
+
+        let run_id = uuid::Uuid::now_v7();
+        let user_id = UserId(run_id);
+        let qualification_prefix = format!("qualification/{run_id}/");
+        let versioned_key = format!("{qualification_prefix}versioned");
+        let payload = Bytes::from(format!("straylight-object-store-qualification:{run_id}"));
+
+        let result = async {
+            let first = self
+                .put_user_blob(user_id, Some("text/plain"), payload.clone())
+                .await?;
+            if !first.created {
+                return Err(ApiError::Internal(
+                    "first conditional object create was not reported as created".to_owned(),
+                ));
+            }
+            let second = self
+                .put_user_blob(user_id, Some("text/plain"), payload.clone())
+                .await?;
+            if second.created || second.object_key != first.object_key {
+                return Err(ApiError::Internal(
+                    "repeated content did not deduplicate through conditional create".to_owned(),
+                ));
+            }
+            if self.get(&first.object_key).await? != payload {
+                return Err(ApiError::Internal(
+                    "object payload did not round-trip exactly".to_owned(),
+                ));
+            }
+
+            let first_version = self
+                .client
+                .put_object()
+                .bucket(&self.bucket)
+                .key(&versioned_key)
+                .metadata("qualification", "first")
+                .body(ByteStream::from_static(b"first"))
+                .send()
+                .await
+                .map_err(|error| {
+                    ApiError::Internal(format!(
+                        "could not write the first qualification version: {error}"
+                    ))
+                })?;
+            let second_version = self
+                .client
+                .put_object()
+                .bucket(&self.bucket)
+                .key(&versioned_key)
+                .metadata("qualification", "second")
+                .body(ByteStream::from_static(b"second"))
+                .send()
+                .await
+                .map_err(|error| {
+                    ApiError::Internal(format!(
+                        "could not write the second qualification version: {error}"
+                    ))
+                })?;
+            let object_version_ids =
+                first_version.version_id().is_some() && second_version.version_id().is_some();
+            if !object_version_ids {
+                return Err(ApiError::Internal(
+                    "versioned writes did not return object version IDs".to_owned(),
+                ));
+            }
+
+            let head = self
+                .client
+                .head_object()
+                .bucket(&self.bucket)
+                .key(&versioned_key)
+                .send()
+                .await
+                .map_err(|error| {
+                    ApiError::Internal(format!(
+                        "could not inspect qualification metadata: {error}"
+                    ))
+                })?;
+            let metadata_round_trip = head
+                .metadata()
+                .and_then(|metadata| metadata.get("qualification"))
+                .is_some_and(|value| value == "second");
+            if !metadata_round_trip {
+                return Err(ApiError::Internal(
+                    "object metadata did not round-trip exactly".to_owned(),
+                ));
+            }
+
+            let deleted = self
+                .client
+                .delete_object()
+                .bucket(&self.bucket)
+                .key(&versioned_key)
+                .send()
+                .await
+                .map_err(|error| {
+                    ApiError::Internal(format!(
+                        "could not create a qualification delete marker: {error}"
+                    ))
+                })?;
+            let delete_markers =
+                deleted.delete_marker().unwrap_or(false) && deleted.version_id().is_some();
+            if !delete_markers {
+                return Err(ApiError::Internal(
+                    "versioned delete did not create an identified delete marker".to_owned(),
+                ));
+            }
+
+            let listed = self
+                .client
+                .list_object_versions()
+                .bucket(&self.bucket)
+                .prefix(&versioned_key)
+                .send()
+                .await
+                .map_err(|error| {
+                    ApiError::Internal(format!(
+                        "could not list qualification object versions: {error}"
+                    ))
+                })?;
+            let versions = listed
+                .versions()
+                .iter()
+                .filter(|version| version.key() == Some(versioned_key.as_str()))
+                .count();
+            let markers = listed
+                .delete_markers()
+                .iter()
+                .filter(|marker| marker.key() == Some(versioned_key.as_str()))
+                .count();
+            if versions < 2 || markers < 1 {
+                return Err(ApiError::Internal(format!(
+                    "version listing omitted qualification history: versions={versions} markers={markers}"
+                )));
+            }
+
+            Ok((
+                first.object_key,
+                metadata_round_trip,
+                object_version_ids,
+                delete_markers,
+            ))
+        }
+        .await;
+
+        let blob_key = format!(
+            "{}/blobs/{}",
+            user_id.0,
+            hex::encode(Sha256::digest(&payload))
+        );
+        let exact_version_purge = self.purge_all_versions(&blob_key).await;
+        let prefix_version_purge = self.purge_prefix(&qualification_prefix).await;
+
+        let (object_key, metadata_round_trip, object_version_ids, delete_markers) = result?;
+        if object_key != blob_key {
+            return Err(ApiError::Internal(
+                "content-addressed object key was not deterministic".to_owned(),
+            ));
+        }
+        let exact_version_purge = exact_version_purge?;
+        let prefix_version_purge = prefix_version_purge?;
+        if exact_version_purge.versions_deleted < 1 || prefix_version_purge.versions_deleted < 2 {
+            return Err(ApiError::Internal(
+                "qualification cleanup did not remove all expected object versions".to_owned(),
+            ));
+        }
+
+        Ok(ObjectStoreQualification {
+            status: "pass",
+            bucket_versioning: versioning_status,
+            conditional_create: true,
+            content_deduplication: true,
+            metadata_round_trip,
+            object_version_ids,
+            delete_markers,
+            exact_version_purge,
+            prefix_version_purge,
+        })
+    }
+
+    pub async fn purge_all_versions(&self, key: &str) -> ApiResult<PurgeResult> {
+        let started = Instant::now();
+        let result = self.purge_all_versions_inner(key).await;
+        let outcome = if result.is_ok() { "success" } else { "error" };
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "purge_versions",
+            "result" => outcome
+        )
+        .increment(1);
+        metrics::histogram!(
+            "object_store.duration_ms",
+            "operation" => "purge_versions",
+            "result" => outcome
+        )
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
+        if let Ok(summary) = result {
+            metrics::histogram!(
+                "object_store.deleted_versions",
+                "kind" => "object_version"
+            )
+            .record(summary.versions_deleted as f64);
+            metrics::histogram!(
+                "object_store.deleted_versions",
+                "kind" => "delete_marker"
+            )
+            .record(summary.delete_markers_deleted as f64);
+        }
+        result
+    }
+
+    pub async fn purge_prefix(&self, prefix: &str) -> ApiResult<PurgeResult> {
+        let mut versions = Vec::new();
+        let mut markers = Vec::new();
+        let mut key_marker = None;
+        let mut version_id_marker = None;
+        loop {
+            let mut request = self
+                .client
+                .list_object_versions()
+                .bucket(&self.bucket)
+                .prefix(prefix);
+            if let Some(marker) = key_marker.as_deref() {
+                request = request.key_marker(marker);
+            }
+            if let Some(marker) = version_id_marker.as_deref() {
+                request = request.version_id_marker(marker);
+            }
+            let output = request.send().await.map_err(|error| {
+                ApiError::Internal(format!("object version listing failed: {error}"))
+            })?;
+            for version in output.versions() {
+                let key = version.key().ok_or_else(|| {
+                    ApiError::Internal("object version listing omitted a key".to_owned())
+                })?;
+                let version_id = version.version_id().ok_or_else(|| {
+                    ApiError::Internal("object version listing omitted a version ID".to_owned())
+                })?;
+                versions.push((key.to_owned(), version_id.to_owned()));
+            }
+            for marker in output.delete_markers() {
+                let key = marker.key().ok_or_else(|| {
+                    ApiError::Internal("delete marker listing omitted a key".to_owned())
+                })?;
+                let version_id = marker.version_id().ok_or_else(|| {
+                    ApiError::Internal("delete marker listing omitted a version ID".to_owned())
+                })?;
+                markers.push((key.to_owned(), version_id.to_owned()));
+            }
+            if !output.is_truncated().unwrap_or(false) {
+                break;
+            }
+            key_marker = output.next_key_marker().map(ToOwned::to_owned);
+            version_id_marker = output.next_version_id_marker().map(ToOwned::to_owned);
+            if key_marker.is_none() {
+                return Err(ApiError::Internal(
+                    "truncated object version listing omitted the next key marker".to_owned(),
+                ));
+            }
+        }
+
+        for (key, version_id) in versions.iter().chain(&markers) {
+            self.client
+                .delete_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .version_id(version_id)
+                .send()
+                .await
+                .map_err(|error| {
+                    ApiError::Internal(format!("object version deletion failed: {error}"))
+                })?;
+        }
+        let remaining = self.prefix_version_count(prefix).await?;
+        if remaining != 0 {
+            return Err(ApiError::Internal(format!(
+                "{remaining} object versions remain under the purged prefix"
+            )));
+        }
+        Ok(PurgeResult {
+            versions_deleted: versions.len(),
+            delete_markers_deleted: markers.len(),
+        })
+    }
+
+    async fn purge_all_versions_inner(&self, key: &str) -> ApiResult<PurgeResult> {
+        let mut version_ids = Vec::new();
+        let mut delete_marker_ids = Vec::new();
+        let mut key_marker = None;
+        let mut version_id_marker = None;
+
+        loop {
+            let mut request = self
+                .client
+                .list_object_versions()
+                .bucket(&self.bucket)
+                .prefix(key);
+            if let Some(marker) = key_marker.as_deref() {
+                request = request.key_marker(marker);
+            }
+            if let Some(marker) = version_id_marker.as_deref() {
+                request = request.version_id_marker(marker);
+            }
+            let output = request.send().await.map_err(|error| {
+                ApiError::Internal(format!("object version listing failed: {error}"))
+            })?;
+
+            for version in output.versions() {
+                if version.key() == Some(key) {
+                    let version_id = version.version_id().ok_or_else(|| {
+                        ApiError::Internal(
+                            "object version listing returned a version without an ID".to_owned(),
+                        )
+                    })?;
+                    version_ids.push(version_id.to_owned());
+                }
+            }
+            for marker in output.delete_markers() {
+                if marker.key() == Some(key) {
+                    let version_id = marker.version_id().ok_or_else(|| {
+                        ApiError::Internal(
+                            "object version listing returned a delete marker without an ID"
+                                .to_owned(),
+                        )
+                    })?;
+                    delete_marker_ids.push(version_id.to_owned());
+                }
+            }
+
+            if !output.is_truncated().unwrap_or(false) {
+                break;
+            }
+            key_marker = output.next_key_marker().map(ToOwned::to_owned);
+            version_id_marker = output.next_version_id_marker().map(ToOwned::to_owned);
+            if key_marker.is_none() {
+                return Err(ApiError::Internal(
+                    "truncated object version listing omitted the next key marker".to_owned(),
+                ));
+            }
+        }
+
+        for version_id in version_ids.iter().chain(&delete_marker_ids) {
+            self.client
+                .delete_object()
+                .bucket(&self.bucket)
+                .key(key)
+                .version_id(version_id)
+                .send()
+                .await
+                .map_err(|error| {
+                    ApiError::Internal(format!("object version deletion failed: {error}"))
+                })?;
+        }
+
+        let remaining = self.exact_version_count(key).await?;
+        if remaining != 0 {
+            return Err(ApiError::Internal(format!(
+                "{remaining} object versions remain after purge"
+            )));
+        }
+
+        Ok(PurgeResult {
+            versions_deleted: version_ids.len(),
+            delete_markers_deleted: delete_marker_ids.len(),
+        })
+    }
+
+    async fn exact_version_count(&self, key: &str) -> ApiResult<usize> {
+        let mut count = 0usize;
+        let mut key_marker = None;
+        let mut version_id_marker = None;
+        loop {
+            let mut request = self
+                .client
+                .list_object_versions()
+                .bucket(&self.bucket)
+                .prefix(key);
+            if let Some(marker) = key_marker.as_deref() {
+                request = request.key_marker(marker);
+            }
+            if let Some(marker) = version_id_marker.as_deref() {
+                request = request.version_id_marker(marker);
+            }
+            let output = request.send().await.map_err(|error| {
+                ApiError::Internal(format!("object purge verification failed: {error}"))
+            })?;
+            count += output
+                .versions()
+                .iter()
+                .filter(|version| version.key() == Some(key))
+                .count();
+            count += output
+                .delete_markers()
+                .iter()
+                .filter(|marker| marker.key() == Some(key))
+                .count();
+            if !output.is_truncated().unwrap_or(false) {
+                return Ok(count);
+            }
+            key_marker = output.next_key_marker().map(ToOwned::to_owned);
+            version_id_marker = output.next_version_id_marker().map(ToOwned::to_owned);
+            if key_marker.is_none() {
+                return Err(ApiError::Internal(
+                    "truncated object purge verification omitted the next key marker".to_owned(),
+                ));
+            }
+        }
+    }
+
+    async fn prefix_version_count(&self, prefix: &str) -> ApiResult<usize> {
+        let mut count = 0usize;
+        let mut key_marker = None;
+        let mut version_id_marker = None;
+        loop {
+            let mut request = self
+                .client
+                .list_object_versions()
+                .bucket(&self.bucket)
+                .prefix(prefix);
+            if let Some(marker) = key_marker.as_deref() {
+                request = request.key_marker(marker);
+            }
+            if let Some(marker) = version_id_marker.as_deref() {
+                request = request.version_id_marker(marker);
+            }
+            let output = request.send().await.map_err(|error| {
+                ApiError::Internal(format!("object prefix verification failed: {error}"))
+            })?;
+            count = count
+                .saturating_add(output.versions().len())
+                .saturating_add(output.delete_markers().len());
+            if !output.is_truncated().unwrap_or(false) {
+                return Ok(count);
+            }
+            key_marker = output.next_key_marker().map(ToOwned::to_owned);
+            version_id_marker = output.next_version_id_marker().map(ToOwned::to_owned);
+            if key_marker.is_none() {
+                return Err(ApiError::Internal(
+                    "truncated object prefix verification omitted the next key marker".to_owned(),
+                ));
+            }
+        }
+    }
+}
+
+async fn sha256_file(path: &Path) -> ApiResult<(String, u64)> {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|error| ApiError::Internal(format!("could not open file for hashing: {error}")))?;
+    let mut digest = Sha256::new();
+    let mut size_bytes = 0_u64;
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .await
+            .map_err(|error| ApiError::Internal(format!("could not hash file: {error}")))?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+        size_bytes = size_bytes.saturating_add(read as u64);
+    }
+    Ok((hex::encode(digest.finalize()), size_bytes))
 }
 
 pub fn inspect_archive(name: &str, bytes: &[u8]) -> ApiResult<ArchiveInventory> {
@@ -187,14 +893,59 @@ pub fn inspect_archive(name: &str, bytes: &[u8]) -> ApiResult<ArchiveInventory> 
 }
 
 pub fn extract_archive(name: &str, bytes: &[u8]) -> ApiResult<ArchiveInspection> {
+    let started = Instant::now();
     let lower = name.to_ascii_lowercase();
-    if lower.ends_with(".zip") {
+    let format = if lower.ends_with(".zip") {
+        "zip"
+    } else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+        "tar_gzip"
+    } else if lower.ends_with(".tar") {
+        "tar"
+    } else {
+        "not_archive"
+    };
+    let result = if lower.ends_with(".zip") {
         extract_zip(bytes)
     } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
         extract_tar(bytes, lower.ends_with(".gz") || lower.ends_with(".tgz"))
     } else {
         Ok(ArchiveInspection::default())
+    };
+    let outcome = if result.is_ok() { "success" } else { "error" };
+    metrics::counter!(
+        "archive.inspections",
+        "format" => format,
+        "result" => outcome
+    )
+    .increment(1);
+    metrics::histogram!(
+        "archive.duration_ms",
+        "format" => format,
+        "result" => outcome
+    )
+    .record(started.elapsed().as_secs_f64() * 1_000.0);
+    metrics::histogram!("archive.input_bytes", "format" => format).record(bytes.len() as f64);
+    if let Ok(inspection) = &result {
+        metrics::histogram!("archive.entries", "format" => format)
+            .record(inspection.inventory.entries.len() as f64);
+        metrics::histogram!("archive.expanded_bytes", "format" => format).record(
+            inspection
+                .inventory
+                .entries
+                .iter()
+                .map(|entry| entry.size_bytes)
+                .sum::<u64>() as f64,
+        );
+        metrics::histogram!("archive.quarantined_entries", "format" => format).record(
+            inspection
+                .inventory
+                .entries
+                .iter()
+                .filter(|entry| entry.quarantined)
+                .count() as f64,
+        );
     }
+    result
 }
 
 fn extract_zip(bytes: &[u8]) -> ApiResult<ArchiveInspection> {
@@ -202,7 +953,7 @@ fn extract_zip(bytes: &[u8]) -> ApiResult<ArchiveInspection> {
         .map_err(|error| ApiError::invalid(format!("invalid zip archive: {error}")))?;
     if archive.len() > MAX_ARCHIVE_FILES {
         return Err(ApiError::invalid(
-            "archive contains more than 10,000 entries",
+            "archive contains more than 2,000 entries",
         ));
     }
     let mut inventory = ArchiveInventory {
@@ -221,7 +972,7 @@ fn extract_zip(bytes: &[u8]) -> ApiResult<ArchiveInspection> {
         expanded = expanded.saturating_add(file.size());
         if expanded > MAX_ARCHIVE_EXPANDED_BYTES {
             return Err(ApiError::invalid(
-                "archive expands beyond the 2 GiB safety limit",
+                "archive expands beyond the 256 MiB safety limit",
             ));
         }
         let raw_path = file.name().to_owned();
@@ -315,7 +1066,7 @@ fn extract_tar(bytes: &[u8], compressed: bool) -> ApiResult<ArchiveInspection> {
         enforce_inspection_time(started)?;
         if index >= MAX_ARCHIVE_FILES {
             return Err(ApiError::invalid(
-                "archive contains more than 10,000 entries",
+                "archive contains more than 2,000 entries",
             ));
         }
         let mut entry =
@@ -324,7 +1075,7 @@ fn extract_tar(bytes: &[u8], compressed: bool) -> ApiResult<ArchiveInspection> {
         expanded = expanded.saturating_add(size);
         if expanded > MAX_ARCHIVE_EXPANDED_BYTES {
             return Err(ApiError::invalid(
-                "archive expands beyond the 2 GiB safety limit",
+                "archive expands beyond the 256 MiB safety limit",
             ));
         }
         if compressed && expanded > (bytes.len() as u64).saturating_mul(MAX_ARCHIVE_RATIO) {

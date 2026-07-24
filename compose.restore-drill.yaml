@@ -1,0 +1,18 @@
+services:
+  db:
+    ports: !reset []
+    mem_limit: 3g
+    cpus: 2
+
+  minio:
+    ports: !reset []
+    mem_limit: 1g
+    cpus: 1
+
+  api:
+    ports: !reset []
+    mem_limit: 1g
+    cpus: 1
+
+  web:
+    ports: !reset []

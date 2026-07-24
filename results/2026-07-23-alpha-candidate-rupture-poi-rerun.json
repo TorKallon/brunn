@@ -1,0 +1,1377 @@
+{
+  "benchmark_version": "rupture-ops-v0.1",
+  "run_at": "2026-07-23T18:40:42-07:00",
+  "run_id": "20260723T183900-0700",
+  "harness_sha256": "cc0f90983dd980258e83aa3338eef18c15e54e6325bc6512967d965704ce8f7d",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "2acc6f360de65734c1fd7f9f5bea3c7f86ff03df364de175339affac460dd375",
+  "manifest_sha256": "edbc39b66aea328aae6c173dda656fd9b61ebc30afa08a2e5bc5992f0b80e540",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-rupture-ops-v0.1",
+    "sha256": "aa9c33e39777f0899dacecee61a94f5fd11ec1315f7a6e820a41bc217e1a9803",
+    "artifact_tree_sha256": "aa434eb3ffd5f4b6b9c766000d34ec6c30fd14b5ec6f94a4ff625306396b7b50",
+    "documents": 65,
+    "chunks": 587,
+    "characters": 468399
+  },
+  "manifest": {
+    "benchmark_version": "rupture-ops-v0.1",
+    "name": "Straylight Rupture Ops workload evaluation",
+    "report_title": "Straylight Rupture Ops workload evaluation",
+    "report_date": "2026-07-11",
+    "evaluation_model": "subject_plus_product_work",
+    "grading_mode": "concept_tokens_v1",
+    "fixture_domain": "RuptureOps and StarRupture",
+    "generalization": {
+      "purpose": "Evaluate an agent that learns an evolving subject, tracks a concrete instance, advances goals and decisions, builds durable products, and verifies results.",
+      "planes": [
+        "subject",
+        "instance",
+        "work",
+        "product",
+        "validation"
+      ],
+      "fixture_rule": "Game-specific entities and values are concrete test data, not privileged Straylight schema."
+    },
+    "corpus_root": "eval/corpus-rupture-ops-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "filesystem",
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "future_lanes": [
+      "binary image understanding with source-native reads",
+      "object-store archive inspection and staged promotion",
+      "live web refresh against a snapshot-pinned local corpus",
+      "concurrent multi-agent writes against optimistic revision preconditions"
+    ],
+    "cases": [
+      {
+        "id": "ruptureops-live-poi-advice",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "situated_low_latency_decision_support",
+        "task": "The player is at Little Cloud carrying valuable ammunition and consumables, has tagged a nearby Regeneration Chamber, and is deciding whether to continue to Starry Night. Give a compact field brief: assess both sites, protect the carried supplies, explain the respawn limitation, and name Starry Night's guaranteed final-chest value.",
+        "claim_slots": {
+          "c1": "Little Cloud threat",
+          "c2": "risk-adjusted action",
+          "c3": "respawn and evidence caveats",
+          "c4": "Starry Night threat and reward"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "2/5",
+                  "2 of 5",
+                  "low-tier"
+                ]
+              },
+              {
+                "any": [
+                  "13"
+                ]
+              },
+              {
+                "any": [
+                  "8",
+                  "melee"
+                ]
+              },
+              {
+                "any": [
+                  "4",
+                  "ranged",
+                  "1",
+                  "exploder"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "bank",
+                  "store",
+                  "deposit"
+                ]
+              },
+              {
+                "any": [
+                  "excess",
+                  "valuable",
+                  "ammo",
+                  "consumables"
+                ]
+              },
+              {
+                "any": [
+                  "reasonably quick",
+                  "short return",
+                  "if practical"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "possible persistent population",
+                  "not simultaneous",
+                  "markers"
+                ]
+              },
+              {
+                "any": [
+                  "replacement equipment",
+                  "replacement gear",
+                  "safe recovery cache"
+                ]
+              },
+              {
+                "any": [
+                  "Regeneration Chamber",
+                  "respawn"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Topics/StarRupture/Player save - exploration and combat.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "1/5",
+                  "1 of 5",
+                  "extremely easy"
+                ]
+              },
+              {
+                "any": [
+                  "zero persistent",
+                  "0 persistent"
+                ]
+              },
+              {
+                "any": [
+                  "Electronics Blueprint"
+                ]
+              },
+              {
+                "any": [
+                  "Rotor Blueprint",
+                  "15 Armory Tokens",
+                  "Frame Memory Module"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "13 enemies attack at once",
+          "the respawn chamber makes the supplies safe",
+          "Starry Night has no possible enemies"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "ruptureops-live-poi-advice": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:20260723T183900-0700/ruptureops-live-poi-advice",
+      "display_scope": "RuptureOps",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODk5Y2VjNDktYzdmMy00MTJjLThhNmUtYTFmZjIwYzZkZmY1IiwiY3JlZGVudGlhbF9pZCI6IjU4MzZiYWY3LWUwYjktNGZjOC04MmY2LWRkNjQyYTYyZmEwYSIsInNjb3BlX2lkIjoiYjY2MWRmMjUtNTdmZi00OTdmLThmNTQtY2IyOTJmNGRhNmI3IiwicmVjZWlwdF9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1NzE1NGMyODVjOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1OTA4MjVkMDE4MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.PEAEvCfjOGPK3kw8sgxAJZh5QqiE72zYu9e2THR2yv4",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019f91c74ab87cb0b7cb3590825d0181",
+      "corpus_revision": "revision:019f91c74ab87cb0b7cb3590825d0181",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 45300.477,
+        "ready_elapsed_ms": 45300.477,
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODk5Y2VjNDktYzdmMy00MTJjLThhNmUtYTFmZjIwYzZkZmY1IiwiY3JlZGVudGlhbF9pZCI6IjU4MzZiYWY3LWUwYjktNGZjOC04MmY2LWRkNjQyYTYyZmEwYSIsInNjb3BlX2lkIjoiYjY2MWRmMjUtNTdmZi00OTdmLThmNTQtY2IyOTJmNGRhNmI3IiwicmVjZWlwdF9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1NzE1NGMyODVjOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1OTA4MjVkMDE4MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.PEAEvCfjOGPK3kw8sgxAJZh5QqiE72zYu9e2THR2yv4",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODk5Y2VjNDktYzdmMy00MTJjLThhNmUtYTFmZjIwYzZkZmY1IiwiY3JlZGVudGlhbF9pZCI6IjU4MzZiYWY3LWUwYjktNGZjOC04MmY2LWRkNjQyYTYyZmEwYSIsInNjb3BlX2lkIjoiYjY2MWRmMjUtNTdmZi00OTdmLThmNTQtY2IyOTJmNGRhNmI3IiwicmVjZWlwdF9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1NzE1NGMyODVjOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1OTA4MjVkMDE4MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.PEAEvCfjOGPK3kw8sgxAJZh5QqiE72zYu9e2THR2yv4",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260723T183900-0700/ruptureops-live-poi-advice",
+          "display_scope": "RuptureOps",
+          "access_mode": "read_write",
+          "user_id": "user:899cec49c7f3412c8a6ea1ff20c6dff5",
+          "scope_id": "scope:b661df2557ff497f8f54cb292f4da6b7",
+          "credential_id": "credential:5836baf7e0b94fc882f6dd642a62fa0a",
+          "base_corpus_revision": "revision:019f91c74ab87cb0b7cb3590825d0181",
+          "corpus_revision": "revision:019f91c74ab87cb0b7cb3590825d0181",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 65,
+            "chunks": 566,
+            "embeddings": 566
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 65,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODk5Y2VjNDktYzdmMy00MTJjLThhNmUtYTFmZjIwYzZkZmY1IiwiY3JlZGVudGlhbF9pZCI6IjU4MzZiYWY3LWUwYjktNGZjOC04MmY2LWRkNjQyYTYyZmEwYSIsInNjb3BlX2lkIjoiYjY2MWRmMjUtNTdmZi00OTdmLThmNTQtY2IyOTJmNGRhNmI3IiwicmVjZWlwdF9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1NzE1NGMyODVjOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1OTA4MjVkMDE4MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.PEAEvCfjOGPK3kw8sgxAJZh5QqiE72zYu9e2THR2yv4",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiODk5Y2VjNDktYzdmMy00MTJjLThhNmUtYTFmZjIwYzZkZmY1IiwiY3JlZGVudGlhbF9pZCI6IjU4MzZiYWY3LWUwYjktNGZjOC04MmY2LWRkNjQyYTYyZmEwYSIsInNjb3BlX2lkIjoiYjY2MWRmMjUtNTdmZi00OTdmLThmNTQtY2IyOTJmNGRhNmI3IiwicmVjZWlwdF9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1NzE1NGMyODVjOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWY5MWM3LTRhYjgtN2NiMC1iN2NiLTM1OTA4MjVkMDE4MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.PEAEvCfjOGPK3kw8sgxAJZh5QqiE72zYu9e2THR2yv4",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:20260723T183900-0700/ruptureops-live-poi-advice",
+          "display_scope": "RuptureOps",
+          "access_mode": "read_write",
+          "user_id": "user:899cec49c7f3412c8a6ea1ff20c6dff5",
+          "scope_id": "scope:b661df2557ff497f8f54cb292f4da6b7",
+          "credential_id": "credential:5836baf7e0b94fc882f6dd642a62fa0a",
+          "base_corpus_revision": "revision:019f91c74ab87cb0b7cb3590825d0181",
+          "corpus_revision": "revision:019f91c74ab87cb0b7cb3590825d0181",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 65,
+            "chunks": 566,
+            "embeddings": 566
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 65,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "ruptureops-live-poi-advice",
+      "condition": "filesystem",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 57.106,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260723T183900-0700/filesystem/ruptureops-live-poi-advice/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Little Cloud is a modest fight and Starry Night is lighter still, but the carried supplies\u2014not either site's mapped enemies\u2014are the main risk. Bank excess ammunition and consumables before continuing if storage is reasonably close. Otherwise move methodically, preserve an abort route and ammunition reserve, and treat the tagged chamber only as a travel-saving fallback. At Starry Night, clear any wanderers, open the final chest first, then loot debris.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Little Cloud is about 2/5 difficulty: 13 persistent hostile spawn entries within 250 units\u20148 tier-1 melee, 4 tier-1 ranged, and 1 tier-1 exploder\u2014with no mapped Goliaths, Flingers, tier-2 enemies, or raid-class concentration. These markers represent possible persistent population, not 13 simultaneous attackers; the player subsequently completed the site and called it \u201cno big deal.\u201d",
+            "source_paths": [
+              "corpus/Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Because the player is carrying valuable ammunition and consumables, bank the excess before continuing to Starry Night when storage is reasonably quick to reach. If returning is impractical, proceed methodically, retain an ammunition reserve and abort route, and do not regard the nearby tagged respawn as a substitute for replacement equipment and a safe recovery cache.",
+            "source_paths": [
+              "corpus/Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "corpus/Topics/StarRupture/Player save - exploration and combat.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "A claimed Regeneration Chamber can shorten recovery travel, but it does not protect carried supplies or provide replacement gear. Direct field evidence from one Geo Scanner encounter showed corruption disabling the contested base and taking its chamber offline, after which death returned the player to the starting launcher rather than the intended local checkpoint. The exact corruption threshold and universal chamber-disable conditions remain unverified, so keep replacement weapons, ammunition, healing, and rebuilding materials in a separate safe cache outside the contested base.",
+            "source_paths": [
+              "corpus/Topics/StarRupture/Player save - exploration and combat.md",
+              "corpus/Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Starry Night is about 1/5 difficulty, with zero persistent hostile spawn markers within 250 units, although roaming enemies can still wander in. Its guaranteed final chest contains an Electronics Blueprint, Rotor Blueprint, 15 Armory Tokens, and a Frame Memory Module; clear wanderers, open that chest first, then loot the debris.",
+            "source_paths": [
+              "corpus/Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Give a compact, evidence-grounded field brief for a player at Little Cloud deciding whether to continue to Starry Night while protecting valuable ammunition and consumables.",
+          "current_state": [
+            "Verified Little Cloud's mapped threat composition and the player's later direct completion report.",
+            "Verified the risk-adjusted supply-protection guidance.",
+            "Verified the observed Regeneration Chamber failure sequence and its stated evidence boundary.",
+            "Verified Starry Night's mapped threat and guaranteed final-chest contents."
+          ],
+          "decisions": [
+            "Recommend banking excess supplies when storage is reasonably quick to reach; otherwise continue cautiously with an abort route and ammunition reserve.",
+            "Treat the tagged Regeneration Chamber as a travel-saving fallback, not supply insurance or a complete recovery point.",
+            "Preserve the distinction between mapped spawn markers and simultaneous attackers.",
+            "Preserve the respawn claim as one encounter's direct field evidence; do not generalize an exact corruption threshold or universal disable rule."
+          ],
+          "open_questions": [
+            "The exact corruption threshold and every condition capable of disabling a Regeneration Chamber remain unverified.",
+            "The current live state beyond the frozen evidence\u2014such as whether Starry Night has since been completed\u2014is unknown."
+          ],
+          "next_actions": [
+            "If play continues, bank excess supplies when practical; otherwise approach Starry Night methodically, clear wanderers, take the final chest first, and then loot debris.",
+            "For a future contested defense, stage replacement weapons, ammunition, healing, and rebuilding materials in a safe cache outside the contested base."
+          ],
+          "artifacts": [
+            "corpus/Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "corpus/Topics/StarRupture/Player save - exploration and combat.md",
+            "corpus/Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 6,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "2/5",
+                  "2 of 5",
+                  "low-tier"
+                ],
+                "matched": "2/5"
+              },
+              {
+                "alternatives": [
+                  "13"
+                ],
+                "matched": "13"
+              },
+              {
+                "alternatives": [
+                  "8",
+                  "melee"
+                ],
+                "matched": "8"
+              },
+              {
+                "alternatives": [
+                  "4",
+                  "ranged",
+                  "1",
+                  "exploder"
+                ],
+                "matched": "4"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "bank",
+                  "store",
+                  "deposit"
+                ],
+                "matched": "bank"
+              },
+              {
+                "alternatives": [
+                  "excess",
+                  "valuable",
+                  "ammo",
+                  "consumables"
+                ],
+                "matched": "excess"
+              },
+              {
+                "alternatives": [
+                  "reasonably quick",
+                  "short return",
+                  "if practical"
+                ],
+                "matched": "reasonably quick"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "corpus/Topics/StarRupture/Player save - exploration and combat.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.7333,
+            "pass": true,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "possible persistent population",
+                  "not simultaneous",
+                  "markers"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "replacement equipment",
+                  "replacement gear",
+                  "safe recovery cache"
+                ],
+                "matched": "replacement gear"
+              },
+              {
+                "alternatives": [
+                  "Regeneration Chamber",
+                  "respawn"
+                ],
+                "matched": "Regeneration Chamber"
+              }
+            ],
+            "citations": [
+              "corpus/Topics/StarRupture/Player save - exploration and combat.md",
+              "corpus/Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "1/5",
+                  "1 of 5",
+                  "extremely easy"
+                ],
+                "matched": "1/5"
+              },
+              {
+                "alternatives": [
+                  "zero persistent",
+                  "0 persistent"
+                ],
+                "matched": "zero persistent"
+              },
+              {
+                "alternatives": [
+                  "Electronics Blueprint"
+                ],
+                "matched": "Electronics Blueprint"
+              },
+              {
+                "alternatives": [
+                  "Rotor Blueprint",
+                  "15 Armory Tokens",
+                  "Frame Memory Module"
+                ],
+                "matched": "Rotor Blueprint"
+              }
+            ],
+            "citations": [
+              "corpus/Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 13,
+        "commands": 4,
+        "command_output_chars": 142101,
+        "tokens": {
+          "input_tokens": 141046,
+          "cached_input_tokens": 100352,
+          "output_tokens": 1829
+        }
+      },
+      "service_operations": [],
+      "service_calls": 0,
+      "service_result_chars": 0,
+      "service_source_text_chars": 0,
+      "service_metadata_chars": 0,
+      "service_replay_weighted_chars": 0,
+      "service_latency_ms": 0.0,
+      "service_checkpoint": null,
+      "service_session_id": null,
+      "service_corpus_revision": null,
+      "workspace_operations": [],
+      "workspace_result_chars": 0,
+      "workspace_checkpoint": null,
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "ruptureops-live-poi-advice",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 50.929,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260723T183900-0700/service_api/ruptureops-live-poi-advice/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Little Cloud is a manageable ~2/5 site, but valuable supplies make the downside meaningful. Bank excess ammunition and consumables if storage is reasonably close; otherwise advance methodically and keep recovery gear outside the contested base. The tagged Regeneration Chamber shortens travel only while operational\u2014it does not replace lost equipment, and corruption can disable it. Starry Night is easier at ~1/5; clear any wanderers, open the final chest first, then loot debris.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Little Cloud is about 2/5 difficulty. Within 250 units it has 13 persistent hostile spawn entries: 8 tier-1 melee, 4 tier-1 ranged, and 1 tier-1 exploder, with no mapped Goliaths, Flingers, tier-2 enemies, or raid-class concentration. These markers indicate possible persistent population, not 13 simultaneous attackers. The player later completed it and reported it was \u201cno big deal,\u201d which is historical outcome rather than a replacement for the map-derived assessment.",
+            "source_paths": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Because the player is carrying valuable ammunition and consumables, bank the excess first if returning to storage is reasonably quick. Otherwise proceed methodically, using the nearby respawn as limited insurance, and leave replacement weapons, ammunition, healing, and rebuilding supplies in a safe recovery cache outside the contested base\u2019s corruption failure domain.",
+            "source_paths": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Topics/StarRupture/Player save - sites and freight network.md",
+              "Topics/StarRupture/Player save - play history.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "A nearby claimed Regeneration Chamber can reduce recovery travel, but it does not replace lost weapons, ammunition, or materials. Field evidence shows corruption can disable a contested base and its claimed chamber, causing the next respawn at the starting launcher. The exact corruption threshold and any universal Regeneration Chamber rule remain unverified.",
+            "source_paths": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Topics/StarRupture/Player save - sites and freight network.md",
+              "Topics/StarRupture/Player save - play history.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Starry Night is about 1/5 difficulty with zero persistent hostile spawn markers within 250 units, although roaming enemies may still wander in. Its guaranteed final chest contains an Electronics Blueprint, Rotor Blueprint, 15 Armory Tokens, and a Frame Memory Module; clear wanderers and open that chest before looting debris.",
+            "source_paths": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Provide a compact, evidence-backed field brief comparing Little Cloud and Starry Night while protecting carried supplies and explaining respawn limitations.",
+          "current_state": [
+            "All four claim slots were verified from complete sources in the initial Straylight packet.",
+            "Checkpoint checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be was committed.",
+            "Little Cloud\u2019s map-derived assessment and later direct play outcome remain explicitly distinguished.",
+            "Starry Night\u2019s threat level and guaranteed final-chest contents are established."
+          ],
+          "decisions": [
+            "Recommend banking excess supplies when storage is reasonably close; otherwise advance methodically with an external recovery cache.",
+            "Treat hostile markers as possible persistent population rather than simultaneous attackers.",
+            "Do not generalize the observed corruption failure into an unverified universal chamber rule."
+          ],
+          "open_questions": [
+            "The exact corruption threshold and universal Regeneration Chamber behavior remain unverified."
+          ],
+          "next_actions": [
+            "No further retrieval is required for this brief.",
+            "If mechanics beyond the observed failure are needed later, retrieve authoritative evidence specifically about corruption thresholds and chamber rules."
+          ],
+          "artifacts": [
+            "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/Player save - play history.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8867,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.8667,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 8,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "2/5",
+                  "2 of 5",
+                  "low-tier"
+                ],
+                "matched": "2/5"
+              },
+              {
+                "alternatives": [
+                  "13"
+                ],
+                "matched": "13"
+              },
+              {
+                "alternatives": [
+                  "8",
+                  "melee"
+                ],
+                "matched": "8"
+              },
+              {
+                "alternatives": [
+                  "4",
+                  "ranged",
+                  "1",
+                  "exploder"
+                ],
+                "matched": "4"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "bank",
+                  "store",
+                  "deposit"
+                ],
+                "matched": "bank"
+              },
+              {
+                "alternatives": [
+                  "excess",
+                  "valuable",
+                  "ammo",
+                  "consumables"
+                ],
+                "matched": "excess"
+              },
+              {
+                "alternatives": [
+                  "reasonably quick",
+                  "short return",
+                  "if practical"
+                ],
+                "matched": "reasonably quick"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Topics/StarRupture/Player save - sites and freight network.md",
+              "Topics/StarRupture/Player save - play history.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "score": 0.4667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "possible persistent population",
+                  "not simultaneous",
+                  "markers"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "replacement equipment",
+                  "replacement gear",
+                  "safe recovery cache"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Regeneration Chamber",
+                  "respawn"
+                ],
+                "matched": "Regeneration Chamber"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Topics/StarRupture/Player save - sites and freight network.md",
+              "Topics/StarRupture/Player save - play history.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "1/5",
+                  "1 of 5",
+                  "extremely easy"
+                ],
+                "matched": "1/5"
+              },
+              {
+                "alternatives": [
+                  "zero persistent",
+                  "0 persistent"
+                ],
+                "matched": "zero persistent"
+              },
+              {
+                "alternatives": [
+                  "Electronics Blueprint"
+                ],
+                "matched": "Electronics Blueprint"
+              },
+              {
+                "alternatives": [
+                  "Rotor Blueprint",
+                  "15 Armory Tokens",
+                  "Frame Memory Module"
+                ],
+                "matched": "Rotor Blueprint"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          }
+        ]
+      },
+      "events": {
+        "events": 10,
+        "commands": 2,
+        "command_output_chars": 36322,
+        "tokens": {
+          "input_tokens": 68868,
+          "cached_input_tokens": 52480,
+          "output_tokens": 1937
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-23T18:39:57.786-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f91c76bd77c138eb9892c0b9a4413",
+          "elapsed_ms": 4414.951,
+          "result_chars": 35571,
+          "source_text_chars": 31132,
+          "metadata_chars": 4439,
+          "evidence_items": 4,
+          "complete_sources": 3,
+          "pointer_sources": 4,
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-23T18:40:15.526-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f91c7c0da7a4085d1779762b8b70e",
+          "elapsed_ms": 379.723,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 2,
+      "service_result_chars": 36320,
+      "service_source_text_chars": 31132,
+      "service_metadata_chars": 5188,
+      "service_replay_weighted_chars": 71891,
+      "service_latency_ms": 4794.674,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019f91c7-4ab8-7cb0-b7cb-3590825d0181",
+        "checkpoint_id": "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+        "corpus_revision": "revision:019f91c7-c12d-70f0-a359-4748bcf5d81d",
+        "created": [
+          {
+            "id": "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "5836baf7-e0b9-4fc8-82f6-dd642a62fa0a",
+        "deduplicated": [],
+        "id": "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+        "idempotency_key": "eval-checkpoint:session:019f91c76c217b83ba9ea5e5d837ee6e:c8827e916617d64f45a0311f47d6cd3e1303bee68370ad0f75ffbff89dbb80e9",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f91c7-c12d-70f0-a359-4748bcf5d81d",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f91c7-c125-7b93-a27e-573b5d17637e"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:064cfbef3823767201cff39e4f5e8f74ebdf24a73f5f57aed716478cf855bb11",
+        "operation_id": "operation:019f91c7-c11c-77d3-b2b6-0e4adca363db",
+        "policy": {
+          "policy_id": "04838dde-cdbc-4a59-8581-13f179160e26",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f91c7-c11c-77d3-b2b6-0e4adca363db",
+        "replayed": false,
+        "request_hash": "sha256:38a52ba3dfe5d2cdc983b14098e488afad1388be90c51098a6d460b194d7986e",
+        "resulting_corpus_revision": "revision:019f91c7-c12d-70f0-a359-4748bcf5d81d",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f91c76c217b83ba9ea5e5d837ee6e",
+        "status": "committed",
+        "user_id": "user:899cec49c7f3412c8a6ea1ff20c6dff5"
+      },
+      "service_session_id": "session:019f91c76c217b83ba9ea5e5d837ee6e",
+      "service_corpus_revision": "revision:019f91c7-c12d-70f0-a359-4748bcf5d81d",
+      "workspace_operations": [
+        {
+          "at": "2026-07-23T18:39:57.786-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019f91c76bd77c138eb9892c0b9a4413",
+          "elapsed_ms": 4414.951,
+          "result_chars": 35571,
+          "source_text_chars": 31132,
+          "metadata_chars": 4439,
+          "evidence_items": 4,
+          "complete_sources": 3,
+          "pointer_sources": 4,
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-23T18:40:15.526-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019f91c7c0da7a4085d1779762b8b70e",
+          "elapsed_ms": 379.723,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 36320,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019f91c7-4ab8-7cb0-b7cb-3590825d0181",
+        "checkpoint_id": "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+        "corpus_revision": "revision:019f91c7-c12d-70f0-a359-4748bcf5d81d",
+        "created": [
+          {
+            "id": "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "5836baf7-e0b9-4fc8-82f6-dd642a62fa0a",
+        "deduplicated": [],
+        "id": "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+        "idempotency_key": "eval-checkpoint:session:019f91c76c217b83ba9ea5e5d837ee6e:c8827e916617d64f45a0311f47d6cd3e1303bee68370ad0f75ffbff89dbb80e9",
+        "import_receipt": null,
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019f91c7-c12d-70f0-a359-4748bcf5d81d",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019f91c7-c125-7b93-a27e-573b5d17637e"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:064cfbef3823767201cff39e4f5e8f74ebdf24a73f5f57aed716478cf855bb11",
+        "operation_id": "operation:019f91c7-c11c-77d3-b2b6-0e4adca363db",
+        "policy": {
+          "policy_id": "04838dde-cdbc-4a59-8581-13f179160e26",
+          "policy_version": 1
+        },
+        "receipt": "commit:019f91c7-c11c-77d3-b2b6-0e4adca363db",
+        "replayed": false,
+        "request_hash": "sha256:38a52ba3dfe5d2cdc983b14098e488afad1388be90c51098a6d460b194d7986e",
+        "resulting_corpus_revision": "revision:019f91c7-c12d-70f0-a359-4748bcf5d81d",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019f91c7-c12c-70a2-b78d-7e843b8e15be"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019f91c76c217b83ba9ea5e5d837ee6e",
+        "status": "committed",
+        "user_id": "user:899cec49c7f3412c8a6ea1ff20c6dff5"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "filesystem": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 1,
+        "case_pass_rate": 1.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_pass_rate": 1.0,
+        "mean_score": 0.9433,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 57.11,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 0.0,
+        "persisted_checkpoints": 0,
+        "checkpoint_eligible_runs": 0,
+        "mean_service_calls": 0.0,
+        "mean_service_result_chars": 0.0,
+        "mean_service_source_text_chars": 0.0,
+        "mean_service_metadata_chars": 0.0,
+        "mean_service_replay_weighted_chars": 0.0,
+        "mean_service_latency_ms": 0.0,
+        "mean_completed_commands": 4.0,
+        "mean_command_output_chars": 142101.0,
+        "mean_tokens": {
+          "input_tokens": 141046.0,
+          "output_tokens": 1829.0,
+          "cached_input_tokens": 100352.0,
+          "uncached_input_tokens": 40694.0
+        }
+      },
+      "service_api": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 0,
+        "case_pass_rate": 0.0,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.8867,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 50.93,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 36320.0,
+        "persisted_checkpoints": 1,
+        "checkpoint_eligible_runs": 1,
+        "mean_service_calls": 2.0,
+        "mean_service_result_chars": 36320.0,
+        "mean_service_source_text_chars": 31132.0,
+        "mean_service_metadata_chars": 5188.0,
+        "mean_service_replay_weighted_chars": 71891.0,
+        "mean_service_latency_ms": 4794.674,
+        "mean_completed_commands": 2.0,
+        "mean_command_output_chars": 36322.0,
+        "mean_tokens": {
+          "input_tokens": 68868.0,
+          "output_tokens": 1937.0,
+          "cached_input_tokens": 52480.0,
+          "uncached_input_tokens": 16388.0
+        }
+      }
+    },
+    "by_workload": {
+      "RuptureOps": {
+        "filesystem": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 57.11,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 0.0,
+          "persisted_checkpoints": 0,
+          "checkpoint_eligible_runs": 0,
+          "mean_service_calls": 0.0,
+          "mean_service_result_chars": 0.0,
+          "mean_service_source_text_chars": 0.0,
+          "mean_service_metadata_chars": 0.0,
+          "mean_service_replay_weighted_chars": 0.0,
+          "mean_service_latency_ms": 0.0,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 142101.0,
+          "mean_tokens": {
+            "input_tokens": 141046.0,
+            "output_tokens": 1829.0,
+            "cached_input_tokens": 100352.0,
+            "uncached_input_tokens": 40694.0
+          }
+        },
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.8867,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 50.93,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 36320.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 36320.0,
+          "mean_service_source_text_chars": 31132.0,
+          "mean_service_metadata_chars": 5188.0,
+          "mean_service_replay_weighted_chars": 71891.0,
+          "mean_service_latency_ms": 4794.674,
+          "mean_completed_commands": 2.0,
+          "mean_command_output_chars": 36322.0,
+          "mean_tokens": {
+            "input_tokens": 68868.0,
+            "output_tokens": 1937.0,
+            "cached_input_tokens": 52480.0,
+            "uncached_input_tokens": 16388.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "situated_low_latency_decision_support": {
+        "filesystem": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 57.11,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 0.0,
+          "persisted_checkpoints": 0,
+          "checkpoint_eligible_runs": 0,
+          "mean_service_calls": 0.0,
+          "mean_service_result_chars": 0.0,
+          "mean_service_source_text_chars": 0.0,
+          "mean_service_metadata_chars": 0.0,
+          "mean_service_replay_weighted_chars": 0.0,
+          "mean_service_latency_ms": 0.0,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 142101.0,
+          "mean_tokens": {
+            "input_tokens": 141046.0,
+            "output_tokens": 1829.0,
+            "cached_input_tokens": 100352.0,
+            "uncached_input_tokens": 40694.0
+          }
+        },
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.8867,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 50.93,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 36320.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 36320.0,
+          "mean_service_source_text_chars": 31132.0,
+          "mean_service_metadata_chars": 5188.0,
+          "mean_service_replay_weighted_chars": 71891.0,
+          "mean_service_latency_ms": 4794.674,
+          "mean_completed_commands": 2.0,
+          "mean_command_output_chars": 36322.0,
+          "mean_tokens": {
+            "input_tokens": 68868.0,
+            "output_tokens": 1937.0,
+            "cached_input_tokens": 52480.0,
+            "uncached_input_tokens": 16388.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "ruptureops-live-poi-advice": {
+        "id": "ruptureops-live-poi-advice",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "situated_low_latency_decision_support",
+        "task": "The player is at Little Cloud carrying valuable ammunition and consumables, has tagged a nearby Regeneration Chamber, and is deciding whether to continue to Starry Night. Give a compact field brief: assess both sites, protect the carried supplies, explain the respawn limitation, and name Starry Night's guaranteed final-chest value.",
+        "claim_slots": {
+          "c1": "Little Cloud threat",
+          "c2": "risk-adjusted action",
+          "c3": "respawn and evidence caveats",
+          "c4": "Starry Night threat and reward"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "2/5",
+                  "2 of 5",
+                  "low-tier"
+                ]
+              },
+              {
+                "any": [
+                  "13"
+                ]
+              },
+              {
+                "any": [
+                  "8",
+                  "melee"
+                ]
+              },
+              {
+                "any": [
+                  "4",
+                  "ranged",
+                  "1",
+                  "exploder"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "bank",
+                  "store",
+                  "deposit"
+                ]
+              },
+              {
+                "any": [
+                  "excess",
+                  "valuable",
+                  "ammo",
+                  "consumables"
+                ]
+              },
+              {
+                "any": [
+                  "reasonably quick",
+                  "short return",
+                  "if practical"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "possible persistent population",
+                  "not simultaneous",
+                  "markers"
+                ]
+              },
+              {
+                "any": [
+                  "replacement equipment",
+                  "replacement gear",
+                  "safe recovery cache"
+                ]
+              },
+              {
+                "any": [
+                  "Regeneration Chamber",
+                  "respawn"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Topics/StarRupture/Player save - exploration and combat.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "1/5",
+                  "1 of 5",
+                  "extremely easy"
+                ]
+              },
+              {
+                "any": [
+                  "zero persistent",
+                  "0 persistent"
+                ]
+              },
+              {
+                "any": [
+                  "Electronics Blueprint"
+                ]
+              },
+              {
+                "any": [
+                  "Rotor Blueprint",
+                  "15 Armory Tokens",
+                  "Frame Memory Module"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "13 enemies attack at once",
+          "the respawn chamber makes the supplies safe",
+          "Starry Night has no possible enemies"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    }
+  }
+}

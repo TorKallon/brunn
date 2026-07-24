@@ -225,9 +225,9 @@
           "id": "c2",
           "checks": [
             {"any": ["August 22", "Aug 22"]},
-            {"any": ["August 25", "Aug 25", "August 22 through August 25", "Aug 22-25", "Aug 22–25"]},
+            {"any": ["August 25", "Aug 25", "August 22 through August 25", "August 22-25", "August 22–25", "Aug 22-25", "Aug 22–25"]},
             {"any": ["three nights", "3 nights"]},
-            {"any": ["superseded", "superseding"]}
+            {"any": ["supersede", "supersedes", "superseded", "superseding"]}
           ],
           "sources_any": ["eval/transition-deltas/switzerland-family-window-and-reservation.md"]
         },

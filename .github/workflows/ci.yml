@@ -1,0 +1,355 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    container:
+      image: rust:1.96.1-bookworm@sha256:a339861ae23e9abb272cea45dfafde21760d2ce6577a70f8a926153677902663
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install pinned Rust components
+        run: rustup component add clippy rustfmt
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Strict Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test --all-targets --all-features
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: RustSec audit
+        run: cargo audit
+
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - run: npm run build
+      - run: npm test
+
+  mcp:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/mcp
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: apps/mcp/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - name: Build before testing compiled output
+        run: npm run build
+      - run: npm test
+
+  contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Python contracts
+        run: python3 -m unittest discover -s tests -v
+      - name: Shell syntax
+        run: |
+          for script in scripts/*.sh; do
+            sh -n "$script"
+          done
+      - name: Development Compose contract
+        run: docker compose --env-file .env.example --file compose.yaml config --quiet
+      - name: Production Compose contract
+        run: >-
+          docker compose
+          --env-file .env.example
+          --file compose.yaml
+          --file compose.production.yaml
+          config --quiet
+      - name: Caddy contract
+        run: |
+          docker build --file infra/caddy/Dockerfile --tag straylight-caddy:ci infra/caddy
+          docker run --rm \
+            --env STRAYLIGHT_PUBLIC_HOST=memory.example.com \
+            --env STRAYLIGHT_ACME_EMAIL=ops@example.com \
+            --volume "$PWD/infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            straylight-caddy:ci validate --config /etc/caddy/Caddyfile
+      - name: GitHub Actions contract
+        run: >-
+          docker run --rm
+          --volume "$PWD:/repo:ro"
+          --workdir /repo
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Create isolated integration configuration
+        run: |
+          python3 - <<'PY'
+          import os
+          import secrets
+          from pathlib import Path
+
+          def value(prefix: str, bytes_: int = 24) -> str:
+              return prefix + secrets.token_urlsafe(bytes_)
+
+          values = {
+              "POSTGRES_DB": "straylight",
+              "STRAYLIGHT_ENV": "test",
+              "POSTGRES_ADMIN_PASSWORD": value("admin_"),
+              "POSTGRES_APP_RW_PASSWORD": value("rw_"),
+              "POSTGRES_APP_RO_PASSWORD": value("ro_"),
+              "MINIO_ROOT_USER": value("root_", 12),
+              "MINIO_ROOT_PASSWORD": value("root_secret_"),
+              "STRAYLIGHT_MINIO_BUCKET": "straylight",
+              "STRAYLIGHT_MINIO_REGION": "us-east-1",
+              "STRAYLIGHT_MINIO_ACCESS_KEY": value("app_", 12),
+              "STRAYLIGHT_MINIO_SECRET_KEY": value("app_secret_"),
+              "STRAYLIGHT_CONTINUATION_SIGNING_KEY": value("continuation_", 32),
+              "STRAYLIGHT_EMBEDDING_PROVIDER": "hashing",
+              "STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS": "true",
+              "STRAYLIGHT_EMBEDDING_DIMENSIONS": "1536",
+              "STRAYLIGHT_DREAM_SCHEDULER_ENABLED": "true",
+              "STRAYLIGHT_DREAM_SCHEDULER_POLL_SECONDS": "1",
+              "STRAYLIGHT_DREAM_INACTIVITY_SECONDS": "1",
+              "STRAYLIGHT_DREAM_COOLDOWN_SECONDS": "1",
+              "STRAYLIGHT_DREAM_DIRTY_THRESHOLD": "1",
+              "STRAYLIGHT_DEV_USER_REF": "user:ci",
+              "STRAYLIGHT_DEV_USER_NAME": "CI alpha safety user",
+              "STRAYLIGHT_DEV_READ_WRITE_TOKEN": value("sl_ci_rw_", 30),
+              "STRAYLIGHT_DEV_READ_ONLY_TOKEN": value("sl_ci_ro_", 30),
+              "STRAYLIGHT_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS": "1",
+              "STRAYLIGHT_BACKUP_RETENTION_DAYS": "1",
+              "STRAYLIGHT_METRICS_ENABLED": "false",
+              "DD_ENV": "ci",
+              "DD_VERSION": os.environ["GITHUB_SHA"],
+          }
+          Path("ci.env").write_text(
+              "".join(f"{key}={value}\n" for key, value in values.items())
+          )
+          PY
+          chmod 0600 ci.env
+      - name: Build and start disposable stack
+        run: docker compose --env-file ci.env up -d --build
+      - name: Object-store semantic qualification
+        env:
+          ENV_FILE: ci.env
+        run: scripts/qualify-object-store.sh
+      - name: Live API and authorization safety
+        run: |
+          python3 tests/live_api_smoke.py \
+            --env-file ci.env \
+            --poll-timeout 180
+          python3 tests/live_alpha_safety.py \
+            --env-file ci.env \
+            --poll-timeout 180
+      - name: Dependency and proxy recovery
+        run: >-
+          python3 tests/live_runtime_safety.py
+          --env-file ci.env
+          --project straylight
+          --timeout 180
+      - name: Current-schema rollback compatibility
+        env:
+          ENV_FILE: ci.env
+          COMPOSE_OVERRIDE_FILE: ""
+        run: scripts/verify-rollback-compatibility.sh straylight-api:local
+      - name: Coordinated backup and isolated restore
+        run: |
+          set -euo pipefail
+          backup_root="$RUNNER_TEMP/straylight-backups"
+          backup_log="$RUNNER_TEMP/straylight-backup.log"
+          ENV_FILE="$PWD/ci.env" \
+            STRAYLIGHT_BACKUP_RETENTION_DAYS=1 \
+            scripts/backup.sh "$backup_root" | tee "$backup_log"
+          backup_dir=$(sed -n 's/^coordinated backup complete: //p' "$backup_log")
+          test -n "$backup_dir"
+          ENV_FILE="$PWD/ci.env" scripts/restore-drill.sh "$backup_dir"
+          mkdir -p integration-evidence
+          cp "$backup_dir/manifest.json" integration-evidence/
+          cp "$backup_dir/CHECKSUMS.sha256" integration-evidence/
+          cp "$backup_dir/db-inventory.txt" integration-evidence/
+          cp "$backup_dir/database-invariants.json" integration-evidence/
+          cp "$backup_dir/minio-versions.jsonl" integration-evidence/
+          cp "$backup_dir/runtime-images.json" integration-evidence/
+          cp "$backup_dir/compose-service-hashes.txt" integration-evidence/
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: integration-evidence
+          path: integration-evidence
+          if-no-files-found: warn
+      - name: Capture failure logs
+        if: failure()
+        run: docker compose --env-file ci.env logs --no-color >integration-logs.txt
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: failure()
+        with:
+          name: integration-logs
+          path: integration-logs.txt
+          if-no-files-found: error
+      - name: Remove disposable stack
+        if: always()
+        run: docker compose --env-file ci.env down --volumes --remove-orphans
+
+  supply-chain:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build release images
+        run: |
+          docker build --file apps/api/Dockerfile --tag straylight-api:ci .
+          docker build --file apps/web/Dockerfile --tag straylight-web:ci apps/web
+          docker build --file apps/mcp/Dockerfile --tag straylight-mcp:ci apps/mcp
+          docker build --file infra/postgres/Dockerfile --tag straylight-postgres:ci infra/postgres
+          docker build --file infra/minio/Dockerfile --tag straylight-minio:ci infra/minio
+          docker build --file infra/minio-client/Dockerfile --tag straylight-minio-client:ci infra/minio-client
+          docker build --file infra/caddy/Dockerfile --tag straylight-caddy:ci infra/caddy
+      - name: Prepare supply-chain evidence directories
+        run: mkdir -p release-scans
+      - name: Scan repository
+        id: repository-scan
+        continue-on-error: true
+        run: >-
+          docker run --rm
+          --volume "$PWD:/workspace:ro"
+          --volume "$PWD/release-scans:/output"
+          aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
+          filesystem
+          --exit-code 1
+          --severity HIGH,CRITICAL
+          --scanners vuln,secret,misconfig
+          --format json
+          --output /output/repository.json
+          /workspace
+      - name: Scan images and write SBOMs
+        id: release-image-scan
+        continue-on-error: true
+        run: |
+          mkdir -p release-sboms release-scans
+          failed=
+          for image in api web mcp postgres minio minio-client caddy; do
+            if docker run --rm \
+              --volume /var/run/docker.sock:/var/run/docker.sock \
+              --volume "$PWD/release-scans:/output" \
+              aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+              image --exit-code 1 --severity HIGH,CRITICAL --format json \
+              --output "/output/${image}.json" "straylight-${image}:ci"; then
+              printf '%s\n' PASS >"release-scans/${image}.status"
+            else
+              printf '%s\n' FAIL >"release-scans/${image}.status"
+              failed="$failed $image"
+            fi
+            docker run --rm \
+              --volume /var/run/docker.sock:/var/run/docker.sock \
+              --volume "$PWD/release-sboms:/output" \
+              aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+              image --format cyclonedx --output "/output/${image}.cdx.json" \
+              "straylight-${image}:ci"
+          done
+          test -z "$failed" || {
+            echo "release image vulnerability gate failed:$failed" >&2
+            exit 1
+          }
+      - name: Inventory third-party runtime images
+        if: always()
+        run: |
+          mkdir -p vendor-scans vendor-sboms
+          docker compose --env-file .env.example --profile '*' \
+            --file compose.yaml --file compose.production.yaml \
+            config --format json |
+            jq -r '.services[].image' |
+            LC_ALL=C sort -u |
+            grep -v '^straylight-' >vendor-images.txt
+          index=0
+          while IFS= read -r image; do
+            index=$((index + 1))
+            name=$(printf 'vendor-%02d' "$index")
+            printf '%s\t%s\n' "$name" "$image" >>vendor-images.tsv
+            docker run --rm \
+              --volume /var/run/docker.sock:/var/run/docker.sock \
+              --volume "$PWD/vendor-scans:/output" \
+              aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+              image --severity HIGH,CRITICAL --format json \
+              --output "/output/${name}.json" "$image"
+            docker run --rm \
+              --volume /var/run/docker.sock:/var/run/docker.sock \
+              --volume "$PWD/vendor-sboms:/output" \
+              aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+              image --format cyclonedx --output "/output/${name}.cdx.json" "$image"
+          done <vendor-images.txt
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: supply-chain-evidence
+          path: |
+            release-sboms
+            release-scans
+            vendor-images.tsv
+            vendor-scans
+            vendor-sboms
+          if-no-files-found: error
+      - name: Require repository and release-image gates
+        if: always()
+        env:
+          REPOSITORY_SCAN: ${{ steps.repository-scan.outcome }}
+          RELEASE_IMAGE_SCAN: ${{ steps.release-image-scan.outcome }}
+        run: |
+          test "$REPOSITORY_SCAN" = success
+          test "$RELEASE_IMAGE_SCAN" = success
+
+  ci-green:
+    if: always()
+    needs: [rust, web, mcp, contracts, integration, supply-chain]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every release gate
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = {
+              name: detail["result"]
+              for name, detail in json.loads(os.environ["NEEDS"]).items()
+          }
+          failed = {name: result for name, result in results.items() if result != "success"}
+          if failed:
+              print(f"release gates failed: {failed}", file=sys.stderr)
+              raise SystemExit(1)
+          print(f"all release gates passed: {sorted(results)}")
+          PY

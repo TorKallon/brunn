@@ -9,9 +9,12 @@ use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::{
+    account_worker,
     db::AppState,
     dream_service,
     error::{ApiError, ApiResult},
+    quota::{self, UsageReservation},
+    telemetry,
 };
 
 pub async fn run(state: AppState) -> ApiResult<()> {
@@ -24,22 +27,89 @@ pub async fn run(state: AppState) -> ApiResult<()> {
     let worker_id = format!("worker:{}", std::process::id());
     let mut next_scheduler_scan = Instant::now();
     loop {
-        let mut did_work = process_background_job(&state).await?;
-        did_work |= process_deletion_job(&state).await?;
+        let cycle_started = Instant::now();
+        let mut cycle_failed = false;
+        let mut did_work = match process_background_job(&state).await {
+            Ok(value) => value,
+            Err(error) => {
+                metrics::counter!("worker.cycle.errors", "stage" => "background").increment(1);
+                tracing::warn!(?error, "background queue cycle failed");
+                cycle_failed = true;
+                false
+            }
+        };
+        did_work |= match account_worker::process_account_export(&state, &worker_id).await {
+            Ok(value) => value,
+            Err(error) => {
+                metrics::counter!("worker.cycle.errors", "stage" => "account_export").increment(1);
+                tracing::warn!(?error, "account export queue cycle failed");
+                cycle_failed = true;
+                false
+            }
+        };
+        did_work |= match account_worker::process_account_deletion(&state, &worker_id).await {
+            Ok(value) => value,
+            Err(error) => {
+                metrics::counter!("worker.cycle.errors", "stage" => "account_deletion")
+                    .increment(1);
+                tracing::warn!(?error, "account deletion queue cycle failed");
+                cycle_failed = true;
+                false
+            }
+        };
+        did_work |= match process_deletion_job(&state).await {
+            Ok(value) => value,
+            Err(error) => {
+                metrics::counter!("worker.cycle.errors", "stage" => "deletion").increment(1);
+                tracing::warn!(?error, "deletion queue cycle failed");
+                cycle_failed = true;
+                false
+            }
+        };
         if next_scheduler_scan <= Instant::now() {
+            let scheduler_started = Instant::now();
             next_scheduler_scan = Instant::now() + state.config.dream_scheduler_poll_interval;
             match dream_service::schedule_next_dirty_job(&state).await {
-                Ok(Some(_)) => did_work = true,
-                Ok(None) => {}
-                Err(error) => tracing::warn!(?error, "dream scheduler scan failed"),
+                Ok(Some(detail)) => {
+                    did_work = true;
+                    metrics::counter!("dream.scheduler.scans", "result" => "scheduled")
+                        .increment(1);
+                    dream_service_metric("scheduled", &detail);
+                    metrics::histogram!("dream.scheduler.duration_ms", "result" => "scheduled")
+                        .record(telemetry::elapsed_ms(scheduler_started));
+                }
+                Ok(None) => {
+                    metrics::counter!("dream.scheduler.scans", "result" => "idle").increment(1);
+                    metrics::histogram!("dream.scheduler.duration_ms", "result" => "idle")
+                        .record(telemetry::elapsed_ms(scheduler_started));
+                }
+                Err(error) => {
+                    metrics::counter!("dream.scheduler.scans", "result" => "failed").increment(1);
+                    metrics::histogram!("dream.scheduler.duration_ms", "result" => "failed")
+                        .record(telemetry::elapsed_ms(scheduler_started));
+                    tracing::warn!(?error, "dream scheduler scan failed");
+                }
             }
         }
         match dream_service::process_next_job(&state, &worker_id).await {
-            Ok(Some(_)) => did_work = true,
+            Ok(Some(detail)) => {
+                did_work = true;
+                dream_service_metric("processed", &detail);
+            }
             Ok(None) => {}
-            Err(error) => tracing::warn!(?error, "dream job processing failed"),
+            Err(error) => {
+                metrics::counter!("worker.job.errors", "queue" => "dream").increment(1);
+                tracing::warn!(?error, "dream job processing failed");
+            }
         }
-        if !did_work {
+        let cycle_result = if did_work { "busy" } else { "idle" };
+        metrics::counter!("worker.cycles", "result" => cycle_result).increment(1);
+        metrics::gauge!("worker.busy").set(if did_work { 1.0 } else { 0.0 });
+        metrics::histogram!("worker.cycle.duration_ms", "result" => cycle_result)
+            .record(telemetry::elapsed_ms(cycle_started));
+        if cycle_failed {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
@@ -47,6 +117,7 @@ pub async fn run(state: AppState) -> ApiResult<()> {
 
 async fn process_background_job(state: &AppState) -> ApiResult<bool> {
     let pool = state.admin_pool.as_ref().expect("checked at worker start");
+    recover_stale_background_jobs(pool, state.config.background_job_lease).await?;
     let worker_id = format!("worker:{}", std::process::id());
     let mut transaction = pool.begin().await?;
     let row = sqlx::query(
@@ -71,6 +142,20 @@ async fn process_background_job(state: &AppState) -> ApiResult<bool> {
     let payload: Value = row.try_get("payload")?;
     let attempts: i32 = row.try_get("attempts")?;
     let max_attempts: i32 = row.try_get("max_attempts")?;
+    let started = Instant::now();
+    let metric_job_kind = bounded_background_job_kind(&job_kind);
+    metrics::counter!(
+        "worker.job.claims",
+        "queue" => "background",
+        "job_kind" => metric_job_kind
+    )
+    .increment(1);
+    metrics::histogram!(
+        "worker.job.attempt",
+        "queue" => "background",
+        "job_kind" => metric_job_kind
+    )
+    .record((attempts + 1) as f64);
     sqlx::query(
         r#"
         UPDATE straylight.background_jobs
@@ -104,6 +189,7 @@ async fn process_background_job(state: &AppState) -> ApiResult<bool> {
             .bind(job_id)
             .execute(pool)
             .await?;
+            record_worker_job("background", metric_job_kind, "succeeded", started);
         }
         Err(error) => {
             let terminal = attempts + 1 >= max_attempts;
@@ -122,9 +208,75 @@ async fn process_background_job(state: &AppState) -> ApiResult<bool> {
             .bind(job_id)
             .execute(pool)
             .await?;
+            record_worker_job(
+                "background",
+                metric_job_kind,
+                if terminal { "failed" } else { "retry_wait" },
+                started,
+            );
         }
     }
     Ok(true)
+}
+
+async fn recover_stale_background_jobs(pool: &PgPool, lease: Duration) -> ApiResult<()> {
+    let lease_seconds = i64::try_from(lease.as_secs()).unwrap_or(i64::MAX);
+    let failed = sqlx::query(
+        r#"
+        UPDATE straylight.background_jobs
+        SET status='failed',
+            result=jsonb_build_object(
+              'error','worker lease expired after the final permitted attempt',
+              'recovery','stale_running_job'
+            ),
+            locked_at=NULL,
+            locked_by=NULL,
+            completed_at=clock_timestamp()
+        WHERE status='running'
+          AND coalesce(locked_at,created_at)
+              < clock_timestamp() - make_interval(secs => $1)
+          AND attempts >= max_attempts
+        "#,
+    )
+    .bind(lease_seconds)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    let retried = sqlx::query(
+        r#"
+        UPDATE straylight.background_jobs
+        SET status='retry_wait',
+            available_at=clock_timestamp(),
+            locked_at=NULL,
+            locked_by=NULL,
+            result=jsonb_build_object('recovery','stale_running_job')
+        WHERE status='running'
+          AND coalesce(locked_at,created_at)
+              < clock_timestamp() - make_interval(secs => $1)
+          AND attempts < max_attempts
+        "#,
+    )
+    .bind(lease_seconds)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if failed > 0 {
+        metrics::counter!(
+            "worker.job.recoveries",
+            "queue" => "background",
+            "result" => "failed"
+        )
+        .increment(failed);
+    }
+    if retried > 0 {
+        metrics::counter!(
+            "worker.job.recoveries",
+            "queue" => "background",
+            "result" => "retried"
+        )
+        .increment(retried);
+    }
+    Ok(())
 }
 
 async fn index_embeddings(
@@ -142,8 +294,12 @@ async fn index_embeddings(
         .filter_map(|value| value.as_str().and_then(|value| Uuid::parse_str(value).ok()))
         .collect();
     if chunk_ids.is_empty() {
+        metrics::histogram!("embedding.index.requested_chunks").record(0.0);
+        metrics::histogram!("embedding.index.loaded_chunks").record(0.0);
+        metrics::histogram!("embedding.index.indexed_chunks").record(0.0);
         return Ok(json!({"indexed": 0}));
     }
+    metrics::histogram!("embedding.index.requested_chunks").record(chunk_ids.len() as f64);
     let rows = sqlx::query(
         r#"
         SELECT id,content,content_hash FROM straylight.chunks
@@ -156,10 +312,20 @@ async fn index_embeddings(
     .bind(&chunk_ids)
     .fetch_all(pool)
     .await?;
+    metrics::histogram!("embedding.index.loaded_chunks").record(rows.len() as f64);
     let contents: Vec<String> = rows
         .iter()
         .map(|row| row.try_get("content"))
         .collect::<Result<_, _>>()?;
+    quota::reserve_for_user(
+        pool,
+        user_id,
+        UsageReservation {
+            embedding_input_chars: contents.iter().map(String::len).sum::<usize>() as u64,
+            ..UsageReservation::default()
+        },
+    )
+    .await?;
     let vectors = state.embedder.embed(&contents).await?;
     if rows.len() != vectors.len() {
         return Err(ApiError::Internal(
@@ -191,6 +357,7 @@ async fn index_embeddings(
         .execute(pool)
         .await?;
     }
+    metrics::histogram!("embedding.index.indexed_chunks").record(rows.len() as f64);
     Ok(json!({
         "indexed": rows.len(),
         "provider": state.embedder.provider(),
@@ -218,6 +385,8 @@ struct DeletionJob {
     user_id: Uuid,
     scope_id: Uuid,
     tombstone_id: Uuid,
+    attempt_count: i32,
+    max_attempts: i32,
     target_id: Uuid,
     target_kind: String,
     authorization_source_id: Uuid,
@@ -337,16 +506,37 @@ fn summarize_cleanup_statuses<'a>(statuses: impl IntoIterator<Item = &'a str>) -
     summary
 }
 
+fn deletion_retry_delay_seconds(attempt_count: i32) -> i32 {
+    let exponent = u32::try_from(attempt_count.saturating_sub(1))
+        .unwrap_or(0)
+        .min(6);
+    5_i32
+        .saturating_mul(2_i32.saturating_pow(exponent))
+        .min(300)
+}
+
+fn deletion_planning_failure_is_retryable(error: &ApiError) -> bool {
+    !matches!(
+        error,
+        ApiError::Internal(message)
+            if message.starts_with("deletion target kind is not safely redacted:")
+    )
+}
+
 async fn process_deletion_job(state: &AppState) -> ApiResult<bool> {
     let pool = state.admin_pool.as_ref().expect("checked at worker start");
     let Some(job) = claim_deletion_job(pool).await? else {
         return Ok(false);
     };
+    let job_started = Instant::now();
+    metrics::counter!("worker.job.claims", "queue" => "deletion", "job_kind" => "deletion")
+        .increment(1);
 
     let plan = match DeletionPlan::load(pool, &job).await {
         Ok(plan) => plan,
         Err(error) => {
             record_planning_failure(pool, &job, &error).await?;
+            record_worker_job("deletion", "deletion", "planning_failed", job_started);
             return Ok(true);
         }
     };
@@ -355,15 +545,72 @@ async fn process_deletion_job(state: &AppState) -> ApiResult<bool> {
         if !begin_cleanup_surface(pool, &job, surface).await? {
             continue;
         }
+        let surface_started = Instant::now();
         let result = process_cleanup_surface(state, &job, &plan, surface).await;
         match result {
-            Ok(outcome) => complete_cleanup_surface(pool, &job, surface, outcome).await?,
-            Err(error) => fail_cleanup_surface(pool, &job, surface, &error).await?,
+            Ok(outcome) => {
+                let result = outcome.status.as_str();
+                complete_cleanup_surface(pool, &job, surface, outcome).await?;
+                record_deletion_surface(surface, result, surface_started);
+            }
+            Err(error) => {
+                fail_cleanup_surface(pool, &job, surface, &error).await?;
+                record_deletion_surface(surface, "failed", surface_started);
+            }
         }
     }
 
-    finalize_deletion_job(pool, &job, &plan).await?;
+    let result = finalize_deletion_job(pool, &job, &plan).await?;
+    record_worker_job("deletion", "deletion", result, job_started);
     Ok(true)
+}
+
+fn bounded_background_job_kind(value: &str) -> &'static str {
+    match value {
+        "index_embeddings" => "index_embeddings",
+        _ => "unknown",
+    }
+}
+
+fn record_worker_job(
+    queue: &'static str,
+    job_kind: &'static str,
+    result: &'static str,
+    started: Instant,
+) {
+    metrics::counter!(
+        "worker.jobs",
+        "queue" => queue,
+        "job_kind" => job_kind,
+        "result" => result
+    )
+    .increment(1);
+    metrics::histogram!(
+        "worker.job.duration_ms",
+        "queue" => queue,
+        "job_kind" => job_kind,
+        "result" => result
+    )
+    .record(telemetry::elapsed_ms(started));
+}
+
+fn record_deletion_surface(surface: &'static str, result: &'static str, started: Instant) {
+    metrics::counter!(
+        "deletion.surfaces",
+        "surface" => surface,
+        "result" => result
+    )
+    .increment(1);
+    metrics::histogram!(
+        "deletion.surface.duration_ms",
+        "surface" => surface,
+        "result" => result
+    )
+    .record(telemetry::elapsed_ms(started));
+}
+
+fn dream_service_metric(action: &'static str, detail: &Value) {
+    crate::telemetry::record_dream_action(action, detail);
 }
 
 async fn claim_deletion_job(pool: &PgPool) -> ApiResult<Option<DeletionJob>> {
@@ -372,6 +619,7 @@ async fn claim_deletion_job(pool: &PgPool) -> ApiResult<Option<DeletionJob>> {
         r#"
         SELECT
           job.id,job.user_id,job.scope_id,job.tombstone_id,
+          job.attempt_count,job.max_attempts,
           tombstone.target_record_id,tombstone.source_episode_id,
           tombstone.evidence_id,record_key.record_kind
         FROM straylight.deletion_jobs AS job
@@ -381,17 +629,19 @@ async fn claim_deletion_job(pool: &PgPool) -> ApiResult<Option<DeletionJob>> {
           ON record_key.user_id=job.user_id
          AND record_key.record_id=tombstone.target_record_id
         WHERE
-          job.status='queued'
+          (
+            job.status='queued'
+            AND job.available_at <= clock_timestamp()
+            AND job.attempt_count < job.max_attempts
+          )
           OR (
             job.status='failed'
-            AND coalesce((
-              SELECT max(event.recorded_at)
-              FROM straylight.deletion_job_events AS event
-              WHERE event.user_id=job.user_id AND event.deletion_job_id=job.id
-            ),job.completed_at,job.created_at) <= clock_timestamp()-interval '5 seconds'
+            AND job.available_at <= clock_timestamp()
+            AND job.attempt_count < job.max_attempts
           )
           OR (
             job.status='propagating'
+            AND job.attempt_count < job.max_attempts
             AND coalesce((
               SELECT max(event.recorded_at)
               FROM straylight.deletion_job_events AS event
@@ -400,6 +650,7 @@ async fn claim_deletion_job(pool: &PgPool) -> ApiResult<Option<DeletionJob>> {
           )
           OR (
             job.status='completed'
+            AND job.attempt_count < job.max_attempts
             AND EXISTS (
               SELECT 1
               FROM straylight.derivative_cleanup_targets AS cleanup
@@ -425,6 +676,8 @@ async fn claim_deletion_job(pool: &PgPool) -> ApiResult<Option<DeletionJob>> {
         user_id: row.try_get("user_id")?,
         scope_id: row.try_get("scope_id")?,
         tombstone_id: row.try_get("tombstone_id")?,
+        attempt_count: row.try_get::<i32, _>("attempt_count")?.saturating_add(1),
+        max_attempts: row.try_get("max_attempts")?,
         target_id: row.try_get("target_record_id")?,
         target_kind: row.try_get("record_kind")?,
         authorization_source_id: row.try_get("source_episode_id")?,
@@ -495,8 +748,9 @@ async fn claim_deletion_job(pool: &PgPool) -> ApiResult<Option<DeletionJob>> {
         r#"
         UPDATE straylight.deletion_jobs
         SET status='propagating',started_at=coalesce(started_at,clock_timestamp()),
-            completed_at=NULL,terminal_result=NULL
-        WHERE user_id=$1 AND id=$2
+            completed_at=NULL,terminal_result=NULL,
+            attempt_count=attempt_count+1
+        WHERE user_id=$1 AND id=$2 AND attempt_count < max_attempts
         "#,
     )
     .bind(job.user_id)
@@ -510,6 +764,8 @@ async fn claim_deletion_job(pool: &PgPool) -> ApiResult<Option<DeletionJob>> {
         json!({
             "target_record_id": job.target_id,
             "target_kind": job.target_kind,
+            "attempt_count": job.attempt_count,
+            "max_attempts": job.max_attempts,
             "legacy_targets_reopened": legacy_rows
         }),
     )
@@ -665,10 +921,26 @@ async fn record_planning_failure(
     job: &DeletionJob,
     error: &ApiError,
 ) -> ApiResult<()> {
+    let retryable = deletion_planning_failure_is_retryable(error);
+    let exhausted = job.attempt_count >= job.max_attempts;
+    let status = if retryable && !exhausted {
+        "failed"
+    } else {
+        "blocked"
+    };
+    let retry_delay_seconds = deletion_retry_delay_seconds(job.attempt_count);
     let details = json!({
         "reason": "deletion_plan_failed",
         "error": error.to_string(),
-        "target_kind": job.target_kind
+        "target_kind": job.target_kind,
+        "retryable": retryable,
+        "attempt_count": job.attempt_count,
+        "max_attempts": job.max_attempts,
+        "retry_delay_seconds": if status == "failed" {
+            Some(retry_delay_seconds)
+        } else {
+            None
+        }
     });
     let mut transaction = pool.begin().await?;
     sqlx::query(
@@ -688,18 +960,33 @@ async fn record_planning_failure(
     sqlx::query(
         r#"
         UPDATE straylight.deletion_jobs
-        SET status='failed',completed_at=clock_timestamp(),terminal_result=$1
-        WHERE user_id=$2 AND id=$3
+        SET status=$1,completed_at=clock_timestamp(),terminal_result=$2,
+            available_at=CASE WHEN $1='failed'
+              THEN clock_timestamp()+make_interval(secs => $3)
+              ELSE available_at END
+        WHERE user_id=$4 AND id=$5
         "#,
     )
+    .bind(status)
     .bind(&details)
+    .bind(retry_delay_seconds)
     .bind(job.user_id)
     .bind(job.id)
     .execute(&mut *transaction)
     .await?;
-    insert_deletion_event(&mut transaction, job, "planning_failed", details).await?;
+    insert_deletion_event(
+        &mut transaction,
+        job,
+        if status == "blocked" {
+            "planning_blocked"
+        } else {
+            "planning_failed"
+        },
+        details,
+    )
+    .await?;
     transaction.commit().await?;
-    tracing::warn!(job_id=%job.id, ?error, "deletion planning failed");
+    tracing::warn!(job_id=%job.id, status, ?error, "deletion planning failed");
     Ok(())
 }
 
@@ -1990,7 +2277,23 @@ async fn remove_asset_surface(
     job: &DeletionJob,
     plan: &DeletionPlan,
 ) -> ApiResult<SurfaceOutcome> {
+    let pool = state.admin_pool.as_ref().expect("checked at worker start");
+    let mut transaction = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
+        .bind(job.user_id)
+        .execute(&mut *transaction)
+        .await?;
+    set_deletion_context(&mut transaction, job.id).await?;
+
     let mut object_deletes = 0usize;
+    let mut object_versions_deleted = 0usize;
+    let mut delete_markers_deleted = 0usize;
+    let mut shared_object_keys_retained = 0usize;
+    let mut removal_counts = BTreeMap::<String, i64>::new();
+    for asset in &plan.removable_assets {
+        *removal_counts.entry(asset.object_key.clone()).or_insert(0) += 1;
+    }
+    let mut processed_keys = BTreeSet::<String>::new();
     for asset in &plan.removable_assets {
         if asset.bucket != state.config.s3_bucket {
             return Err(ApiError::Internal(format!(
@@ -1999,15 +2302,39 @@ async fn remove_asset_surface(
             )));
         }
         let redacted_key = redacted_asset_key(job.user_id, asset.asset_id, asset.version);
-        if asset.object_key != redacted_key {
-            state.object_store.delete(&asset.object_key).await?;
+        if asset.object_key != redacted_key && processed_keys.insert(asset.object_key.clone()) {
+            let references = sqlx::query_scalar::<_, i64>(
+                r#"
+                SELECT count(*)
+                FROM straylight.asset_versions
+                WHERE user_id=$1 AND bucket=$2 AND object_key=$3 AND size_bytes > 0
+                "#,
+            )
+            .bind(job.user_id)
+            .bind(&asset.bucket)
+            .bind(&asset.object_key)
+            .fetch_one(&mut *transaction)
+            .await?;
+            let removals = *removal_counts.get(&asset.object_key).unwrap_or(&0);
+            if references < removals {
+                return Err(ApiError::Internal(
+                    "asset deletion plan exceeds physical object references".to_owned(),
+                ));
+            }
+            if references > removals {
+                shared_object_keys_retained += 1;
+                continue;
+            }
+            let purge = state
+                .object_store
+                .purge_all_versions(&asset.object_key)
+                .await?;
             object_deletes += 1;
+            object_versions_deleted += purge.versions_deleted;
+            delete_markers_deleted += purge.delete_markers_deleted;
         }
     }
 
-    let pool = state.admin_pool.as_ref().expect("checked at worker start");
-    let mut transaction = pool.begin().await?;
-    set_deletion_context(&mut transaction, job.id).await?;
     let mut metadata_redactions = 0u64;
     for asset in &plan.removable_assets {
         let redacted_key = redacted_asset_key(job.user_id, asset.asset_id, asset.version);
@@ -2035,11 +2362,15 @@ async fn remove_asset_surface(
 
     let removable = asset_receipts(&plan.removable_assets);
     let retained = asset_receipts(&plan.retained_assets);
-    if plan.retained_assets.is_empty() {
+    if plan.retained_assets.is_empty() && shared_object_keys_retained == 0 {
         Ok(SurfaceOutcome::removed(json!({
             "mode": "object_blobs_deleted_and_asset_metadata_redacted",
             "removed_assets": removable,
             "object_deletes": object_deletes,
+            "object_versions_deleted": object_versions_deleted,
+            "delete_markers_deleted": delete_markers_deleted,
+            "shared_object_keys_retained": shared_object_keys_retained,
+            "object_version_verification": "complete",
             "metadata_rows_redacted": metadata_redactions
         })))
     } else {
@@ -2049,6 +2380,10 @@ async fn remove_asset_surface(
             "removed_assets": removable,
             "retained_assets": retained,
             "object_deletes": object_deletes,
+            "object_versions_deleted": object_versions_deleted,
+            "delete_markers_deleted": delete_markers_deleted,
+            "shared_object_keys_retained": shared_object_keys_retained,
+            "object_version_verification": "complete",
             "metadata_rows_redacted": metadata_redactions
         })))
     }
@@ -2407,7 +2742,7 @@ async fn finalize_deletion_job(
     pool: &PgPool,
     job: &DeletionJob,
     plan: &DeletionPlan,
-) -> ApiResult<()> {
+) -> ApiResult<&'static str> {
     sqlx::query(
         r#"
         UPDATE straylight.derivative_cleanup_targets
@@ -2463,16 +2798,27 @@ async fn finalize_deletion_job(
     let mut summary = summarize_cleanup_statuses(statuses.iter().map(String::as_str));
     summary.failed += missing_required.len();
     let disposition = summary.disposition();
+    let retry_exhausted = matches!(disposition, DeletionDisposition::RetryRequired)
+        && job.attempt_count >= job.max_attempts;
     let status = match disposition {
         DeletionDisposition::Complete => "completed",
         DeletionDisposition::InProgress => "propagating",
+        DeletionDisposition::RetryRequired if retry_exhausted => "blocked",
         DeletionDisposition::RetryRequired => "failed",
     };
+    let retry_delay_seconds = deletion_retry_delay_seconds(job.attempt_count);
     let result = json!({
         "status": status,
         "target_record_id": job.target_id,
         "target_kind": job.target_kind,
         "minimal_tombstone_id": job.tombstone_id,
+        "attempt_count": job.attempt_count,
+        "max_attempts": job.max_attempts,
+        "retry_delay_seconds": if status == "failed" {
+            Some(retry_delay_seconds)
+        } else {
+            None
+        },
         "surface_summary": {
             "total": summary.total(),
             "pending": summary.pending,
@@ -2519,16 +2865,31 @@ async fn finalize_deletion_job(
             sqlx::query(
                 r#"
                 UPDATE straylight.deletion_jobs
-                SET status='failed',completed_at=clock_timestamp(),terminal_result=$1
-                WHERE user_id=$2 AND id=$3
+                SET status=$1,completed_at=clock_timestamp(),terminal_result=$2,
+                    available_at=CASE WHEN $1='failed'
+                      THEN clock_timestamp()+make_interval(secs => $3)
+                      ELSE available_at END
+                WHERE user_id=$4 AND id=$5
                 "#,
             )
+            .bind(status)
             .bind(&result)
+            .bind(retry_delay_seconds)
             .bind(job.user_id)
             .bind(job.id)
             .execute(&mut *transaction)
             .await?;
-            insert_deletion_event(&mut transaction, job, "retry_required", result).await?;
+            insert_deletion_event(
+                &mut transaction,
+                job,
+                if status == "blocked" {
+                    "retry_exhausted"
+                } else {
+                    "retry_required"
+                },
+                result,
+            )
+            .await?;
         }
         DeletionDisposition::InProgress => {
             sqlx::query(
@@ -2547,7 +2908,7 @@ async fn finalize_deletion_job(
         }
     }
     transaction.commit().await?;
-    Ok(())
+    Ok(status)
 }
 
 #[cfg(test)]
@@ -2582,5 +2943,24 @@ mod deletion_tests {
         let summary = summarize_cleanup_statuses(["removed", "future_status"]);
         assert_eq!(summary.disposition(), DeletionDisposition::RetryRequired);
         assert_eq!(summary.failed, 1);
+    }
+
+    #[test]
+    fn deletion_retry_backoff_is_bounded() {
+        assert_eq!(deletion_retry_delay_seconds(1), 5);
+        assert_eq!(deletion_retry_delay_seconds(2), 10);
+        assert_eq!(deletion_retry_delay_seconds(7), 300);
+        assert_eq!(deletion_retry_delay_seconds(i32::MAX), 300);
+    }
+
+    #[test]
+    fn unsupported_record_kind_is_a_permanent_planning_failure() {
+        let error = ApiError::Internal(
+            "deletion target kind is not safely redacted: corpus_revision".to_owned(),
+        );
+        assert!(!deletion_planning_failure_is_retryable(&error));
+        assert!(deletion_planning_failure_is_retryable(&ApiError::Internal(
+            "temporary object-store failure".to_owned()
+        )));
     }
 }

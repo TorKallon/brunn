@@ -1,8 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Ban,
+  BarChart3,
   Check,
+  ChevronsDown,
   Copy,
   KeyRound,
   Plus,
@@ -10,6 +12,7 @@ import {
   Shield,
 } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { DataTable } from "../components/DataTable";
 import { JsonView } from "../components/JsonView";
 import { DefinitionList, Metric, Page, PageHeader, Section } from "../components/Page";
 import { EmptyState, ErrorState, LoadingState, ReadOnlyNotice, StatusBadge } from "../components/StateViews";
@@ -17,7 +20,13 @@ import { TabPanel, Tabs } from "../components/Tabs";
 import { useApi } from "../lib/auth";
 import { useCurrent, useReadOnly } from "../lib/current";
 import { formatDate, humanize, shortId } from "../lib/format";
-import { asItems, type CredentialSummary } from "../lib/types";
+import {
+  asItems,
+  type CredentialSummary,
+  type DataUsageItem,
+} from "../lib/types";
+
+const numberFormat = new Intl.NumberFormat();
 
 export function ControlPage() {
   const api = useApi();
@@ -26,6 +35,9 @@ export function ControlPage() {
   const canManageCredentials = current.data.capabilities?.includes("credential:manage") ?? false;
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("credentials");
+  const [usageRanking, setUsageRanking] = useState<
+    "most_used" | "least_used" | "least_recently_used"
+  >("most_used");
   const [createOpen, setCreateOpen] = useState(false);
   const [credentialName, setCredentialName] = useState("");
   const [credentialAccess, setCredentialAccess] = useState<"read_only" | "read_write">("read_only");
@@ -35,7 +47,16 @@ export function ControlPage() {
   const credentialsQuery = useQuery({ queryKey: ["credentials"], queryFn: () => api.credentials() });
   const scopesQuery = useQuery({ queryKey: ["scopes"], queryFn: () => api.scopes() });
   const policiesQuery = useQuery({ queryKey: ["policies"], queryFn: () => api.policies() });
-  const auditQuery = useQuery({ queryKey: ["audit"], queryFn: () => api.audit() });
+  const auditQuery = useInfiniteQuery({
+    queryKey: ["audit"],
+    queryFn: ({ pageParam }) => api.audit(pageParam || undefined),
+    initialPageParam: "",
+    getNextPageParam: (lastPage) =>
+      Array.isArray(lastPage.data)
+        ? undefined
+        : lastPage.data.continuation_token ?? undefined,
+  });
+  const usageQuery = useQuery({ queryKey: ["usage"], queryFn: () => api.usage() });
   const statusQuery = useQuery({ queryKey: ["service-status"], queryFn: () => api.status(), refetchInterval: 30_000 });
   const createCredentialMutation = useMutation({
     mutationFn: () => api.createCredential({ name: credentialName, access: credentialAccess, scope_ids: credentialScope ? [credentialScope] : [] }),
@@ -53,7 +74,13 @@ export function ControlPage() {
   const credentials = asItems(credentialsQuery.data?.data);
   const scopes = asItems(scopesQuery.data?.data);
   const policies = asItems(policiesQuery.data?.data);
-  const audit = asItems(auditQuery.data?.data);
+  const audit = auditQuery.data?.pages.flatMap((page) => asItems(page.data)) ?? [];
+  const auditTotal = (() => {
+    const first = auditQuery.data?.pages[0]?.data;
+    return first && !Array.isArray(first) ? first.total ?? audit.length : audit.length;
+  })();
+  const usage = usageQuery.data?.data;
+  const usageItems = usage?.[usageRanking] ?? [];
   const createdCredential = createCredentialMutation.data?.data;
 
   function submitCredential(event: FormEvent<HTMLFormElement>) {
@@ -70,11 +97,12 @@ export function ControlPage() {
 
   return (
     <Page>
-      <PageHeader title="Control" description="Access, policy, audit, and service state" />
+      <PageHeader title="Control" description="Access, usage, policy, audit, and service state" />
       {readOnly ? <ReadOnlyNotice /> : null}
       <Tabs
         tabs={[
           { id: "credentials", label: "Credentials", count: credentials.length || undefined },
+          { id: "usage", label: "Usage", count: usage?.summary.used_source_count || undefined },
           { id: "scopes", label: "Scopes", count: scopes.length || undefined },
           { id: "policies", label: "Policies", count: policies.length || undefined },
           { id: "audit", label: "Audit", count: audit.length || undefined },
@@ -95,6 +123,66 @@ export function ControlPage() {
         </Section>
       </TabPanel>
 
+      <TabPanel id="usage" active={activeTab}>
+        {usageQuery.isPending ? <LoadingState label="Loading data usage" /> : null}
+        {usageQuery.isError ? <ErrorState error={usageQuery.error} retry={() => void usageQuery.refetch()} /> : null}
+        {usage ? (
+          <>
+            <div className="metric-grid">
+              <Metric label="Active sources" value={numberFormat.format(usage.summary.active_source_count)} />
+              <Metric label="Used sources" value={numberFormat.format(usage.summary.used_source_count)} />
+              <Metric label="Never used" value={numberFormat.format(usage.summary.never_used_source_count)} />
+              <Metric label="Source uses" value={numberFormat.format(usage.summary.source_uses)} detail={`${numberFormat.format(usage.summary.tracked_response_count)} responses`} />
+            </div>
+            <Section
+              title="Agent data usage"
+              meta={`${usageItems.length} sources`}
+              actions={<BarChart3 size={18} aria-hidden="true" />}
+            >
+              <div className="mode-control" aria-label="Usage ranking">
+                <button type="button" className={usageRanking === "most_used" ? "active" : undefined} onClick={() => setUsageRanking("most_used")}>Most used</button>
+                <button type="button" className={usageRanking === "least_used" ? "active" : undefined} onClick={() => setUsageRanking("least_used")}>Least used</button>
+                <button type="button" className={usageRanking === "least_recently_used" ? "active" : undefined} onClick={() => setUsageRanking("least_recently_used")}>Least recent</button>
+              </div>
+              <DataTable<DataUsageItem>
+                data={usageItems}
+                emptyTitle="No source usage"
+                columns={[
+                  {
+                    id: "source",
+                    header: "Source",
+                    cell: ({ row }) => (
+                      <div className="usage-source">
+                        <strong>{row.original.title}</strong>
+                        <code>{row.original.source_ref}</code>
+                      </div>
+                    ),
+                  },
+                  { accessorKey: "kind", header: "Kind", cell: ({ getValue }) => humanize(String(getValue())) },
+                  { accessorKey: "access_count", header: "Uses", cell: ({ getValue }) => numberFormat.format(Number(getValue())) },
+                  { accessorKey: "session_count", header: "Sessions", cell: ({ getValue }) => numberFormat.format(Number(getValue())) },
+                  { accessorKey: "last_used_at", header: "Last used", cell: ({ row }) => row.original.never_used ? "Never" : formatDate(row.original.last_used_at) },
+                ]}
+              />
+            </Section>
+            <Section title="Use by operation">
+              {usage.by_operation.length ? (
+                <div className="metric-grid compact-metrics">
+                  {usage.by_operation.map((operation) => (
+                    <Metric
+                      key={operation.operation}
+                      label={humanize(operation.operation)}
+                      value={numberFormat.format(operation.source_uses)}
+                      detail={`${numberFormat.format(operation.response_count)} responses`}
+                    />
+                  ))}
+                </div>
+              ) : <EmptyState title="No tracked operations" />}
+            </Section>
+          </>
+        ) : null}
+      </TabPanel>
+
       <TabPanel id="scopes" active={activeTab}>
         <Section title="Authorization scopes" actions={<Shield size={18} aria-hidden="true" />}>
           {scopesQuery.isPending ? <LoadingState label="Loading scopes" /> : null}
@@ -112,10 +200,10 @@ export function ControlPage() {
       </TabPanel>
 
       <TabPanel id="audit" active={activeTab}>
-        <Section title="Audit log" meta={`${audit.length} events`}>
+        <Section title="Audit log" meta={`${audit.length} of ${auditTotal} events`}>
           {auditQuery.isPending ? <LoadingState label="Loading audit log" /> : null}
           {auditQuery.isError ? <ErrorState error={auditQuery.error} retry={() => void auditQuery.refetch()} /> : null}
-          {audit.length ? <div className="audit-list control-audit">{audit.map((event) => <div key={event.id}><time>{formatDate(event.created_at)}</time><strong>{event.action}</strong><span>{event.actor ?? "System"}</span><code>{event.target ?? event.request_id ?? event.id}</code><StatusBadge status={event.status} />{event.details !== undefined ? <JsonView value={event.details} label={`${event.action} details`} /> : null}</div>)}</div> : auditQuery.isSuccess ? <EmptyState title="No audit events" /> : null}
+          {audit.length ? <><div className="audit-list control-audit">{audit.map((event) => <div key={event.id}><time>{formatDate(event.created_at)}</time><strong>{event.action}</strong><span>{event.actor ?? "System"}</span><code>{event.target ?? event.request_id ?? event.id}</code><StatusBadge status={event.status} />{event.details !== undefined ? <JsonView value={event.details} label={`${event.action} details`} /> : null}</div>)}</div>{auditQuery.hasNextPage ? <div className="section-footer"><button className="button secondary" type="button" onClick={() => void auditQuery.fetchNextPage()} disabled={auditQuery.isFetchingNextPage}><ChevronsDown size={16} aria-hidden="true" />{auditQuery.isFetchingNextPage ? "Loading" : "Load more"}</button></div> : null}</> : auditQuery.isSuccess ? <EmptyState title="No audit events" /> : null}
         </Section>
       </TabPanel>
 

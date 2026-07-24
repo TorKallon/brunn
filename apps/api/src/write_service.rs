@@ -16,6 +16,7 @@ use crate::{
         Capability, CheckpointRequest, RecurrenceSpecV1, SaveAction, SaveItem, SaveKind,
         SaveRequest, TemporalSpecV1, canonical_json,
     },
+    quota,
     refs::{RecordKind, RecordRef},
 };
 
@@ -26,8 +27,8 @@ pub struct StageUpload {
     pub bytes: Bytes,
 }
 
-const MAX_STAGE_ENTRIES: usize = 10_000;
-const MAX_STAGE_EXPANDED_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const MAX_STAGE_ENTRIES: usize = 2_000;
+const MAX_STAGE_EXPANDED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_STAGE_PATH_BYTES: usize = 1_024;
 const MAX_STAGE_TEXT_INDEX_CHARS: usize = 256 * 1024;
 
@@ -41,6 +42,14 @@ struct PreparedStageEntry {
     readability: String,
     inspection: Value,
     bytes: Option<Bytes>,
+}
+
+#[derive(Clone, Debug)]
+struct PendingStageBlob {
+    bytes: Bytes,
+    media_type: Option<String>,
+    expected_hash: String,
+    object_key: String,
 }
 
 #[derive(Clone, Debug)]
@@ -754,7 +763,19 @@ pub async fn stage_uploads(
     }
     let input_count = uploads.len();
     let (prepared, input_hash, inventory_hash, mut warnings) = prepare_stage_entries(uploads)?;
+    let pending_blobs: HashMap<String, usize> = prepared
+        .iter()
+        .filter_map(|entry| {
+            Some((
+                strip_sha256(entry.content_hash.as_deref()?),
+                entry.bytes.as_ref()?.len(),
+            ))
+        })
+        .map(|(hash, size)| (hash.to_owned(), size))
+        .collect();
+    let pending_blobs: Vec<_> = pending_blobs.into_iter().collect();
     let mut tx = state.begin_write(auth).await?;
+    quota::ensure_storage_capacity(&mut tx, auth.user_id.0, &pending_blobs).await?;
     let scope_id = resolve_scope(&mut tx, auth, scope_ref).await?;
     let (base_revision, _, _, _) = active_revision(&mut tx, auth.user_id.0, scope_id).await?;
     let (policy_id, policy_version) = default_policy(&mut tx, auth.user_id.0).await?;
@@ -841,66 +862,98 @@ pub async fn stage_uploads(
     .execute(&mut *tx)
     .await?;
     let mut response_entries = Vec::with_capacity(prepared.len());
-    let mut staged_assets = HashMap::<String, Uuid>::new();
+    let mut staged_assets = HashMap::<String, (Uuid, i32)>::new();
+    let mut pending_uploads = Vec::<PendingStageBlob>::new();
     for entry in &prepared {
-        let asset_id =
+        let asset_binding =
             if let (Some(bytes), Some(content_hash)) = (&entry.bytes, &entry.content_hash) {
-                if let Some(asset_id) = staged_assets.get(content_hash) {
-                    Some(*asset_id)
+                if let Some(binding) = staged_assets.get(content_hash) {
+                    Some(*binding)
                 } else {
-                    let blob = state
-                        .object_store
-                        .put_user_blob(auth.user_id, entry.media_type.as_deref(), bytes.clone())
-                        .await?;
-                    if blob.sha256 != *content_hash {
-                        return Err(ApiError::conflict(
-                            "content_hash_mismatch",
-                            "prepared staged content changed before object storage",
-                            json!({"path": entry.path}),
-                        ));
-                    }
-                    let asset_id = Uuid::now_v7();
-                    sqlx::query(
+                    let digest = strip_sha256(content_hash);
+                    let object_key = format!("{}/blobs/{digest}", auth.user_id.0);
+                    let existing = sqlx::query(
                         r#"
-                    INSERT INTO straylight.assets (
-                      id,user_id,scope_id,current_version,policy_id,policy_version
-                    ) VALUES ($1,$2,$3,1,$4,$5)
-                    "#,
+                        SELECT asset_id,version,bucket,content_hash,size_bytes
+                        FROM straylight.asset_versions
+                        WHERE user_id=$1 AND object_key=$2 AND size_bytes > 0
+                        ORDER BY stored_at,asset_id,version
+                        LIMIT 1
+                        FOR SHARE
+                        "#,
                     )
-                    .bind(asset_id)
                     .bind(auth.user_id.0)
-                    .bind(scope_id)
-                    .bind(policy_id)
-                    .bind(policy_version)
-                    .execute(&mut *tx)
+                    .bind(&object_key)
+                    .fetch_optional(&mut *tx)
                     .await?;
-                    sqlx::query(
-                    r#"
-                    INSERT INTO straylight.asset_versions (
-                      user_id,asset_id,version,bucket,object_key,content_hash,
-                      size_bytes,media_type,metadata
-                    ) VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8)
-                    "#,
-                )
-                .bind(auth.user_id.0)
-                .bind(asset_id)
-                .bind(&state.config.s3_bucket)
-                .bind(&blob.object_key)
-                .bind(strip_sha256(&blob.sha256))
-                .bind(blob.size_bytes as i64)
-                .bind(
-                    entry
-                        .media_type
-                        .as_deref()
-                        .unwrap_or("application/octet-stream"),
-                )
-                .bind(
-                    json!({"stage_ref": format!("stage:{stage_id}"), "original_path": entry.path}),
-                )
-                .execute(&mut *tx)
-                .await?;
-                    staged_assets.insert(content_hash.clone(), asset_id);
-                    Some(asset_id)
+                    let binding = if let Some(existing) = existing {
+                        let stored_bucket: String = existing.try_get("bucket")?;
+                        let stored_hash: String = existing.try_get("content_hash")?;
+                        let stored_size: i64 = existing.try_get("size_bytes")?;
+                        if stored_bucket != state.config.s3_bucket
+                            || stored_hash != digest
+                            || stored_size != i64::try_from(bytes.len()).unwrap_or(i64::MAX)
+                        {
+                            return Err(ApiError::Internal(
+                                "content-addressed asset metadata is inconsistent".to_owned(),
+                            ));
+                        }
+                        (
+                            existing.try_get::<Uuid, _>("asset_id")?,
+                            existing.try_get::<i32, _>("version")?,
+                        )
+                    } else {
+                        let asset_id = Uuid::now_v7();
+                        sqlx::query(
+                            r#"
+                            INSERT INTO straylight.assets (
+                              id,user_id,scope_id,current_version,policy_id,policy_version
+                            ) VALUES ($1,$2,$3,1,$4,$5)
+                            "#,
+                        )
+                        .bind(asset_id)
+                        .bind(auth.user_id.0)
+                        .bind(scope_id)
+                        .bind(policy_id)
+                        .bind(policy_version)
+                        .execute(&mut *tx)
+                        .await?;
+                        sqlx::query(
+                            r#"
+                            INSERT INTO straylight.asset_versions (
+                              user_id,asset_id,version,bucket,object_key,content_hash,
+                              size_bytes,media_type,metadata
+                            ) VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8)
+                            "#,
+                        )
+                        .bind(auth.user_id.0)
+                        .bind(asset_id)
+                        .bind(&state.config.s3_bucket)
+                        .bind(&object_key)
+                        .bind(digest)
+                        .bind(i64::try_from(bytes.len()).unwrap_or(i64::MAX))
+                        .bind(
+                            entry
+                                .media_type
+                                .as_deref()
+                                .unwrap_or("application/octet-stream"),
+                        )
+                        .bind(json!({
+                            "stage_ref": format!("stage:{stage_id}"),
+                            "original_path": entry.path
+                        }))
+                        .execute(&mut *tx)
+                        .await?;
+                        pending_uploads.push(PendingStageBlob {
+                            bytes: bytes.clone(),
+                            media_type: entry.media_type.clone(),
+                            expected_hash: content_hash.clone(),
+                            object_key,
+                        });
+                        (asset_id, 1)
+                    };
+                    staged_assets.insert(content_hash.clone(), binding);
+                    Some(binding)
                 }
             } else {
                 None
@@ -923,8 +976,8 @@ pub async fn stage_uploads(
         .bind(&entry.media_type)
         .bind(entry.size_bytes as i64)
         .bind(entry.content_hash.as_deref().map(strip_sha256))
-        .bind(asset_id)
-        .bind(asset_id.map(|_| 1_i32))
+        .bind(asset_binding.map(|binding| binding.0))
+        .bind(asset_binding.map(|binding| binding.1))
         .bind(&entry.readability)
         .bind(&entry.inspection)
         .execute(&mut *tx)
@@ -936,7 +989,7 @@ pub async fn stage_uploads(
             "content_type": entry.media_type,
             "size_bytes": entry.size_bytes,
             "hash": entry.content_hash,
-            "asset_ref": asset_id.map(|id| format!("asset:{id}")),
+            "asset_ref": asset_binding.map(|binding| format!("asset:{}", binding.0)),
             "disposition": "staged",
             "status": entry.readability
         }));
@@ -988,7 +1041,56 @@ pub async fn stage_uploads(
         .iter()
         .filter(|entry| entry.readability == "unsupported" && entry.entry_kind != "directory")
         .count();
-    tx.commit().await?;
+    let pending_keys: Vec<String> = pending_uploads
+        .iter()
+        .map(|pending| pending.object_key.clone())
+        .collect();
+    for pending in &pending_uploads {
+        let upload = state
+            .object_store
+            .put_user_blob(
+                auth.user_id,
+                pending.media_type.as_deref(),
+                pending.bytes.clone(),
+            )
+            .await;
+        let upload = match upload {
+            Ok(upload) => upload,
+            Err(error) => {
+                let cleanup = purge_stage_candidates(state, &pending_keys).await;
+                let _ = tx.rollback().await;
+                if let Err(cleanup_error) = cleanup {
+                    tracing::error!(?cleanup_error, "failed stage upload cleanup");
+                    return Err(ApiError::Internal(
+                        "stage upload failed and object cleanup could not be verified".to_owned(),
+                    ));
+                }
+                return Err(error);
+            }
+        };
+        if upload.sha256 != pending.expected_hash
+            || upload.object_key != pending.object_key
+            || upload.size_bytes != pending.bytes.len()
+        {
+            let cleanup = purge_stage_candidates(state, &pending_keys).await;
+            let _ = tx.rollback().await;
+            if let Err(cleanup_error) = cleanup {
+                tracing::error!(?cleanup_error, "failed inconsistent stage upload cleanup");
+            }
+            return Err(ApiError::Internal(
+                "staged object identity changed during upload".to_owned(),
+            ));
+        }
+    }
+    if let Err(error) = tx.commit().await {
+        if let Err(cleanup_error) = reconcile_stage_commit(state, auth, &pending_keys).await {
+            tracing::error!(
+                ?cleanup_error,
+                "could not reconcile blobs after an ambiguous stage commit"
+            );
+        }
+        return Err(ApiError::Database(error));
+    }
     Ok(json!({
         "id": format!("stage:{stage_id}"),
         "stage_ref": format!("stage:{stage_id}"),
@@ -1010,6 +1112,39 @@ pub async fn stage_uploads(
         "prior_stage_ref": prior_stage_ref,
         "replayed": false
     }))
+}
+
+async fn purge_stage_candidates(state: &AppState, object_keys: &[String]) -> ApiResult<()> {
+    for object_key in object_keys {
+        state.object_store.purge_all_versions(object_key).await?;
+    }
+    Ok(())
+}
+
+async fn reconcile_stage_commit(
+    state: &AppState,
+    auth: &AuthContext,
+    object_keys: &[String],
+) -> ApiResult<()> {
+    let mut tx = state.begin_write(auth).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
+        .bind(auth.user_id.0)
+        .execute(&mut *tx)
+        .await?;
+    for object_key in object_keys {
+        let referenced = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM straylight.asset_versions WHERE user_id=$1 AND object_key=$2 AND size_bytes > 0)",
+        )
+        .bind(auth.user_id.0)
+        .bind(object_key)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !referenced {
+            state.object_store.purge_all_versions(object_key).await?;
+        }
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 fn prepare_stage_entries(
@@ -1137,12 +1272,12 @@ fn prepare_stage_entries(
         }
         if prepared.len() > MAX_STAGE_ENTRIES {
             return Err(ApiError::invalid(
-                "stage inventory contains more than 10,000 entries",
+                "stage inventory contains more than 2,000 entries",
             ));
         }
         if expanded_bytes > MAX_STAGE_EXPANDED_BYTES {
             return Err(ApiError::invalid(
-                "stage inventory exceeds the 2 GiB expanded-size limit",
+                "stage inventory exceeds the 256 MiB expanded-size limit",
             ));
         }
     }
@@ -1314,12 +1449,13 @@ async fn expand_stage_promotion(
         FROM straylight.stages AS stage
         JOIN straylight.scopes AS scope
           ON scope.user_id=stage.user_id AND scope.id=stage.scope_id
-        WHERE stage.user_id=$1 AND stage.id=$2 AND stage.credential_id=$3
+        WHERE stage.user_id=$1 AND stage.id=$2
+          AND scope.scope_ref=ANY($3::text[])
         "#,
     )
     .bind(auth.user_id.0)
     .bind(stage_id)
-    .bind(auth.credential_id.0)
+    .bind(&auth.scope_refs)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::not_found("stage_not_found", &stage_ref))?;
@@ -2053,7 +2189,6 @@ async fn staged_asset_binding(
           AND entry.asset_id=$4 AND entry.asset_version=$5
           AND entry.entry_kind IN ('file','archive')
           AND entry.readability IN ('readable','unsupported')
-          AND stage.credential_id=$6
           AND stage.status IN ('ready','promoted')
           AND stage.expires_at > clock_timestamp()
         "#,
@@ -2063,7 +2198,6 @@ async fn staged_asset_binding(
     .bind(staged_entry_id)
     .bind(asset_id)
     .bind(asset_version)
-    .bind(context.auth.credential_id.0)
     .fetch_optional(&mut **tx)
     .await?
     .ok_or_else(|| ApiError::not_found("staged_asset_not_found", entry_ref))?;
@@ -2884,10 +3018,10 @@ async fn resolve_record(
     reference: &str,
     expected: Option<RecordKind>,
 ) -> ApiResult<(Uuid, RecordKind)> {
-    if let Some((id, kind)) = context.local_refs.get(reference).copied() {
-        if expected.is_none_or(|expected| expected == kind) {
-            return Ok((id, kind));
-        }
+    if let Some((id, kind)) = context.local_refs.get(reference).copied()
+        && expected.is_none_or(|expected| expected == kind)
+    {
+        return Ok((id, kind));
     }
     if let Ok(parsed) = RecordRef::parse(reference) {
         if expected.is_some_and(|expected| expected != parsed.kind) {
@@ -3878,7 +4012,7 @@ async fn process_checkpoint(
         .map_err(|_| ApiError::invalid("checkpoint session_id is invalid"))?;
     let session_row = sqlx::query(
         r#"
-        SELECT scope_id,corpus_revision_id,mode,expires_at
+        SELECT scope_id,corpus_revision_id,mode,expires_at,resumed_checkpoint_id
         FROM straylight.sessions
         WHERE user_id=$1 AND id=$2
         "#,
@@ -3925,29 +4059,29 @@ async fn process_checkpoint(
             ));
         }
     }
-    if sqlx::query_scalar::<_, bool>(
-        "SELECT to_regclass('straylight.session_checkpoint_resumes') IS NOT NULL",
+    let expected_parent = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT id
+        FROM straylight.checkpoints
+        WHERE user_id=$1 AND session_id=$2
+        ORDER BY created_at DESC,id DESC
+        LIMIT 1
+        "#,
     )
-    .fetch_one(&mut **tx)
+    .bind(context.auth.user_id.0)
+    .bind(session_id)
+    .fetch_optional(&mut **tx)
     .await?
-    {
-        let expected = sqlx::query_scalar::<_, Uuid>(
-            "SELECT checkpoint_id FROM straylight.session_checkpoint_resumes WHERE user_id=$1 AND session_id=$2",
-        )
-        .bind(context.auth.user_id.0)
-        .bind(session_id)
-        .fetch_optional(&mut **tx)
-        .await?;
-        if expected.is_some() && expected != parent_id {
-            return Err(ApiError::conflict(
-                "checkpoint_parent_conflict",
-                "child checkpoint must preserve the resumed parent",
-                json!({
-                    "expected_parent": expected.map(|id| format!("checkpoint:{id}")),
-                    "provided_parent": parent_id.map(|id| format!("checkpoint:{id}"))
-                }),
-            ));
-        }
+    .or(session_row.try_get::<Option<Uuid>, _>("resumed_checkpoint_id")?);
+    if expected_parent != parent_id {
+        return Err(ApiError::conflict(
+            "checkpoint_parent_conflict",
+            "checkpoint must extend the latest durable state for this session",
+            json!({
+                "expected_parent": expected_parent.map(|id| format!("checkpoint:{id}")),
+                "provided_parent": parent_id.map(|id| format!("checkpoint:{id}"))
+            }),
+        ));
     }
     let summary = item
         .payload

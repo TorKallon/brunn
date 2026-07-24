@@ -5,6 +5,7 @@ import type {
   CommitReceipt,
   CaptureReceipt,
   CredentialSummary,
+  DataUsage,
   DreamDetail,
   DreamSummary,
   JsonObject,
@@ -64,7 +65,7 @@ async function parseBody(response: Response): Promise<unknown> {
 export interface StraylightApi {
   me(): Promise<ApiEnvelope<MeData>>;
   status(): Promise<ApiEnvelope<ServiceStatus>>;
-  sessions(): Promise<ApiEnvelope<ListData<SessionSummary> | SessionSummary[]>>;
+  sessions(cursor?: string): Promise<ApiEnvelope<ListData<SessionSummary> | SessionSummary[]>>;
   session(id: string): Promise<ApiEnvelope<SessionDetail>>;
   refreshSession(id: string): Promise<ApiEnvelope<SessionDetail>>;
   open(payload: JsonObject): Promise<ApiEnvelope<SessionDetail>>;
@@ -93,7 +94,8 @@ export interface StraylightApi {
   revokeCredential(id: string): Promise<ApiEnvelope<CredentialSummary>>;
   scopes(): Promise<ApiEnvelope<ListData<ScopeSummary> | ScopeSummary[]>>;
   policies(): Promise<ApiEnvelope<ListData<PolicySummary> | PolicySummary[]>>;
-  audit(): Promise<ApiEnvelope<ListData<AuditEvent> | AuditEvent[]>>;
+  audit(cursor?: string): Promise<ApiEnvelope<ListData<AuditEvent> | AuditEvent[]>>;
+  usage(): Promise<ApiEnvelope<DataUsage>>;
 }
 
 export function createApiClient(getToken: () => string | null): StraylightApi {
@@ -175,7 +177,10 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
   return {
     me: () => get<MeData>("/me"),
     status: () => get<ServiceStatus>("/status"),
-    sessions: () => get<ListData<SessionSummary> | SessionSummary[]>("/sessions"),
+    sessions: (cursor) =>
+      get<ListData<SessionSummary> | SessionSummary[]>(
+        cursor ? `/sessions?cursor=${encodeURIComponent(cursor)}` : "/sessions",
+      ),
     session: (id) => get<SessionDetail>(`/sessions/${encodeURIComponent(id)}`),
     refreshSession: (id) =>
       post<SessionDetail>(`/sessions/${encodeURIComponent(id)}/refresh`, {}),
@@ -206,6 +211,10 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
       del<CredentialSummary>(`/credentials/${encodeURIComponent(id)}`),
     scopes: () => get<ListData<ScopeSummary> | ScopeSummary[]>("/scopes"),
     policies: () => get<ListData<PolicySummary> | PolicySummary[]>("/policies"),
-    audit: () => get<ListData<AuditEvent> | AuditEvent[]>("/audit"),
+    audit: (cursor) =>
+      get<ListData<AuditEvent> | AuditEvent[]>(
+        cursor ? `/audit?cursor=${encodeURIComponent(cursor)}` : "/audit",
+      ),
+    usage: () => get<DataUsage>("/usage"),
   };
 }

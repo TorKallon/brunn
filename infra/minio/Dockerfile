@@ -1,4 +1,4 @@
-FROM golang:1.24.8-bookworm AS build
+FROM golang:1.25.12-bookworm@sha256:ea341baa9bd5ba6784f6d7161ace70544349a6242d54d34a0fbfd2c4d51c9d58 AS build
 
 ARG MINIO_COMMIT=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a
 ARG MINIO_RELEASE=RELEASE.2025-10-15T17-29-55Z
@@ -10,12 +10,16 @@ RUN git clone --filter=blob:none https://github.com/minio/minio.git . \
     && test "$(git describe --tags --exact-match)" = "${MINIO_RELEASE}"
 RUN make build
 
-FROM debian:bookworm-slim
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
+ARG STRAYLIGHT_BUILD_REVISION=unknown
+LABEL org.opencontainers.image.title="Straylight MinIO" \
+      org.opencontainers.image.revision="${STRAYLIGHT_BUILD_REVISION}"
+RUN apk add --no-cache ca-certificates \
+    && addgroup -g 10001 -S straylight \
+    && adduser -S -D -H -u 10001 -G straylight straylight
 COPY --from=build /src/minio /usr/local/bin/minio
+COPY entrypoint.sh /usr/local/bin/straylight-minio-entrypoint
 EXPOSE 9000 9001
 VOLUME ["/data"]
-ENTRYPOINT ["/usr/local/bin/minio"]
-
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/straylight-minio-entrypoint"]
