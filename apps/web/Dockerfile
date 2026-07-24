@@ -8,7 +8,7 @@ COPY tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts index.htm
 COPY src ./src
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.30.4-alpine@sha256:44e36330f74d4f3a1d4e222acca9e23b401fb87811a7597024502bb759c4dd49
+FROM nginxinc/nginx-unprivileged:1.31.3-alpine@sha256:18d67281256ded39ff65e010ae4f831be18f19356f83c60bc546492c7eb6dd23
 
 ARG STRAYLIGHT_BUILD_REVISION=unknown
 LABEL org.opencontainers.image.title="Straylight Control Plane" \
