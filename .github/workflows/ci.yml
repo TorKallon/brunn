@@ -204,7 +204,7 @@ jobs:
           cp "$backup_dir/minio-versions.jsonl" integration-evidence/
           cp "$backup_dir/runtime-images.json" integration-evidence/
           cp "$backup_dir/compose-service-hashes.txt" integration-evidence/
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: integration-evidence
@@ -213,7 +213,7 @@ jobs:
       - name: Capture failure logs
         if: failure()
         run: docker compose --env-file ci.env logs --no-color >integration-logs.txt
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: integration-logs
@@ -309,7 +309,7 @@ jobs:
               aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
               image --format cyclonedx --output "/output/${name}.cdx.json" "$image"
           done <vendor-images.txt
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: supply-chain-evidence
