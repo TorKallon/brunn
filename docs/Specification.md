@@ -204,8 +204,10 @@ last known good, and materialized scope. A request returns complete, partial,
 unsupported, or failed independently, with bounded truncation and a signed
 continuation token when resumable.
 
-Source content is read from MinIO by an authorized user-scoped key. A caller
-cannot substitute an arbitrary object key.
+Source content is read from the configured versioned S3 store by an authorized
+user-scoped key. Production uses a managed cloud object store; MinIO supplies
+the same contract in development and destructive tests. A caller cannot
+substitute an arbitrary object key.
 
 ## Compute
 
@@ -411,15 +413,21 @@ The alpha is releasable for inspection when all of the following hold:
 8. Failures are reported honestly; no path claims complete coverage, policy
    application, validation, or cleanup that did not occur.
 
-## Deferred Public-Service Decisions
+## Public-Service Decisions
 
 The alpha implements token administration and operator recovery, per-user
 quotas, request limiting, complete export and deletion, coordinated
 backup/restore, production metrics, and immutable candidate deployment.
 
-Owner approval is still required for the final hostname and brand,
-deployment host and network exposure, object-store product, off-host backup
-destination and key custody, alert recipients, alpha cohort and token-delivery
-method, spend limits, final retention/support/privacy wording, and launch
-go/no-go. Future identity-provider, collaborative-ownership, billing, and
-commercial packaging work must preserve the contracts above.
+Production uses a managed, versioned cloud S3 store; MinIO is development-only.
+Datadog metrics and structured logs are approved. Source control is a private
+GitHub repository under `TorKallon`, and the alpha is owner-first and
+invite-only with individual users and credentials.
+
+Owner approval is still required for the final name, hostname, descriptor and
+logo; deployment provider and network exposure; exact managed-S3
+qualification; off-host backup destination, key custody, RPO, and RTO; alert
+delivery and retention; hard spend limits; final retention, support, and
+privacy wording; and launch go/no-go. Future identity-provider,
+collaborative-ownership, billing, and commercial packaging work must preserve
+the contracts above.

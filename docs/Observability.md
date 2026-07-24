@@ -31,6 +31,14 @@ scope, session, record, source, object key, filesystem path, query text, title,
 task text, request ID, model output, error message, or any other arbitrary
 input. Individual investigations use structured logs and audited records.
 
+Structured production logs are delivered to Datadog through the selected
+platform's supported log stream. Logs may include service, component, release,
+severity, operation, stable error code, and request ID for correlation. They
+must not include API credentials, secret material, memory or source content,
+query or task text, model prompts or outputs, uploaded payloads, or raw
+third-party response bodies. Log delivery is observational and fail-open; a
+Datadog outage cannot change a memory operation.
+
 ## Metric Families
 
 | Prefix | Operational question |
@@ -71,12 +79,20 @@ dashboard definition. Its template variables are `env`, `service`, `version`,
 and `component`. The groups are ordered for incident use:
 
 1. service overview
-2. API and authorization
-3. reasoning and retrieval quality
-4. persistence and learning
-5. models and embeddings
-6. background work and deletion
-7. dependencies and telemetry health
+2. usage and cost drivers
+3. API and authorization
+4. reasoning and retrieval quality
+5. persistence and learning
+6. models and embeddings
+7. background work and deletion
+8. dependencies and telemetry health
+
+The model-and-embedding group keeps exact model token totals, cached-input
+tokens, output tokens, embedding request volume, and embedding input size
+prominent for the selected dashboard window. With one initial user, those
+aggregate totals represent the owner's workload. Datadog deliberately does not
+receive user IDs. Per-source most-used, least-used, never-used, and
+least-recently-used views remain in the authenticated Control UI.
 
 The dashboard can exist before metrics arrive. A new deployment is considered
 observable only after the runtime, HTTP, and worker series appear with the

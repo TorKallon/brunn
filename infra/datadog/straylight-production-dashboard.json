@@ -193,7 +193,130 @@
     {
       "definition": {
         "type": "group",
-        "title": "02 API and Authorization",
+        "title": "02 Usage and Cost Drivers",
+        "layout_type": "ordered",
+        "background_color": "vivid_green",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "type": "query_value",
+              "title": "Model input tokens",
+              "autoscale": true,
+              "precision": 0,
+              "custom_unit": "tokens",
+              "requests": [
+                {
+                  "q": "sum:straylight.model.tokens{env:$env,service:$service,version:$version,component:$component,token_type:input}",
+                  "aggregator": "sum",
+                  "conditional_formats": []
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "query_value",
+              "title": "Cached input tokens",
+              "autoscale": true,
+              "precision": 0,
+              "custom_unit": "tokens",
+              "requests": [
+                {
+                  "q": "sum:straylight.model.tokens{env:$env,service:$service,version:$version,component:$component,token_type:cached_input}",
+                  "aggregator": "sum",
+                  "conditional_formats": []
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "query_value",
+              "title": "Model output tokens",
+              "autoscale": true,
+              "precision": 0,
+              "custom_unit": "tokens",
+              "requests": [
+                {
+                  "q": "sum:straylight.model.tokens{env:$env,service:$service,version:$version,component:$component,token_type:output}",
+                  "aggregator": "sum",
+                  "conditional_formats": []
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "query_value",
+              "title": "Embedding input characters",
+              "autoscale": true,
+              "precision": 0,
+              "custom_unit": "characters",
+              "requests": [
+                {
+                  "q": "sum:straylight.embedding.input_characters{env:$env,service:$service,version:$version,component:$component}",
+                  "aggregator": "sum",
+                  "conditional_formats": []
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Model token mix by purpose",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "sum",
+                "max"
+              ],
+              "requests": [
+                {
+                  "q": "sum:straylight.model.tokens{env:$env,service:$service,version:$version,component:$component} by {purpose,token_type}",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "dog_classic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Object-store bytes by operation",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "sum",
+                "max"
+              ],
+              "requests": [
+                {
+                  "q": "sum:straylight.object_store.bytes{env:$env,service:$service,version:$version,component:$component} by {operation}",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "cool",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "group",
+        "title": "03 API and Authorization",
         "layout_type": "ordered",
         "background_color": "vivid_purple",
         "show_title": true,
@@ -296,7 +419,7 @@
     {
       "definition": {
         "type": "group",
-        "title": "03 Reasoning and Retrieval Quality",
+        "title": "04 Reasoning and Retrieval Quality",
         "layout_type": "ordered",
         "background_color": "vivid_green",
         "show_title": true,
@@ -456,7 +579,7 @@
     {
       "definition": {
         "type": "group",
-        "title": "04 Persistence and Learning",
+        "title": "05 Persistence and Learning",
         "layout_type": "ordered",
         "background_color": "vivid_orange",
         "show_title": true,
@@ -645,7 +768,7 @@
     {
       "definition": {
         "type": "group",
-        "title": "05 Models and Embeddings",
+        "title": "06 Models and Embeddings",
         "layout_type": "ordered",
         "background_color": "vivid_purple",
         "show_title": true,
@@ -780,7 +903,7 @@
     {
       "definition": {
         "type": "group",
-        "title": "06 Background Work and Deletion",
+        "title": "07 Background Work and Deletion",
         "layout_type": "ordered",
         "background_color": "vivid_yellow",
         "show_title": true,
@@ -931,7 +1054,7 @@
     {
       "definition": {
         "type": "group",
-        "title": "07 Dependencies and Telemetry Health",
+        "title": "08 Dependencies and Telemetry Health",
         "layout_type": "ordered",
         "background_color": "vivid_red",
         "show_title": true,

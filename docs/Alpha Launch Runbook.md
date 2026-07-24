@@ -1,7 +1,13 @@
 # Straylight Alpha Launch Runbook
 
-Status: candidate procedure; do not launch until `Alpha Readiness.md` records a
-go decision and every owner decision is resolved.
+Status: retained single-host qualification procedure; not the approved managed
+production path. Do not launch until `Alpha Readiness.md` records a go decision
+and the selected provider has a replacement runbook.
+
+This procedure still exercises the local MinIO-backed candidate topology. The
+production architecture now requires managed PostgreSQL and a managed,
+versioned cloud S3 store. MinIO remains useful for local development and
+destructive qualification, but this runbook must not be used for production.
 
 This runbook deploys the tested retrieval, write, capture, and dreaming
 contracts unchanged. Production validation rejects changes to the embedding
@@ -160,9 +166,14 @@ recovery modes create content-free audit events.
 
 ## Observability
 
-The bundled Datadog Agent receives only DogStatsD metrics. It has no Docker
-socket, host process, or host filesystem mounts. Container logs remain local
-unless a separate log-shipping design is approved.
+Datadog metrics and structured logs are approved for production. The
+application sends DogStatsD metrics to a private Agent, while the selected
+hosting platform forwards service logs through its supported Datadog log
+stream. The Agent does not need Docker-socket, host-process, or host-filesystem
+access for the managed deployment.
+
+This retained single-host procedure leaves container logs local and therefore
+does not satisfy the production logging gate.
 
 After first traffic, verify runtime, HTTP, worker, model, embedding, queue,
 deletion, database, and object-store series. Configure distribution

@@ -1,7 +1,7 @@
 # Straylight Alpha Readiness
 
-Status: autonomous qualification complete; owner decisions and exact production
-provider qualification remain before launch
+Status: autonomous qualification complete; identity, deployment, recovery,
+exact provider qualification, and launch approval remain before launch
 
 This is the evidence register for one exact candidate commit. It separates
 work Codex can complete and verify autonomously from choices that require the
@@ -26,23 +26,23 @@ provenance contracts.
 | Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Pass |
 | Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment dry run | Pending |
 
-## Owner Approvals
+## Owner Decisions
 
-These are deliberately deferred until every autonomous gate above is complete.
-The final decision packet will include a recommendation, concrete alternatives,
-tradeoffs, and the exact configuration each choice unlocks.
+Settled choices are recorded here even when their implementation still depends
+on an unsettled provider or public identity.
 
-| Decision | Owner input required |
-| --- | --- |
-| Public identity | Final hostname, public descriptor if any, and product logo |
-| Deployment | Production host, network exposure, DNS control, and image registry |
-| Object storage | Approved qualified provider and any commercial terms |
-| Recovery | Off-host encrypted backup destination, key custody, RPO, and RTO |
-| Monitoring | Alert recipients, escalation path, log destination, and retention |
-| Source control | Git host/remote and required branch protection |
-| Alpha cohort | Initial users, invitation order, and secure token-delivery method |
-| Operating policy | OpenAI/Datadog budgets, retention/privacy wording, and support expectations |
-| Launch | Explicit go/no-go on the exact fingerprinted candidate |
+| Decision | Status | Recorded direction |
+| --- | --- | --- |
+| Public identity | Pending, highest priority | Select a durable product name and short URL. A descriptor near "agent-first workspace and memory" is under discussion. Logo approval follows the name. |
+| Deployment | Recommendation ready | Render is recommended for application compute and managed PostgreSQL; see `docs/Production Platform Evaluation.md`. No provider-specific deployment is approved yet. |
+| Object storage | Architecture approved; exact qualification pending | Production uses a managed, versioned cloud S3 store. AWS S3 is the recommended first provider. MinIO is development and destructive-test infrastructure only. |
+| Recovery | Explicitly deferred | Off-host backup destination, key custody, RPO, and RTO remain a launch blocker and will be decided after deployment selection. |
+| Monitoring | Approved in part | Datadog metrics and structured logs are approved. Alert recipients, escalation path, and retention still need exact values. Browser RUM remains outside the alpha. |
+| Source control | Approved | Private GitHub repository under `TorKallon` for now. Public GitHub hosting is acceptable later. |
+| Alpha cohort | Approved | Owner first, then only people the owner explicitly invites. No public signup. Every person receives a separate user account and credential. |
+| Operating visibility | Approved | Begin with the owner's real usage. Keep source-use rankings visible in the Control UI and aggregate model, embedding, storage, and request consumption prominent in Datadog. Set hard spend limits only after observing the initial workload. |
+| Policy and support | Pending | Final retention, privacy wording, and support expectations are not yet selected. |
+| Launch | Pending | Explicit go/no-go on the exact fingerprinted and provider-qualified candidate. |
 
 Secrets, private keys, and bearer tokens must be supplied through approved
 files or secret stores, never pasted into chat or committed to the repository.
@@ -89,4 +89,4 @@ store. The exact release commit, immutable image digests, SBOMs, source and
 dependency fingerprints, and production dry-run configuration are generated
 by `scripts/fingerprint-release.sh` after the clean candidate commit. The
 release is expected to remain blocked until the owner selects a qualified
-object-store path.
+deployment and the exact managed S3 target passes live qualification.

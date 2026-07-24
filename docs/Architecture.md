@@ -318,16 +318,19 @@ the bypass themselves.
 
 ## Deployment Boundary
 
-The alpha deployment uses one multi-user service, one PostgreSQL/pgvector
-database, and one S3-compatible versioned object store. Production Compose
-consumes prebuilt candidate images, exposes only the TLS edge, uses file-backed
-secrets, forbids development bootstrap credentials, and provisions owners
-through a one-shot database-operator command. Quotas, request limiting,
-complete export, account deletion, coordinated backup/restore, release
-fingerprinting, and bounded production metrics are implemented.
+The alpha deployment uses one multi-user service, one managed
+PostgreSQL/pgvector database, and one managed versioned cloud S3 object store.
+MinIO is local development and destructive-test infrastructure only.
+Production consumes prebuilt candidate images, exposes only the intended TLS
+edge, uses provider secret stores, forbids development bootstrap credentials,
+and provisions owners through a one-shot database-operator command. Quotas,
+request limiting, complete export, account deletion, coordinated
+backup/restore, release fingerprinting, and bounded production metrics are
+implemented.
 
-Final hostname and brand, deployment host and exposure, object-store product,
-off-host backup destination and key custody, alert recipients, alpha cohort,
-token delivery, spend limits, policy wording, and go/no-go remain owner
+The private GitHub source home, invite-only cohort, managed-S3 boundary, and
+Datadog metrics-and-logs direction are approved. Final hostname and brand,
+deployment provider, exact S3 qualification, recovery policy, alert delivery
+and retention, hard spend limits, policy wording, and go/no-go remain owner
 decisions. They may not weaken the user, scope, revision, evidence, capability,
-metric-privacy, reasoning-quality, or token-efficiency contracts above.
+telemetry-privacy, reasoning-quality, or token-efficiency contracts above.
