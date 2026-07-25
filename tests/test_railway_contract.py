@@ -40,6 +40,7 @@ class RailwayContractTests(unittest.TestCase):
             len(re.findall(r'volume\("postgres-data"', RAILWAY)),
         )
         self.assertIn('"/var/lib/postgresql/data": postgresData', RAILWAY)
+        self.assertIn('PGDATA: "/var/lib/postgresql/data/pgdata"', RAILWAY)
         self.assertIn("sizeMB: 5000", RAILWAY)
         self.assertNotIn("minio", RAILWAY.lower())
         self.assertIn(

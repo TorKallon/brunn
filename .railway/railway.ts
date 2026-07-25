@@ -80,6 +80,7 @@ const db = service("db", {
     STRAYLIGHT_BUILD_REVISION: preserve(),
     POSTGRES_DB: "straylight",
     POSTGRES_USER: "admin",
+    PGDATA: "/var/lib/postgresql/data/pgdata",
     POSTGRES_PASSWORD: preserve(),
     APP_RW_PASSWORD: preserve(),
     APP_RO_PASSWORD: preserve(),
