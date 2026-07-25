@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RAILWAY = (ROOT / ".railway/railway.ts").read_text()
 WEB_PROXY = (ROOT / "apps/web/nginx.railway.conf.template").read_text()
 WEB_DOCKERFILE = (ROOT / "apps/web/Dockerfile.railway").read_text()
+DATABASE_DOCKERFILE = (ROOT / "infra/postgres/Dockerfile").read_text()
 
 
 class RailwayContractTests(unittest.TestCase):
@@ -41,6 +42,15 @@ class RailwayContractTests(unittest.TestCase):
         self.assertIn('"/var/lib/postgresql/data": postgresData', RAILWAY)
         self.assertIn("sizeMB: 5000", RAILWAY)
         self.assertNotIn("minio", RAILWAY.lower())
+        self.assertIn(
+            "COPY infra/postgres/init/ /docker-entrypoint-initdb.d/",
+            DATABASE_DOCKERFILE,
+        )
+        self.assertIn(
+            "COPY infra/postgres/healthcheck.sh "
+            "/usr/local/bin/straylight-postgres-healthcheck",
+            DATABASE_DOCKERFILE,
+        )
 
     def test_public_web_is_the_only_domain_boundary(self):
         self.assertNotIn("domains:", RAILWAY)

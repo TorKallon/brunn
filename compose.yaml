@@ -62,7 +62,8 @@ x-common-environment: &common-environment
 services:
   db:
     build:
-      context: ./infra/postgres
+      context: .
+      dockerfile: infra/postgres/Dockerfile
       args:
         STRAYLIGHT_BUILD_REVISION: ${STRAYLIGHT_BUILD_REVISION:-local}
     image: ${STRAYLIGHT_DATABASE_IMAGE:-straylight-postgres:local}

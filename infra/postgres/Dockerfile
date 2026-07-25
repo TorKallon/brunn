@@ -32,6 +32,7 @@ LABEL org.opencontainers.image.title="Straylight PostgreSQL with pgvector" \
 COPY --from=pgvector-build /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/vector.so
 COPY --from=pgvector-build /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
 COPY --from=gosu-build /out/gosu /usr/local/bin/gosu
-COPY healthcheck.sh /usr/local/bin/straylight-postgres-healthcheck
+COPY infra/postgres/healthcheck.sh /usr/local/bin/straylight-postgres-healthcheck
+COPY infra/postgres/init/ /docker-entrypoint-initdb.d/
 
 USER postgres:postgres
