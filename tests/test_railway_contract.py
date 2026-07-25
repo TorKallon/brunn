@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RAILWAY = (ROOT / ".railway/railway.ts").read_text()
 WEB_PROXY = (ROOT / "apps/web/nginx.railway.conf.template").read_text()
 WEB_DOCKERFILE = (ROOT / "apps/web/Dockerfile.railway").read_text()
+API_DOCKERFILE = (ROOT / "apps/api/Dockerfile").read_text()
 DATABASE_DOCKERFILE = (ROOT / "infra/postgres/Dockerfile").read_text()
 
 
@@ -141,6 +142,7 @@ class RailwayContractTests(unittest.TestCase):
 
     def test_railway_dockerfiles_pin_every_external_base(self):
         for path in [
+            ROOT / "apps/api/Dockerfile",
             ROOT / "apps/web/Dockerfile.railway",
             ROOT / "deploy/railway/datadog-agent/Dockerfile",
         ]:
@@ -154,6 +156,9 @@ class RailwayContractTests(unittest.TestCase):
                     self.assertRegex(image, r"@sha256:[0-9a-f]{64}$", path)
                 if len(parts) >= 4 and parts[2].upper() == "AS":
                     local_stages.add(parts[3])
+
+    def test_shared_api_dockerfile_avoids_service_scoped_cache_mounts(self):
+        self.assertNotIn("--mount=type=cache", API_DOCKERFILE)
 
 
 if __name__ == "__main__":
