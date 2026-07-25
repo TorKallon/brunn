@@ -77,6 +77,7 @@ const db = service("db", {
   env: {
     PORT: "5432",
     RAILWAY_RUN_UID: "0",
+    STRAYLIGHT_BUILD_REVISION: preserve(),
     POSTGRES_DB: "straylight",
     POSTGRES_USER: "admin",
     POSTGRES_PASSWORD: preserve(),

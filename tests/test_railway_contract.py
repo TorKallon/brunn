@@ -103,7 +103,10 @@ class RailwayContractTests(unittest.TestCase):
             self.assertIn(f'{name}: "{value}"', RAILWAY)
 
     def test_release_revision_is_available_to_every_runtime(self):
-        self.assertIn("STRAYLIGHT_BUILD_REVISION: preserve()", RAILWAY)
+        self.assertGreaterEqual(
+            RAILWAY.count("STRAYLIGHT_BUILD_REVISION: preserve()"),
+            3,
+        )
         self.assertIn("STRAYLIGHT_BUILD_REVISION: api.env.STRAYLIGHT_BUILD_REVISION", RAILWAY)
         self.assertGreaterEqual(RAILWAY.count("DD_VERSION: preserve()"), 2)
 
