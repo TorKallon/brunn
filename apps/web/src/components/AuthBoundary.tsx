@@ -23,7 +23,7 @@ export function LoginScreen({ error }: { error?: string }) {
         <div className="brand brand-login">
           <span className="brand-mark">S</span>
           <div>
-            <h1>CarryState</h1>
+            <h1>Straylight</h1>
             <span>Control plane</span>
           </div>
         </div>
@@ -74,7 +74,7 @@ export function AuthBoundary({ children }: PropsWithChildren) {
   if (meQuery.isPending) {
     return (
       <main className="full-state">
-        <LoadingState label="Connecting to CarryState" />
+        <LoadingState label="Connecting to Straylight" />
       </main>
     );
   }

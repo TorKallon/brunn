@@ -63,7 +63,7 @@ export function AppShell({ children }: PropsWithChildren) {
         <Link to="/work" className="brand" onClick={() => setNavOpen(false)}>
           <span className="brand-mark">S</span>
           <div>
-            <strong>CarryState</strong>
+            <strong>Straylight</strong>
             <span>Control plane</span>
           </div>
         </Link>

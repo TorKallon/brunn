@@ -210,7 +210,7 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
       throw new ApiError(
         413,
         "browser_download_too_large",
-        "This asset is too large for a browser download. Use the CarryState CLI or MCP asset fetch instead.",
+        "This asset is too large for a browser download. Use the Straylight CLI or MCP asset fetch instead.",
       );
     }
     if (expected && expected.sizeBytes > MAX_BROWSER_DOWNLOAD_BYTES) {
@@ -218,7 +218,7 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
       throw new ApiError(
         413,
         "browser_download_too_large",
-        "This asset is too large for a browser download. Use the CarryState CLI or MCP asset fetch instead.",
+        "This asset is too large for a browser download. Use the Straylight CLI or MCP asset fetch instead.",
       );
     }
     const bytes = await readBoundedDownload(response);
@@ -360,7 +360,7 @@ async function readBoundedDownload(response: Response): Promise<ArrayBuffer> {
         throw new ApiError(
           413,
           "browser_download_too_large",
-          "This asset is too large for a browser download. Use the CarryState CLI or MCP asset fetch instead.",
+          "This asset is too large for a browser download. Use the Straylight CLI or MCP asset fetch instead.",
         );
       }
       chunks.push(item.value);

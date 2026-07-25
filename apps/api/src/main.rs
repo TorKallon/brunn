@@ -3,11 +3,14 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use straylight::{
     AppState, Config, db,
+    logging::UdpLogMakeWriter,
     object_store::{ObjectStore, backup as object_backup},
     operator_service, router, telemetry, worker,
 };
 use tokio::net::TcpListener;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{
+    EnvFilter, fmt::writer::MakeWriterExt, layer::SubscriberExt, util::SubscriberInitExt,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "straylight", about = "Agent-first durable context service")]
@@ -256,8 +259,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn init_tracing() {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn"));
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer().json())
-        .init();
+    match UdpLogMakeWriter::from_env() {
+        Ok(Some(datadog)) => tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_writer(std::io::stdout.and(datadog)),
+            )
+            .init(),
+        Ok(None) => tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().json())
+            .init(),
+        Err(error) => {
+            eprintln!("Datadog log forwarding is disabled: {error}");
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer().json())
+                .init();
+        }
+    }
 }

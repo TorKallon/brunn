@@ -23,6 +23,7 @@ pub mod embeddings;
 pub mod error;
 pub mod eval_service;
 pub mod ingest;
+pub mod logging;
 pub mod models;
 pub mod object_store;
 pub mod operator_service;

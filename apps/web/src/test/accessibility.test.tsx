@@ -25,7 +25,7 @@ describe("accessibility contracts", () => {
   it("has no automated violations on the token entry screen", async () => {
     const { container } = renderApp("/work");
     expect(
-      await screen.findByRole("heading", { name: "CarryState" }),
+      await screen.findByRole("heading", { name: "Straylight" }),
     ).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });

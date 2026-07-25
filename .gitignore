@@ -11,6 +11,7 @@ apps/api/target-codex/
 apps/web/node_modules/
 apps/web/dist/
 apps/mcp/node_modules/
+.railway/node_modules/
 apps/mcp/dist/
 
 runs/
