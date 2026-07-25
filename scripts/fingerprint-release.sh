@@ -102,6 +102,10 @@ copy_from_image \
   /usr/local/bin/straylight \
   "$work_dir/binaries/straylight"
 copy_from_image \
+  "straylight-api:$revision" \
+  /usr/local/bin/carrystate \
+  "$work_dir/binaries/carrystate"
+copy_from_image \
   "straylight-minio:$revision" \
   /usr/local/bin/minio \
   "$work_dir/binaries/minio"

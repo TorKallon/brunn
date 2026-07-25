@@ -1,14 +1,16 @@
 # CarryState Alpha Readiness
 
 Status: **no-go for owner alpha as of 2026-07-25**; core, destructive-safety,
-binary-lifecycle, and local recovery qualification are green, but the live
-embedding dependency and exact release identity are not
+binary-lifecycle, local recovery qualification, and exact release identity are
+green, but the live embedding dependency and current matched reasoning
+recertification are not
 
 This is the evidence register for release-candidate qualification. A launch
-record must bind all evidence to one exact clean commit; the current working
-candidate has not reached that state. The register separates work Codex can
-complete and verify autonomously from choices that require the owner's
-approval. No owner decision may weaken the frozen read, write, capture,
+record must bind all evidence to one exact clean commit. The retained candidate
+does so through its generated release manifest, checksums, image archives,
+standalone binaries, bundles, SBOMs, and scan reports. The register separates
+work Codex can complete and verify autonomously from choices that require the
+owner's approval. No owner decision may weaken the frozen read, write, capture,
 dreaming, reasoning-quality, token-efficiency, isolation, or provenance
 contracts.
 
@@ -23,9 +25,12 @@ yet:
    service's `/ready` endpoint confirms configuration and local dependencies;
    it does not prove that the external OpenAI account can accept a billed
    request.
-2. The current implementation is an uncommitted working tree based on
-   `f858763`. It has passed the gates below, but it is not yet a clean,
-   fingerprinted, reproducible release candidate.
+2. The current implementation is retained as a clean `main` commit with
+   checksummed binaries, bundles, immutable image archives, SBOMs, and scan
+   reports. The application, repository, PostgreSQL, MCP, web, Caddy, and MinIO
+   client scans pass the high/critical gate. The bundled Community MinIO image
+   is explicitly marked blocked and remains restricted to the temporary
+   private Nyx deployment; hosted deployments use qualified managed S3.
 3. Historical and screening evaluations favor the workspace approach, but a
    current matched CarryState-versus-filesystem reasoning and token run cannot
    be certified until embeddings work. The 2026-07-25 Codex/OpenClaw runtime
@@ -36,9 +41,9 @@ yet:
 
 Once working OpenAI quota is available, the remaining private-owner launch
 sequence is: live semantic smoke, a matched current reasoning regression,
-freeze and fingerprint the exact commit, and explicit go/no-go. A managed-S3
-backup/restore drill is required before a hosted or invited-user alpha, but
-not before the temporary owner-only Nyx deployment.
+and explicit go/no-go. A managed-S3 backup/restore drill is required before a
+hosted or invited-user alpha, but not before the temporary owner-only Nyx
+deployment.
 
 ## Autonomous Release Gates
 
@@ -55,7 +60,7 @@ not before the temporary owner-only Nyx deployment.
 | Supply chain | Pinned bases, SBOMs, repository scan, application image scan, residual inventory | Application pass; Community MinIO restricted to temporary private Nyx use |
 | Browser experience | Desktop and mobile workflow, accessibility, layout, and console checks | Pass |
 | Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Historical pass; current matched recertification pending |
-| Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment dry run | Pending |
+| Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment dry run | Pass; retained artifact is marked hosted-release-blocked only because it includes Community MinIO |
 
 ## Owner Decisions
 
@@ -73,16 +78,17 @@ on an unsettled provider or public identity.
 | Alpha cohort | Approved | Owner first, then only people the owner explicitly invites. No public signup. Every person receives a separate user account and credential. |
 | Operating visibility | Approved | Begin with the owner's real usage. Keep source-use rankings visible in the Control UI and aggregate model, embedding, storage, and request consumption prominent in Datadog. Set hard spend limits only after observing the initial workload. |
 | Policy and support | Pending | Final retention, privacy wording, and support expectations are not yet selected. |
-| Launch | Pending | Restore OpenAI quota, certify the current reasoning path, retain the exact candidate, then make an explicit go/no-go decision. |
+| Launch | Pending | Restore OpenAI quota, certify the current reasoning path, then make an explicit go/no-go decision. |
 
 Secrets, private keys, and bearer tokens must be supplied through approved
 files or secret stores, never pasted into chat or committed to the repository.
 
 ## Candidate Record
 
-### Current working candidate - 2026-07-25
+### Retained candidate - 2026-07-25
 
-The working candidate has 48 applied migrations and passed:
+The retained candidate is identified by the clean Git revision and tree in its
+generated `manifest.json`. It has 48 applied migrations and passed:
 
 - Rust formatting, check, Clippy, 191 unit tests, and two integration tests;
 - 182 offline Python tests, with five designated live binary tests separately
@@ -109,8 +115,9 @@ started healthy isolated API and worker processes. The original stack remained
 online, and the isolated stack and volumes were removed afterward. Measured
 recovery time was 2,742 seconds (45m42s).
 
-This backup records `git_dirty: true` at `f858763`. It establishes data
-recoverability, not reproducible release identity.
+This backup records `git_dirty: true` at `f858763`. It predates the retained
+candidate and establishes data recoverability; the generated release artifact
+provides the separate reproducible release identity.
 
 ### Prior autonomous candidate - 2026-07-23/24
 
