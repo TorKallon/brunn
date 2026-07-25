@@ -56,6 +56,28 @@ def create_backup(
     return backup
 
 
+def add_restore_receipt(backup: Path) -> None:
+    manifest = json.loads((backup / "manifest.json").read_text())
+    receipt = {
+        "format": "straylight-restore-drill-receipt@v1",
+        "status": "pass",
+        "backup_id": manifest["backup_id"],
+        "backup_manifest_sha256": f"sha256:{sha256(backup / 'manifest.json')}",
+        "completed_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "rto_seconds": 1,
+        "checks": {
+            "database_restore": True,
+            "object_restore": True,
+            "object_reference_integrity": True,
+            "api_ready": True,
+            "worker_ready": True,
+        },
+    }
+    (backup / "restore-drill-receipt.json").write_text(
+        json.dumps(receipt, sort_keys=True) + "\n"
+    )
+
+
 class BackupRetentionTests(unittest.TestCase):
     def test_prune_is_dry_run_by_default_and_only_deletes_verified_expired_v2(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -71,6 +93,7 @@ class BackupRetentionTests(unittest.TestCase):
                 "current",
                 expires_at=now + timedelta(days=1),
             )
+            add_restore_receipt(current)
             legacy = create_backup(
                 backup_root,
                 "legacy",

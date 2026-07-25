@@ -1,0 +1,40 @@
+# AGENTS.md
+
+Straylight is the durable memory, evidence, checkpoint, and continuity system
+on Nyx. Read `README.md`, `docs/Architecture.md`, `docs/Specification.md`, and
+`docs/Operations.md` as needed; current code and tests are implementation
+truth.
+
+## Code retrieval
+
+Before adding a helper or duplicating an existing behavior:
+
+1. Use `rg` for exact names, strings, routes, SQL, config keys, and errors.
+2. Use `nyx-code-intel search --project straylight "<intent>"` when the name is
+   unknown.
+3. Use `nyx-code-intel lsp --project straylight ...` for precise symbols,
+   definitions, and references.
+
+Use `--semantic=false` when an entirely local search is preferred. The index
+still returns exact and FTS results if OpenAI semantic search is unavailable.
+
+Use Codex Session Search for historical commands, failures, decisions, and
+handoffs. Use Straylight memory for durable conclusions, checkpoints,
+provenance, and cross-session continuity. Do not ingest full source trees into
+Straylight; the local code index is authoritative for the current checkout.
+
+The shared implementation and runbook live at:
+
+```text
+/Users/Shared/projects/metis/docs/nyx-code-intel.md
+```
+
+## Verification
+
+Run the narrowest checks that cover the change. Common gates are:
+
+```bash
+python3 -m unittest discover -s tests -v
+(cd apps/mcp && npm run build && npm test)
+(cd apps/web && npm run build && npm test -- --run)
+```

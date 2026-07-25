@@ -1437,8 +1437,8 @@ class LiveApiSmoke:
             )
             check(
                 len(duplicate_entries) == 1
-                and duplicate_entries[0].get("asset_ref") == first_asset_ref,
-                "identical staged content did not reuse one physical asset",
+                and duplicate_entries[0].get("asset_ref") != first_asset_ref,
+                "distinct logical paths unexpectedly shared one asset identity",
                 duplicate_data,
             )
             duplicate_stage_ref = str(duplicate_data.get("stage_ref", ""))

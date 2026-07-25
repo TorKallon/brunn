@@ -2798,6 +2798,7 @@ async fn load_source_documents(
           FROM straylight.evidence_items AS evidence
           JOIN member ON member.record_id=evidence.id AND member.record_kind='evidence'
           WHERE evidence.user_id=$1 AND evidence.scope_id=$2
+            AND evidence.evidence_kind <> 'derived_non_authoritative'
           UNION ALL
           SELECT source.id,
                  concat_ws(E'\n',source.title,source.source_ref,source.source_kind,
@@ -2811,6 +2812,7 @@ async fn load_source_documents(
           FROM straylight.source_episodes AS source
           JOIN member ON member.record_id=source.id AND member.record_kind='source_episode'
           WHERE source.user_id=$1 AND source.scope_id=$2
+            AND source.source_kind <> 'derived_asset_description'
           UNION ALL
           SELECT chunk.id,
                  concat_ws(E'\n',array_to_string(chunk.heading_path,' / '),chunk.content),
@@ -2826,7 +2828,11 @@ async fn load_source_documents(
             ON revision.user_id=chunk.user_id
            AND revision.document_id=chunk.document_id
            AND revision.version=chunk.document_version
+          JOIN straylight.source_episodes AS source
+            ON source.user_id=revision.user_id
+           AND source.id=revision.source_episode_id
           WHERE chunk.user_id=$1 AND chunk.scope_id=$2
+            AND source.source_kind <> 'derived_asset_description'
           UNION ALL
           SELECT document.id,
                  concat_ws(E'\n',revision.title,revision.media_type,
@@ -2843,7 +2849,11 @@ async fn load_source_documents(
             ON revision.user_id=document.user_id
            AND revision.document_id=document.id
            AND revision.version=document.current_version
+          JOIN straylight.source_episodes AS source
+            ON source.user_id=revision.user_id
+           AND source.id=revision.source_episode_id
           WHERE document.user_id=$1 AND document.scope_id=$2
+            AND source.source_kind <> 'derived_asset_description'
           UNION ALL
           SELECT relation.id,
                  concat_ws(E'\n',revision.predicate::text,revision.qualifiers::text,(

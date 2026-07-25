@@ -241,7 +241,7 @@ class AgentWorkEvalTests(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
-            "af92c68c6ac5abefb0d93d42d4445ab3cd3616b8b1283292125cc5a946aa77a6",
+            "ad3a20cd4019d9ba574241b78924b51fcf69261d3cab802037ed9dff09abb7a2",
         )
 
     def test_personal_coordination_rubrics_are_satisfiable_and_fixed_packs_are_fair(self):
@@ -526,6 +526,223 @@ class AgentWorkEvalTests(unittest.TestCase):
         grade = grade_answer(case, answer, {document.path for document in self.documents})
         self.assertTrue(grade["pass"])
         self.assertEqual(grade["citation_validity"], 1.0)
+
+    def test_structured_grader_rejects_duplicate_missing_and_extra_claim_ids(self):
+        case = {
+            "rubric": [
+                {
+                    "id": "c1",
+                    "checks": [{"any": ["alpha"]}],
+                    "sources_any": ["Evidence/source.md"],
+                },
+                {
+                    "id": "c2",
+                    "checks": [{"any": ["beta"]}],
+                    "sources_any": ["Evidence/source.md"],
+                },
+            ],
+        }
+        checkpoint = {
+            "objective": "Test exact claim sets.",
+            "current_state": ["Evidence is available."],
+            "next_actions": ["Reject malformed claim sets."],
+            "artifacts": ["Evidence/source.md"],
+        }
+        valid_claims = [
+            {
+                "id": "c1",
+                "value": "alpha",
+                "source_paths": ["Evidence/source.md"],
+            },
+            {
+                "id": "c2",
+                "value": "beta",
+                "source_paths": ["Evidence/source.md"],
+            },
+        ]
+        corpus = {"Evidence/source.md"}
+        valid = grade_answer(
+            case,
+            {"answer": "", "claims": valid_claims, "checkpoint": checkpoint},
+            corpus,
+        )
+        duplicate = grade_answer(
+            case,
+            {
+                "answer": "",
+                "claims": [valid_claims[0], valid_claims[0], valid_claims[1]],
+                "checkpoint": checkpoint,
+            },
+            corpus,
+        )
+        missing = grade_answer(
+            case,
+            {
+                "answer": "",
+                "claims": [valid_claims[0]],
+                "checkpoint": checkpoint,
+            },
+            corpus,
+        )
+        extra = grade_answer(
+            case,
+            {
+                "answer": "",
+                "claims": [
+                    *valid_claims,
+                    {
+                        "id": "c3",
+                        "value": "gamma",
+                        "source_paths": ["Evidence/source.md"],
+                    },
+                ],
+                "checkpoint": checkpoint,
+            },
+            corpus,
+        )
+
+        self.assertTrue(valid["pass"])
+        self.assertTrue(valid["claim_set_valid"])
+        self.assertFalse(duplicate["pass"])
+        self.assertEqual(duplicate["duplicate_claim_ids"], ["c1"])
+        self.assertFalse(missing["pass"])
+        self.assertEqual(missing["missing_claim_ids"], ["c2"])
+        self.assertFalse(extra["pass"])
+        self.assertEqual(extra["extra_claim_ids"], ["c3"])
+
+    def test_claim_cannot_borrow_required_content_from_global_answer(self):
+        case = {
+            "rubric": [{
+                "id": "c1",
+                "checks": [{"any": ["required claim detail"]}],
+                "sources_any": ["Evidence/source.md"],
+            }],
+        }
+        answer = {
+            "answer": "The required claim detail appears only in the global answer.",
+            "claims": [{
+                "id": "c1",
+                "value": "This claim omits it.",
+                "source_paths": ["Evidence/source.md"],
+            }],
+            "checkpoint": {
+                "objective": "Test claim isolation.",
+                "current_state": ["A claim is incomplete."],
+                "next_actions": ["Keep grading claim-local."],
+                "artifacts": ["Evidence/source.md"],
+            },
+        }
+
+        grade = grade_answer(case, answer, {"Evidence/source.md"})
+
+        self.assertFalse(grade["pass"])
+        self.assertFalse(grade["claims"][0]["pass"])
+        self.assertIsNone(grade["claims"][0]["checks"][0]["matched"])
+
+    def test_claim_with_only_two_of_three_required_checks_fails(self):
+        case = {
+            "rubric": [{
+                "id": "c1",
+                "checks": [
+                    {"any": ["alpha"]},
+                    {"any": ["beta"]},
+                    {"any": ["gamma"]},
+                ],
+                "sources_any": ["Evidence/source.md"],
+            }],
+        }
+        answer = {
+            "answer": "",
+            "claims": [{
+                "id": "c1",
+                "value": "alpha beta",
+                "source_paths": ["Evidence/source.md"],
+            }],
+            "checkpoint": {
+                "objective": "Test complete checks.",
+                "current_state": ["Two details are present."],
+                "next_actions": ["Require the third detail."],
+                "artifacts": ["Evidence/source.md"],
+            },
+        }
+
+        grade = grade_answer(case, answer, {"Evidence/source.md"})
+
+        self.assertFalse(grade["pass"])
+        self.assertEqual(grade["claims"][0]["content_fraction"], 0.6667)
+        self.assertFalse(grade["claims"][0]["pass"])
+
+    def test_fabricated_suffix_citation_does_not_match_expected_path(self):
+        case = {
+            "rubric": [{
+                "id": "c1",
+                "checks": [{"any": ["supported fact"]}],
+                "sources_any": ["Authority/source.md"],
+            }],
+        }
+        answer = {
+            "answer": "",
+            "claims": [{
+                "id": "c1",
+                "value": "supported fact",
+                "source_paths": ["fabricated/Authority/source.md"],
+            }],
+            "checkpoint": {
+                "objective": "Test exact citations.",
+                "current_state": ["The claim has a fabricated path."],
+                "next_actions": ["Reject suffix matching."],
+                "artifacts": ["Authority/source.md"],
+            },
+        }
+
+        grade = grade_answer(case, answer, {"Authority/source.md"})
+
+        self.assertFalse(grade["pass"])
+        self.assertFalse(grade["claims"][0]["source_hit"])
+        self.assertEqual(grade["citation_validity"], 0.0)
+
+    def test_sources_all_requires_every_exact_path(self):
+        case = {
+            "rubric": [{
+                "id": "c1",
+                "checks": [{"any": ["joined conclusion"]}],
+                "sources_any": ["Evidence/alpha.md", "Evidence/beta.md"],
+                "sources_all": ["Evidence/alpha.md", "Evidence/beta.md"],
+            }],
+        }
+        answer = {
+            "answer": "",
+            "claims": [{
+                "id": "c1",
+                "value": "joined conclusion",
+                "source_paths": ["Evidence/alpha.md"],
+            }],
+            "checkpoint": {
+                "objective": "Test all-source evidence.",
+                "current_state": ["Only one source is cited."],
+                "next_actions": ["Require both exact paths."],
+                "artifacts": ["Evidence/alpha.md", "Evidence/beta.md"],
+            },
+        }
+        corpus_paths = {"Evidence/alpha.md", "Evidence/beta.md"}
+
+        incomplete = grade_answer(case, answer, corpus_paths)
+        answer["claims"][0]["source_paths"] = [
+            "Evidence/alpha.md",
+            "fabricated/Evidence/beta.md",
+        ]
+        fabricated = grade_answer(case, answer, corpus_paths)
+        answer["claims"][0]["source_paths"] = [
+            "Evidence/alpha.md",
+            "Evidence/beta.md",
+        ]
+        complete = grade_answer(case, answer, corpus_paths)
+
+        self.assertFalse(incomplete["pass"])
+        self.assertFalse(incomplete["claims"][0]["source_hit"])
+        self.assertFalse(fabricated["pass"])
+        self.assertFalse(fabricated["claims"][0]["source_hit"])
+        self.assertTrue(complete["pass"])
 
     def test_event_metrics_count_completed_calls_and_cached_input(self):
         with tempfile.TemporaryDirectory() as temp:

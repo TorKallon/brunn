@@ -3,18 +3,19 @@ use std::{
     time::{Duration, Instant},
 };
 
+use chrono::Utc;
 use pgvector::Vector;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::{
-    account_worker,
+    account_worker, asset_description,
     db::AppState,
     dream_service,
     error::{ApiError, ApiResult},
     quota::{self, UsageReservation},
-    telemetry,
+    telemetry, upload_service,
 };
 
 pub async fn run(state: AppState) -> ApiResult<()> {
@@ -26,6 +27,9 @@ pub async fn run(state: AppState) -> ApiResult<()> {
     tracing::info!("Straylight background worker started");
     let worker_id = format!("worker:{}", std::process::id());
     let mut next_scheduler_scan = Instant::now();
+    let mut next_upload_expiry_scan = Instant::now();
+    let mut next_stage_expiry_scan = Instant::now();
+    let mut next_object_reconciliation_scan = Instant::now();
     loop {
         let cycle_started = Instant::now();
         let mut cycle_failed = false;
@@ -66,6 +70,48 @@ pub async fn run(state: AppState) -> ApiResult<()> {
                 false
             }
         };
+        if next_upload_expiry_scan <= Instant::now() {
+            next_upload_expiry_scan = Instant::now() + Duration::from_secs(60);
+            match upload_service::expire_one(&state).await {
+                Ok(value) => did_work |= value,
+                Err(error) => {
+                    metrics::counter!("worker.cycle.errors", "stage" => "asset_upload_expiry")
+                        .increment(1);
+                    tracing::warn!(?error, "asset upload expiry cycle failed");
+                    cycle_failed = true;
+                }
+            }
+        }
+        if next_stage_expiry_scan <= Instant::now() {
+            next_stage_expiry_scan = Instant::now() + Duration::from_secs(60);
+            match upload_service::expire_one_stage(&state).await {
+                Ok(value) => did_work |= value,
+                Err(error) => {
+                    metrics::counter!(
+                        "worker.cycle.errors",
+                        "stage" => "asset_stage_expiry"
+                    )
+                    .increment(1);
+                    tracing::warn!(?error, "asset stage expiry cycle failed");
+                    cycle_failed = true;
+                }
+            }
+        }
+        if next_object_reconciliation_scan <= Instant::now() {
+            next_object_reconciliation_scan = Instant::now() + Duration::from_secs(10 * 60);
+            match reconcile_orphan_object_versions(&state).await {
+                Ok(count) => did_work |= count > 0,
+                Err(error) => {
+                    metrics::counter!(
+                        "worker.cycle.errors",
+                        "stage" => "object_reconciliation"
+                    )
+                    .increment(1);
+                    tracing::warn!(?error, "orphan object reconciliation failed");
+                    cycle_failed = true;
+                }
+            }
+        }
         if next_scheduler_scan <= Instant::now() {
             let scheduler_started = Instant::now();
             next_scheduler_scan = Instant::now() + state.config.dream_scheduler_poll_interval;
@@ -113,6 +159,106 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
+}
+
+async fn reconcile_orphan_object_versions(state: &AppState) -> ApiResult<usize> {
+    const GRACE_SECONDS: i64 = 60 * 60;
+    const MAX_CANDIDATES: usize = 10_000;
+
+    let cutoff = Utc::now().timestamp().saturating_sub(GRACE_SECONDS);
+    let candidates = state
+        .object_store
+        .stale_object_versions(cutoff, MAX_CANDIDATES)
+        .await?;
+    metrics::gauge!("asset.object.reconciliation_candidates").set(candidates.len() as f64);
+    let pool = state.admin_pool.as_ref().expect("checked at worker start");
+    let mut purged = 0usize;
+    for candidate in candidates {
+        let Some(user_id) = object_owner_id(&candidate.object_key) else {
+            metrics::counter!("asset.object.reconciliation", "result" => "foreign_key")
+                .increment(1);
+            continue;
+        };
+        let mut transaction = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
+            .bind(user_id)
+            .execute(&mut *transaction)
+            .await?;
+        let referenced = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+              SELECT 1
+              FROM straylight.asset_versions
+              WHERE user_id=$1 AND object_key=$2
+                AND (
+                  object_version_id=$3
+                  OR object_version_id IS NULL
+                )
+              UNION ALL
+              SELECT 1
+              FROM straylight.asset_uploads
+              WHERE user_id=$1
+                AND (
+                  (
+                    canonical_object_key=$2
+                    AND status IN ('completed','consumed')
+                    AND (
+                      canonical_object_version_id=$3
+                      OR canonical_object_version_id IS NULL
+                    )
+                  )
+                  OR (
+                    temporary_object_key=$2
+                    AND temporary_cleaned_at IS NULL
+                    AND (
+                      temporary_object_version_id=$3
+                      OR temporary_object_version_id IS NULL
+                    )
+                  )
+                )
+              UNION ALL
+              SELECT 1
+              FROM straylight.account_exports
+              WHERE user_id=$1 AND object_key=$2 AND status='ready'
+                AND (
+                  object_version_id=$3
+                  OR object_version_id IS NULL
+                )
+            )
+            "#,
+        )
+        .bind(user_id)
+        .bind(&candidate.object_key)
+        .bind(&candidate.object_version_id)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if referenced {
+            transaction.commit().await?;
+            continue;
+        }
+        state
+            .object_store
+            .delete_exact_version(&candidate.object_key, &candidate.object_version_id)
+            .await?;
+        transaction.commit().await?;
+        purged += 1;
+        tracing::info!(
+            object_key = %candidate.object_key,
+            object_version_id = %candidate.object_version_id,
+            delete_marker = candidate.delete_marker,
+            "purged an unreferenced object-store version"
+        );
+    }
+    metrics::histogram!("asset.object.reconciliation_purged").record(purged as f64);
+    Ok(purged)
+}
+
+fn object_owner_id(object_key: &str) -> Option<Uuid> {
+    let (owner, remainder) = object_key.split_once('/')?;
+    if !(remainder.starts_with("blobs/") || remainder.starts_with("uploads/")) {
+        return None;
+    }
+    owner.parse().ok()
 }
 
 async fn process_background_job(state: &AppState) -> ApiResult<bool> {
@@ -171,47 +317,92 @@ async fn process_background_job(state: &AppState) -> ApiResult<bool> {
 
     let result = match job_kind.as_str() {
         "index_embeddings" => index_embeddings(state, user_id, scope_id, &payload).await,
+        "asset_description" => {
+            asset_description::process_job(state, user_id, scope_id, &payload).await
+        }
+        "asset_object_cleanup" => {
+            upload_service::cleanup_object_job(state, user_id, &payload).await
+        }
         _ => Err(ApiError::invalid(format!(
             "unknown background job kind: {job_kind}"
         ))),
     };
+    let result = if job_kind == "asset_description" {
+        match result {
+            Ok(value) => asset_description::finalize_stage(state, user_id, &payload, job_id, true)
+                .await
+                .map(|()| value),
+            Err(error) => Err(error),
+        }
+    } else {
+        result
+    };
     match result {
         Ok(result) => {
-            sqlx::query(
+            let updated = sqlx::query(
                 r#"
                 UPDATE straylight.background_jobs
                 SET status='succeeded',result=$1,completed_at=clock_timestamp(),
                     locked_at=NULL,locked_by=NULL
-                WHERE id=$2
+                WHERE id=$2 AND status='running'
                 "#,
             )
             .bind(result)
             .bind(job_id)
             .execute(pool)
-            .await?;
-            record_worker_job("background", metric_job_kind, "succeeded", started);
+            .await?
+            .rows_affected();
+            record_worker_job(
+                "background",
+                metric_job_kind,
+                if updated == 1 {
+                    "succeeded"
+                } else {
+                    "canceled"
+                },
+                started,
+            );
         }
         Err(error) => {
             let terminal = attempts + 1 >= max_attempts;
             tracing::warn!(%job_id, %job_kind, ?error, terminal, "background job failed");
-            sqlx::query(
+            let updated = sqlx::query(
                 r#"
                 UPDATE straylight.background_jobs
                 SET status=$1,result=$2,available_at=clock_timestamp()+interval '5 seconds',
                     completed_at=CASE WHEN $1='failed' THEN clock_timestamp() ELSE NULL END,
                     locked_at=NULL,locked_by=NULL
-                WHERE id=$3
+                WHERE id=$3 AND status='running'
                 "#,
             )
             .bind(if terminal { "failed" } else { "retry_wait" })
             .bind(json!({"error": error.to_string()}))
             .bind(job_id)
             .execute(pool)
-            .await?;
+            .await?
+            .rows_affected();
+            if updated == 1
+                && terminal
+                && job_kind == "asset_description"
+                && let Err(finalize_error) =
+                    asset_description::finalize_stage(state, user_id, &payload, job_id, false).await
+            {
+                tracing::error!(
+                    ?finalize_error,
+                    %job_id,
+                    "failed to mark asset-description stage terminal"
+                );
+            }
             record_worker_job(
                 "background",
                 metric_job_kind,
-                if terminal { "failed" } else { "retry_wait" },
+                if updated == 0 {
+                    "canceled"
+                } else if terminal {
+                    "failed"
+                } else {
+                    "retry_wait"
+                },
                 started,
             );
         }
@@ -568,6 +759,8 @@ async fn process_deletion_job(state: &AppState) -> ApiResult<bool> {
 fn bounded_background_job_kind(value: &str) -> &'static str {
     match value {
         "index_embeddings" => "index_embeddings",
+        "asset_description" => "asset_description",
+        "asset_object_cleanup" => "asset_object_cleanup",
         _ => "unknown",
     }
 }
@@ -999,6 +1192,7 @@ impl DeletionPlan {
         let mut chunk_ids = BTreeSet::new();
         let mut checkpoint_ids = BTreeSet::new();
         let mut stage_ids = BTreeSet::new();
+        let mut derivative_source_ids = BTreeSet::new();
         let direct_asset_id = match job.target_kind.as_str() {
             "object" => {
                 object_ids.insert(job.target_id);
@@ -1065,6 +1259,47 @@ impl DeletionPlan {
                 &mut relation_ids,
                 &mut document_ids,
             )?;
+            extend_uuid_set(
+                &mut derivative_source_ids,
+                sqlx::query(
+                    r#"
+                    SELECT DISTINCT descriptor.source_episode_id AS id
+                    FROM straylight.source_asset_links AS native
+                    JOIN straylight.source_asset_links AS descriptor
+                      ON descriptor.user_id=native.user_id
+                     AND descriptor.asset_id=native.asset_id
+                     AND descriptor.asset_version=native.asset_version
+                     AND descriptor.role='describes'
+                    JOIN straylight.source_episodes AS descriptor_source
+                      ON descriptor_source.user_id=descriptor.user_id
+                     AND descriptor_source.id=descriptor.source_episode_id
+                     AND descriptor_source.source_kind='derived_asset_description'
+                    WHERE native.user_id=$1
+                      AND native.source_episode_id=$2
+                      AND native.role='source_native'
+                    "#,
+                )
+                .bind(job.user_id)
+                .bind(job.target_id)
+                .fetch_all(pool)
+                .await?,
+            )?;
+            if !derivative_source_ids.is_empty() {
+                extend_uuid_set(
+                    &mut document_ids,
+                    sqlx::query(
+                        r#"
+                        SELECT document_id AS id
+                        FROM straylight.document_revisions
+                        WHERE user_id=$1 AND source_episode_id=ANY($2)
+                        "#,
+                    )
+                    .bind(job.user_id)
+                    .bind(sorted_ids(&derivative_source_ids))
+                    .fetch_all(pool)
+                    .await?,
+                )?;
+            }
         }
 
         if job.target_kind == "evidence" {
@@ -1238,6 +1473,7 @@ impl DeletionPlan {
         if job.target_kind == "source_episode" {
             source_candidates.insert(job.target_id);
         }
+        source_candidates.extend(derivative_source_ids.iter().copied());
         extend_uuid_set(
             &mut source_candidates,
             sqlx::query(
@@ -2962,5 +3198,21 @@ mod deletion_tests {
         assert!(deletion_planning_failure_is_retryable(&ApiError::Internal(
             "temporary object-store failure".to_owned()
         )));
+    }
+
+    #[test]
+    fn object_reconciliation_only_accepts_user_owned_asset_namespaces() {
+        let user_id = Uuid::now_v7();
+        assert_eq!(
+            object_owner_id(&format!("{user_id}/blobs/{}", "a".repeat(64))),
+            Some(user_id)
+        );
+        assert_eq!(
+            object_owner_id(&format!("{user_id}/uploads/{}", Uuid::now_v7())),
+            Some(user_id)
+        );
+        assert_eq!(object_owner_id("qualification/probe"), None);
+        assert_eq!(object_owner_id(&format!("{user_id}/other/value")), None);
+        assert_eq!(object_owner_id("not-a-uuid/blobs/value"), None);
     }
 }

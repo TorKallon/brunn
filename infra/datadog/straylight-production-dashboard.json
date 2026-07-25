@@ -1297,6 +1297,247 @@
           }
         ]
       }
+    },
+    {
+      "definition": {
+        "type": "group",
+        "title": "09 Native Assets and Portability",
+        "layout_type": "ordered",
+        "background_color": "vivid_green",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Resumable upload lifecycle",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "sum",
+                "value"
+              ],
+              "requests": [
+                {
+                  "q": "sum:straylight.asset.upload.sessions{env:$env,service:$service,version:$version,component:$component} by {operation,result}.as_rate()",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "semantic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Uploads awaiting work",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ],
+              "requests": [
+                {
+                  "q": "max:straylight.worker.queue.depth{env:$env,service:$service,version:$version,component:$component,queue:asset_upload} by {status}",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "warm",
+                    "line_type": "solid",
+                    "line_width": "thick"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Multipart throughput and part size",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "sum",
+                "max"
+              ],
+              "requests": [
+                {
+                  "q": "sum:straylight.asset.upload.parts{env:$env,service:$service,version:$version,component:$component} by {result}.as_rate()",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "cool",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "p95:straylight.asset.upload.part_bytes{env:$env,service:$service,version:$version,component:$component}",
+                  "display_type": "line",
+                  "on_right_yaxis": true,
+                  "style": {
+                    "palette": "orange",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Asset reads and download volume",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "sum",
+                "max"
+              ],
+              "requests": [
+                {
+                  "q": "sum:straylight.asset.access{env:$env,service:$service,version:$version,component:$component} by {operation,result}.as_rate()",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "semantic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "p95:straylight.asset.access.bytes{env:$env,service:$service,version:$version,component:$component,operation:download}",
+                  "display_type": "line",
+                  "on_right_yaxis": true,
+                  "style": {
+                    "palette": "purple",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Binary transfer capacity",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ],
+              "requests": [
+                {
+                  "q": "max:straylight.asset.transfer.permits{env:$env,service:$service,version:$version,component:$component} by {state}",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "cool",
+                    "line_type": "solid",
+                    "line_width": "thick"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Generated description outcomes",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "sum",
+                "value"
+              ],
+              "requests": [
+                {
+                  "q": "sum:straylight.asset.description.jobs{env:$env,service:$service,version:$version,component:$component} by {result,method}.as_rate()",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "semantic",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Logical and deduplicated storage",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "max",
+                "value"
+              ],
+              "requests": [
+                {
+                  "q": "max:straylight.asset.storage.logical_bytes{env:$env,service:$service,version:$version,component:$component}",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "warm",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "max:straylight.asset.storage.physical_bytes{env:$env,service:$service,version:$version,component:$component}",
+                  "display_type": "line",
+                  "style": {
+                    "palette": "cool",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Asset integrity failures",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": [
+                "avg",
+                "sum",
+                "value"
+              ],
+              "requests": [
+                {
+                  "q": "sum:straylight.asset.upload.integrity_failures{env:$env,service:$service,version:$version,component:$component} by {failure}.as_rate()",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "red",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                },
+                {
+                  "q": "sum:straylight.object_store.integrity_failures{env:$env,service:$service,version:$version,component:$component} by {failure}.as_rate()",
+                  "display_type": "bars",
+                  "style": {
+                    "palette": "orange",
+                    "line_type": "solid",
+                    "line_width": "normal"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
     }
   ]
 }

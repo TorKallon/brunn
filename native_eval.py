@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import mimetypes
 import os
 import shlex
+import stat
 import time
 import urllib.error
 import urllib.parse
@@ -50,6 +53,15 @@ class NativeResponse:
     def data(self) -> dict[str, Any]:
         value = self.body.get("data", self.body)
         return value if isinstance(value, dict) else {"value": value}
+
+
+@dataclass(frozen=True)
+class NativeDownload:
+    path: Path
+    content_hash: str
+    size_bytes: int
+    media_type: str
+    elapsed_ms: float
 
 
 class NativeApiClient:
@@ -149,6 +161,177 @@ class NativeApiClient:
                 )
         return self.get(f"/v1/checkpoints/{urllib.parse.quote(checkpoint_id, safe=':_-')}")
 
+    def request_multipart(
+        self,
+        path: str,
+        *,
+        fields: list[tuple[str, str]],
+        files: list[tuple[str, Path]],
+    ) -> NativeResponse:
+        content_type, body = encode_multipart(fields, files)
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": content_type,
+        }
+        if self.run_id:
+            headers["X-Straylight-Eval-Run"] = self.run_id
+        if self.case_id:
+            headers["X-Straylight-Eval-Case"] = self.case_id
+        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        started = time.monotonic()
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                raw = response.read()
+                parsed = json.loads(raw or b"{}")
+                if not isinstance(parsed, dict):
+                    parsed = {"data": parsed}
+                return NativeResponse(
+                    body=parsed,
+                    http_status=response.status,
+                    elapsed_ms=(time.monotonic() - started) * 1000,
+                    headers={
+                        key.casefold(): value
+                        for key, value in response.headers.items()
+                    },
+                )
+        except urllib.error.HTTPError as exc:
+            elapsed_ms = (time.monotonic() - started) * 1000
+            try:
+                raw = exc.read()
+            finally:
+                exc.close()
+            try:
+                parsed = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                parsed = {
+                    "error": "http_error",
+                    "message": raw.decode("utf-8", errors="replace"),
+                }
+            if not isinstance(parsed, dict):
+                parsed = {"error": "http_error", "data": parsed}
+            raise NativeApiError(exc.code, parsed, elapsed_ms=elapsed_ms) from exc
+
+    def download_verified(
+        self,
+        path: str,
+        destination: Path,
+        *,
+        expected_hash: str,
+        expected_size: int,
+    ) -> NativeDownload:
+        expected_digest = expected_hash.removeprefix("sha256:").casefold()
+        if not re_full_sha256(expected_digest):
+            raise ValueError("expected_hash must be a SHA-256 digest")
+        if expected_size < 0:
+            raise ValueError("expected_size must not be negative")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        started = time.monotonic()
+        if destination.exists() or destination.is_symlink():
+            existing = destination.lstat()
+            if (
+                not stat.S_ISREG(existing.st_mode)
+                or existing.st_uid != os.getuid()
+                or stat.S_IMODE(existing.st_mode) != 0o600
+            ):
+                raise PermissionError(
+                    f"refusing to reuse non-private asset download {destination}"
+                )
+            if existing.st_size != expected_size:
+                raise FileExistsError(
+                    f"existing asset download does not match metadata: {destination}"
+                )
+            digest = hashlib.sha256()
+            size = 0
+            with destination.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    size += len(chunk)
+                    digest.update(chunk)
+            actual_digest = digest.hexdigest()
+            if size != expected_size or actual_digest != expected_digest:
+                raise FileExistsError(
+                    "existing asset download failed size or SHA-256 verification: "
+                    f"{destination}"
+                )
+            return NativeDownload(
+                path=destination,
+                content_hash=f"sha256:{actual_digest}",
+                size_bytes=size,
+                media_type=mimetypes.guess_type(destination.name)[0]
+                or "application/octet-stream",
+                elapsed_ms=(time.monotonic() - started) * 1000,
+            )
+        temporary = destination.with_name(
+            f".{destination.name}.{os.getpid()}.{time.time_ns()}.tmp"
+        )
+        url = path if path.startswith(("http://", "https://")) else (
+            f"{self.base_url}/{path.lstrip('/')}"
+        )
+        headers = {
+            "Accept": "*/*",
+            "Accept-Encoding": "identity",
+            "Authorization": f"Bearer {self.token}",
+        }
+        if self.run_id:
+            headers["X-Straylight-Eval-Run"] = self.run_id
+        if self.case_id:
+            headers["X-Straylight-Eval-Case"] = self.case_id
+        request = urllib.request.Request(url, headers=headers, method="GET")
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                response_hash = (
+                    response.headers.get("X-CarryState-SHA256") or ""
+                ).removeprefix("sha256:").casefold()
+                content_length = response.headers.get("Content-Length")
+                if response_hash != expected_digest:
+                    raise RuntimeError("asset hash header does not match metadata")
+                if content_length is None or int(content_length) != expected_size:
+                    raise RuntimeError("asset content length does not match metadata")
+                with temporary.open("xb", buffering=0) as output:
+                    os.chmod(temporary, 0o600)
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        size += len(chunk)
+                        if size > expected_size:
+                            raise RuntimeError("asset download exceeded its expected size")
+                        digest.update(chunk)
+                        output.write(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                media = response.headers.get_content_type()
+            actual_digest = digest.hexdigest()
+            if size != expected_size or actual_digest != expected_digest:
+                raise RuntimeError("asset download failed size or SHA-256 verification")
+            temporary.replace(destination)
+            return NativeDownload(
+                path=destination,
+                content_hash=f"sha256:{actual_digest}",
+                size_bytes=size,
+                media_type=media,
+                elapsed_ms=(time.monotonic() - started) * 1000,
+            )
+        except urllib.error.HTTPError as exc:
+            elapsed_ms = (time.monotonic() - started) * 1000
+            try:
+                raw = exc.read()
+            finally:
+                exc.close()
+            try:
+                body = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                body = {"error": "http_error", "message": "asset download failed"}
+            if not isinstance(body, dict):
+                body = {"error": "http_error"}
+            raise NativeApiError(exc.code, body, elapsed_ms=elapsed_ms) from exc
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
 
 def find_checkpoint(value: Any, checkpoint_id: str) -> dict[str, Any] | None:
     if isinstance(value, dict):
@@ -199,6 +382,184 @@ def media_type(path: Path) -> str:
         ".csv": "text/csv",
         ".tsv": "text/tab-separated-values",
     }.get(path.suffix.casefold(), "text/plain")
+
+
+def encode_multipart(
+    fields: list[tuple[str, str]],
+    files: list[tuple[str, Path]],
+) -> tuple[str, bytes]:
+    seed = "\0".join(
+        [*(f"{key}={value}" for key, value in fields), *(str(path) for _, path in files)]
+    )
+    boundary = f"carrystate-eval-{hashlib.sha256(seed.encode()).hexdigest()[:32]}"
+    output = bytearray()
+    for name, value in fields:
+        output.extend(f"--{boundary}\r\n".encode())
+        output.extend(
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode()
+        )
+        output.extend(value.encode())
+        output.extend(b"\r\n")
+    for logical_path, path in files:
+        media = mimetypes.guess_type(logical_path)[0] or "application/octet-stream"
+        output.extend(f"--{boundary}\r\n".encode())
+        output.extend(b'Content-Disposition: form-data; name="path"\r\n\r\n')
+        output.extend(logical_path.encode("utf-8"))
+        output.extend(b"\r\n")
+        output.extend(f"--{boundary}\r\n".encode())
+        output.extend(
+            (
+                'Content-Disposition: form-data; name="file"; '
+                f'filename="{path.name}"\r\n'
+            ).encode()
+        )
+        output.extend(f"Content-Type: {media}\r\n\r\n".encode())
+        output.extend(path.read_bytes())
+        output.extend(b"\r\n")
+    output.extend(f"--{boundary}--\r\n".encode())
+    return f"multipart/form-data; boundary={boundary}", bytes(output)
+
+
+def re_full_sha256(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
+def provision_binary_assets(
+    metadata: dict[str, Any],
+    *,
+    corpus_root: Path,
+    logical_paths: Iterable[str],
+    run_id: str,
+    case_id: str,
+    timeout_seconds: float,
+    describe_binaries: bool = True,
+) -> dict[str, Any]:
+    paths = tuple(sorted(set(logical_paths)))
+    if not paths:
+        return {"files": 0, "bytes": 0, "stage_ref": None}
+    token = str(metadata.get("token") or "")
+    scope = str(metadata.get("authorization_scope") or "")
+    if not token or not scope:
+        raise RuntimeError("binary provisioning requires an issued token and scope")
+    files: list[tuple[str, Path]] = []
+    total_bytes = 0
+    for logical_path in paths:
+        path = corpus_root / logical_path
+        if not path.is_file():
+            raise FileNotFoundError(f"binary evaluation asset is missing: {logical_path}")
+        size = path.stat().st_size
+        if size > 64 * 1024 * 1024:
+            raise ValueError(
+                f"binary evaluation asset requires resumable provisioning: {logical_path}"
+            )
+        total_bytes += size
+        if total_bytes > 64 * 1024 * 1024:
+            raise ValueError("binary evaluation stage exceeds 64 MiB")
+        files.append((logical_path, path))
+    digest = hashlib.sha256()
+    for logical_path, path in files:
+        digest.update(logical_path.encode())
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    stable_import_id = f"eval-binary:{digest.hexdigest()}"
+    client = NativeApiClient(
+        base_url=os.environ.get("STRAYLIGHT_API_URL"),
+        token=token,
+        run_id=run_id,
+        case_id=case_id,
+        timeout=max(120.0, timeout_seconds),
+    )
+    staged = client.request_multipart(
+        "/v1/memory/stage",
+        fields=[
+            ("scope", scope),
+            ("stable_import_id", stable_import_id),
+            ("describe_binaries", str(describe_binaries).lower()),
+        ],
+        files=files,
+    )
+    stage = staged.data
+    stage_ref = str(stage.get("stage_ref") or stage.get("id") or "")
+    if not stage_ref:
+        raise RuntimeError("binary stage response did not include stage_ref")
+    deadline = time.monotonic() + timeout_seconds
+    while str(stage.get("status") or "") not in {"ready", "promoted"}:
+        if str(stage.get("status") or "") in {"failed", "expired", "quarantined"}:
+            raise RuntimeError(f"binary stage ended in {stage.get('status')}: {stage_ref}")
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"binary stage did not become ready: {stage_ref}")
+        time.sleep(0.25)
+        stage = client.get(
+            f"/v1/stages/{urllib.parse.quote(stage_ref, safe=':')}"
+        ).data
+    entries = stage.get("entries")
+    if not isinstance(entries, list):
+        stage = client.get(
+            f"/v1/stages/{urllib.parse.quote(stage_ref, safe=':')}"
+        ).data
+        entries = stage.get("entries")
+    if not isinstance(entries, list) or not entries:
+        raise RuntimeError(f"binary stage has no entries: {stage_ref}")
+    selected = [
+        item["path"]
+        for item in entries
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    ]
+    expected_assets = []
+    for item in entries:
+        if not isinstance(item, dict) or item.get("path") not in paths:
+            continue
+        expected_assets.append({
+            "path": item.get("path"),
+            "asset_ref": item.get("asset_ref"),
+            "version": item.get("asset_version"),
+            "content_hash": item.get("content_hash") or item.get("hash"),
+            "size_bytes": item.get("size_bytes"),
+        })
+    if len(expected_assets) != len(paths) or any(
+        not isinstance(item.get("asset_ref"), str)
+        or not isinstance(item.get("version"), int)
+        or not isinstance(item.get("content_hash"), str)
+        or not isinstance(item.get("size_bytes"), int)
+        for item in expected_assets
+    ):
+        raise RuntimeError(
+            f"binary stage omitted immutable asset identity: {stage_ref}"
+        )
+    promoted = client.post(
+        "/v1/memory/save",
+        {
+            "intent": "binary_evaluation_import",
+            "scope": scope,
+            "root_refs": [],
+            "source_refs": [],
+            "base_corpus_revision": stage.get("base_corpus_revision"),
+            "idempotency_key": f"{stable_import_id}:{case_id}",
+            "items": [
+                {
+                    "action": "create",
+                    "kind": "import_receipt",
+                    "payload": {
+                        "stage_ref": stage_ref,
+                        "selected_entries": selected,
+                    },
+                }
+            ],
+        },
+    )
+    return {
+        "files": len(files),
+        "bytes": total_bytes,
+        "stage_ref": stage_ref,
+        "selected_entries": len(selected),
+        "assets": expected_assets,
+        "descriptions_requested": describe_binaries,
+        "corpus_revision": response_field(
+            promoted,
+            "corpus_revision",
+            "resulting_corpus_revision",
+        ),
+    }
 
 
 def stable_scope(run_id: str, case_id: str) -> str:
@@ -357,17 +718,28 @@ def provision_evaluation(
         initial_delay_seconds=dependency_retry_seconds,
     )
     ready = wait_for_indexes(client, imported, timeout_seconds=timeout_seconds)
-    issued_token = response_field(imported, "credential_token", "token") or client.token
+    issued_token = response_field(imported, "credential_token", "token")
+    issued_scope = response_field(imported, "authorization_scope")
+    if not isinstance(issued_token, str) or not issued_token:
+        raise RuntimeError(
+            "eval import did not issue a case-scoped credential"
+        )
+    if hmac.compare_digest(issued_token, client.token):
+        raise RuntimeError(
+            "eval import returned the parent/admin credential instead of a scoped credential"
+        )
+    if not isinstance(issued_scope, str) or issued_scope != authorization_scope:
+        raise RuntimeError(
+            "eval import did not bind the credential to the exact requested scope"
+        )
     checkpoint_id = response_field(imported, "checkpoint_id", "seed_checkpoint_id")
     corpus_revision = response_field(ready, "corpus_revision", "revision_id") or response_field(
         imported, "corpus_revision", "revision_id"
     )
     base_revision = response_field(imported, "base_corpus_revision", "base_revision")
     return {
-        "authorization_scope": response_field(imported, "authorization_scope") or authorization_scope,
-        "requested_authorization_scope": response_field(
-            imported, "requested_authorization_scope"
-        ) or authorization_scope,
+        "authorization_scope": issued_scope,
+        "requested_authorization_scope": authorization_scope,
         "display_scope": display_scope,
         "access_mode": access_mode,
         "import_id": response_field(imported, "import_id"),
@@ -375,6 +747,7 @@ def provision_evaluation(
         "base_corpus_revision": base_revision,
         "corpus_revision": corpus_revision,
         "token": issued_token,
+        "credential_provenance": "service_issued_case_scope",
         "provisioning": {
             "documents": len(documents),
             "delta_documents": len(deltas),
@@ -400,10 +773,12 @@ def provisioning_matches_run_case(
         metadata.get("requested_authorization_scope")
         or import_response.get("requested_authorization_scope")
     )
+    expected_scope = stable_scope(run_id, case_id)
     return bool(
-        requested_scope == stable_scope(run_id, case_id)
-        and metadata.get("authorization_scope")
+        requested_scope == expected_scope
+        and metadata.get("authorization_scope") == expected_scope
         and metadata.get("token")
+        and metadata.get("credential_provenance") == "service_issued_case_scope"
         and (not require_checkpoint or metadata.get("checkpoint_id"))
     )
 
@@ -417,12 +792,13 @@ def write_native_memory_wrapper(
     run_id: str,
     case_id: str,
     checkpoint_id: str | None = None,
+    script_path: Path | None = None,
 ) -> None:
     task_file = run_dir / "task.txt"
     task_file.write_text(task.rstrip() + "\n", encoding="utf-8")
     arguments = [
         "python3",
-        str(PROJECT_ROOT / "native_memory.py"),
+        str(script_path or PROJECT_ROOT / "native_memory.py"),
         "--state",
         str(run_dir / "native-session.json"),
         "--task-file",

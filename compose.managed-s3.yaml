@@ -1,0 +1,73 @@
+x-managed-s3-environment: &managed-s3-environment
+  STRAYLIGHT_S3_ENDPOINT: ${STRAYLIGHT_S3_ENDPOINT:-}
+  STRAYLIGHT_S3_REGION: ${STRAYLIGHT_S3_REGION:?set STRAYLIGHT_S3_REGION}
+  STRAYLIGHT_S3_BUCKET: ${STRAYLIGHT_S3_BUCKET:?set STRAYLIGHT_S3_BUCKET}
+  STRAYLIGHT_S3_FORCE_PATH_STYLE: ${STRAYLIGHT_S3_FORCE_PATH_STYLE:-false}
+  STRAYLIGHT_S3_CREATE_BUCKET: "false"
+  STRAYLIGHT_S3_ACCESS_KEY: ""
+  STRAYLIGHT_S3_SECRET_KEY: ""
+  STRAYLIGHT_S3_ACCESS_KEY_FILE: ${STRAYLIGHT_S3_ACCESS_KEY_FILE:-}
+  STRAYLIGHT_S3_SECRET_KEY_FILE: ${STRAYLIGHT_S3_SECRET_KEY_FILE:-}
+  STRAYLIGHT_MINIO_ENDPOINT: ""
+  STRAYLIGHT_MINIO_REGION: ""
+  STRAYLIGHT_MINIO_BUCKET: ""
+  STRAYLIGHT_MINIO_ACCESS_KEY: ""
+  STRAYLIGHT_MINIO_SECRET_KEY: ""
+  STRAYLIGHT_MINIO_ACCESS_KEY_FILE: ""
+  STRAYLIGHT_MINIO_SECRET_KEY_FILE: ""
+  # Long-lived keys are never expanded into rendered Compose configuration.
+  # Platforms may mount the two files above or attach a workload identity.
+  AWS_ROLE_ARN: ${AWS_ROLE_ARN:-}
+  AWS_ROLE_SESSION_NAME: ${AWS_ROLE_SESSION_NAME:-}
+  AWS_WEB_IDENTITY_TOKEN_FILE: ${AWS_WEB_IDENTITY_TOKEN_FILE:-}
+  AWS_CONTAINER_CREDENTIALS_RELATIVE_URI: ${AWS_CONTAINER_CREDENTIALS_RELATIVE_URI:-}
+  AWS_CONTAINER_CREDENTIALS_FULL_URI: ${AWS_CONTAINER_CREDENTIALS_FULL_URI:-}
+  AWS_REGION: ${STRAYLIGHT_S3_REGION:?set STRAYLIGHT_S3_REGION}
+  AWS_DEFAULT_REGION: ${STRAYLIGHT_S3_REGION:?set STRAYLIGHT_S3_REGION}
+
+services:
+  # These definitions remain available in compose.yaml for development and
+  # self-hosted recovery. The hosted overlay never activates this profile.
+  minio-permissions:
+    profiles: ["local-object-store"]
+
+  minio:
+    profiles: ["local-object-store"]
+
+  minio-init:
+    profiles: ["local-object-store"]
+
+  migrate:
+    environment:
+      <<: *managed-s3-environment
+    secrets: !override
+      - database_url_rw
+      - database_url_ro
+      - database_url_admin
+      - continuation_signing_key
+      - openai_api_key
+
+  api:
+    environment:
+      <<: *managed-s3-environment
+    secrets: !override
+      - database_url_rw
+      - database_url_ro
+      - continuation_signing_key
+      - openai_api_key
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    environment:
+      <<: *managed-s3-environment
+    secrets: !override
+      - database_url_rw
+      - database_url_ro
+      - database_url_admin
+      - continuation_signing_key
+      - openai_api_key
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully

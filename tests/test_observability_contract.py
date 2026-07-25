@@ -56,8 +56,8 @@ class ObservabilityContractTests(unittest.TestCase):
         child_count = sum(
             len(group["definition"]["widgets"]) for group in groups
         )
-        self.assertEqual(8, len(groups))
-        self.assertGreaterEqual(child_count, 46)
+        self.assertEqual(9, len(groups))
+        self.assertGreaterEqual(child_count, 53)
         variables = {
             variable["name"]: variable["prefix"]
             for variable in self.dashboard["template_variables"]

@@ -14,7 +14,10 @@
 //! the missing isolated token. The signed status URL remains usable in either
 //! case.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::{Mutex, OnceLock},
+};
 
 use axum::{
     Extension, Json,
@@ -42,6 +45,7 @@ const EVAL_SCHEMA: &str = "straylight-eval-import@v1";
 const EFFECTIVE_SCOPE_REF: &str = "scope:root";
 const EMBEDDING_DIMENSIONS: usize = 1_536;
 const EMBEDDING_BATCH_SIZE: usize = 128;
+const MAX_EVAL_EMBEDDING_CACHE_ENTRIES: usize = 10_000;
 const MAX_DOCUMENTS: usize = 5_000;
 const MAX_TOTAL_TEXT_BYTES: usize = 128 * 1024 * 1024;
 const MAX_IDENTIFIER_BYTES: usize = 512;
@@ -64,6 +68,8 @@ const WRITE_CAPABILITIES: &[&str] = &[
 ];
 
 type HmacSha256 = Hmac<Sha256>;
+
+static EVAL_EMBEDDING_CACHE: OnceLock<Mutex<HashMap<String, Vec<f32>>>> = OnceLock::new();
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct EvalImportRequest {
@@ -1037,20 +1043,52 @@ async fn embed_prepared_chunks(
     state: &AppState,
     prepared: &PreparedImport,
 ) -> ApiResult<HashMap<Uuid, Vec<f32>>> {
-    let inputs: Vec<_> = prepared
+    let mut chunks_by_hash: BTreeMap<String, (String, Vec<Uuid>)> = BTreeMap::new();
+    for chunk in prepared
         .documents
         .iter()
         .filter(|document| !document.duplicate)
-        .flat_map(|document| {
-            document
-                .chunks
-                .iter()
-                .map(|chunk| (chunk.id, chunk.content.clone()))
-        })
-        .collect();
-    let mut result = HashMap::with_capacity(inputs.len());
-    for batch in inputs.chunks(EMBEDDING_BATCH_SIZE) {
-        let texts: Vec<String> = batch.iter().map(|(_, text)| text.clone()).collect();
+        .flat_map(|document| &document.chunks)
+    {
+        let entry = chunks_by_hash
+            .entry(chunk.content_hash.clone())
+            .or_insert_with(|| (chunk.content.clone(), Vec::new()));
+        entry.1.push(chunk.id);
+    }
+
+    let provider = state.embedder.provider();
+    let model = state.embedder.model();
+    let cache = EVAL_EMBEDDING_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut result = HashMap::with_capacity(
+        chunks_by_hash
+            .values()
+            .map(|(_, chunk_ids)| chunk_ids.len())
+            .sum(),
+    );
+    let mut missing = Vec::new();
+    {
+        let cached = cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (content_hash, (content, chunk_ids)) in chunks_by_hash {
+            let key = eval_embedding_cache_key(provider, model, &content_hash);
+            if let Some(vector) = cached.get(&key) {
+                for chunk_id in chunk_ids {
+                    result.insert(chunk_id, vector.clone());
+                }
+            } else {
+                missing.push((key, content, chunk_ids));
+            }
+        }
+    }
+    let cache_hits = result.len();
+    let cache_misses: usize = missing
+        .iter()
+        .map(|(_, _, chunk_ids)| chunk_ids.len())
+        .sum();
+
+    for batch in missing.chunks(EMBEDDING_BATCH_SIZE) {
+        let texts: Vec<String> = batch.iter().map(|(_, text, _)| text.clone()).collect();
         let vectors = state.embedder.embed(&texts).await?;
         if vectors.len() != batch.len()
             || vectors
@@ -1061,11 +1099,33 @@ async fn embed_prepared_chunks(
                 "embedding provider returned an unexpected batch shape".to_owned(),
             ));
         }
-        for ((chunk_id, _), vector) in batch.iter().zip(vectors) {
-            result.insert(*chunk_id, vector);
+        let mut cached = cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if cached.len() + batch.len() > MAX_EVAL_EMBEDDING_CACHE_ENTRIES {
+            cached.clear();
+        }
+        for ((key, _, chunk_ids), vector) in batch.iter().zip(vectors) {
+            cached.insert(key.clone(), vector.clone());
+            for chunk_id in chunk_ids {
+                result.insert(*chunk_id, vector.clone());
+            }
         }
     }
+    tracing::debug!(
+        cache_hits,
+        cache_misses,
+        cache_entries = cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len(),
+        "evaluation embedding cache applied"
+    );
     Ok(result)
+}
+
+fn eval_embedding_cache_key(provider: &str, model: &str, content_hash: &str) -> String {
+    format!("{provider}\0{model}\0{content_hash}")
 }
 
 async fn bootstrap_user(
@@ -1776,7 +1836,7 @@ fn manifest_hash(members: &BTreeMap<Uuid, CorpusMember>) -> String {
         hasher.update(member.version.unwrap_or(0).to_be_bytes());
         hasher.update([0]);
         hasher.update(member.disposition.as_bytes());
-        hasher.update([b'\n']);
+        hasher.update(b"\n");
     }
     hex::encode(hasher.finalize())
 }
@@ -1993,6 +2053,23 @@ mod tests {
         let same_token = derive_bearer_token(TEST_SECRET, &isolated_external_ref(&same)).unwrap();
         assert_eq!(first_token, same_token);
         assert!(first_token.starts_with("seval_"));
+    }
+
+    #[test]
+    fn evaluation_embedding_cache_key_binds_provider_model_and_content() {
+        let baseline = eval_embedding_cache_key("openai", "text-embedding-3-small", "abc");
+        assert_ne!(
+            baseline,
+            eval_embedding_cache_key("other", "text-embedding-3-small", "abc")
+        );
+        assert_ne!(
+            baseline,
+            eval_embedding_cache_key("openai", "text-embedding-3-large", "abc")
+        );
+        assert_ne!(
+            baseline,
+            eval_embedding_cache_key("openai", "text-embedding-3-small", "def")
+        );
     }
 
     #[test]

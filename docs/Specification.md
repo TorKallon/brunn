@@ -293,6 +293,98 @@ source/document/chunk records, deduplicates exact content without merging
 identity, advances one corpus revision, records every entry disposition, and
 returns a durable import receipt. Replays converge.
 
+### Native Assets
+
+The source-native file is authoritative. Its asset version records exact
+SHA-256, byte length, media type, immutable object key, previous version, and
+storage metadata. Updating bytes at the same imported path advances the same
+logical asset; two paths containing equal bytes remain two logical assets and
+may reuse one physical content-addressed object.
+
+Read credentials may list, inspect, and stream only asset versions reachable
+from their unexpired, credential-bound, revision-pinned session. Downloads
+support one bounded byte range, return the full-object hash and exact version
+headers, force attachment disposition, disable caching, and set
+`X-Content-Type-Options: nosniff`. Write capability is never required for
+download, and read-only credentials cannot create or complete uploads.
+
+Opaque native versions receive generated Markdown when descriptions are
+enabled. The description records original path, exact asset reference and
+version, hash, size, method, confidence, and limitations. Deterministic native
+profiling is the bounded fallback when model description is unavailable.
+Linked note excerpts are bounded, deduplicated, and labeled untrusted
+user-authored context. Generated description evidence is
+`derived_non_authoritative`; it is searchable but excluded from authoritative
+claim formation and dreaming source material.
+
+Multipart upload sessions are scoped to one user, scope, and creating
+credential. Each part is 5 to 64 MiB, has an exact SHA-256, and may be replayed
+only with identical bytes. The completed object is streamed through whole-file
+size and SHA-256 verification before canonical promotion. Ambiguous completion
+and promotion are retryable; a byte mismatch is terminal. Sessions expire
+after a bounded interval and are aborted on expiry or account deletion.
+All canonical-object writes, committed references, and purges coordinate under
+one per-user storage lock. Cleanup runs only after rollback and preserves a key
+referenced by an asset version or another completed upload. Opaque promotion
+verification is streaming and bounded independently of the declared asset
+size.
+
+### Vault Import And Export
+
+Import walks without following symbolic links or accepting special files,
+rejects traversal and case/Unicode-normalized path collisions, and sorts one
+manifest containing path, SHA-256, byte length, MIME type, modification time,
+portable mode, ignored entries, and bounded attachment context. Files are
+rechecked against their inventoried device, inode, size, and modification time
+before upload. Large files use the resumable path. Every promoted source and
+expected companion is verified by current path, hash, size, and description
+availability.
+
+Any path containing `.carrystate/generated/descriptions/` is a reserved
+system derivative and is ignored during inventory; the current companion is
+regenerated from the authoritative native version. An exact repeat returns
+`status: unchanged` and performs no authoritative write. Portable export
+metadata can override rounded local MIME, modification time, or mode values
+only when the file's exact hash and size match its manifest entry and
+`CHECKSUMS.sha256` authenticates that manifest. A metadata-only change advances
+the logical asset version while reusing the same physical content-addressed
+object. Portable mode is restricted to ordinary `0o777` permission bits;
+setuid, setgid, and sticky bits are never accepted or restored.
+
+Absence is not deletion. Mirror mode compares the complete current
+stable-import path set with the local manifest, returns a no-write preview and
+confirmation hash, and removes paths only when that exact hash is supplied.
+An explicitly confirmed empty snapshot may remove every current imported path.
+
+Export is separate from account disaster-recovery export. It pins one session
+revision and writes exact current source bytes under `sources/`, generated
+companions under `workspace/assets/`, and deterministic first-class record
+Markdown under `workspace/memory/`. Optional history is versioned under
+`history/`. Export verifies every byte count and SHA-256, restores source
+modification time and mode, rejects unsafe/colliding paths, writes a machine
+manifest plus `CHECKSUMS.sha256`, fsyncs the tree, and atomically publishes the
+destination. It fails rather than mixing revisions or silently omitting a
+requested file.
+
+### Account Portability And Erasure
+
+Account disaster-recovery export is a complete, snapshot-consistent archive of
+the user's database rows and every referenced exact object version. Building
+the archive uses a bounded temporary allowance separate from durable storage
+quota so a user near quota can still leave the service. Download requires an
+immutable provider version ID and verifies the recorded size and SHA-256 while
+streaming. Deleting an export commits a recoverable `deleting` state before
+object purge and removes the stored locator only after purge succeeds.
+
+Account deletion immediately blocks writes, preserves a status-only credential,
+purges canonical rows and every object version under a per-user storage fence,
+and then waits for retained backup erasure. Elapsed retention time is necessary
+but not sufficient for completion. A checksummed operator prune receipt must
+prove that the oldest retained verified backup was created after canonical
+purge. The completion transition and database constraint both require that
+proof, and the receipt digest, source, verification time, and watermark remain
+auditable.
+
 ## Checkpoints
 
 A checkpoint records session, parent checkpoint, corpus revision, ordered

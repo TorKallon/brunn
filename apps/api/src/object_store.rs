@@ -9,9 +9,12 @@ use aws_config::{BehaviorVersion, Region};
 use aws_sdk_s3::{
     Client,
     config::{Credentials, SharedCredentialsProvider},
+    error::ProvideErrorMetadata,
     primitives::ByteStream,
+    types::{CompletedMultipartUpload, CompletedPart},
 };
 use bytes::Bytes;
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
@@ -21,6 +24,8 @@ use crate::{
     error::{ApiError, ApiResult},
     models::UserId,
 };
+
+pub mod backup;
 
 const MAX_STAGE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ARCHIVE_FILES: usize = 2_000;
@@ -33,6 +38,7 @@ const MAX_ARCHIVE_INSPECTION_TIME: Duration = Duration::from_secs(5);
 pub struct ObjectStore {
     client: Client,
     bucket: String,
+    create_bucket: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -40,6 +46,7 @@ pub struct StoredBlob {
     pub sha256: String,
     pub size_bytes: usize,
     pub object_key: String,
+    pub object_version_id: Option<String>,
     pub created: bool,
 }
 
@@ -48,6 +55,24 @@ pub struct StoredFile {
     pub sha256: String,
     pub size_bytes: u64,
     pub object_key: String,
+    pub object_version_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PromotedUpload {
+    pub file: StoredFile,
+    pub temporary_object_version_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MultipartUpload {
+    pub object_key: String,
+    pub upload_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct UploadedPart {
+    pub etag: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -59,6 +84,8 @@ pub struct ObjectStoreQualification {
     pub metadata_round_trip: bool,
     pub object_version_ids: bool,
     pub delete_markers: bool,
+    pub complete_version_inventory: bool,
+    pub multipart_upload_inventory: bool,
     pub exact_version_purge: PurgeResult,
     pub prefix_version_purge: PurgeResult,
 }
@@ -67,6 +94,17 @@ pub struct ObjectStream {
     pub body: ByteStream,
     pub content_length: Option<i64>,
     pub content_type: Option<String>,
+    pub content_range: Option<String>,
+    pub etag: Option<String>,
+    pub object_version_id: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObjectVersionCandidate {
+    pub object_key: String,
+    pub object_version_id: String,
+    pub last_modified_unix_seconds: i64,
+    pub delete_marker: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
@@ -114,38 +152,69 @@ pub struct ArchiveInspection {
 
 impl ObjectStore {
     pub async fn new(config: &Config) -> ApiResult<Self> {
-        let credentials = Credentials::new(
-            config.s3_access_key.clone(),
-            config.s3_secret_key.clone(),
-            None,
-            None,
-            "straylight-config",
-        );
-        let shared = aws_config::defaults(BehaviorVersion::latest())
-            .region(Region::new(config.s3_region.clone()))
-            .credentials_provider(SharedCredentialsProvider::new(credentials))
-            .load()
-            .await;
-        let s3_config = aws_sdk_s3::config::Builder::from(&shared)
-            .endpoint_url(&config.s3_endpoint)
-            .force_path_style(true)
-            .build();
+        let mut loader = aws_config::defaults(BehaviorVersion::latest())
+            .region(Region::new(config.s3_region.clone()));
+        if let (Some(access_key), Some(secret_key)) = (&config.s3_access_key, &config.s3_secret_key)
+        {
+            let credentials = Credentials::new(
+                access_key.clone(),
+                secret_key.clone(),
+                None,
+                None,
+                "straylight-config",
+            );
+            loader = loader.credentials_provider(SharedCredentialsProvider::new(credentials));
+        }
+        let shared = loader.load().await;
+        let mut s3_config =
+            aws_sdk_s3::config::Builder::from(&shared).force_path_style(config.s3_force_path_style);
+        if let Some(endpoint) = &config.s3_endpoint {
+            s3_config = s3_config.endpoint_url(endpoint);
+        }
         Ok(Self {
-            client: Client::from_conf(s3_config),
+            client: Client::from_conf(s3_config.build()),
             bucket: config.s3_bucket.clone(),
+            create_bucket: config.s3_create_bucket,
         })
     }
 
     pub async fn ensure_bucket(&self) -> ApiResult<()> {
         let started = Instant::now();
-        let missing = self
-            .client
-            .head_bucket()
-            .bucket(&self.bucket)
-            .send()
-            .await
-            .is_err();
+        let missing = match self.client.head_bucket().bucket(&self.bucket).send().await {
+            Ok(_) => false,
+            Err(error)
+                if error
+                    .raw_response()
+                    .is_some_and(|response| response.status().as_u16() == 404) =>
+            {
+                true
+            }
+            Err(error) => {
+                metrics::counter!(
+                    "object_store.operations",
+                    "operation" => "ensure_bucket",
+                    "result" => "error",
+                    "created" => "false"
+                )
+                .increment(1);
+                return Err(ApiError::Internal(format!(
+                    "could not inspect object bucket: {error}"
+                )));
+            }
+        };
         if missing {
+            if !self.create_bucket {
+                metrics::counter!(
+                    "object_store.operations",
+                    "operation" => "ensure_bucket",
+                    "result" => "error",
+                    "created" => "false"
+                )
+                .increment(1);
+                return Err(ApiError::configuration(
+                    "object bucket is missing and STRAYLIGHT_S3_CREATE_BUCKET is false",
+                ));
+            }
             self.client
                 .create_bucket()
                 .bucket(&self.bucket)
@@ -168,6 +237,53 @@ impl ObjectStore {
             "result" => "success"
         )
         .record(started.elapsed().as_secs_f64() * 1_000.0);
+        Ok(())
+    }
+
+    pub async fn ensure_versioned_bucket(&self) -> ApiResult<()> {
+        self.ensure_bucket().await?;
+        let versioning = self
+            .client
+            .get_bucket_versioning()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::configuration(format!(
+                    "could not verify required object bucket versioning: {error}"
+                ))
+            })?;
+        let status = versioning
+            .status()
+            .map(|value| value.as_str())
+            .unwrap_or("Unset");
+        if status != "Enabled" {
+            return Err(ApiError::configuration(format!(
+                "object bucket versioning must be Enabled; status={status}"
+            )));
+        }
+        self.client
+            .list_object_versions()
+            .bucket(&self.bucket)
+            .max_keys(1)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::configuration(format!(
+                    "object storage must allow complete version inventory: {error}"
+                ))
+            })?;
+        self.client
+            .list_multipart_uploads()
+            .bucket(&self.bucket)
+            .max_uploads(1)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::configuration(format!(
+                    "object storage must allow multipart upload inventory: {error}"
+                ))
+            })?;
         Ok(())
     }
 
@@ -201,8 +317,11 @@ impl ObjectStore {
             .if_none_match("*")
             .send()
             .await;
-        let created = match result {
-            Ok(_) => true,
+        let (created, object_version_id) = match result {
+            Ok(output) => (
+                true,
+                exact_object_version_id(output.version_id(), "object upload")?,
+            ),
             Err(error)
                 if error
                     .raw_response()
@@ -232,7 +351,13 @@ impl ObjectStore {
                         "content-addressed object metadata does not match its key".to_owned(),
                     ));
                 }
-                false
+                (
+                    false,
+                    exact_object_version_id(
+                        existing.version_id(),
+                        "deduplicated object verification",
+                    )?,
+                )
             }
             Err(error) => {
                 metrics::counter!(
@@ -262,11 +387,398 @@ impl ObjectStore {
             sha256: format!("sha256:{digest}"),
             size_bytes: bytes.len(),
             object_key: key,
+            object_version_id: Some(object_version_id),
             created,
         })
     }
 
+    pub async fn create_multipart_upload(
+        &self,
+        user_id: UserId,
+        upload_ref: uuid::Uuid,
+        content_type: &str,
+        expected_sha256: &str,
+    ) -> ApiResult<MultipartUpload> {
+        let digest = expected_sha256.trim_start_matches("sha256:");
+        let object_key = format!("{}/uploads/{upload_ref}", user_id.0);
+        let output = self
+            .client
+            .create_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&object_key)
+            .content_type(content_type)
+            .metadata("sha256", digest)
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(?error, "multipart upload creation failed");
+                ApiError::Internal("could not create resumable object upload".to_owned())
+            })?;
+        let upload_id = output
+            .upload_id()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                ApiError::Internal("object storage returned no multipart upload ID".to_owned())
+            })?
+            .to_owned();
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "multipart_create",
+            "result" => "success"
+        )
+        .increment(1);
+        Ok(MultipartUpload {
+            object_key,
+            upload_id,
+        })
+    }
+
+    pub async fn upload_multipart_part(
+        &self,
+        object_key: &str,
+        upload_id: &str,
+        part_number: i32,
+        bytes: Bytes,
+    ) -> ApiResult<UploadedPart> {
+        let size_bytes = bytes.len();
+        let output = self
+            .client
+            .upload_part()
+            .bucket(&self.bucket)
+            .key(object_key)
+            .upload_id(upload_id)
+            .part_number(part_number)
+            .content_length(i64::try_from(size_bytes).unwrap_or(i64::MAX))
+            .body(ByteStream::from(bytes))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(?error, part_number, "multipart part upload failed");
+                ApiError::Internal("could not persist resumable upload part".to_owned())
+            })?;
+        let etag = output
+            .e_tag()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                ApiError::Internal("object storage returned no multipart part ETag".to_owned())
+            })?
+            .to_owned();
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "multipart_part",
+            "result" => "success"
+        )
+        .increment(1);
+        metrics::histogram!("object_store.bytes", "operation" => "multipart_part")
+            .record(size_bytes as f64);
+        Ok(UploadedPart { etag })
+    }
+
+    pub async fn complete_multipart_upload(
+        &self,
+        object_key: &str,
+        upload_id: &str,
+        parts: &[(i32, String)],
+    ) -> ApiResult<Option<String>> {
+        let completed_parts = parts
+            .iter()
+            .map(|(part_number, etag)| {
+                CompletedPart::builder()
+                    .part_number(*part_number)
+                    .e_tag(etag)
+                    .build()
+            })
+            .collect();
+        let upload = CompletedMultipartUpload::builder()
+            .set_parts(Some(completed_parts))
+            .build();
+        let output = self
+            .client
+            .complete_multipart_upload()
+            .bucket(&self.bucket)
+            .key(object_key)
+            .upload_id(upload_id)
+            .multipart_upload(upload)
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(?error, "multipart upload completion failed");
+                ApiError::Internal("could not complete resumable object upload".to_owned())
+            })?;
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "multipart_complete",
+            "result" => "success"
+        )
+        .increment(1);
+        Ok(Some(exact_object_version_id(
+            output.version_id(),
+            "multipart upload completion",
+        )?))
+    }
+
+    pub async fn abort_multipart_upload(&self, object_key: &str, upload_id: &str) -> ApiResult<()> {
+        let result = self
+            .client
+            .abort_multipart_upload()
+            .bucket(&self.bucket)
+            .key(object_key)
+            .upload_id(upload_id)
+            .send()
+            .await;
+        if let Err(error) = result {
+            if error
+                .as_service_error()
+                .and_then(ProvideErrorMetadata::code)
+                == Some("NoSuchUpload")
+            {
+                return Ok(());
+            }
+            return Err({
+                tracing::warn!(?error, "multipart upload abort failed");
+                ApiError::Internal("could not abort resumable object upload".to_owned())
+            });
+        }
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "multipart_abort",
+            "result" => "success"
+        )
+        .increment(1);
+        Ok(())
+    }
+
+    pub async fn promote_verified_upload(
+        &self,
+        user_id: UserId,
+        temporary_object_key: &str,
+        temporary_object_version_id: Option<&str>,
+        expected_sha256: &str,
+        expected_size_bytes: u64,
+    ) -> ApiResult<PromotedUpload> {
+        let digest = expected_sha256.trim_start_matches("sha256:");
+        let actual = self
+            .hash_stream(temporary_object_key, temporary_object_version_id)
+            .await?;
+        let actual_object_version_id = exact_object_version_id(
+            actual.object_version_id.as_deref(),
+            "completed multipart source verification",
+        )?;
+        if actual.sha256 != digest || actual.size_bytes != expected_size_bytes {
+            metrics::counter!(
+                "object_store.integrity_failures",
+                "failure" => "multipart_content_mismatch"
+            )
+            .increment(1);
+            return Err(ApiError::conflict(
+                "content_hash_mismatch",
+                "uploaded bytes do not match the declared size and SHA-256",
+                serde_json::json!({
+                    "expected_size_bytes": expected_size_bytes,
+                    "received_size_bytes": actual.size_bytes
+                }),
+            ));
+        }
+        let canonical_key = format!("{}/blobs/{digest}", user_id.0);
+        let existing = self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(&canonical_key)
+            .send()
+            .await;
+        let canonical_object_version_id = match existing {
+            Ok(head) => {
+                let stored_digest = head
+                    .metadata()
+                    .and_then(|metadata| metadata.get("sha256"))
+                    .map(String::as_str);
+                if head.content_length()
+                    != Some(i64::try_from(expected_size_bytes).unwrap_or(i64::MAX))
+                    || stored_digest != Some(digest)
+                {
+                    return Err(ApiError::Internal(
+                        "content-addressed object metadata does not match its key".to_owned(),
+                    ));
+                }
+                Some(exact_object_version_id(
+                    head.version_id(),
+                    "existing canonical object verification",
+                )?)
+            }
+            Err(error)
+                if error
+                    .raw_response()
+                    .is_some_and(|response| response.status().as_u16() == 404) =>
+            {
+                let copy_source = versioned_copy_source(
+                    &self.bucket,
+                    temporary_object_key,
+                    Some(&actual_object_version_id),
+                );
+                let copied = self
+                    .client
+                    .copy_object()
+                    .bucket(&self.bucket)
+                    .key(&canonical_key)
+                    .copy_source(copy_source)
+                    .send()
+                    .await
+                    .map_err(|copy_error| {
+                        tracing::warn!(?copy_error, "verified object promotion failed");
+                        ApiError::Internal("could not promote verified resumable upload".to_owned())
+                    })?;
+                let copied_version_id =
+                    exact_object_version_id(copied.version_id(), "canonical object promotion")?;
+                let head = self
+                    .client
+                    .head_object()
+                    .bucket(&self.bucket)
+                    .key(&canonical_key)
+                    .version_id(&copied_version_id)
+                    .send()
+                    .await
+                    .map_err(|head_error| {
+                        tracing::warn!(?head_error, "promoted object verification failed");
+                        ApiError::Internal("could not verify promoted resumable upload".to_owned())
+                    })?;
+                let stored_digest = head
+                    .metadata()
+                    .and_then(|metadata| metadata.get("sha256"))
+                    .map(String::as_str);
+                if head.content_length()
+                    != Some(i64::try_from(expected_size_bytes).unwrap_or(i64::MAX))
+                    || stored_digest != Some(digest)
+                {
+                    return Err(ApiError::Internal(
+                        "promoted object metadata failed integrity verification".to_owned(),
+                    ));
+                }
+                ensure_requested_version(
+                    Some(&copied_version_id),
+                    head.version_id(),
+                    "promoted object verification",
+                )?;
+                Some(copied_version_id)
+            }
+            Err(error) => {
+                tracing::warn!(?error, "content-addressed object lookup failed");
+                return Err(ApiError::Internal(
+                    "could not check resumable upload destination".to_owned(),
+                ));
+            }
+        };
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "multipart_promote",
+            "result" => "success"
+        )
+        .increment(1);
+        Ok(PromotedUpload {
+            temporary_object_version_id: Some(actual_object_version_id),
+            file: StoredFile {
+                sha256: format!("sha256:{digest}"),
+                size_bytes: expected_size_bytes,
+                object_key: canonical_key,
+                object_version_id: canonical_object_version_id,
+            },
+        })
+    }
+
+    pub async fn delete_object(&self, object_key: &str) -> ApiResult<()> {
+        self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(object_key)
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(?error, "object delete failed");
+                ApiError::Internal("could not remove object".to_owned())
+            })?;
+        Ok(())
+    }
+
+    async fn hash_stream(
+        &self,
+        object_key: &str,
+        object_version_id: Option<&str>,
+    ) -> ApiResult<StoredFile> {
+        let stream = self
+            .get_stream_version(object_key, object_version_id)
+            .await?;
+        let returned_version_id = stream.object_version_id.clone();
+        let mut reader = stream.body.into_async_read();
+        let mut hasher = Sha256::new();
+        let mut size_bytes = 0_u64;
+        let mut buffer = vec![0_u8; 1024 * 1024];
+        loop {
+            let count = reader.read(&mut buffer).await.map_err(|error| {
+                ApiError::Internal(format!("could not verify uploaded object: {error}"))
+            })?;
+            if count == 0 {
+                break;
+            }
+            size_bytes = size_bytes
+                .checked_add(u64::try_from(count).unwrap_or(u64::MAX))
+                .ok_or_else(|| ApiError::Internal("uploaded object size overflow".to_owned()))?;
+            hasher.update(&buffer[..count]);
+        }
+        Ok(StoredFile {
+            sha256: hex::encode(hasher.finalize()),
+            size_bytes,
+            object_key: object_key.to_owned(),
+            object_version_id: returned_version_id,
+        })
+    }
+
+    pub async fn verify_object_content(
+        &self,
+        object_key: &str,
+        expected_sha256: &str,
+        expected_size_bytes: u64,
+    ) -> ApiResult<()> {
+        self.verify_object_content_version(object_key, None, expected_sha256, expected_size_bytes)
+            .await
+    }
+
+    pub async fn verify_object_content_version(
+        &self,
+        object_key: &str,
+        object_version_id: Option<&str>,
+        expected_sha256: &str,
+        expected_size_bytes: u64,
+    ) -> ApiResult<()> {
+        let actual = self.hash_stream(object_key, object_version_id).await?;
+        if actual.sha256 != expected_sha256.trim_start_matches("sha256:")
+            || actual.size_bytes != expected_size_bytes
+        {
+            metrics::counter!(
+                "object_store.integrity_failures",
+                "failure" => "streamed_content_mismatch"
+            )
+            .increment(1);
+            return Err(ApiError::conflict(
+                "content_hash_mismatch",
+                "stored object no longer matches its declared size and SHA-256",
+                serde_json::json!({
+                    "expected_size_bytes": expected_size_bytes,
+                    "received_size_bytes": actual.size_bytes
+                }),
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn get(&self, key: &str) -> ApiResult<Bytes> {
+        self.get_version(key, None).await
+    }
+
+    pub async fn get_version(
+        &self,
+        key: &str,
+        object_version_id: Option<&str>,
+    ) -> ApiResult<Bytes> {
         let started = Instant::now();
         let result = async {
             let output = self
@@ -274,11 +786,14 @@ impl ObjectStore {
                 .get_object()
                 .bucket(&self.bucket)
                 .key(key)
+                .set_version_id(object_version_id.map(ToOwned::to_owned))
                 .send()
                 .await
                 .map_err(|error| {
-                    ApiError::not_found("asset_not_found", &format!("{key}: {error}"))
+                    tracing::warn!(?error, "object-store read failed");
+                    ApiError::not_found("asset_not_found", "asset")
                 })?;
+            ensure_requested_version(object_version_id, output.version_id(), "object-store read")?;
             output
                 .body
                 .collect()
@@ -307,19 +822,181 @@ impl ObjectStore {
         result
     }
 
-    pub async fn get_stream(&self, key: &str) -> ApiResult<ObjectStream> {
+    pub async fn verify_object_identity(
+        &self,
+        key: &str,
+        expected_sha256: &str,
+        expected_size_bytes: u64,
+    ) -> ApiResult<()> {
+        self.verify_object_identity_version(key, None, expected_sha256, expected_size_bytes)
+            .await
+    }
+
+    pub async fn resolve_object_version_id(
+        &self,
+        key: &str,
+        object_version_id: Option<&str>,
+    ) -> ApiResult<Option<String>> {
+        let head = self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .set_version_id(object_version_id.map(ToOwned::to_owned))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(?error, "object version lookup failed");
+                ApiError::not_found("asset_not_found", "asset")
+            })?;
+        ensure_requested_version(
+            object_version_id,
+            head.version_id(),
+            "object version lookup",
+        )?;
+        Ok(head.version_id().map(ToOwned::to_owned))
+    }
+
+    pub async fn verify_object_identity_version(
+        &self,
+        key: &str,
+        object_version_id: Option<&str>,
+        expected_sha256: &str,
+        expected_size_bytes: u64,
+    ) -> ApiResult<()> {
+        let head = self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .set_version_id(object_version_id.map(ToOwned::to_owned))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(?error, "object identity lookup failed");
+                ApiError::not_found("asset_not_found", "asset")
+            })?;
+        ensure_requested_version(
+            object_version_id,
+            head.version_id(),
+            "object identity lookup",
+        )?;
+        let stored_digest = head
+            .metadata()
+            .and_then(|metadata| metadata.get("sha256"))
+            .map(String::as_str);
+        let expected_digest = expected_sha256.trim_start_matches("sha256:");
+        if head.content_length() != Some(i64::try_from(expected_size_bytes).unwrap_or(i64::MAX))
+            || stored_digest != Some(expected_digest)
+        {
+            metrics::counter!(
+                "object_store.integrity_failures",
+                "failure" => "head_identity_mismatch"
+            )
+            .increment(1);
+            return Err(ApiError::conflict(
+                "content_hash_mismatch",
+                "object metadata does not match the immutable asset identity",
+                serde_json::json!({}),
+            ));
+        }
+        Ok(())
+    }
+
+    pub async fn get_prefix(&self, key: &str, max_bytes: usize) -> ApiResult<Bytes> {
+        self.get_prefix_version(key, None, max_bytes).await
+    }
+
+    pub async fn get_prefix_version(
+        &self,
+        key: &str,
+        object_version_id: Option<&str>,
+        max_bytes: usize,
+    ) -> ApiResult<Bytes> {
+        if max_bytes == 0 {
+            return Ok(Bytes::new());
+        }
+        let end = max_bytes.saturating_sub(1);
         let output = self
             .client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
+            .range(format!("bytes=0-{end}"))
+            .set_version_id(object_version_id.map(ToOwned::to_owned))
             .send()
             .await
-            .map_err(|error| ApiError::not_found("asset_not_found", &format!("{key}: {error}")))?;
+            .map_err(|error| {
+                tracing::warn!(?error, "object prefix read failed");
+                ApiError::not_found("asset_not_found", "asset")
+            })?;
+        ensure_requested_version(object_version_id, output.version_id(), "object prefix read")?;
+        let bytes = output
+            .body
+            .collect()
+            .await
+            .map_err(|error| ApiError::Internal(format!("object prefix download failed: {error}")))?
+            .into_bytes();
+        if bytes.len() > max_bytes {
+            return Err(ApiError::Internal(
+                "object storage returned more prefix bytes than requested".to_owned(),
+            ));
+        }
+        Ok(bytes)
+    }
+
+    pub async fn get_stream(&self, key: &str) -> ApiResult<ObjectStream> {
+        self.get_stream_version(key, None).await
+    }
+
+    pub async fn get_stream_version(
+        &self,
+        key: &str,
+        object_version_id: Option<&str>,
+    ) -> ApiResult<ObjectStream> {
+        self.get_stream_range_version(key, object_version_id, None)
+            .await
+    }
+
+    pub async fn get_stream_range(
+        &self,
+        key: &str,
+        range: Option<&str>,
+    ) -> ApiResult<ObjectStream> {
+        self.get_stream_range_version(key, None, range).await
+    }
+
+    pub async fn get_stream_range_version(
+        &self,
+        key: &str,
+        object_version_id: Option<&str>,
+        range: Option<&str>,
+    ) -> ApiResult<ObjectStream> {
+        let mut request = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .set_version_id(object_version_id.map(ToOwned::to_owned));
+        if let Some(range) = range {
+            request = request.range(range);
+        }
+        let output = request.send().await.map_err(|error| {
+            tracing::warn!(?error, "object-store streaming read failed");
+            ApiError::not_found("asset_not_found", "asset")
+        })?;
+        ensure_requested_version(
+            object_version_id,
+            output.version_id(),
+            "object-store streaming read",
+        )?;
         Ok(ObjectStream {
             body: output.body,
             content_length: output.content_length,
             content_type: output.content_type,
+            content_range: output.content_range,
+            etag: output.e_tag,
+            object_version_id: output.version_id,
         })
     }
 
@@ -333,7 +1010,8 @@ impl ObjectStore {
         let body = ByteStream::from_path(path).await.map_err(|error| {
             ApiError::Internal(format!("could not open object upload file: {error}"))
         })?;
-        self.client
+        let output = self
+            .client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
@@ -356,18 +1034,35 @@ impl ObjectStore {
             sha256: format!("sha256:{digest}"),
             size_bytes,
             object_key: key.to_owned(),
+            object_version_id: output.version_id().map(ToOwned::to_owned),
         })
     }
 
     pub async fn download_to_path(&self, key: &str, path: &Path) -> ApiResult<StoredFile> {
+        self.download_version_to_path(key, None, path).await
+    }
+
+    pub async fn download_version_to_path(
+        &self,
+        key: &str,
+        object_version_id: Option<&str>,
+        path: &Path,
+    ) -> ApiResult<StoredFile> {
         let output = self
             .client
             .get_object()
             .bucket(&self.bucket)
             .key(key)
+            .set_version_id(object_version_id.map(ToOwned::to_owned))
             .send()
             .await
             .map_err(|error| ApiError::not_found("asset_not_found", &format!("{key}: {error}")))?;
+        ensure_requested_version(
+            object_version_id,
+            output.version_id(),
+            "object export download",
+        )?;
+        let returned_version_id = output.version_id().map(ToOwned::to_owned);
         let mut reader = output.body.into_async_read();
         let mut file = tokio::fs::File::create(path).await.map_err(|error| {
             ApiError::Internal(format!("could not create export file: {error}"))
@@ -383,6 +1078,7 @@ impl ObjectStore {
             sha256: format!("sha256:{digest}"),
             size_bytes,
             object_key: key.to_owned(),
+            object_version_id: returned_version_id,
         })
     }
 
@@ -399,6 +1095,30 @@ impl ObjectStore {
                     format!("object storage is unavailable: {error}"),
                 )
             })?;
+        let versioning = self
+            .client
+            .get_bucket_versioning()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::public(
+                    http::StatusCode::SERVICE_UNAVAILABLE,
+                    "dependency_unavailable",
+                    format!("object storage versioning cannot be verified: {error}"),
+                )
+            })?;
+        let status = versioning
+            .status()
+            .map(|value| value.as_str())
+            .unwrap_or("Unset");
+        if status != "Enabled" {
+            return Err(ApiError::public(
+                http::StatusCode::SERVICE_UNAVAILABLE,
+                "dependency_unavailable",
+                format!("object storage versioning is not enabled: status={status}"),
+            ));
+        }
         Ok(())
     }
 
@@ -422,6 +1142,28 @@ impl ObjectStore {
                 "object store qualification requires bucket versioning; status={versioning_status}"
             )));
         }
+        self.client
+            .list_object_versions()
+            .bucket(&self.bucket)
+            .max_keys(1)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::Internal(format!(
+                    "object store qualification requires complete version inventory access: {error}"
+                ))
+            })?;
+        self.client
+            .list_multipart_uploads()
+            .bucket(&self.bucket)
+            .max_uploads(1)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::Internal(format!(
+                    "object store qualification requires multipart inventory access: {error}"
+                ))
+            })?;
 
         let run_id = uuid::Uuid::now_v7();
         let user_id = UserId(run_id);
@@ -438,15 +1180,28 @@ impl ObjectStore {
                     "first conditional object create was not reported as created".to_owned(),
                 ));
             }
+            let first_object_version_id =
+                first.object_version_id.as_deref().ok_or_else(|| {
+                    ApiError::Internal(
+                        "conditional object create returned no object version ID".to_owned(),
+                    )
+                })?;
             let second = self
                 .put_user_blob(user_id, Some("text/plain"), payload.clone())
                 .await?;
-            if second.created || second.object_key != first.object_key {
+            if second.created
+                || second.object_key != first.object_key
+                || second.object_version_id.as_deref() != Some(first_object_version_id)
+            {
                 return Err(ApiError::Internal(
                     "repeated content did not deduplicate through conditional create".to_owned(),
                 ));
             }
-            if self.get(&first.object_key).await? != payload {
+            if self
+                .get_version(&first.object_key, Some(first_object_version_id))
+                .await?
+                != payload
+            {
                 return Err(ApiError::Internal(
                     "object payload did not round-trip exactly".to_owned(),
                 ));
@@ -597,6 +1352,8 @@ impl ObjectStore {
             metadata_round_trip,
             object_version_ids,
             delete_markers,
+            complete_version_inventory: true,
+            multipart_upload_inventory: true,
             exact_version_purge,
             prefix_version_purge,
         })
@@ -705,6 +1462,132 @@ impl ObjectStore {
             versions_deleted: versions.len(),
             delete_markers_deleted: markers.len(),
         })
+    }
+
+    pub async fn stale_object_versions(
+        &self,
+        before_unix_seconds: i64,
+        limit: usize,
+    ) -> ApiResult<Vec<ObjectVersionCandidate>> {
+        let mut candidates = Vec::new();
+        let mut key_marker = None;
+        let mut version_id_marker = None;
+        loop {
+            let mut request = self.client.list_object_versions().bucket(&self.bucket);
+            if let Some(marker) = key_marker.as_deref() {
+                request = request.key_marker(marker);
+            }
+            if let Some(marker) = version_id_marker.as_deref() {
+                request = request.version_id_marker(marker);
+            }
+            let output = request.send().await.map_err(|error| {
+                ApiError::Internal(format!(
+                    "object reconciliation could not list versions: {error}"
+                ))
+            })?;
+            for version in output.versions() {
+                let modified = version.last_modified().ok_or_else(|| {
+                    ApiError::Internal(
+                        "object reconciliation found a version without last_modified".to_owned(),
+                    )
+                })?;
+                if modified.secs() > before_unix_seconds {
+                    continue;
+                }
+                candidates.push(ObjectVersionCandidate {
+                    object_key: version
+                        .key()
+                        .ok_or_else(|| {
+                            ApiError::Internal(
+                                "object reconciliation found a version without a key".to_owned(),
+                            )
+                        })?
+                        .to_owned(),
+                    object_version_id: version
+                        .version_id()
+                        .ok_or_else(|| {
+                            ApiError::Internal(
+                                "object reconciliation found a version without an ID".to_owned(),
+                            )
+                        })?
+                        .to_owned(),
+                    last_modified_unix_seconds: modified.secs(),
+                    delete_marker: false,
+                });
+            }
+            for marker in output.delete_markers() {
+                let modified = marker.last_modified().ok_or_else(|| {
+                    ApiError::Internal(
+                        "object reconciliation found a delete marker without last_modified"
+                            .to_owned(),
+                    )
+                })?;
+                if modified.secs() > before_unix_seconds {
+                    continue;
+                }
+                candidates.push(ObjectVersionCandidate {
+                    object_key: marker
+                        .key()
+                        .ok_or_else(|| {
+                            ApiError::Internal(
+                                "object reconciliation found a delete marker without a key"
+                                    .to_owned(),
+                            )
+                        })?
+                        .to_owned(),
+                    object_version_id: marker
+                        .version_id()
+                        .ok_or_else(|| {
+                            ApiError::Internal(
+                                "object reconciliation found a delete marker without an ID"
+                                    .to_owned(),
+                            )
+                        })?
+                        .to_owned(),
+                    last_modified_unix_seconds: modified.secs(),
+                    delete_marker: true,
+                });
+            }
+            if candidates.len() >= limit || !output.is_truncated().unwrap_or(false) {
+                break;
+            }
+            key_marker = output.next_key_marker().map(ToOwned::to_owned);
+            version_id_marker = output.next_version_id_marker().map(ToOwned::to_owned);
+            if key_marker.is_none() {
+                return Err(ApiError::Internal(
+                    "truncated reconciliation inventory omitted the next key marker".to_owned(),
+                ));
+            }
+        }
+        candidates.sort_by(|left, right| {
+            left.last_modified_unix_seconds
+                .cmp(&right.last_modified_unix_seconds)
+                .then_with(|| left.object_key.cmp(&right.object_key))
+                .then_with(|| left.object_version_id.cmp(&right.object_version_id))
+        });
+        candidates.truncate(limit);
+        Ok(candidates)
+    }
+
+    pub async fn delete_exact_version(
+        &self,
+        object_key: &str,
+        object_version_id: &str,
+    ) -> ApiResult<()> {
+        self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(object_key)
+            .version_id(object_version_id)
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::Internal(format!(
+                    "object reconciliation could not delete exact version: {error}"
+                ))
+            })?;
+        metrics::counter!("asset.object.reconciliation", "result" => "purged").increment(1);
+        Ok(())
     }
 
     async fn purge_all_versions_inner(&self, key: &str) -> ApiResult<PurgeResult> {
@@ -864,6 +1747,48 @@ impl ObjectStore {
                 ));
             }
         }
+    }
+}
+
+fn ensure_requested_version(
+    requested: Option<&str>,
+    returned: Option<&str>,
+    operation: &str,
+) -> ApiResult<()> {
+    if let Some(requested) = requested
+        && returned != Some(requested)
+    {
+        return Err(ApiError::Internal(format!(
+            "{operation} did not return the requested object version"
+        )));
+    }
+    Ok(())
+}
+
+fn exact_object_version_id(version_id: Option<&str>, operation: &str) -> ApiResult<String> {
+    let version_id = version_id
+        .filter(|value| !value.trim().is_empty() && *value != "null")
+        .ok_or_else(|| {
+            ApiError::Internal(format!(
+                "{operation} returned no exact object version ID; bucket versioning is required"
+            ))
+        })?;
+    Ok(version_id.to_owned())
+}
+
+fn versioned_copy_source(bucket: &str, key: &str, object_version_id: Option<&str>) -> String {
+    let encoded_bucket = utf8_percent_encode(bucket, NON_ALPHANUMERIC);
+    let encoded_key = key
+        .split('/')
+        .map(|segment| utf8_percent_encode(segment, NON_ALPHANUMERIC).to_string())
+        .collect::<Vec<_>>()
+        .join("/");
+    match object_version_id {
+        Some(version_id) => format!(
+            "{encoded_bucket}/{encoded_key}?versionId={}",
+            utf8_percent_encode(version_id, NON_ALPHANUMERIC)
+        ),
+        None => format!("{encoded_bucket}/{encoded_key}"),
     }
 }
 
@@ -1284,5 +2209,110 @@ mod tests {
         assert_eq!(inspection.members[0].bytes.as_deref(), Some(&b"safe"[..]));
         assert!(safe_relative_path(Path::new("../escape.txt")).is_none());
         assert!(safe_relative_path(Path::new("safe/../escape.txt")).is_none());
+    }
+
+    #[test]
+    fn copy_source_preserves_key_structure_and_encodes_opaque_version_ids() {
+        assert_eq!(
+            versioned_copy_source(
+                "carry-state",
+                "user/uploads/file name",
+                Some("opaque+/= value")
+            ),
+            "carry%2Dstate/user/uploads/file%20name?versionId=opaque%2B%2F%3D%20value"
+        );
+        assert_eq!(
+            versioned_copy_source("bucket", "user/blobs/hash", None),
+            "bucket/user/blobs/hash"
+        );
+    }
+
+    #[test]
+    fn requested_version_must_be_echoed_exactly() {
+        assert!(ensure_requested_version(None, None, "read").is_ok());
+        assert!(ensure_requested_version(Some("v1"), Some("v1"), "read").is_ok());
+        assert!(ensure_requested_version(Some("v1"), Some("v2"), "read").is_err());
+        assert!(ensure_requested_version(Some("v1"), None, "read").is_err());
+    }
+
+    #[test]
+    fn canonical_writes_require_real_provider_version_ids() {
+        assert_eq!(
+            exact_object_version_id(Some("opaque-version"), "write").unwrap(),
+            "opaque-version"
+        );
+        for invalid in [None, Some(""), Some("   "), Some("null")] {
+            assert!(exact_object_version_id(invalid, "write").is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn live_reads_stay_on_the_pinned_version_after_latest_changes() {
+        if std::env::var("STRAYLIGHT_LIVE_S3_VERSION_TEST").as_deref() != Ok("1") {
+            eprintln!("STRAYLIGHT_LIVE_S3_VERSION_TEST is unset; skipping live S3 version test");
+            return;
+        }
+        let config = Config::from_env().expect("load live S3 test configuration");
+        let store = ObjectStore::new(&config)
+            .await
+            .expect("create live S3 client");
+        store.ensure_bucket().await.expect("ensure test bucket");
+
+        let user_id = UserId(uuid::Uuid::now_v7());
+        let original = Bytes::from_static(b"original pinned bytes");
+        let first = store
+            .put_user_blob(user_id, Some("application/octet-stream"), original.clone())
+            .await
+            .expect("write original object");
+        let pinned_version = first
+            .object_version_id
+            .as_deref()
+            .expect("versioned write returned an object version ID");
+
+        let mut replacement = tempfile::NamedTempFile::new().expect("create replacement file");
+        replacement
+            .write_all(b"replacement latest bytes")
+            .expect("write replacement file");
+        let latest = store
+            .put_file(
+                &first.object_key,
+                "application/octet-stream",
+                replacement.path(),
+            )
+            .await
+            .expect("write a newer version at the same key");
+        assert_ne!(latest.object_version_id.as_deref(), Some(pinned_version));
+        assert_eq!(
+            store.get(&first.object_key).await.expect("read latest key"),
+            Bytes::from_static(b"replacement latest bytes")
+        );
+        assert_eq!(
+            store
+                .get_version(&first.object_key, Some(pinned_version))
+                .await
+                .expect("read pinned object version"),
+            original
+        );
+        store
+            .verify_object_content_version(
+                &first.object_key,
+                Some(pinned_version),
+                &first.sha256,
+                u64::try_from(first.size_bytes).unwrap(),
+            )
+            .await
+            .expect("verify pinned object bytes");
+        assert_eq!(
+            store
+                .get_prefix_version(&first.object_key, Some(pinned_version), 8)
+                .await
+                .expect("read pinned prefix"),
+            Bytes::from_static(b"original")
+        );
+
+        store
+            .purge_all_versions(&first.object_key)
+            .await
+            .expect("purge live test versions");
     }
 }

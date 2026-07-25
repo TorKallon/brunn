@@ -251,12 +251,7 @@ Return the required JSON object. Include exactly one `claims` entry for every sl
 
 
 def grade_transition_answer(case: dict[str, Any], answer: dict[str, Any], corpus_paths: set[str]) -> dict[str, Any]:
-    complete_answer = " ".join([
-        str(answer.get("answer") or ""),
-        *(str(claim.get("value") or "") for claim in answer.get("claims", [])),
-    ])
-    expanded = {**answer, "answer": complete_answer}
-    return grade_answer(case, expanded, corpus_paths)
+    return grade_answer(case, answer, corpus_paths)
 
 
 def write_wrapper(run_dir: Path, case: dict[str, Any], metadata: dict[str, Any], embeddings: str, model: str) -> None:
@@ -491,6 +486,65 @@ def checkpoint_source_paths(value: dict[str, Any] | None) -> set[str]:
     return paths
 
 
+def resolve_checkpoint_source_paths(
+    client: NativeApiClient,
+    session_id: str,
+    value: dict[str, Any] | None,
+) -> tuple[set[str], str | None]:
+    paths = checkpoint_source_paths(value)
+    payload = checkpoint_payload(value)
+    provenance_refs = {
+        reference
+        for reference in (payload or {}).get("source_refs", [])
+        if isinstance(reference, str)
+        and reference.startswith(("source:", "evidence:"))
+    }
+    for source in (payload or {}).get("sources", []):
+        if not isinstance(source, dict):
+            continue
+        locator = source.get("locator")
+        if not isinstance(locator, dict):
+            continue
+        reference = locator.get("ref")
+        if isinstance(reference, str) and reference.startswith(
+            ("source:", "evidence:")
+        ):
+            provenance_refs.add(reference)
+    if not provenance_refs:
+        return paths, None
+
+    try:
+        response = client.post("/v1/memory/read", {
+            "session_id": session_id,
+            "requests": [
+                {"ref": reference, "view": "full", "max_chars": 1}
+                for reference in sorted(provenance_refs)
+            ],
+        })
+    except (NativeApiError, ValueError) as exc:
+        return paths, str(exc)
+
+    items = response.data.get("items", [])
+    if not isinstance(items, list):
+        return paths, "memory.read returned no provenance items"
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        data = item.get("data")
+        if not isinstance(data, dict):
+            continue
+        metadata = data.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        source_ref = metadata.get("source_ref")
+        if isinstance(source_ref, str):
+            paths.add(source_ref)
+        locator = metadata.get("locator")
+        if isinstance(locator, dict) and isinstance(locator.get("path"), str):
+            paths.add(locator["path"])
+    return paths, None
+
+
 def attach_native_lineage(
     record: dict[str, Any],
     case: dict[str, Any],
@@ -528,6 +582,7 @@ def attach_native_lineage(
     session_revision = None
     checkpoint_read_via_http = False
     lineage_error = None
+    client = None
     if session_id and child_id:
         client = NativeApiClient(
             token=metadata["token"],
@@ -553,6 +608,13 @@ def attach_native_lineage(
 
     payload = checkpoint_payload(child)
     source_paths = checkpoint_source_paths(child)
+    provenance_resolution_error = None
+    if client is not None and session_id:
+        source_paths, provenance_resolution_error = resolve_checkpoint_source_paths(
+            client,
+            session_id,
+            child,
+        )
     expected_parent = metadata["checkpoint_id"]
     expected_revision = metadata.get("corpus_revision")
     parent = nested_field(payload, "parent_checkpoint_id", "parent_checkpoint_ref") if payload else None
@@ -572,6 +634,7 @@ def attach_native_lineage(
         ),
         "delta_source_preserved": case["delta_path"] in source_paths,
         "prior_source_preserved": bool(source_paths & set(metadata.get("seed_source_refs", []))),
+        "provenance_resolution_error": provenance_resolution_error,
         "within_call_budget": operation_summary["completed_calls"] <= max_calls,
         "operations": operation_summary,
         "error": lineage_error,

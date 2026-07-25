@@ -1,4 +1,17 @@
 {
+  "straylight.asset.access.bytes": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "operation"
+  ],
+  "straylight.asset.upload.part_bytes": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
   "straylight.compute.step.duration_ms": [
     "env",
     "service",

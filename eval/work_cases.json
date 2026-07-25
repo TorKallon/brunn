@@ -50,7 +50,7 @@
         {
           "id": "c4",
           "checks": [
-            {"any": ["longer alpha", "beta recovery", "delta", "gamma", "small reviewable commits"]},
+            {"any": ["longer alpha", "bounded alpha", "alpha soak", "production-shaped alpha", "beta recovery", "delta", "gamma", "small reviewable commits"]},
             {"any": ["host pressure", "decision loop", "validation gate", "integrity", "host/MySQL", "controller changes"]}
           ],
           "sources_any": ["Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md"]
@@ -682,7 +682,10 @@
             {"any": ["agent-first", "agent first"]},
             {"any": ["learn", "continue", "advance"]}
           ],
-          "sources_any": ["Projects/Straylight/Straylight.md"]
+          "sources_any": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md"
+          ]
         },
         {
           "id": "c2",

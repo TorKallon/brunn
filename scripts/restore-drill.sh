@@ -10,6 +10,7 @@ usage() {
 [ "$#" -eq 1 ] || usage
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 backup_dir=$(CDPATH= cd -- "$1" && pwd)
+backup_root=$(dirname "$backup_dir")
 env_file=${ENV_FILE:-"$root/.env"}
 project="straylight-restore-$(date -u +%Y%m%d%H%M%S)-$$"
 compose_file="$root/compose.yaml"
@@ -18,17 +19,9 @@ override_file="$root/compose.restore-drill.yaml"
 started_epoch=$(date +%s)
 temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/straylight-restore-drill.XXXXXX")
 host_baseline="$temp_dir/host-containers.tsv"
-
-running_containers=$(docker ps -q)
-if [ -n "$running_containers" ]; then
-  docker inspect $running_containers |
-    jq -r '.[] | [.Id, .Name[1:], .RestartCount] | @tsv' \
-      >"$host_baseline"
-else
-  : >"$host_baseline"
-fi
-
-"$root/scripts/verify-backup.sh" "$backup_dir"
+operation_lock_dir="$backup_root/.recovery-operation.lock"
+operation_lock_acquired=false
+object_reference_integrity_verified=false
 
 compose() {
   if [ -n "$compose_override_file" ]; then
@@ -54,9 +47,28 @@ cleanup() {
   trap - EXIT INT TERM
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   rm -rf "$temp_dir"
+  if [ "$operation_lock_acquired" = true ]; then
+    rmdir "$operation_lock_dir" >/dev/null 2>&1 || true
+  fi
   exit "$status"
 }
 trap cleanup EXIT INT TERM
+
+mkdir "$operation_lock_dir" 2>/dev/null || {
+  echo "another backup, restore, or prune operation holds $operation_lock_dir" >&2
+  exit 1
+}
+operation_lock_acquired=true
+
+"$root/scripts/verify-backup.sh" "$backup_dir"
+running_containers=$(docker ps -q)
+if [ -n "$running_containers" ]; then
+  docker inspect $running_containers |
+    jq -r '.[] | [.Id, .Name[1:], .RestartCount] | @tsv' \
+      >"$host_baseline"
+else
+  : >"$host_baseline"
+fi
 
 wait_healthy() {
   service=$1
@@ -176,8 +188,26 @@ diff -u \
   "$backup_dir/minio-versions.jsonl" \
   "$temp_dir/minio-versions.jsonl"
 
-echo "running no-op migrations and restored API healthcheck"
+echo "running no-op migrations and restored API/worker healthcheck"
 compose run --rm migrate >/dev/null
+echo "pinning any legacy restored database references"
+compose run --rm -T migrate object-store-backup pin-database \
+  >"$temp_dir/database-object-pinning.json"
+jq -e '
+  (.asset_versions_pinned | type == "number" and . >= 0)
+  and (.upload_canonical_versions_pinned | type == "number" and . >= 0)
+  and (.account_export_versions_pinned | type == "number" and . >= 0)
+  and (.objects_stream_verified | type == "number" and . >= 0)
+' "$temp_dir/database-object-pinning.json" >/dev/null
+echo "verifying every restored database reference against exact object bytes"
+compose run --rm -T migrate object-store-backup verify-database \
+  >"$temp_dir/database-object-verification.json"
+jq -e '
+  (.references_verified | type == "number" and . >= 0)
+  and (.unique_object_versions_verified | type == "number" and . >= 0)
+  and (.logical_bytes_verified | type == "number" and . >= 0)
+' "$temp_dir/database-object-verification.json" >/dev/null
+object_reference_integrity_verified=true
 
 operator_marker=$(date -u +%Y%m%d%H%M%S)-$$
 operator_provision="$temp_dir/operator-provision.json"
@@ -249,10 +279,48 @@ credential_states=$(docker exec "$db_container" psql \
   exit 1
 }
 
-compose up -d api >/dev/null
+compose up -d api worker >/dev/null
 wait_healthy api
+worker_container=$(compose ps -q worker)
+[ -n "$worker_container" ] &&
+  [ "$(docker inspect --format '{{.State.Running}}' "$worker_container")" = "true" ] || {
+  echo "worker is not running against the restored database" >&2
+  exit 1
+}
 verify_host_stability
 
 completed_epoch=$(date +%s)
 rto_seconds=$((completed_epoch - started_epoch))
+backup_id=$(jq -r '.backup_id' "$backup_dir/manifest.json")
+manifest_sha256=$(shasum -a 256 "$backup_dir/manifest.json" |
+  awk '{print "sha256:" $1}')
+receipt="$backup_dir/restore-drill-receipt.json"
+receipt_temp="$backup_dir/.restore-drill-receipt.$$.tmp"
+jq -n \
+  --arg backup_id "$backup_id" \
+  --arg manifest_sha256 "$manifest_sha256" \
+  --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg project "$project" \
+  --argjson rto_seconds "$rto_seconds" \
+  --argjson object_reference_integrity "$object_reference_integrity_verified" \
+  '{
+    format: "straylight-restore-drill-receipt@v1",
+    status: "pass",
+    backup_id: $backup_id,
+    backup_manifest_sha256: $manifest_sha256,
+    completed_at: $completed_at,
+    drill_kind: "self-hosted-minio",
+    project: $project,
+    rto_seconds: $rto_seconds,
+    checks: {
+      database_restore: true,
+      object_restore: true,
+      object_reference_integrity: $object_reference_integrity,
+      api_ready: true,
+      worker_ready: true
+    }
+  }' >"$receipt_temp"
+chmod 0600 "$receipt_temp"
+mv "$receipt_temp" "$receipt"
+"$root/scripts/verify-restore-drill-receipt.sh" "$backup_dir"
 echo "restore drill PASS: project=$project rto_seconds=$rto_seconds operator_paths=verified"

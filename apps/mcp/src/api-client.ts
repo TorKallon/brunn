@@ -1,6 +1,16 @@
+import { readFile, realpath, stat } from "node:fs/promises";
+import { basename, relative, resolve } from "node:path";
+
+import {
+  configuredAssetRoot,
+  parseAssetMetadata,
+  storeVerifiedAsset,
+} from "./asset-download.js";
+
 export interface ApiResponse {
   status: number;
   body: Record<string, unknown>;
+  elapsedMs: number;
 }
 
 const MAX_STAGE_FILES = 2_000;
@@ -28,16 +38,20 @@ export class StraylightApiClient {
     baseUrl: string,
     private readonly token: string,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly requestHeaders: Record<string, string> = {},
+    private readonly assetRoot?: string,
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
   async request(path: string, body?: unknown): Promise<ApiResponse> {
+    const started = performance.now();
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
         accept: "application/json",
         authorization: `Bearer ${this.token}`,
+        ...this.requestHeaders,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -46,19 +60,105 @@ export class StraylightApiClient {
     if (!response.ok) {
       throw new StraylightApiError(response.status, parsed);
     }
-    return { status: response.status, body: parsed };
+    return {
+      status: response.status,
+      body: parsed,
+      elapsedMs: performance.now() - started,
+    };
+  }
+
+  async assetMetadata(assetRef: string, sessionId: string): Promise<ApiResponse> {
+    return this.request(
+      `/v1/assets/${encodeURIComponent(assetRef)}?${sessionQuery(sessionId)}`,
+    );
+  }
+
+  async listAssets(
+    sessionId: string,
+    offset = 0,
+    limit = 100,
+  ): Promise<ApiResponse> {
+    const query = new URLSearchParams({
+      session_id: sessionId,
+      offset: String(offset),
+      limit: String(limit),
+    });
+    return this.request(`/v1/assets?${query.toString()}`);
+  }
+
+  async fetchAsset(
+    assetRef: string,
+    sessionId: string,
+    requestedVersion?: number,
+  ): Promise<ApiResponse> {
+    const started = performance.now();
+    let metadataResponse: ApiResponse;
+    try {
+      metadataResponse = await this.assetMetadata(assetRef, sessionId);
+    } catch (error) {
+      if (error instanceof StraylightApiError) {
+        throw new StraylightApiError(
+          error.status,
+          assetFailure("metadata", error.status),
+        );
+      }
+      throw error;
+    }
+    const metadata = parseAssetMetadata(metadataResponse.body, assetRef);
+    if (
+      requestedVersion !== undefined
+      && requestedVersion !== metadata.version
+    ) {
+      throw new Error(
+        `asset version ${requestedVersion} is not active in the supplied session`,
+      );
+    }
+    const response = await this.fetchImpl(
+      `${this.baseUrl}/v1/assets/${encodeURIComponent(assetRef)}/versions/`
+      + `${metadata.version}/content?${sessionQuery(sessionId)}`,
+      {
+        method: "GET",
+        headers: {
+          accept: "*/*",
+          "accept-encoding": "identity",
+          authorization: `Bearer ${this.token}`,
+          ...this.requestHeaders,
+        },
+        redirect: "error",
+      },
+    );
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new StraylightApiError(
+        response.status,
+        assetFailure("download", response.status),
+      );
+    }
+    const body = await storeVerifiedAsset(
+      response,
+      metadata,
+      this.assetRoot ?? configuredAssetRoot(),
+    );
+    return {
+      status: response.status,
+      body,
+      elapsedMs: performance.now() - started,
+    };
   }
 
   async stage(
     scope: string,
     stableImportId: string | undefined,
     files: Array<{ path: string; name?: string | undefined; media_type?: string | undefined }>,
+    describeBinaries = true,
   ): Promise<ApiResponse> {
+    const started = performance.now();
     const form = new FormData();
     form.set("scope", scope);
     if (stableImportId) {
       form.set("stable_import_id", stableImportId);
     }
+    form.set("describe_binaries", describeBinaries ? "true" : "false");
     const importRoot = await realpath(
       process.env.STRAYLIGHT_MCP_IMPORT_ROOT ?? "/imports",
     );
@@ -88,10 +188,11 @@ export class StraylightApiClient {
     }
     for (const { file, filePath } of resolvedFiles) {
       const bytes = await readFile(filePath);
+      form.append("path", file.name ?? file.path.replaceAll("\\", "/"));
       form.append(
         "file",
         new Blob([bytes], { type: file.media_type ?? "application/octet-stream" }),
-        file.name ?? basename(filePath),
+        basename(filePath),
       );
     }
     const response = await this.fetchImpl(`${this.baseUrl}/v1/memory/stage`, {
@@ -99,6 +200,7 @@ export class StraylightApiClient {
       headers: {
         accept: "application/json",
         authorization: `Bearer ${this.token}`,
+        ...this.requestHeaders,
       },
       body: form,
     });
@@ -106,7 +208,11 @@ export class StraylightApiClient {
     if (!response.ok) {
       throw new StraylightApiError(response.status, parsed);
     }
-    return { status: response.status, body: parsed };
+    return {
+      status: response.status,
+      body: parsed,
+      elapsedMs: performance.now() - started,
+    };
   }
 }
 
@@ -124,5 +230,19 @@ async function parseJson(response: Response): Promise<Record<string, unknown>> {
     return { error: { code: "invalid_upstream_response", message: text.slice(0, 2_000) } };
   }
 }
-import { readFile, realpath, stat } from "node:fs/promises";
-import { basename, relative, resolve } from "node:path";
+
+function assetFailure(
+  stage: "metadata" | "download",
+  status: number,
+): Record<string, unknown> {
+  return {
+    error: {
+      code: `asset_${stage}_failed`,
+      message: `CarryState asset ${stage} request returned HTTP ${status}`,
+    },
+  };
+}
+
+function sessionQuery(sessionId: string): string {
+  return new URLSearchParams({ session_id: sessionId }).toString();
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -14,6 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 class ProductionContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        compose_environment = {
+            **os.environ,
+            "OPENAI_API_KEY": "",
+            "STRAYLIGHT_S3_ACCESS_KEY": "",
+            "STRAYLIGHT_S3_SECRET_KEY": "",
+            "STRAYLIGHT_MINIO_ACCESS_KEY": "",
+            "STRAYLIGHT_MINIO_SECRET_KEY": "",
+        }
         result = subprocess.run(
             [
                 "docker",
@@ -31,6 +40,7 @@ class ProductionContractTests(unittest.TestCase):
                 "json",
             ],
             cwd=ROOT,
+            env=compose_environment,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -39,6 +49,36 @@ class ProductionContractTests(unittest.TestCase):
         if result.returncode != 0:
             raise AssertionError(f"production Compose contract failed: {result.stderr}")
         cls.compose = json.loads(result.stdout)
+        managed = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "--env-file",
+                str(ROOT / "production.managed-s3.env.example"),
+                "--file",
+                str(ROOT / "compose.yaml"),
+                "--file",
+                str(ROOT / "compose.production.yaml"),
+                "--file",
+                str(ROOT / "compose.managed-s3.yaml"),
+                "--profile",
+                "observability",
+                "config",
+                "--format",
+                "json",
+            ],
+            cwd=ROOT,
+            env=compose_environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if managed.returncode != 0:
+            raise AssertionError(
+                f"managed S3 Compose contract failed: {managed.stderr}"
+            )
+        cls.managed_compose = json.loads(managed.stdout)
 
     def test_internal_services_publish_no_host_ports(self):
         for service in ["db", "minio", "api", "web"]:
@@ -170,6 +210,125 @@ class ProductionContractTests(unittest.TestCase):
             }.issubset(actions)
         )
 
+    def test_application_object_store_configuration_is_provider_neutral(self):
+        config = (ROOT / "apps/api/src/config.rs").read_text()
+        object_store = (ROOT / "apps/api/src/object_store.rs").read_text()
+        example = (ROOT / ".env.example").read_text()
+        evaluation = (ROOT / "docs/Object Store Evaluation.md").read_text()
+
+        for declaration in [
+            "pub s3_endpoint: Option<String>",
+            "pub s3_access_key: Option<String>",
+            "pub s3_secret_key: Option<String>",
+            "pub s3_force_path_style: bool",
+            "pub s3_create_bucket: bool",
+        ]:
+            self.assertIn(declaration, config)
+        for alias in [
+            "STRAYLIGHT_MINIO_ENDPOINT",
+            "STRAYLIGHT_MINIO_REGION",
+            "STRAYLIGHT_MINIO_BUCKET",
+            "STRAYLIGHT_MINIO_ACCESS_KEY",
+            "STRAYLIGHT_MINIO_SECRET_KEY",
+            "STRAYLIGHT_MINIO_FORCE_PATH_STYLE",
+            "STRAYLIGHT_MINIO_CREATE_BUCKET",
+        ]:
+            self.assertIn(alias, config)
+
+        self.assertIn("validate_explicit_s3_credentials", config)
+        self.assertIn('deployment_environment != "production"', config)
+        self.assertRegex(
+            object_store,
+            r"if let \(Some\(access_key\), Some\(secret_key\)\)[\s\S]*?"
+            r"credentials_provider",
+        )
+        self.assertRegex(
+            object_store,
+            r"if let Some\(endpoint\) = &config\.s3_endpoint[\s\S]*?"
+            r"endpoint_url",
+        )
+        self.assertIn(
+            ".force_path_style(config.s3_force_path_style)",
+            object_store,
+        )
+        self.assertIn("if !self.create_bucket", object_store)
+
+        for setting in [
+            "STRAYLIGHT_S3_FORCE_PATH_STYLE",
+            "STRAYLIGHT_S3_CREATE_BUCKET",
+        ]:
+            self.assertIn(setting, example)
+            self.assertIn(setting, evaluation)
+        self.assertIn("default credential chain", example)
+        self.assertIn("default chain", evaluation)
+        self.assertIn("workload identity", evaluation)
+
+    def test_managed_s3_overlay_removes_local_object_store_runtime(self):
+        services = self.managed_compose["services"]
+        self.assertNotIn("minio-permissions", services)
+        self.assertNotIn("minio", services)
+        self.assertNotIn("minio-init", services)
+        for service in ["migrate", "api", "worker"]:
+            environment = services[service]["environment"]
+            self.assertEqual("", environment["STRAYLIGHT_S3_ENDPOINT"])
+            self.assertEqual("us-west-2", environment["STRAYLIGHT_S3_REGION"])
+            self.assertEqual(
+                "replace-carrystate-production",
+                environment["STRAYLIGHT_S3_BUCKET"],
+            )
+            self.assertEqual("false", environment["STRAYLIGHT_S3_CREATE_BUCKET"])
+            self.assertEqual("", environment["STRAYLIGHT_MINIO_ENDPOINT"])
+            self.assertEqual("", environment["STRAYLIGHT_MINIO_BUCKET"])
+            self.assertEqual("", environment["STRAYLIGHT_MINIO_ACCESS_KEY"])
+            self.assertEqual("", environment["STRAYLIGHT_MINIO_SECRET_KEY"])
+            self.assertEqual("", environment["STRAYLIGHT_S3_ACCESS_KEY"])
+            self.assertEqual("", environment["STRAYLIGHT_S3_SECRET_KEY"])
+            self.assertNotIn("AWS_ACCESS_KEY_ID", environment)
+            self.assertNotIn("AWS_SECRET_ACCESS_KEY", environment)
+            self.assertNotIn("AWS_SESSION_TOKEN", environment)
+            secret_targets = {item["target"] for item in services[service]["secrets"]}
+            self.assertFalse(
+                {
+                    "/run/secrets/minio_app_access_key",
+                    "/run/secrets/minio_app_secret_key",
+                }
+                & secret_targets
+            )
+
+    def test_managed_s3_backup_restore_and_deploy_are_first_class(self):
+        paths = [
+            ROOT / "scripts/managed-s3-backup.sh",
+            ROOT / "scripts/managed-s3-restore-drill.sh",
+            ROOT / "scripts/verify-managed-backup.sh",
+        ]
+        for path in paths:
+            self.assertTrue(path.stat().st_mode & 0o111, path.name)
+
+        deploy = (ROOT / "scripts/deploy-production.sh").read_text()
+        rollback = (ROOT / "scripts/rollback-production.sh").read_text()
+        compatibility = (
+            ROOT / "scripts/verify-rollback-compatibility.sh"
+        ).read_text()
+        managed_backup = paths[0].read_text()
+        managed_restore = paths[1].read_text()
+        verifier = paths[2].read_text()
+        makefile = (ROOT / "Makefile").read_text()
+
+        self.assertIn("STRAYLIGHT_OBJECT_STORE_MODE", deploy)
+        self.assertIn("compose.managed-s3.yaml", deploy)
+        self.assertIn("scripts/managed-s3-backup.sh", deploy)
+        self.assertIn("object_store_mode", deploy)
+        self.assertIn("COMPOSE_MANAGED_S3_FILE", rollback)
+        self.assertIn("COMPOSE_MANAGED_S3_FILE", compatibility)
+        self.assertIn("portable-all-versions", managed_backup)
+        self.assertIn("STRAYLIGHT_MANAGED_BACKUP_ROOT", managed_backup)
+        self.assertIn("STRAYLIGHT_RESTORE_DRILL", managed_restore)
+        self.assertIn("cleanup-restore", managed_restore)
+        self.assertIn("verify_host_stability", managed_restore)
+        self.assertIn("straylight-managed-s3-coordinated-backup@v1", verifier)
+        self.assertIn("managed-production-backup:", makefile)
+        self.assertIn("managed-production-restore-drill:", makefile)
+
     def test_shipped_base_images_are_digest_pinned(self):
         dockerfiles = [
             ROOT / "apps/api/Dockerfile",
@@ -255,6 +414,42 @@ class ProductionContractTests(unittest.TestCase):
             r"location /api/ \{[\s\S]*?"
             r"limit_req zone=straylight_api_limit burst=40 nodelay;",
         )
+        self.assertRegex(
+            nginx,
+            r"location /api/ \{[\s\S]*?client_max_body_size 73m;",
+        )
+        self.assertRegex(
+            nginx,
+            r"location /api/ \{[\s\S]*?proxy_read_timeout 3600s;",
+        )
+        self.assertRegex(
+            nginx,
+            r"location /api/ \{[\s\S]*?proxy_send_timeout 3600s;",
+        )
+
+    def test_binary_transfers_have_separate_timeout_and_concurrency_bounds(self):
+        config = (ROOT / "apps/api/src/config.rs").read_text()
+        api = (ROOT / "apps/api/src/api.rs").read_text()
+        compose = (ROOT / "compose.yaml").read_text()
+        validator = (ROOT / "scripts/validate-production-config.sh").read_text()
+        for setting in [
+            "STRAYLIGHT_TRANSFER_TIMEOUT_SECONDS",
+            "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS",
+        ]:
+            self.assertIn(setting, config)
+            self.assertIn(setting, compose)
+            self.assertIn(setting, validator)
+        self.assertIn("ConcurrencyLimitLayer", api)
+        self.assertIn("state.config.transfer_timeout", api)
+        self.assertIn("state.config.request_timeout", api)
+
+    def test_spa_deep_links_do_not_redirect_to_the_internal_container_port(self):
+        nginx = (ROOT / "apps/web/nginx.conf").read_text()
+        self.assertRegex(
+            nginx,
+            r"location / \{\s*try_files \$uri /index\.html;",
+        )
+        self.assertNotIn("try_files $uri $uri/", nginx)
 
     def test_build_context_excludes_secrets_and_operational_data(self):
         patterns = set((ROOT / ".dockerignore").read_text().splitlines())
@@ -324,6 +519,8 @@ class ProductionContractTests(unittest.TestCase):
                         "STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125",
                         "STRAYLIGHT_REQUESTS_PER_MINUTE=600",
                         "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS=30",
+                        "STRAYLIGHT_TRANSFER_TIMEOUT_SECONDS=3600",
+                        "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS=8",
                         "STRAYLIGHT_READINESS_TIMEOUT_SECONDS=3",
                         "STRAYLIGHT_METRICS_FLUSH_SECONDS=3",
                         "STRAYLIGHT_BACKUP_RETENTION_DAYS=30",
@@ -440,6 +637,170 @@ class ProductionContractTests(unittest.TestCase):
                 "must remain true for this release contract", rejected.stderr
             )
 
+    def test_managed_s3_validator_needs_no_minio_secrets_and_fails_closed(self):
+        revision = "a" * 40
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            secrets = directory / "secrets"
+            secrets.mkdir(mode=0o700)
+            secrets.chmod(0o700)
+            admin_password = "a" * 24
+            rw_password = "r" * 24
+            ro_password = "o" * 24
+            values = {
+                "postgres_admin_password": admin_password,
+                "postgres_app_rw_password": rw_password,
+                "postgres_app_ro_password": ro_password,
+                "database_url_rw": (
+                    f"postgres://app_rw:{rw_password}@db:5432/straylight"
+                ),
+                "database_url_ro": (
+                    f"postgres://app_ro:{ro_password}@db:5432/straylight"
+                ),
+                "database_url_admin": (
+                    f"postgres://admin:{admin_password}@db:5432/straylight"
+                ),
+                "continuation_signing_key": "c" * 32,
+                "openai_api_key": "sk-unit-" + ("o" * 32),
+                "dd_api_key": "d" * 32,
+            }
+            for name, value in values.items():
+                path = secrets / name
+                path.write_text(value)
+                path.chmod(0o600)
+
+            env_file = directory / "production.env"
+            env_file.write_text(
+                "\n".join(
+                    [
+                        "STRAYLIGHT_ENV=production",
+                        "STRAYLIGHT_OBJECT_STORE_MODE=managed-s3",
+                        f"STRAYLIGHT_RELEASE_REVISION={revision}",
+                        f"DD_VERSION={revision}",
+                        "DD_ENV=production",
+                        "STRAYLIGHT_EMBEDDING_PROVIDER=openai",
+                        "STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS=false",
+                        "STRAYLIGHT_EMBEDDING_MODEL=text-embedding-3-small",
+                        "STRAYLIGHT_EMBEDDING_DIMENSIONS=1536",
+                        "STRAYLIGHT_CAPTURE_MODEL=gpt-5.6",
+                        "STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS=8192",
+                        "STRAYLIGHT_DREAM_MODEL=gpt-5.6",
+                        "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=24000",
+                        "OPENAI_BASE_URL=https://api.openai.com/v1",
+                        "STRAYLIGHT_DREAM_SCHEDULER_ENABLED=true",
+                        "STRAYLIGHT_METRICS_ENABLED=true",
+                        "STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125",
+                        "STRAYLIGHT_REQUESTS_PER_MINUTE=600",
+                        "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS=30",
+                        "STRAYLIGHT_TRANSFER_TIMEOUT_SECONDS=3600",
+                        "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS=8",
+                        "STRAYLIGHT_READINESS_TIMEOUT_SECONDS=3",
+                        "STRAYLIGHT_METRICS_FLUSH_SECONDS=3",
+                        "STRAYLIGHT_BACKUP_RETENTION_DAYS=30",
+                        "STRAYLIGHT_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS=30",
+                        "STRAYLIGHT_DATADOG_NOTIFY=ops@carrystate.dev",
+                        "STRAYLIGHT_ALLOWED_ORIGINS=",
+                        "STRAYLIGHT_PUBLIC_HOST=alpha.carrystate.dev",
+                        "STRAYLIGHT_ACME_EMAIL=ops@carrystate.dev",
+                        "STRAYLIGHT_S3_ENDPOINT=",
+                        "STRAYLIGHT_S3_REGION=us-west-2",
+                        "STRAYLIGHT_S3_BUCKET=carrystate-production",
+                        "STRAYLIGHT_S3_FORCE_PATH_STYLE=false",
+                        "STRAYLIGHT_S3_CREATE_BUCKET=false",
+                        "STRAYLIGHT_S3_ACCESS_KEY=",
+                        "STRAYLIGHT_S3_SECRET_KEY=",
+                        "STRAYLIGHT_S3_ACCESS_KEY_FILE=",
+                        "STRAYLIGHT_S3_SECRET_KEY_FILE=",
+                        "STRAYLIGHT_MANAGED_BACKUP_ROOT=/var/backups/carrystate",
+                        "STRAYLIGHT_DATABASE_IMAGE=database@sha256:"
+                        + ("d" * 64),
+                        "STRAYLIGHT_API_IMAGE=straylight-api@sha256:"
+                        + ("1" * 64),
+                        "STRAYLIGHT_WEB_IMAGE=straylight-web@sha256:"
+                        + ("2" * 64),
+                        "STRAYLIGHT_MCP_IMAGE=straylight-mcp@sha256:"
+                        + ("3" * 64),
+                        "STRAYLIGHT_EDGE_IMAGE=straylight-caddy@sha256:"
+                        + ("4" * 64),
+                        "DATADOG_AGENT_IMAGE=agent@sha256:" + ("b" * 64),
+                        "STRAYLIGHT_SECRETS_DIR=./secrets",
+                        "",
+                    ]
+                )
+            )
+            validator = ROOT / "scripts/validate-production-config.sh"
+            accepted = subprocess.run(
+                [str(validator), str(env_file)],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+            self.assertFalse(any(path.name.startswith("minio") for path in secrets.iterdir()))
+
+            env_file.write_text(
+                env_file.read_text().replace(
+                    "STRAYLIGHT_S3_ACCESS_KEY=",
+                    "STRAYLIGHT_S3_ACCESS_KEY=one-sided-key",
+                )
+            )
+            rejected = subprocess.run(
+                [str(validator), str(env_file)],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertIn("direct keys must be empty", rejected.stderr)
+
+            env_file.write_text(
+                env_file.read_text()
+                .replace(
+                    "STRAYLIGHT_S3_ACCESS_KEY=one-sided-key",
+                    "STRAYLIGHT_S3_ACCESS_KEY=",
+                )
+                .replace(
+                    "STRAYLIGHT_S3_ACCESS_KEY_FILE=",
+                    "STRAYLIGHT_S3_ACCESS_KEY_FILE=/run/secrets/s3-access-key",
+                )
+            )
+            rejected = subprocess.run(
+                [str(validator), str(env_file)],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertIn("files must both be set or both omitted", rejected.stderr)
+
+            env_file.write_text(
+                env_file.read_text()
+                .replace(
+                    "STRAYLIGHT_S3_ACCESS_KEY_FILE=/run/secrets/s3-access-key",
+                    "STRAYLIGHT_S3_ACCESS_KEY_FILE=",
+                )
+                + "STRAYLIGHT_MINIO_ENDPOINT=http://minio:9000\n"
+            )
+            rejected = subprocess.run(
+                [str(validator), str(env_file)],
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertNotEqual(0, rejected.returncode)
+            self.assertIn(
+                "STRAYLIGHT_MINIO_ENDPOINT must be empty in managed-s3 mode",
+                rejected.stderr,
+            )
+
     def test_backup_supports_production_override_and_file_backed_store_secrets(self):
         backup = (ROOT / "scripts/backup.sh").read_text()
         restore = (ROOT / "scripts/restore-drill.sh").read_text()
@@ -492,6 +853,8 @@ class ProductionContractTests(unittest.TestCase):
             "runtime-images.json",
             "compose-service-hashes.txt",
             "database-invariants.json",
+            "database-object-pinning.json",
+            "database-object-verification.json",
         ]:
             self.assertIn(evidence, backup)
             self.assertIn(evidence, verify)
@@ -499,6 +862,19 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("runtime_identity", backup)
         self.assertIn("scripts/database-invariants.sql", backup)
         self.assertIn("straylight-postgres-healthcheck", (ROOT / "scripts/restore-drill.sh").read_text())
+
+    def test_backup_normalizes_relative_destination_before_docker_mount(self):
+        backup = (ROOT / "scripts/backup.sh").read_text()
+        create_root = backup.index('mkdir -p "$backup_root"')
+        normalize = backup.index(
+            'backup_root=$(CDPATH= cd -- "$backup_root" && pwd)',
+            create_root,
+        )
+        work_dir = backup.index('work_dir="$backup_root/', normalize)
+        docker_mount = backup.index('--volume "$work_dir:/backup"', work_dir)
+        self.assertLess(create_root, normalize)
+        self.assertLess(normalize, work_dir)
+        self.assertLess(work_dir, docker_mount)
 
     def test_deploy_and_rollback_paths_are_executable_and_gated(self):
         scripts = {
@@ -521,6 +897,15 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("qualify-object-store.sh", deploy)
         self.assertIn("check-public-health.sh", deploy)
         self.assertIn("production deployment requires a clean Git worktree", deploy)
+        stop_writers = deploy.index("compose stop api worker")
+        migrate = deploy.index(
+            "compose up -d --no-build --pull never --force-recreate migrate"
+        )
+        start_candidate = deploy.index(
+            "compose up -d --no-build --pull never api worker web datadog-agent edge"
+        )
+        self.assertLess(stop_writers, migrate)
+        self.assertLess(migrate, start_candidate)
 
         rollback = scripts["rollback-production.sh"].read_text()
         self.assertIn("verify-rollback-compatibility.sh", rollback)
@@ -530,6 +915,131 @@ class ProductionContractTests(unittest.TestCase):
         compatibility = scripts["verify-rollback-compatibility.sh"].read_text()
         self.assertIn('if [ -n "$compose_override_file" ]', compatibility)
         self.assertIn("/ready", compatibility)
+
+    def test_deploy_steps_propagate_injected_and_real_failures(self):
+        deploy = (ROOT / "scripts/deploy-production.sh").read_text()
+        step_helper = ROOT / "scripts/deploy-steps.sh"
+        self.assertIn('scripts/deploy-steps.sh"', deploy)
+        candidate = deploy.split("deploy_candidate() {", 1)[1].split(
+            "\n}\n\nif ! deploy_candidate", 1
+        )[0]
+        expected_steps = (
+            "database-start",
+            "database-ready",
+            "object-store-start",
+            "object-store-ready",
+            "object-store-init-start",
+            "object-store-init-complete",
+            "object-store-qualify",
+            "writers-stop",
+            "migration-start",
+            "migration-complete",
+            "candidate-start",
+            "api-ready",
+            "web-ready",
+            "datadog-ready",
+            "edge-ready",
+            "worker-ready",
+            "public-health",
+        )
+        for step in expected_steps:
+            self.assertRegex(
+                candidate,
+                rf"deploy_step {re.escape(step)}[\s\S]{{0,220}}"
+                r"\|\|\s+return \$\?",
+            )
+            with tempfile.TemporaryDirectory() as temporary:
+                marker = Path(temporary) / "reached"
+                injected = subprocess.run(
+                    [
+                        "/bin/sh",
+                        "-c",
+                        """
+. "$1"
+marker_path=$2
+fault_step=$3
+run_command() {
+  printf reached >"$marker_path"
+}
+candidate() {
+  deploy_step "$fault_step" run_command || return $?
+  printf continued >"$marker_path"
+}
+STRAYLIGHT_DEPLOY_FAIL_STEP=$fault_step
+export STRAYLIGHT_DEPLOY_FAIL_STEP
+if candidate; then
+  exit 90
+else
+  status=$?
+fi
+[ "$status" -eq 97 ] || exit 91
+[ ! -e "$marker_path" ] || exit 92
+""",
+                        "deploy-fault-test",
+                        str(step_helper),
+                        str(marker),
+                        step,
+                    ],
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(0, injected.returncode, injected.stderr)
+
+        command_failure = subprocess.run(
+            [
+                "/bin/sh",
+                "-c",
+                """
+. "$1"
+fail_command() {
+  return 23
+}
+if deploy_step command-failure fail_command; then
+  exit 90
+else
+  status=$?
+fi
+[ "$status" -eq 23 ]
+""",
+                "deploy-command-test",
+                str(step_helper),
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(0, command_failure.returncode, command_failure.stderr)
+
+    def test_backups_quiesce_migrate_pin_verify_then_snapshot(self):
+        for name in ("backup.sh", "managed-s3-backup.sh"):
+            script = (ROOT / "scripts" / name).read_text()
+            stop_flag = script.index("writers_stop_attempted=true")
+            stop = script.index("compose stop --timeout 30 api worker", stop_flag)
+            migrate = script.index("compose run --rm migrate", stop)
+            active_uploads = script.index("active_uploads=", migrate)
+            pin = script.index(
+                "object-store-backup pin-database",
+                active_uploads,
+            )
+            verify = script.index(
+                "object-store-backup verify-database",
+                pin,
+            )
+            snapshot = script.index("capturing PostgreSQL snapshot", verify)
+            self.assertLess(stop_flag, stop)
+            self.assertLess(stop, migrate)
+            self.assertLess(migrate, active_uploads)
+            self.assertLess(active_uploads, pin)
+            self.assertLess(pin, verify)
+            self.assertLess(verify, snapshot)
+            self.assertIn("wait_original_container_ready", script)
+            self.assertIn(
+                '.recovery-operation.lock"',
+                script,
+            )
 
     def test_release_fingerprint_uses_the_images_built_for_the_candidate(self):
         fingerprint = (ROOT / "scripts/fingerprint-release.sh").read_text()

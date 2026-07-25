@@ -107,6 +107,7 @@ pub struct HydratedSource {
     pub content_hash: Option<String>,
     pub authority: Option<String>,
     pub canonicality: Option<String>,
+    pub provenance: Option<Value>,
     pub recorded_at: Option<String>,
     pub text: String,
     pub ranges: Vec<Value>,
@@ -297,6 +298,7 @@ struct StagedEntry {
     asset_id: Option<Uuid>,
     asset_version: Option<i32>,
     object_key: Option<String>,
+    object_version_id: Option<String>,
     created_at: DateTime<Utc>,
 }
 
@@ -643,6 +645,9 @@ fn complete_hydrated_source(
         canonicality: candidates
             .iter()
             .find_map(|candidate| candidate.canonicality.clone()),
+        provenance: candidates
+            .iter()
+            .find_map(|candidate| candidate.provenance.clone()),
         recorded_at: candidates
             .iter()
             .find_map(|candidate| candidate.recorded_at.clone()),
@@ -693,6 +698,9 @@ fn section_hydrated_source(path: &str, candidates: &[&RetrievalCandidate]) -> Hy
         canonicality: candidates
             .iter()
             .find_map(|candidate| candidate.canonicality.clone()),
+        provenance: candidates
+            .iter()
+            .find_map(|candidate| candidate.provenance.clone()),
         recorded_at: candidates
             .iter()
             .find_map(|candidate| candidate.recorded_at.clone()),
@@ -1385,13 +1393,15 @@ async fn load_session_tx(
           ON cr.user_id = s.user_id AND cr.id = s.corpus_revision_id
         WHERE s.user_id = $1
           AND s.id = $2
+          AND s.credential_id = $3
           AND s.expires_at > clock_timestamp()
-          AND sc.scope_ref = ANY($3::text[])
+          AND sc.scope_ref = ANY($4::text[])
           AND sc.scope_ref = ANY(s.authorization_scope_refs)
         "#,
     )
     .bind(auth.user_id.0)
     .bind(session_id)
+    .bind(auth.credential_id.0)
     .bind(&auth.scope_refs)
     .fetch_optional(&mut **tx)
     .await?
@@ -2694,7 +2704,22 @@ async fn exact_lane_tx(
         r#"
         SELECT c.id, se.source_ref, dr.native_locator ->> 'path' AS path,
                array_to_string(c.heading_path, ' / ') AS heading, c.content,
-               c.content_hash, se.source_version, dr.recorded_at, c.locator,
+               c.content_hash, se.source_version, se.source_kind,
+               se.metadata AS source_metadata,
+               (
+                 SELECT jsonb_build_object(
+                   'asset_ref','asset:' || described.asset_id::text,
+                   'version',described.asset_version,
+                   'path',se.metadata->>'original_path'
+                 )
+                 FROM straylight.source_asset_links AS described
+                 WHERE described.user_id=se.user_id
+                   AND described.source_episode_id=se.id
+                   AND described.role='describes'
+                 ORDER BY described.asset_id,described.asset_version
+                 LIMIT 1
+               ) AS described_asset,
+               dr.recorded_at, c.locator,
                ARRAY(
                  SELECT 'evidence:' || replace(ei.id::text, '-', '')
                  FROM straylight.evidence_items ei
@@ -2790,6 +2815,7 @@ async fn exact_lane_tx(
             source_version: row.try_get("source_version")?,
             authority: None,
             canonicality: Some("canonical_at_revision".to_owned()),
+            provenance: None,
             recorded_at: Some(row.try_get::<DateTime<Utc>, _>("recorded_at")?.to_rfc3339()),
             valid_time: None,
             evidence_refs: Vec::new(),
@@ -2819,7 +2845,22 @@ async fn lexical_lane_tx(
         )
         SELECT c.id, se.source_ref, dr.native_locator ->> 'path' AS path,
                array_to_string(c.heading_path, ' / ') AS heading, c.content,
-               c.content_hash, se.source_version, dr.recorded_at, c.locator,
+               c.content_hash, se.source_version, se.source_kind,
+               se.metadata AS source_metadata,
+               (
+                 SELECT jsonb_build_object(
+                   'asset_ref','asset:' || described.asset_id::text,
+                   'version',described.asset_version,
+                   'path',se.metadata->>'original_path'
+                 )
+                 FROM straylight.source_asset_links AS described
+                 WHERE described.user_id=se.user_id
+                   AND described.source_episode_id=se.id
+                   AND described.role='describes'
+                 ORDER BY described.asset_id,described.asset_version
+                 LIMIT 1
+               ) AS described_asset,
+               dr.recorded_at, c.locator,
                ARRAY(
                  SELECT 'evidence:' || replace(ei.id::text, '-', '')
                  FROM straylight.evidence_items ei
@@ -3047,6 +3088,20 @@ async fn semantic_lane_tx(
                coalesce(c.content_hash, ev.content_hash, e.source_content_hash) AS content_hash,
                coalesce(se_chunk.source_version, se_object.source_version,
                         se_evidence.source_version, se_claim.source_version) AS source_version,
+               se_chunk.source_kind,se_chunk.metadata AS source_metadata,
+               (
+                 SELECT jsonb_build_object(
+                   'asset_ref','asset:' || described.asset_id::text,
+                   'version',described.asset_version,
+                   'path',se_chunk.metadata->>'original_path'
+                 )
+                 FROM straylight.source_asset_links AS described
+                 WHERE described.user_id=se_chunk.user_id
+                   AND described.source_episode_id=se_chunk.id
+                   AND described.role='describes'
+                 ORDER BY described.asset_id,described.asset_version
+                 LIMIT 1
+               ) AS described_asset,
                cl.authority, cl.canonicality,
                coalesce(cl.recorded_at, orev.recorded_at, ev.created_at, c.created_at) AS recorded_at,
                CASE WHEN e.record_kind = 'chunk' THEN ARRAY(
@@ -3169,6 +3224,7 @@ async fn structured_lane_tx(
                 source_version: row.try_get("source_version")?,
                 authority: None,
                 canonicality: Some("canonical_at_revision".to_owned()),
+                provenance: None,
                 recorded_at: Some(row.try_get::<DateTime<Utc>, _>("recorded_at")?.to_rfc3339()),
                 valid_time: None,
                 evidence_refs: Vec::new(),
@@ -3232,6 +3288,7 @@ async fn structured_lane_tx(
                 source_version: row.try_get("source_version")?,
                 authority: row.try_get("authority")?,
                 canonicality: row.try_get("canonicality")?,
+                provenance: None,
                 recorded_at: Some(row.try_get::<DateTime<Utc>, _>("recorded_at")?.to_rfc3339()),
                 valid_time: row.try_get("valid_time")?,
                 evidence_refs: row.try_get("evidence_refs")?,
@@ -3355,6 +3412,7 @@ async fn state_lane_tx(
             source_version: row.try_get("source_version")?,
             authority: row.try_get("authority")?,
             canonicality: row.try_get("canonicality")?,
+            provenance: None,
             recorded_at: Some(row.try_get::<DateTime<Utc>, _>("recorded_at")?.to_rfc3339()),
             valid_time: None,
             evidence_refs: row.try_get("evidence_refs")?,
@@ -3426,6 +3484,7 @@ async fn temporal_lane_tx(
             source_version: row.try_get("source_version")?,
             authority: row.try_get("authority")?,
             canonicality: row.try_get("canonicality")?,
+            provenance: None,
             recorded_at: Some(row.try_get::<DateTime<Utc>, _>("recorded_at")?.to_rfc3339()),
             valid_time: row.try_get("valid_time")?,
             evidence_refs: row.try_get("evidence_refs")?,
@@ -3458,6 +3517,20 @@ async fn timestamped_chunk_lane_tx(
           SELECT c.id, c.user_id, c.scope_id, c.document_id, c.document_version,
                  c.ordinal, c.heading_path, c.content, c.content_hash, c.locator,
                  se.id AS source_episode_id, se.source_ref, se.source_version,
+                 se.source_kind,se.metadata AS source_metadata,
+                 (
+                   SELECT jsonb_build_object(
+                     'asset_ref','asset:' || described.asset_id::text,
+                     'version',described.asset_version,
+                     'path',se.metadata->>'original_path'
+                   )
+                   FROM straylight.source_asset_links AS described
+                   WHERE described.user_id=se.user_id
+                     AND described.source_episode_id=se.id
+                     AND described.role='describes'
+                   ORDER BY described.asset_id,described.asset_version
+                   LIMIT 1
+                 ) AS described_asset,
                  dr.native_locator, dr.recorded_at,
                  coalesce(
                    substring(left(c.content, 500) from
@@ -3516,7 +3589,8 @@ async fn timestamped_chunk_lane_tx(
         )
         SELECT id, source_ref, native_locator ->> 'path' AS path,
                array_to_string(heading_path, ' / ') AS heading, content,
-               content_hash, source_version, recorded_at, locator, content_time,
+               content_hash, source_version, source_kind,source_metadata,
+               described_asset,recorded_at, locator, content_time,
                score,
                ARRAY(
                  SELECT 'evidence:' || replace(ei.id::text, '-', '')
@@ -3550,6 +3624,11 @@ async fn timestamped_chunk_lane_tx(
     for row in rows {
         let id: Uuid = row.try_get("id")?;
         let content_time: String = row.try_get("content_time")?;
+        let source_kind: String = row.try_get("source_kind")?;
+        let source_metadata: Value = row.try_get("source_metadata")?;
+        let described_asset: Option<Value> = row.try_get("described_asset")?;
+        let (authority, canonicality, provenance) =
+            source_provenance(&source_kind, &source_metadata, described_asset);
         candidates.push(RetrievalCandidate {
             reference: record_ref("chunk", id),
             source_ref: row.try_get("source_ref")?,
@@ -3558,8 +3637,9 @@ async fn timestamped_chunk_lane_tx(
             content: row.try_get("content")?,
             content_hash: prefixed_hash(row.try_get("content_hash")?),
             source_version: row.try_get("source_version")?,
-            authority: None,
-            canonicality: Some("source_text_at_revision".to_owned()),
+            authority,
+            canonicality,
+            provenance,
             recorded_at: Some(row.try_get::<DateTime<Utc>, _>("recorded_at")?.to_rfc3339()),
             valid_time: Some(json!({
                 "kind": "source_text_timestamp",
@@ -3676,6 +3756,7 @@ async fn relation_lane_tx(
             source_version: row.try_get("source_version")?,
             authority: None,
             canonicality: Some("canonical_at_revision".to_owned()),
+            provenance: None,
             recorded_at: Some(row.try_get::<DateTime<Utc>, _>("recorded_at")?.to_rfc3339()),
             valid_time: None,
             evidence_refs: row.try_get("evidence_refs")?,
@@ -3711,6 +3792,20 @@ async fn expand_selected_tx(
                    dr.native_locator ->> 'path' AS path,
                    array_to_string(neighbor.heading_path, ' / ') AS heading,
                    neighbor.content, neighbor.content_hash, se.source_version,
+                   se.source_kind,se.metadata AS source_metadata,
+                   (
+                     SELECT jsonb_build_object(
+                       'asset_ref','asset:' || described.asset_id::text,
+                       'version',described.asset_version,
+                       'path',se.metadata->>'original_path'
+                     )
+                     FROM straylight.source_asset_links AS described
+                     WHERE described.user_id=se.user_id
+                       AND described.source_episode_id=se.id
+                       AND described.role='describes'
+                     ORDER BY described.asset_id,described.asset_version
+                     LIMIT 1
+                   ) AS described_asset,
                    dr.recorded_at, neighbor.locator,
                    ARRAY(
                      SELECT 'evidence:' || replace(ei.id::text, '-', '')
@@ -3809,6 +3904,11 @@ fn chunk_rows(rows: Vec<sqlx::postgres::PgRow>, lane: &str) -> ApiResult<Vec<Ret
     let mut candidates = Vec::with_capacity(rows.len());
     for row in rows {
         let id: Uuid = row.try_get("id")?;
+        let source_kind: String = row.try_get("source_kind")?;
+        let source_metadata: Value = row.try_get("source_metadata")?;
+        let described_asset: Option<Value> = row.try_get("described_asset")?;
+        let (authority, canonicality, provenance) =
+            source_provenance(&source_kind, &source_metadata, described_asset);
         candidates.push(RetrievalCandidate {
             reference: record_ref("chunk", id),
             source_ref: row.try_get("source_ref")?,
@@ -3817,8 +3917,9 @@ fn chunk_rows(rows: Vec<sqlx::postgres::PgRow>, lane: &str) -> ApiResult<Vec<Ret
             content: row.try_get("content")?,
             content_hash: prefixed_hash(row.try_get("content_hash")?),
             source_version: row.try_get("source_version")?,
-            authority: None,
-            canonicality: None,
+            authority,
+            canonicality,
+            provenance,
             recorded_at: row
                 .try_get::<Option<DateTime<Utc>>, _>("recorded_at")?
                 .map(|value| value.to_rfc3339()),
@@ -3832,6 +3933,41 @@ fn chunk_rows(rows: Vec<sqlx::postgres::PgRow>, lane: &str) -> ApiResult<Vec<Ret
     Ok(candidates)
 }
 
+fn source_provenance(
+    source_kind: &str,
+    metadata: &Value,
+    described_asset: Option<Value>,
+) -> (Option<String>, Option<String>, Option<Value>) {
+    if source_kind != "derived_asset_description" {
+        return (
+            metadata
+                .get("authoritative")
+                .and_then(Value::as_bool)
+                .filter(|value| *value)
+                .map(|_| "source_authoritative".to_owned()),
+            Some("source_text_at_revision".to_owned()),
+            None,
+        );
+    }
+    (
+        Some("derived_non_authoritative".to_owned()),
+        Some("non_authoritative_derivative".to_owned()),
+        Some(json!({
+            "source_kind": source_kind,
+            "authoritative": false,
+            "evidence_kind": "derived_non_authoritative",
+            "description_status": metadata.get("description_status"),
+            "description_method": metadata.get("description_method"),
+            "prompt_version": metadata.get("prompt_version"),
+            "limitations": [
+                "Generated descriptions may contain extraction or model errors.",
+                "Use the linked native asset or source-backed Markdown for consequential claims."
+            ],
+            "native_asset": described_asset
+        })),
+    )
+}
+
 fn generic_candidate_rows(
     rows: Vec<sqlx::postgres::PgRow>,
     lane: &str,
@@ -3840,6 +3976,22 @@ fn generic_candidate_rows(
     for row in rows {
         let id: Uuid = row.try_get("id")?;
         let kind: String = row.try_get("record_kind")?;
+        let source_kind: Option<String> = row.try_get("source_kind")?;
+        let source_metadata: Option<Value> = row.try_get("source_metadata")?;
+        let described_asset: Option<Value> = row.try_get("described_asset")?;
+        let mut authority: Option<String> = row.try_get("authority")?;
+        let mut canonicality: Option<String> = row.try_get("canonicality")?;
+        let mut provenance = None;
+        if let (Some(source_kind), Some(source_metadata)) =
+            (source_kind.as_deref(), source_metadata.as_ref())
+        {
+            let source = source_provenance(source_kind, source_metadata, described_asset);
+            if source.2.is_some() {
+                authority = source.0;
+                canonicality = source.1;
+                provenance = source.2;
+            }
+        }
         candidates.push(RetrievalCandidate {
             reference: record_ref(&kind, id),
             source_ref: row.try_get("source_ref")?,
@@ -3848,8 +4000,9 @@ fn generic_candidate_rows(
             content: row.try_get("content")?,
             content_hash: prefixed_hash(row.try_get("content_hash")?),
             source_version: row.try_get("source_version")?,
-            authority: row.try_get("authority")?,
-            canonicality: row.try_get("canonicality")?,
+            authority,
+            canonicality,
+            provenance,
             recorded_at: row
                 .try_get::<Option<DateTime<Utc>>, _>("recorded_at")?
                 .map(|value| value.to_rfc3339()),
@@ -4450,7 +4603,8 @@ async fn document_text_tx(
         r#"
         SELECT dr.version, dr.title, dr.media_type, dr.content_hash,
                dr.native_locator, dr.byte_size, se.source_ref, se.source_version,
-               av.object_key, av.size_bytes AS asset_size, av.content_hash AS asset_hash
+               dr.asset_id,dr.asset_version,av.object_key,av.object_version_id,
+               av.size_bytes AS asset_size,av.content_hash AS asset_hash
         FROM straylight.documents d
         JOIN straylight.corpus_members cm
           ON cm.user_id = d.user_id AND cm.record_id = d.id
@@ -4482,12 +4636,17 @@ async fn document_text_tx(
     })?;
     let media_type: String = row.try_get("media_type")?;
     let object_key: Option<String> = row.try_get("object_key")?;
+    let object_version_id: Option<String> = row.try_get("object_version_id")?;
     let asset_hash: Option<String> = row.try_get("asset_hash")?;
     let mut representation = "normalized_chunks";
     let mut integrity_warning = None;
     let text = if is_text_media_type(&media_type) {
         if let Some(key) = object_key.as_deref() {
-            match state.object_store.get(key).await {
+            match state
+                .object_store
+                .get_version(key, object_version_id.as_deref())
+                .await
+            {
                 Ok(bytes) => {
                     if !native_asset_hash_matches(asset_hash.as_deref(), &bytes) {
                         metrics::counter!(
@@ -4543,8 +4702,9 @@ async fn document_text_tx(
         "source_ref": row.try_get::<String, _>("source_ref")?,
         "source_version": row.try_get::<Option<String>, _>("source_version")?,
         "representation": representation,
-        "native_asset": object_key.map(|key| json!({
-            "object_key": key,
+        "native_asset": row.try_get::<Option<Uuid>, _>("asset_id")?.map(|asset_id| json!({
+            "asset_ref": record_ref("asset", asset_id),
+            "version": row.try_get::<Option<i32>, _>("asset_version").ok().flatten(),
             "size_bytes": row.try_get::<Option<i64>, _>("asset_size").ok().flatten(),
             "content_hash": asset_hash.map(prefixed_hash),
             "inline": is_text_media_type(&media_type)
@@ -4628,18 +4788,35 @@ async fn source_text_tx(
         r#"
         SELECT se.source_ref, se.source_version, se.title, se.source_kind,
                se.content_hash, se.native_locator, se.captured_at,
-               av.object_key, av.media_type
+               av.object_key,av.object_version_id,av.media_type,
+               (
+                 SELECT coalesce(
+                   jsonb_agg(
+                     jsonb_build_object(
+                       'role',link.role,
+                       'asset_ref','asset:' || link.asset_id::text,
+                       'version',link.asset_version
+                     )
+                     ORDER BY link.role,link.asset_id,link.asset_version
+                   ),
+                   '[]'::jsonb
+                 )
+                 FROM straylight.source_asset_links AS link
+                 WHERE link.user_id=se.user_id
+                   AND link.source_episode_id=se.id
+               ) AS asset_handles
         FROM straylight.source_episodes se
         JOIN straylight.corpus_members cm
           ON cm.user_id = se.user_id AND cm.record_id = se.id
         LEFT JOIN LATERAL (
-          SELECT av0.object_key, av0.media_type
+          SELECT av0.object_key,av0.object_version_id,av0.media_type
           FROM straylight.source_asset_links sal
           JOIN straylight.asset_versions av0
             ON av0.user_id = sal.user_id AND av0.asset_id = sal.asset_id
            AND av0.version = sal.asset_version
           WHERE sal.user_id = se.user_id AND sal.source_episode_id = se.id
-          ORDER BY sal.role, sal.asset_id LIMIT 1
+            AND sal.role='source_native'
+          ORDER BY sal.asset_id LIMIT 1
         ) av ON true
         WHERE se.user_id = $1 AND se.scope_id = $2 AND se.id = $3
           AND cm.corpus_revision_id = $4 AND cm.disposition = 'active'
@@ -4652,11 +4829,15 @@ async fn source_text_tx(
     .fetch_one(&mut **tx)
     .await?;
     let key: Option<String> = row.try_get("object_key")?;
+    let object_version_id: Option<String> = row.try_get("object_version_id")?;
     let media_type: Option<String> = row.try_get("media_type")?;
     let text = if key.is_some() && media_type.as_deref().is_some_and(is_text_media_type) {
         state
             .object_store
-            .get(key.as_deref().unwrap_or_default())
+            .get_version(
+                key.as_deref().unwrap_or_default(),
+                object_version_id.as_deref(),
+            )
             .await
             .ok()
             .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
@@ -4694,7 +4875,8 @@ async fn source_text_tx(
             "source_kind": row.try_get::<String, _>("source_kind")?,
             "content_hash": row.try_get::<Option<String>, _>("content_hash")?.map(prefixed_hash),
             "native_locator": row.try_get::<Value, _>("native_locator")?,
-            "captured_at": row.try_get::<DateTime<Utc>, _>("captured_at")?
+            "captured_at": row.try_get::<DateTime<Utc>, _>("captured_at")?,
+            "native_assets": row.try_get::<Value, _>("asset_handles")?
         }),
         text,
     })
@@ -4710,7 +4892,9 @@ async fn evidence_text_tx(
         r#"
         SELECT ei.text_content, ei.content_hash, ei.locator, ei.evidence_kind,
                ei.observed_at, se.source_ref, se.source_version,
-               av.object_key, av.media_type
+               ei.asset_id,ei.asset_version,av.object_key,av.object_version_id,
+               av.media_type,
+               av.size_bytes AS asset_size
         FROM straylight.evidence_items ei
         JOIN straylight.corpus_members cm
           ON cm.user_id = ei.user_id AND cm.record_id = ei.id
@@ -4731,11 +4915,15 @@ async fn evidence_text_tx(
     .await?;
     let mut text: Option<String> = row.try_get("text_content")?;
     let key: Option<String> = row.try_get("object_key")?;
+    let object_version_id: Option<String> = row.try_get("object_version_id")?;
     let media_type: Option<String> = row.try_get("media_type")?;
     if text.is_none() && key.is_some() && media_type.as_deref().is_some_and(is_text_media_type) {
         text = state
             .object_store
-            .get(key.as_deref().unwrap_or_default())
+            .get_version(
+                key.as_deref().unwrap_or_default(),
+                object_version_id.as_deref(),
+            )
             .await
             .ok()
             .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
@@ -4756,7 +4944,12 @@ async fn evidence_text_tx(
             "content_hash": prefixed_hash(row.try_get::<String, _>("content_hash")?),
             "locator": row.try_get::<Value, _>("locator")?,
             "observed_at": row.try_get::<Option<DateTime<Utc>>, _>("observed_at")?,
-            "native_asset": key
+            "native_asset": row.try_get::<Option<Uuid>, _>("asset_id")?.map(|asset_id| json!({
+                "asset_ref": record_ref("asset", asset_id),
+                "version": row.try_get::<Option<i32>, _>("asset_version").ok().flatten(),
+                "size_bytes": row.try_get::<Option<i64>, _>("asset_size").ok().flatten(),
+                "inline": false
+            }))
         }),
         text,
     })
@@ -7187,6 +7380,8 @@ async fn evidence_passages_tx(
         JOIN straylight.source_episodes se ON se.user_id = ei.user_id AND se.id = ei.source_episode_id
         WHERE ei.user_id = $1 AND ei.scope_id = $2 AND cm.corpus_revision_id = $3
           AND cm.disposition <> 'tombstoned' AND ei.id = ANY($4::uuid[])
+          AND ei.evidence_kind <> 'derived_non_authoritative'
+          AND se.source_kind <> 'derived_asset_description'
         ORDER BY ei.created_at, ei.id
         "#,
     )
@@ -7217,6 +7412,8 @@ async fn lexical_evidence_tx(
         CROSS JOIN requested
         WHERE ei.user_id = $1 AND ei.scope_id = $2 AND cm.corpus_revision_id = $3
           AND cm.disposition <> 'tombstoned' AND ei.text_content IS NOT NULL
+          AND ei.evidence_kind <> 'derived_non_authoritative'
+          AND se.source_kind <> 'derived_asset_description'
           AND to_tsvector('english', ei.text_content) @@ requested.terms
         ORDER BY ts_rank_cd(to_tsvector('english', ei.text_content), requested.terms) DESC,
                  ei.created_at DESC LIMIT $5
@@ -7706,7 +7903,8 @@ async fn load_staged_entries(
         r#"
         SELECT entry.id,entry.path,entry.entry_kind,entry.media_type,entry.size_bytes,
                entry.content_hash,entry.readability,entry.inspection,entry.asset_id,
-               entry.asset_version,asset.object_key,entry.created_at
+               entry.asset_version,asset.object_key,asset.object_version_id,
+               entry.created_at
         FROM straylight.staged_entries AS entry
         LEFT JOIN straylight.asset_versions AS asset
           ON asset.user_id=entry.user_id AND asset.asset_id=entry.asset_id
@@ -7735,6 +7933,7 @@ async fn load_staged_entries(
                 asset_id: row.try_get("asset_id")?,
                 asset_version: row.try_get("asset_version")?,
                 object_key: row.try_get("object_key")?,
+                object_version_id: row.try_get("object_version_id")?,
                 created_at: row.try_get("created_at")?,
             })
         })
@@ -8012,6 +8211,7 @@ async fn staged_query_candidate(
             source_version: Some(content_hash),
             authority: Some("staged_untrusted".to_owned()),
             canonicality: Some("temporary".to_owned()),
+            provenance: None,
             recorded_at: Some(entry.created_at.to_rfc3339()),
             valid_time: None,
             evidence_refs: vec![reference],
@@ -8104,7 +8304,10 @@ async fn load_staged_text(state: &AppState, entry: &StagedEntry) -> ApiResult<St
             &record_ref("stage-entry", entry.id),
         )
     })?;
-    let bytes = state.object_store.get(key).await?;
+    let bytes = state
+        .object_store
+        .get_version(key, entry.object_version_id.as_deref())
+        .await?;
     verify_staged_bytes(entry, &bytes)?;
     let text = String::from_utf8(bytes.to_vec()).map_err(|_| {
         ApiError::public(
@@ -9020,6 +9223,7 @@ mod tests {
             source_version: Some("source-v1".to_owned()),
             authority: Some("owner_confirmed".to_owned()),
             canonicality: Some("canonical_at_revision".to_owned()),
+            provenance: None,
             recorded_at: Some("2026-07-22T00:00:00Z".to_owned()),
             valid_time: Some(json!({"path": path, "start_line": 1, "end_line": 3})),
             evidence_refs: Vec::new(),

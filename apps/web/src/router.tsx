@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { AuthBoundary } from "./components/AuthBoundary";
 import { EmptyState } from "./components/StateViews";
+import { AssetsPage } from "./pages/AssetsPage";
 import { CapturePage } from "./pages/CapturePage";
 import { ControlPage } from "./pages/ControlPage";
 import { DreamsPage } from "./pages/DreamsPage";
@@ -45,6 +46,18 @@ const indexRoute = createRoute({
 });
 const workRoute = createRoute({ getParentRoute: () => rootRoute, path: "/work", component: WorkPage });
 const sessionRoute = createRoute({ getParentRoute: () => rootRoute, path: "/sessions/$sessionId", component: WorkspacePage });
+const assetsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/assets", component: AssetsPage });
+
+function SessionAssetsRoute() {
+  const { sessionId } = useParams({ from: "/assets/$sessionId" });
+  return <AssetsPage sessionId={sessionId} />;
+}
+
+const sessionAssetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/assets/$sessionId",
+  component: SessionAssetsRoute,
+});
 const exploreRoute = createRoute({ getParentRoute: () => rootRoute, path: "/explore", component: ExplorePage });
 const objectRoute = createRoute({ getParentRoute: () => rootRoute, path: "/objects/$objectId", component: ObjectPage });
 const sourceRoute = createRoute({ getParentRoute: () => rootRoute, path: "/sources/$sourceId", component: SourcePage });
@@ -63,6 +76,8 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   workRoute,
   sessionRoute,
+  assetsRoute,
+  sessionAssetsRoute,
   exploreRoute,
   objectRoute,
   sourceRoute,

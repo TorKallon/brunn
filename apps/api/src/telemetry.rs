@@ -134,6 +134,13 @@ pub fn spawn_runtime_metrics(state: AppState) {
         loop {
             interval.tick().await;
             gauge!("runtime.alive").set(1.0);
+            let transfer_available = state.transfer_limiter.available_permits();
+            let transfer_in_use = state
+                .config
+                .max_concurrent_transfers
+                .saturating_sub(transfer_available);
+            gauge!("asset.transfer.permits", "state" => "available").set(transfer_available as f64);
+            gauge!("asset.transfer.permits", "state" => "in_use").set(transfer_in_use as f64);
             record_pool(
                 "auth",
                 &state.auth_pool,
@@ -155,6 +162,11 @@ pub fn spawn_runtime_metrics(state: AppState) {
                     counter!("telemetry.snapshot.errors", "snapshot" => "worker_queues")
                         .increment(1);
                     tracing::warn!(?error, "could not collect worker queue metrics");
+                }
+                if let Err(error) = record_asset_snapshot(pool).await {
+                    counter!("telemetry.snapshot.errors", "snapshot" => "asset_storage")
+                        .increment(1);
+                    tracing::warn!(?error, "could not collect asset storage metrics");
                 }
             }
             let database_ready = sqlx::query_scalar::<_, i32>("SELECT 1")
@@ -772,7 +784,7 @@ fn record_pool(name: &'static str, pool: &sqlx::PgPool, max: u32) {
 }
 
 async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-    const QUEUES: [(&str, &[&str]); 5] = [
+    const QUEUES: [(&str, &[&str]); 6] = [
         ("background", &["queued", "retry_wait", "running", "failed"]),
         (
             "dream",
@@ -788,8 +800,15 @@ async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
             ],
         ),
         ("deletion", &["queued", "propagating", "failed", "blocked"]),
-        ("account_export", &["queued", "running", "failed"]),
-        ("account_deletion", &["queued", "running", "failed"]),
+        (
+            "account_export",
+            &["queued", "running", "deleting", "failed"],
+        ),
+        (
+            "account_deletion",
+            &["queued", "running", "awaiting_backup_expiry", "failed"],
+        ),
+        ("asset_upload", &["uploading", "verifying", "failed"]),
     ];
     let rows = sqlx::query(
         r#"
@@ -813,11 +832,15 @@ async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
           UNION ALL
           SELECT 'account_export'::text AS queue,status,created_at
           FROM straylight.account_exports
-          WHERE status IN ('queued','running','failed')
+          WHERE status IN ('queued','running','deleting','failed')
           UNION ALL
           SELECT 'account_deletion'::text AS queue,status,created_at
           FROM straylight.account_deletion_requests
-          WHERE status IN ('queued','running','failed')
+          WHERE status IN ('queued','running','awaiting_backup_expiry','failed')
+          UNION ALL
+          SELECT 'asset_upload'::text AS queue,status,created_at
+          FROM straylight.asset_uploads
+          WHERE status IN ('uploading','verifying','failed')
         ) pending
         GROUP BY queue,status
         "#,
@@ -852,6 +875,33 @@ async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
             .set(age.max(0.0));
         }
     }
+    Ok(())
+}
+
+async fn record_asset_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    let row = sqlx::query(
+        r#"
+        WITH physical AS (
+          SELECT user_id,object_key,max(size_bytes)::bigint AS size_bytes
+          FROM straylight.asset_versions
+          GROUP BY user_id,object_key
+        )
+        SELECT
+          (SELECT count(*)::bigint FROM straylight.asset_versions) AS logical_versions,
+          (SELECT coalesce(sum(size_bytes),0)::float8
+             FROM straylight.asset_versions) AS logical_bytes,
+          (SELECT count(*)::bigint FROM physical) AS physical_objects,
+          (SELECT coalesce(sum(size_bytes),0)::float8 FROM physical) AS physical_bytes
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+    let logical_bytes = row.try_get::<f64, _>("logical_bytes")?;
+    let physical_bytes = row.try_get::<f64, _>("physical_bytes")?;
+    gauge!("asset.storage.logical_versions").set(row.try_get::<i64, _>("logical_versions")? as f64);
+    gauge!("asset.storage.logical_bytes").set(logical_bytes);
+    gauge!("asset.storage.physical_objects").set(row.try_get::<i64, _>("physical_objects")? as f64);
+    gauge!("asset.storage.physical_bytes").set(physical_bytes);
     Ok(())
 }
 
@@ -949,6 +999,10 @@ fn describe_metrics() {
         "worker.queue.oldest_age_seconds",
         metrics::Unit::Seconds,
         "Age of the oldest pending durable job."
+    );
+    metrics::describe_gauge!(
+        "asset.transfer.permits",
+        "Configured binary-transfer permits by available or in-use state."
     );
 }
 

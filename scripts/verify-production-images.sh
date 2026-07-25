@@ -24,9 +24,14 @@ read_value() {
 }
 
 revision=$(read_value STRAYLIGHT_RELEASE_REVISION)
-for name in STRAYLIGHT_DATABASE_IMAGE STRAYLIGHT_API_IMAGE \
-  STRAYLIGHT_WEB_IMAGE STRAYLIGHT_MCP_IMAGE STRAYLIGHT_EDGE_IMAGE \
-  STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE; do
+object_store_mode=$(read_value STRAYLIGHT_OBJECT_STORE_MODE)
+object_store_mode=${object_store_mode:-self-hosted-minio}
+image_names="STRAYLIGHT_DATABASE_IMAGE STRAYLIGHT_API_IMAGE
+STRAYLIGHT_WEB_IMAGE STRAYLIGHT_MCP_IMAGE STRAYLIGHT_EDGE_IMAGE"
+if [ "$object_store_mode" = "self-hosted-minio" ]; then
+  image_names="$image_names STRAYLIGHT_OBJECT_STORE_CLIENT_IMAGE"
+fi
+for name in $image_names; do
   image=$(read_value "$name")
   [ -n "$image" ] || {
     echo "$name is missing" >&2

@@ -24,7 +24,19 @@ use crate::{
 pub struct StageUpload {
     pub path: String,
     pub media_type: Option<String>,
-    pub bytes: Bytes,
+    pub import_metadata: Value,
+    pub content: StageUploadContent,
+}
+
+#[derive(Clone, Debug)]
+pub enum StageUploadContent {
+    Bytes(Bytes),
+    Stored {
+        object_key: String,
+        object_version_id: Option<String>,
+        content_hash: String,
+        size_bytes: u64,
+    },
 }
 
 const MAX_STAGE_ENTRIES: usize = 2_000;
@@ -42,14 +54,8 @@ struct PreparedStageEntry {
     readability: String,
     inspection: Value,
     bytes: Option<Bytes>,
-}
-
-#[derive(Clone, Debug)]
-struct PendingStageBlob {
-    bytes: Bytes,
-    media_type: Option<String>,
-    expected_hash: String,
-    object_key: String,
+    stored_object_key: Option<String>,
+    object_version_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -89,11 +95,25 @@ struct StagePromotionEntry {
 struct StagePromotion {
     stage_id: Uuid,
     stable_import_id: String,
+    generation_id: String,
     input_hash: String,
     inventory_hash: String,
     selection_hash: String,
+    snapshot_paths: Option<Vec<String>>,
+    snapshot_hash: Option<String>,
     base_revision_id: Uuid,
     entries: Vec<StagePromotionEntry>,
+}
+
+enum StageExpansion {
+    Fresh {
+        items: Vec<SaveItem>,
+        promotion: StagePromotion,
+    },
+    Replay {
+        receipt: Value,
+        import_receipt: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -103,6 +123,12 @@ struct StagedAssetBinding {
     asset_version: i32,
     content_hash: String,
     media_type: String,
+}
+
+#[derive(Clone, Debug)]
+struct DescribedAssetBinding {
+    asset_id: Uuid,
+    asset_version: i32,
 }
 
 struct WriteContext<'a> {
@@ -125,12 +151,12 @@ pub async fn save(state: &AppState, auth: &AuthContext, request: SaveRequest) ->
     request.validate()?;
     let request_value = serde_json::to_value(&request)?;
     let request_hash = hash_json(&request_value)?;
-    let (request, stage_promotion, stable_replay) =
+    let (request, stage_promotions, stable_replay) =
         expand_stage_promotion(state, auth, request).await?;
     if let Some(receipt) = stable_replay {
         return Ok(receipt);
     }
-    request.validate()?;
+    validate_expanded_save(&request, !stage_promotions.is_empty())?;
     let receipt_scope = request.scope.clone();
     let receipt_idempotency_key = request.idempotency_key.clone();
     let mut tx = state.begin_write(auth).await?;
@@ -172,7 +198,7 @@ pub async fn save(state: &AppState, auth: &AuthContext, request: SaveRequest) ->
             ));
         }
     }
-    if let Some(promotion) = &stage_promotion {
+    for promotion in &stage_promotions {
         lock_stage_promotion(&mut tx, auth, scope_id, promotion).await?;
     }
     let (policy_id, policy_version) = default_policy(&mut tx, auth.user_id.0).await?;
@@ -279,6 +305,19 @@ pub async fn save(state: &AppState, auth: &AuthContext, request: SaveRequest) ->
         }
         process_item(&mut tx, &mut context, order, item, id).await?;
     }
+    if let Some(promotion) = stage_promotions
+        .iter()
+        .find(|promotion| promotion.snapshot_paths.is_some())
+        && let Some(snapshot_paths) = promotion.snapshot_paths.as_deref()
+    {
+        reconcile_import_snapshot(
+            &mut tx,
+            &mut context,
+            &promotion.stable_import_id,
+            snapshot_paths,
+        )
+        .await?;
+    }
 
     for (_, item, id) in &context.checkpoint_items {
         let reference = item.reference.clone().unwrap_or_else(|| {
@@ -358,8 +397,9 @@ pub async fn save(state: &AppState, auth: &AuthContext, request: SaveRequest) ->
         .await?;
     }
 
-    let import_receipt_id = if let Some(promotion) = &stage_promotion {
-        Some(
+    let mut import_receipt_ids = Vec::with_capacity(stage_promotions.len());
+    for promotion in &stage_promotions {
+        import_receipt_ids.push(
             record_stage_promotion(
                 &mut tx,
                 &context,
@@ -369,10 +409,9 @@ pub async fn save(state: &AppState, auth: &AuthContext, request: SaveRequest) ->
                 &manifest_hash,
             )
             .await?,
-        )
-    } else {
-        None
-    };
+        );
+    }
+    let import_receipt_id = import_receipt_ids.first().copied();
 
     let saved: Vec<_> = context
         .receipts
@@ -392,6 +431,9 @@ pub async fn save(state: &AppState, auth: &AuthContext, request: SaveRequest) ->
         "corpus_revision": revision_ref(result_revision_id),
         "manifest_hash": format!("sha256:{manifest_hash}"),
         "import_receipt": import_receipt_id.map(|id| format!("import:{id}")),
+        "import_receipts": import_receipt_ids.iter()
+            .map(|id| format!("import:{id}"))
+            .collect::<Vec<_>>(),
         "saved": saved,
         "items": context.receipts.iter().map(|item| json!({
             "order": item.order,
@@ -503,6 +545,21 @@ pub async fn save(state: &AppState, auth: &AuthContext, request: SaveRequest) ->
     Ok(receipt)
 }
 
+fn validate_expanded_save(request: &SaveRequest, stage_promotion: bool) -> ApiResult<()> {
+    if !stage_promotion {
+        return request.validate();
+    }
+    if request.items.is_empty() || request.items.len() > 100_000 {
+        return Err(ApiError::invalid(
+            "an expanded staged import must contain between 1 and 100,000 files",
+        ));
+    }
+    for item in &request.items {
+        item.validate()?;
+    }
+    Ok(())
+}
+
 async fn lock_stage_promotion(
     tx: &mut Transaction<'_, Postgres>,
     auth: &AuthContext,
@@ -511,7 +568,8 @@ async fn lock_stage_promotion(
 ) -> ApiResult<()> {
     let row = sqlx::query(
         r#"
-        SELECT scope_id,base_corpus_revision_id,input_hash,inventory_hash,status,expires_at
+        SELECT scope_id,credential_id,base_corpus_revision_id,input_hash,
+               inventory_hash,status,expires_at
         FROM straylight.stages
         WHERE user_id=$1 AND id=$2
         FOR UPDATE
@@ -528,6 +586,7 @@ async fn lock_stage_promotion(
     let expires_at: DateTime<Utc> = row.try_get("expires_at")?;
     let current_inventory: Option<String> = row.try_get("inventory_hash")?;
     if row.try_get::<Uuid, _>("scope_id")? != scope_id
+        || row.try_get::<Uuid, _>("credential_id")? != auth.credential_id.0
         || row.try_get::<Uuid, _>("base_corpus_revision_id")? != promotion.base_revision_id
         || row.try_get::<String, _>("input_hash")? != promotion.input_hash
         || current_inventory.as_deref() != Some(promotion.inventory_hash.as_str())
@@ -619,9 +678,13 @@ async fn record_stage_promotion(
     let receipt_id = Uuid::now_v7();
     let receipt = json!({
         "stage_ref": format!("stage:{}", promotion.stage_id),
+        "generation_id": promotion.generation_id,
         "operation_id": format!("operation:{}", context.operation_id),
         "selected_entries": promotion.entries.iter().map(|entry| &entry.path).collect::<Vec<_>>(),
         "selected_manifest_hash": format!("sha256:{}", promotion.selection_hash),
+        "snapshot_path_count": promotion.snapshot_paths.as_ref().map(Vec::len),
+        "snapshot_manifest_hash": promotion.snapshot_hash.as_ref()
+            .map(|hash| format!("sha256:{hash}")),
         "result_corpus_revision": revision_ref(result_revision_id)
     });
     sqlx::query(
@@ -742,7 +805,43 @@ pub async fn stage_uploads(
     auth: &AuthContext,
     scope_ref: &str,
     stable_import_id: Option<String>,
+    describe_binaries: bool,
     uploads: Vec<StageUpload>,
+) -> ApiResult<Value> {
+    let mut uploaded_keys = Vec::new();
+    let result = stage_uploads_inner(
+        state,
+        auth,
+        scope_ref,
+        stable_import_id,
+        describe_binaries,
+        uploads,
+        &mut uploaded_keys,
+    )
+    .await;
+    if result.is_err()
+        && !uploaded_keys.is_empty()
+        && let Err(cleanup_error) = reconcile_stage_commit(state, auth, &uploaded_keys).await
+    {
+        tracing::error!(
+            ?cleanup_error,
+            "failed to reconcile uploaded objects after stage failure"
+        );
+        return Err(ApiError::Internal(
+            "stage failed and uploaded-object cleanup could not be verified".to_owned(),
+        ));
+    }
+    result
+}
+
+async fn stage_uploads_inner(
+    state: &AppState,
+    auth: &AuthContext,
+    scope_ref: &str,
+    stable_import_id: Option<String>,
+    describe_binaries: bool,
+    uploads: Vec<StageUpload>,
+    uploaded_keys: &mut Vec<String>,
 ) -> ApiResult<Value> {
     auth.require(Capability::Stage)?;
     if uploads.is_empty() || uploads.len() > 1_000 {
@@ -762,19 +861,41 @@ pub async fn stage_uploads(
         ));
     }
     let input_count = uploads.len();
-    let (prepared, input_hash, inventory_hash, mut warnings) = prepare_stage_entries(uploads)?;
+    let (prepared, raw_input_hash, inventory_hash, mut warnings) = prepare_stage_entries(uploads)?;
+    let input_hash = hex::encode(Sha256::digest(
+        format!("{raw_input_hash}\0describe_binaries={describe_binaries}").as_bytes(),
+    ));
+    let description_count = prepared
+        .iter()
+        .filter(|entry| {
+            describe_binaries
+                && entry.readability == "unsupported"
+                && matches!(entry.entry_kind.as_str(), "file" | "archive")
+                && entry.content_hash.is_some()
+        })
+        .count();
+    let stage_status = if description_count > 0 {
+        "inspecting"
+    } else {
+        "ready"
+    };
     let pending_blobs: HashMap<String, usize> = prepared
         .iter()
         .filter_map(|entry| {
             Some((
                 strip_sha256(entry.content_hash.as_deref()?),
-                entry.bytes.as_ref()?.len(),
+                usize::try_from(entry.size_bytes).ok()?,
             ))
         })
         .map(|(hash, size)| (hash.to_owned(), size))
         .collect();
     let pending_blobs: Vec<_> = pending_blobs.into_iter().collect();
     let mut tx = state.begin_write(auth).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
+        .bind(auth.user_id.0)
+        .execute(&mut *tx)
+        .await?;
+    validate_stored_stage_objects(state, auth, &prepared).await?;
     quota::ensure_storage_capacity(&mut tx, auth.user_id.0, &pending_blobs).await?;
     let scope_id = resolve_scope(&mut tx, auth, scope_ref).await?;
     let (base_revision, _, _, _) = active_revision(&mut tx, auth.user_id.0, scope_id).await?;
@@ -811,9 +932,8 @@ pub async fn stage_uploads(
             let status: String = row.try_get("status")?;
             let expires_at: DateTime<Utc> = row.try_get("expires_at")?;
             if prior_hash == input_hash
-                && prior_inventory_hash.as_deref() == Some(inventory_hash.as_str())
                 && prior_base == base_revision
-                && matches!(status.as_str(), "ready" | "promoted")
+                && matches!(status.as_str(), "inspecting" | "ready" | "promoted")
                 && expires_at > Utc::now()
             {
                 let import_receipt = sqlx::query_scalar::<_, Uuid>(
@@ -829,12 +949,26 @@ pub async fn stage_uploads(
                     "stage_ref": format!("stage:{stage_id}"),
                     "status": status,
                     "input_hash": format!("sha256:{input_hash}"),
-                    "inventory_hash": format!("sha256:{inventory_hash}"),
+                    "inventory_hash": prior_inventory_hash
+                        .map(|hash| format!("sha256:{hash}")),
                     "base_corpus_revision": revision_ref(base_revision),
                     "import_receipt": import_receipt.map(|id| format!("import:{id}")),
                     "replay_outcome": "exact_replay",
                     "replayed": true
                 }));
+            }
+            if matches!(status.as_str(), "uploading" | "inspecting" | "ready")
+                && expires_at > Utc::now()
+            {
+                return Err(ApiError::conflict(
+                    "stage_pending",
+                    "a changed import cannot replace an unpromoted stage; finish or expire the existing stage first",
+                    json!({
+                        "stage_ref": format!("stage:{stage_id}"),
+                        "status": status,
+                        "expires_at": expires_at
+                    }),
+                ));
             }
             replay_outcome = "revision_delta";
         }
@@ -846,7 +980,7 @@ pub async fn stage_uploads(
           id,user_id,scope_id,credential_id,stable_import_id,
           base_corpus_revision_id,input_hash,inventory_hash,status,
           policy_id,policy_version,expires_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ready',$9,$10,clock_timestamp()+interval '7 days')
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,clock_timestamp()+interval '7 days')
         "#,
     )
     .bind(stage_id)
@@ -856,108 +990,208 @@ pub async fn stage_uploads(
     .bind(&stable_import_id)
     .bind(base_revision)
     .bind(&input_hash)
-    .bind(&inventory_hash)
+    .bind(if stage_status == "ready" {
+        Some(inventory_hash.as_str())
+    } else {
+        None
+    })
+    .bind(stage_status)
     .bind(policy_id)
     .bind(policy_version)
     .execute(&mut *tx)
     .await?;
     let mut response_entries = Vec::with_capacity(prepared.len());
-    let mut staged_assets = HashMap::<String, (Uuid, i32)>::new();
-    let mut pending_uploads = Vec::<PendingStageBlob>::new();
     for entry in &prepared {
-        let asset_binding =
-            if let (Some(bytes), Some(content_hash)) = (&entry.bytes, &entry.content_hash) {
-                if let Some(binding) = staged_assets.get(content_hash) {
-                    Some(*binding)
-                } else {
-                    let digest = strip_sha256(content_hash);
-                    let object_key = format!("{}/blobs/{digest}", auth.user_id.0);
-                    let existing = sqlx::query(
+        let asset_binding = if let Some(content_hash) = &entry.content_hash {
+            if entry.bytes.is_some() || entry.stored_object_key.is_some() {
+                let digest = strip_sha256(content_hash);
+                let object_key = entry
+                    .stored_object_key
+                    .clone()
+                    .unwrap_or_else(|| format!("{}/blobs/{digest}", auth.user_id.0));
+                let entry_size = i64::try_from(entry.size_bytes).unwrap_or(i64::MAX);
+                let entry_media_type = entry
+                    .media_type
+                    .as_deref()
+                    .unwrap_or("application/octet-stream");
+                let entry_import_metadata = entry
+                    .inspection
+                    .get("import_metadata")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
+                let prior_asset = if let Some(stable_import_id) = stable_import_id.as_deref() {
+                    let source_ref = staged_source_ref(scope_ref, stable_import_id, &entry.path);
+                    sqlx::query(
                         r#"
-                        SELECT asset_id,version,bucket,content_hash,size_bytes
-                        FROM straylight.asset_versions
-                        WHERE user_id=$1 AND object_key=$2 AND size_bytes > 0
-                        ORDER BY stored_at,asset_id,version
+                        SELECT asset.id AS asset_id,
+                               asset.current_version AS asset_head_version,
+                               link.asset_version AS current_version,
+                               version.content_hash,version.size_bytes,version.media_type,
+                               source.metadata->'import_metadata' AS prior_import_metadata
+                        FROM straylight.source_episodes AS source
+                        JOIN straylight.source_asset_links AS link
+                          ON link.user_id=source.user_id
+                         AND link.source_episode_id=source.id
+                         AND link.role='source_native'
+                        JOIN straylight.assets AS asset
+                          ON asset.user_id=link.user_id AND asset.id=link.asset_id
+                        JOIN straylight.asset_versions AS version
+                          ON version.user_id=asset.user_id
+                         AND version.asset_id=asset.id
+                         AND version.version=link.asset_version
+                        WHERE source.user_id=$1 AND source.scope_id=$2
+                          AND source.source_ref=$3 AND asset.scope_id=$2
+                        ORDER BY source.captured_at DESC,source.id DESC
                         LIMIT 1
-                        FOR SHARE
+                        FOR UPDATE OF asset
                         "#,
                     )
                     .bind(auth.user_id.0)
-                    .bind(&object_key)
+                    .bind(scope_id)
+                    .bind(source_ref)
                     .fetch_optional(&mut *tx)
-                    .await?;
-                    let binding = if let Some(existing) = existing {
-                        let stored_bucket: String = existing.try_get("bucket")?;
-                        let stored_hash: String = existing.try_get("content_hash")?;
-                        let stored_size: i64 = existing.try_get("size_bytes")?;
-                        if stored_bucket != state.config.s3_bucket
-                            || stored_hash != digest
-                            || stored_size != i64::try_from(bytes.len()).unwrap_or(i64::MAX)
-                        {
-                            return Err(ApiError::Internal(
-                                "content-addressed asset metadata is inconsistent".to_owned(),
-                            ));
-                        }
-                        (
-                            existing.try_get::<Uuid, _>("asset_id")?,
-                            existing.try_get::<i32, _>("version")?,
-                        )
+                    .await?
+                } else {
+                    None
+                };
+                let binding = if let Some(prior) = prior_asset {
+                    let asset_id: Uuid = prior.try_get("asset_id")?;
+                    let current_version: i32 = prior.try_get("current_version")?;
+                    let asset_head_version: i32 = prior.try_get("asset_head_version")?;
+                    if asset_head_version != current_version {
+                        return Err(ApiError::conflict(
+                            "stage_cleanup_pending",
+                            "the prior imported asset has an unpromoted version awaiting cleanup",
+                            json!({
+                                "asset_ref": format!("asset:{asset_id}"),
+                                "active_version": current_version,
+                                "staged_head_version": asset_head_version
+                            }),
+                        ));
+                    }
+                    let prior_hash: String = prior.try_get("content_hash")?;
+                    let prior_size: i64 = prior.try_get("size_bytes")?;
+                    let prior_media_type: String = prior.try_get("media_type")?;
+                    let prior_import_metadata: Option<Value> =
+                        prior.try_get("prior_import_metadata")?;
+                    if prior_hash == digest
+                        && prior_size == entry_size
+                        && prior_media_type == entry_media_type
+                        && prior_import_metadata.as_ref() == Some(&entry_import_metadata)
+                    {
+                        (asset_id, current_version)
                     } else {
-                        let asset_id = Uuid::now_v7();
-                        sqlx::query(
-                            r#"
-                            INSERT INTO straylight.assets (
-                              id,user_id,scope_id,current_version,policy_id,policy_version
-                            ) VALUES ($1,$2,$3,1,$4,$5)
-                            "#,
+                        let next_version = current_version.checked_add(1).ok_or_else(|| {
+                            ApiError::Internal("asset version overflow".to_owned())
+                        })?;
+                        let object_version_id = persist_stage_entry_blob(
+                            state,
+                            auth,
+                            entry,
+                            &object_key,
+                            content_hash,
+                            uploaded_keys,
                         )
-                        .bind(asset_id)
-                        .bind(auth.user_id.0)
-                        .bind(scope_id)
-                        .bind(policy_id)
-                        .bind(policy_version)
-                        .execute(&mut *tx)
                         .await?;
                         sqlx::query(
                             r#"
                             INSERT INTO straylight.asset_versions (
-                              user_id,asset_id,version,bucket,object_key,content_hash,
-                              size_bytes,media_type,metadata
-                            ) VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8)
+                              user_id,asset_id,version,previous_version,bucket,object_key,
+                              object_version_id,content_hash,size_bytes,media_type,metadata
+                            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
                             "#,
                         )
                         .bind(auth.user_id.0)
                         .bind(asset_id)
+                        .bind(next_version)
+                        .bind(current_version)
                         .bind(&state.config.s3_bucket)
                         .bind(&object_key)
+                        .bind(&object_version_id)
                         .bind(digest)
-                        .bind(i64::try_from(bytes.len()).unwrap_or(i64::MAX))
-                        .bind(
-                            entry
-                                .media_type
-                                .as_deref()
-                                .unwrap_or("application/octet-stream"),
-                        )
+                        .bind(entry_size)
+                        .bind(entry_media_type)
                         .bind(json!({
                             "stage_ref": format!("stage:{stage_id}"),
-                            "original_path": entry.path
+                            "stable_import_id": stable_import_id,
+                            "original_path": entry.path,
+                            "import_metadata": entry_import_metadata
                         }))
                         .execute(&mut *tx)
                         .await?;
-                        pending_uploads.push(PendingStageBlob {
-                            bytes: bytes.clone(),
-                            media_type: entry.media_type.clone(),
-                            expected_hash: content_hash.clone(),
-                            object_key,
-                        });
-                        (asset_id, 1)
-                    };
-                    staged_assets.insert(content_hash.clone(), binding);
-                    Some(binding)
-                }
+                        sqlx::query(
+                            r#"
+                            UPDATE straylight.assets
+                            SET current_version=$1
+                            WHERE user_id=$2 AND id=$3 AND current_version=$4
+                            "#,
+                        )
+                        .bind(next_version)
+                        .bind(auth.user_id.0)
+                        .bind(asset_id)
+                        .bind(current_version)
+                        .execute(&mut *tx)
+                        .await?;
+                        (asset_id, next_version)
+                    }
+                } else {
+                    let object_version_id = persist_stage_entry_blob(
+                        state,
+                        auth,
+                        entry,
+                        &object_key,
+                        content_hash,
+                        uploaded_keys,
+                    )
+                    .await?;
+                    let asset_id = Uuid::now_v7();
+                    sqlx::query(
+                        r#"
+                        INSERT INTO straylight.assets (
+                          id,user_id,scope_id,current_version,policy_id,policy_version
+                        ) VALUES ($1,$2,$3,1,$4,$5)
+                        "#,
+                    )
+                    .bind(asset_id)
+                    .bind(auth.user_id.0)
+                    .bind(scope_id)
+                    .bind(policy_id)
+                    .bind(policy_version)
+                    .execute(&mut *tx)
+                    .await?;
+                    sqlx::query(
+                        r#"
+                        INSERT INTO straylight.asset_versions (
+                          user_id,asset_id,version,bucket,object_key,content_hash,
+                          size_bytes,media_type,metadata,object_version_id
+                        ) VALUES ($1,$2,1,$3,$4,$5,$6,$7,$8,$9)
+                        "#,
+                    )
+                    .bind(auth.user_id.0)
+                    .bind(asset_id)
+                    .bind(&state.config.s3_bucket)
+                    .bind(&object_key)
+                    .bind(digest)
+                    .bind(entry_size)
+                    .bind(entry_media_type)
+                    .bind(json!({
+                        "stage_ref": format!("stage:{stage_id}"),
+                        "stable_import_id": stable_import_id,
+                        "original_path": entry.path,
+                        "import_metadata": entry_import_metadata
+                    }))
+                    .bind(&object_version_id)
+                    .execute(&mut *tx)
+                    .await?;
+                    (asset_id, 1)
+                };
+                Some(binding)
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
         let staged_entry_id = Uuid::now_v7();
         sqlx::query(
             r#"
@@ -982,6 +1216,35 @@ pub async fn stage_uploads(
         .bind(&entry.inspection)
         .execute(&mut *tx)
         .await?;
+        if describe_binaries
+            && entry.readability == "unsupported"
+            && matches!(entry.entry_kind.as_str(), "file" | "archive")
+            && let Some((asset_id, asset_version)) = asset_binding
+            && entry.content_hash.is_some()
+        {
+            sqlx::query(
+                r#"
+                INSERT INTO straylight.background_jobs (
+                  id,user_id,scope_id,job_kind,status,payload
+                ) VALUES ($1,$2,$3,'asset_description','queued',$4)
+                "#,
+            )
+            .bind(Uuid::now_v7())
+            .bind(auth.user_id.0)
+            .bind(scope_id)
+            .bind(json!({
+                "stage_id": stage_id,
+                "staged_entry_id": staged_entry_id,
+                "asset_id": asset_id,
+                "asset_version": asset_version,
+                "content_hash": entry.content_hash,
+                "path": entry.path,
+                "media_type": entry.media_type,
+                "size_bytes": entry.size_bytes
+            }))
+            .execute(&mut *tx)
+            .await?;
+        }
         response_entries.push(json!({
             "ref": format!("stage-entry:{staged_entry_id}"),
             "path": entry.path,
@@ -990,6 +1253,7 @@ pub async fn stage_uploads(
             "size_bytes": entry.size_bytes,
             "hash": entry.content_hash,
             "asset_ref": asset_binding.map(|binding| format!("asset:{}", binding.0)),
+            "asset_version": asset_binding.map(|binding| binding.1),
             "disposition": "staged",
             "status": entry.readability
         }));
@@ -1012,7 +1276,13 @@ pub async fn stage_uploads(
         "input_count": input_count,
         "entry_count": prepared.len(),
         "input_hash": input_hash,
-        "inventory_hash": inventory_hash,
+        "inventory_hash": if stage_status == "ready" {
+            Some(inventory_hash.as_str())
+        } else {
+            None
+        },
+        "describe_binaries": describe_binaries,
+        "description_jobs": description_count,
         "replay_outcome": replay_outcome
     }))
     .execute(&mut *tx)
@@ -1041,62 +1311,17 @@ pub async fn stage_uploads(
         .iter()
         .filter(|entry| entry.readability == "unsupported" && entry.entry_kind != "directory")
         .count();
-    let pending_keys: Vec<String> = pending_uploads
-        .iter()
-        .map(|pending| pending.object_key.clone())
-        .collect();
-    for pending in &pending_uploads {
-        let upload = state
-            .object_store
-            .put_user_blob(
-                auth.user_id,
-                pending.media_type.as_deref(),
-                pending.bytes.clone(),
-            )
-            .await;
-        let upload = match upload {
-            Ok(upload) => upload,
-            Err(error) => {
-                let cleanup = purge_stage_candidates(state, &pending_keys).await;
-                let _ = tx.rollback().await;
-                if let Err(cleanup_error) = cleanup {
-                    tracing::error!(?cleanup_error, "failed stage upload cleanup");
-                    return Err(ApiError::Internal(
-                        "stage upload failed and object cleanup could not be verified".to_owned(),
-                    ));
-                }
-                return Err(error);
-            }
-        };
-        if upload.sha256 != pending.expected_hash
-            || upload.object_key != pending.object_key
-            || upload.size_bytes != pending.bytes.len()
-        {
-            let cleanup = purge_stage_candidates(state, &pending_keys).await;
-            let _ = tx.rollback().await;
-            if let Err(cleanup_error) = cleanup {
-                tracing::error!(?cleanup_error, "failed inconsistent stage upload cleanup");
-            }
-            return Err(ApiError::Internal(
-                "staged object identity changed during upload".to_owned(),
-            ));
-        }
-    }
-    if let Err(error) = tx.commit().await {
-        if let Err(cleanup_error) = reconcile_stage_commit(state, auth, &pending_keys).await {
-            tracing::error!(
-                ?cleanup_error,
-                "could not reconcile blobs after an ambiguous stage commit"
-            );
-        }
-        return Err(ApiError::Database(error));
-    }
+    tx.commit().await?;
     Ok(json!({
         "id": format!("stage:{stage_id}"),
         "stage_ref": format!("stage:{stage_id}"),
-        "status": "ready",
+        "status": stage_status,
         "input_hash": format!("sha256:{input_hash}"),
-        "inventory_hash": format!("sha256:{inventory_hash}"),
+        "inventory_hash": if stage_status == "ready" {
+            Some(format!("sha256:{inventory_hash}"))
+        } else {
+            None
+        },
         "base_corpus_revision": revision_ref(base_revision),
         "inventory_summary": {
             "files": files,
@@ -1107,6 +1332,7 @@ pub async fn stage_uploads(
             "quarantined": quarantined
         },
         "warnings": warnings,
+        "description_jobs": description_count,
         "entries": response_entries,
         "replay_outcome": replay_outcome,
         "prior_stage_ref": prior_stage_ref,
@@ -1114,9 +1340,190 @@ pub async fn stage_uploads(
     }))
 }
 
-async fn purge_stage_candidates(state: &AppState, object_keys: &[String]) -> ApiResult<()> {
-    for object_key in object_keys {
-        state.object_store.purge_all_versions(object_key).await?;
+pub async fn stage_status(
+    state: &AppState,
+    auth: &AuthContext,
+    stage_ref: &str,
+) -> ApiResult<Value> {
+    auth.require(Capability::Read)?;
+    let stage_id = Uuid::parse_str(stage_ref.trim_start_matches("stage:"))
+        .map_err(|_| ApiError::invalid("stage reference is invalid"))?;
+    let mut tx = state.begin_read(auth).await?;
+    let stage = sqlx::query(
+        r#"
+        SELECT stage.id,stage.stable_import_id,stage.input_hash,
+               stage.inventory_hash,stage.status,stage.created_at,stage.expires_at,
+               stage.base_corpus_revision_id,scope.scope_ref
+        FROM straylight.stages AS stage
+        JOIN straylight.scopes AS scope
+          ON scope.user_id=stage.user_id AND scope.id=stage.scope_id
+        WHERE stage.user_id=$1 AND stage.id=$2
+          AND stage.credential_id=$3
+          AND scope.scope_ref=ANY($4::text[])
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(stage_id)
+    .bind(auth.credential_id.0)
+    .bind(&auth.scope_refs)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::not_found("stage_not_found", stage_ref))?;
+    let entries = sqlx::query(
+        r#"
+        SELECT id,path,entry_kind,media_type,size_bytes,content_hash,
+               asset_id,asset_version,readability,inspection,created_at
+        FROM straylight.staged_entries
+        WHERE user_id=$1 AND stage_id=$2
+        ORDER BY path,id
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(stage_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let jobs = sqlx::query(
+        r#"
+        SELECT id,job_kind,status,attempts,max_attempts,available_at,
+               result,created_at,completed_at
+        FROM straylight.background_jobs
+        WHERE user_id=$1 AND payload->>'stage_id'=$2
+        ORDER BY created_at,id
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(stage_id.to_string())
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let entry_values = entries
+        .into_iter()
+        .map(|row| {
+            let entry_id: Uuid = row.try_get("id")?;
+            let asset_id: Option<Uuid> = row.try_get("asset_id")?;
+            let content_hash = row
+                .try_get::<Option<String>, _>("content_hash")?
+                .map(|hash| format!("sha256:{hash}"));
+            let mut inspection: Value = row.try_get("inspection")?;
+            if let Some(object) = inspection.as_object_mut() {
+                object.remove("search_text");
+            }
+            Ok(json!({
+                "ref": format!("stage-entry:{entry_id}"),
+                "path": row.try_get::<String,_>("path")?,
+                "entry_kind": row.try_get::<String,_>("entry_kind")?,
+                "media_type": row.try_get::<Option<String>,_>("media_type")?,
+                "size_bytes": row.try_get::<i64,_>("size_bytes")?,
+                "hash": content_hash.clone(),
+                "content_hash": content_hash,
+                "asset_ref": asset_id.map(|id| format!("asset:{id}")),
+                "asset_version": row.try_get::<Option<i32>,_>("asset_version")?,
+                "readability": row.try_get::<String,_>("readability")?,
+                "inspection": inspection,
+                "created_at": row.try_get::<DateTime<Utc>,_>("created_at")?
+            }))
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+    let job_values = jobs
+        .into_iter()
+        .map(|row| {
+            let job_id: Uuid = row.try_get("id")?;
+            Ok(json!({
+                "ref": format!("job:{job_id}"),
+                "kind": row.try_get::<String,_>("job_kind")?,
+                "status": row.try_get::<String,_>("status")?,
+                "attempts": row.try_get::<i32,_>("attempts")?,
+                "max_attempts": row.try_get::<i32,_>("max_attempts")?,
+                "available_at": row.try_get::<DateTime<Utc>,_>("available_at")?,
+                "result": row.try_get::<Option<Value>,_>("result")?,
+                "created_at": row.try_get::<DateTime<Utc>,_>("created_at")?,
+                "completed_at": row.try_get::<Option<DateTime<Utc>>,_>("completed_at")?
+            }))
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+    let status: String = stage.try_get("status")?;
+    Ok(json!({
+        "stage_ref": format!("stage:{stage_id}"),
+        "scope": stage.try_get::<String,_>("scope_ref")?,
+        "stable_import_id": stage.try_get::<Option<String>,_>("stable_import_id")?,
+        "status": status,
+        "promotable": status == "ready",
+        "input_hash": format!("sha256:{}", stage.try_get::<String,_>("input_hash")?),
+        "inventory_hash": stage.try_get::<Option<String>,_>("inventory_hash")?
+            .map(|hash| format!("sha256:{hash}")),
+        "base_corpus_revision": format!(
+            "revision:{}",
+            stage.try_get::<Uuid,_>("base_corpus_revision_id")?
+        ),
+        "created_at": stage.try_get::<DateTime<Utc>,_>("created_at")?,
+        "expires_at": stage.try_get::<DateTime<Utc>,_>("expires_at")?,
+        "entries": entry_values,
+        "jobs": job_values
+    }))
+}
+
+async fn persist_stage_entry_blob(
+    state: &AppState,
+    auth: &AuthContext,
+    entry: &PreparedStageEntry,
+    expected_object_key: &str,
+    expected_hash: &str,
+    uploaded_keys: &mut Vec<String>,
+) -> ApiResult<Option<String>> {
+    let Some(bytes) = &entry.bytes else {
+        return Ok(entry.object_version_id.clone());
+    };
+    let stored = state
+        .object_store
+        .put_user_blob(auth.user_id, entry.media_type.as_deref(), bytes.clone())
+        .await?;
+    uploaded_keys.push(stored.object_key.clone());
+    if stored.sha256 != expected_hash
+        || stored.object_key != expected_object_key
+        || stored.size_bytes != bytes.len()
+    {
+        return Err(ApiError::Internal(
+            "staged object identity changed during upload".to_owned(),
+        ));
+    }
+    Ok(stored.object_version_id)
+}
+
+async fn validate_stored_stage_objects(
+    state: &AppState,
+    auth: &AuthContext,
+    entries: &[PreparedStageEntry],
+) -> ApiResult<()> {
+    for entry in entries {
+        let Some(object_key) = entry.stored_object_key.as_deref() else {
+            continue;
+        };
+        let content_hash = entry.content_hash.as_deref().ok_or_else(|| {
+            ApiError::Internal("stored stage object has no content hash".to_owned())
+        })?;
+        let digest = strip_sha256(content_hash);
+        let expected_object_key = format!("{}/blobs/{digest}", auth.user_id.0);
+        if object_key != expected_object_key {
+            return Err(ApiError::Internal(
+                "stored stage object key does not match its immutable identity".to_owned(),
+            ));
+        }
+        let object_version_id = entry
+            .object_version_id
+            .as_deref()
+            .filter(|version_id| !version_id.is_empty() && *version_id != "null")
+            .ok_or_else(|| {
+                ApiError::Internal("stored stage object has no exact storage version ID".to_owned())
+            })?;
+        state
+            .object_store
+            .verify_object_identity_version(
+                object_key,
+                Some(object_version_id),
+                digest,
+                entry.size_bytes,
+            )
+            .await?;
     }
     Ok(())
 }
@@ -1133,7 +1540,18 @@ async fn reconcile_stage_commit(
         .await?;
     for object_key in object_keys {
         let referenced = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM straylight.asset_versions WHERE user_id=$1 AND object_key=$2 AND size_bytes > 0)",
+            r#"
+            SELECT EXISTS(
+              SELECT 1
+              FROM straylight.asset_versions
+              WHERE user_id=$1 AND object_key=$2 AND size_bytes > 0
+              UNION ALL
+              SELECT 1
+              FROM straylight.asset_uploads
+              WHERE user_id=$1 AND canonical_object_key=$2
+                AND status IN ('completed','consumed')
+            )
+            "#,
         )
         .bind(auth.user_id.0)
         .bind(object_key)
@@ -1160,28 +1578,85 @@ fn prepare_stage_entries(
 
     for upload in uploads {
         validate_stage_path(&upload.path)?;
+        validate_stage_import_metadata(&upload.import_metadata)?;
         if previous_path.as_deref() == Some(upload.path.as_str()) {
             return Err(ApiError::invalid("stage input paths must be unique"));
         }
         previous_path = Some(upload.path.clone());
         input_hasher.update((upload.path.len() as u64).to_be_bytes());
         input_hasher.update(upload.path.as_bytes());
-        input_hasher.update(Sha256::digest(&upload.bytes));
+        let (
+            bytes,
+            stored_object_key,
+            object_version_id,
+            declared_size_bytes,
+            content_hash,
+            upload_source,
+        ) = match upload.content {
+            StageUploadContent::Bytes(bytes) => {
+                let digest = hex::encode(Sha256::digest(&bytes));
+                let size_bytes = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+                (
+                    Some(bytes),
+                    None,
+                    None,
+                    size_bytes,
+                    format!("sha256:{digest}"),
+                    "multipart_upload",
+                )
+            }
+            StageUploadContent::Stored {
+                object_key,
+                object_version_id,
+                content_hash,
+                size_bytes,
+            } => {
+                let digest = strip_sha256(&content_hash);
+                if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                    return Err(ApiError::invalid(
+                        "stored stage content_hash must be a SHA-256 hex digest",
+                    ));
+                }
+                if object_key.is_empty() || object_key.chars().any(char::is_control) {
+                    return Err(ApiError::invalid("stored stage object key is invalid"));
+                }
+                (
+                    None,
+                    Some(object_key),
+                    object_version_id,
+                    size_bytes,
+                    format!("sha256:{}", digest.to_ascii_lowercase()),
+                    "resumable_upload",
+                )
+            }
+        };
+        let digest_bytes = hex::decode(strip_sha256(&content_hash))
+            .map_err(|_| ApiError::invalid("stage content hash is invalid"))?;
+        input_hasher.update(digest_bytes);
 
-        let archive = crate::object_store::extract_archive(&upload.path, &upload.bytes)?;
+        let archive = if let Some(bytes) = bytes.as_deref() {
+            crate::object_store::extract_archive(&upload.path, bytes)?
+        } else {
+            crate::object_store::ArchiveInspection::default()
+        };
         let archive_inventory = archive.inventory.clone();
         let is_archive = archive.inventory.format.is_some();
-        let media_type =
-            detect_media_type(&upload.path, upload.media_type.as_deref(), &upload.bytes);
-        let content_hash = format!("sha256:{}", hex::encode(Sha256::digest(&upload.bytes)));
+        let media_type = detect_media_type(
+            &upload.path,
+            upload.media_type.as_deref(),
+            bytes.as_deref().unwrap_or_default(),
+        );
         let (readability, text_index) = if is_archive {
             ("unsupported".to_owned(), None)
+        } else if let Some(bytes) = bytes.as_deref() {
+            stage_text_index(bytes)
         } else {
-            stage_text_index(&upload.bytes)
+            ("unsupported".to_owned(), None)
         };
         let mut inspection = json!({
-            "source": "multipart_upload",
+            "source": upload_source,
             "archive": archive_inventory,
+            "import_metadata": upload.import_metadata,
             "text_index_complete": false
         });
         if let Some((text, complete)) = text_index {
@@ -1189,16 +1664,20 @@ fn prepare_stage_entries(
             inspection["text_index_complete"] = Value::Bool(complete);
         }
         insert_prepared_path(&mut stage_paths, &upload.path)?;
-        expanded_bytes = expanded_bytes.saturating_add(upload.bytes.len() as u64);
+        if stored_object_key.is_none() {
+            expanded_bytes = expanded_bytes.saturating_add(declared_size_bytes);
+        }
         prepared.push(PreparedStageEntry {
             path: upload.path.clone(),
             entry_kind: if is_archive { "archive" } else { "file" }.to_owned(),
             media_type,
-            size_bytes: upload.bytes.len() as u64,
+            size_bytes: declared_size_bytes,
             content_hash: Some(content_hash),
             readability,
             inspection,
-            bytes: Some(upload.bytes),
+            bytes,
+            stored_object_key,
+            object_version_id,
         });
 
         warnings.extend(
@@ -1268,6 +1747,8 @@ fn prepare_stage_entries(
                 readability,
                 inspection,
                 bytes: member.bytes,
+                stored_object_key: None,
+                object_version_id: None,
             });
         }
         if prepared.len() > MAX_STAGE_ENTRIES {
@@ -1307,13 +1788,46 @@ fn prepare_stage_entries(
     ))
 }
 
-fn validate_stage_path(path: &str) -> ApiResult<()> {
+fn validate_stage_import_metadata(metadata: &Value) -> ApiResult<()> {
+    let object = metadata
+        .as_object()
+        .ok_or_else(|| ApiError::invalid("staged import metadata must be a JSON object"))?;
+    for name in ["modified_unix_ns", "mode"] {
+        if let Some(value) = object.get(name)
+            && !value.is_null()
+            && value.as_u64().is_none()
+        {
+            return Err(ApiError::invalid(format!(
+                "staged import metadata {name} must be an unsigned integer"
+            )));
+        }
+    }
+    if object
+        .get("mode")
+        .and_then(Value::as_u64)
+        .is_some_and(|mode| mode > 0o777)
+    {
+        return Err(ApiError::invalid(
+            "staged import metadata mode must contain only ordinary portable permission bits",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_stage_path(path: &str) -> ApiResult<()> {
+    let parts = path.split('/').collect::<Vec<_>>();
+    let reserved_description_path = parts.windows(3).any(|window| {
+        window[0].eq_ignore_ascii_case(".carrystate")
+            && window[1].eq_ignore_ascii_case("generated")
+            && window[2].eq_ignore_ascii_case("descriptions")
+    });
     let invalid = path.is_empty()
         || path.len() > MAX_STAGE_PATH_BYTES
         || path.starts_with('/')
         || path.contains('\\')
         || path.contains('\0')
         || path.contains("!/")
+        || reserved_description_path
         || path
             .split('/')
             .any(|part| part.is_empty() || matches!(part, "." | ".."));
@@ -1349,26 +1863,53 @@ fn quarantine_stage_path(archive_path: &str, index: usize, original_path: &str) 
     )
 }
 
+fn staged_source_ref(scope_ref: &str, stable_import_id: &str, path: &str) -> String {
+    let mut source_identity = Sha256::new();
+    source_identity.update(scope_ref.as_bytes());
+    source_identity.update([0]);
+    source_identity.update(stable_import_id.as_bytes());
+    source_identity.update([0]);
+    source_identity.update(path.as_bytes());
+    format!("staged-import:{}", hex::encode(source_identity.finalize()))
+}
+
+fn staged_source_version(
+    content_hash: &str,
+    media_type: &str,
+    import_metadata: Option<&Value>,
+) -> ApiResult<String> {
+    Ok(format!(
+        "sha256:{}",
+        hash_json(&json!({
+            "content_hash": strip_sha256(content_hash),
+            "media_type": media_type,
+            "import_metadata": import_metadata.cloned().unwrap_or_else(|| json!({}))
+        }))?
+    ))
+}
+
 fn detect_media_type(path: &str, supplied: Option<&str>, bytes: &[u8]) -> Option<String> {
-    if let Some(supplied) = supplied.map(str::trim).filter(|value| !value.is_empty()) {
-        return Some(supplied.to_owned());
-    }
-    if let Some(kind) = infer::get(bytes) {
-        return Some(kind.mime_type().to_owned());
-    }
     let lower = path.to_ascii_lowercase();
-    let media_type = if lower.ends_with(".md") || lower.ends_with(".markdown") {
-        "text/markdown"
+    let extension_type = if lower.ends_with(".docx") {
+        Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    } else if lower.ends_with(".xlsx") {
+        Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    } else if lower.ends_with(".pptx") {
+        Some("application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    } else if lower.ends_with(".sqlite") || lower.ends_with(".sqlite3") || lower.ends_with(".db") {
+        Some("application/vnd.sqlite3")
+    } else if lower.ends_with(".md") || lower.ends_with(".markdown") {
+        Some("text/markdown")
     } else if lower.ends_with(".json") || lower.ends_with(".jsonl") {
-        "application/json"
+        Some("application/json")
     } else if lower.ends_with(".csv") {
-        "text/csv"
+        Some("text/csv")
     } else if lower.ends_with(".html") || lower.ends_with(".htm") {
-        "text/html"
+        Some("text/html")
     } else if lower.ends_with(".xml") {
-        "application/xml"
+        Some("application/xml")
     } else if lower.ends_with(".sql") {
-        "application/sql"
+        Some("application/sql")
     } else if [
         ".txt", ".log", ".yaml", ".yml", ".toml", ".ini", ".conf", ".rs", ".go", ".py", ".sh",
         ".js", ".jsx", ".ts", ".tsx", ".css",
@@ -1376,11 +1917,27 @@ fn detect_media_type(path: &str, supplied: Option<&str>, bytes: &[u8]) -> Option
     .iter()
     .any(|extension| lower.ends_with(extension))
     {
-        "text/plain"
+        Some("text/plain")
     } else {
-        return None;
+        None
     };
-    Some(media_type.to_owned())
+    if let Some(kind) = infer::get(bytes) {
+        if kind.mime_type() == "application/zip"
+            && let Some(extension_type) = extension_type
+            && extension_type.starts_with("application/vnd.openxmlformats")
+        {
+            return Some(extension_type.to_owned());
+        }
+        return Some(kind.mime_type().to_owned());
+    }
+    if let Some(extension_type) = extension_type {
+        return Some(extension_type.to_owned());
+    }
+    supplied
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.chars().any(char::is_control))
+        .and_then(|value| value.parse::<mime::Mime>().ok())
+        .map(|value| value.essence_str().to_owned())
 }
 
 fn stage_text_index(bytes: &[u8]) -> (String, Option<(String, bool)>) {
@@ -1405,21 +1962,118 @@ async fn expand_stage_promotion(
     state: &AppState,
     auth: &AuthContext,
     mut request: SaveRequest,
-) -> ApiResult<(SaveRequest, Option<StagePromotion>, Option<Value>)> {
-    let promotion_items: Vec<_> = request
+) -> ApiResult<(SaveRequest, Vec<StagePromotion>, Option<Value>)> {
+    let promotion_payloads: Vec<Value> = request
         .items
         .iter()
         .filter(|item| item.kind == SaveKind::ImportReceipt)
+        .map(|item| item.payload.clone())
         .collect();
-    if promotion_items.is_empty() {
-        return Ok((request, None, None));
+    if promotion_payloads.is_empty() {
+        return Ok((request, Vec::new(), None));
     }
-    if promotion_items.len() != 1 || request.items.len() != 1 {
+    if promotion_payloads.len() != request.items.len() {
         return Err(ApiError::invalid(
-            "a stage promotion must be the only item in its save request",
+            "stage promotions cannot be mixed with ordinary save items",
         ));
     }
-    let payload = &promotion_items[0].payload;
+    let mut promotions = Vec::with_capacity(promotion_payloads.len());
+    let mut expanded_items = Vec::new();
+    let mut replays = Vec::new();
+    for payload in &promotion_payloads {
+        match expand_single_stage_promotion(state, auth, &request, payload, expanded_items.len())
+            .await?
+        {
+            StageExpansion::Fresh { items, promotion } => {
+                expanded_items.extend(items);
+                promotions.push(promotion);
+            }
+            StageExpansion::Replay {
+                receipt,
+                import_receipt,
+            } => replays.push((receipt, import_receipt)),
+        }
+    }
+    if !replays.is_empty() {
+        if !promotions.is_empty() {
+            return Err(ApiError::conflict(
+                "import_generation_inconsistent",
+                "an atomic import generation cannot mix committed and uncommitted stages",
+                json!({"replayed_stages": replays.len(), "fresh_stages": promotions.len()}),
+            ));
+        }
+        let operation_id = replays[0]
+            .0
+            .get("operation_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ApiError::Internal("replayed import receipt lacks operation_id".into()))?
+            .to_owned();
+        if replays.iter().any(|(receipt, _)| {
+            receipt.get("operation_id").and_then(Value::as_str) != Some(operation_id.as_str())
+        }) {
+            return Err(ApiError::conflict(
+                "import_generation_inconsistent",
+                "the import generation was previously committed by multiple operations",
+                json!({}),
+            ));
+        }
+        let import_receipts = replays
+            .iter()
+            .map(|(_, import_receipt)| import_receipt.clone())
+            .collect::<Vec<_>>();
+        let mut receipt = replays.remove(0).0;
+        if let Some(object) = receipt.as_object_mut() {
+            object.insert("import_receipts".to_owned(), json!(import_receipts));
+            object.insert("replayed".to_owned(), Value::Bool(true));
+            object.insert("stable_replay".to_owned(), Value::Bool(true));
+            object.insert("replay_outcome".to_owned(), json!("exact_replay"));
+        }
+        return Ok((request, Vec::new(), Some(receipt)));
+    }
+    let base_revision_id = promotions
+        .first()
+        .map(|promotion| promotion.base_revision_id)
+        .ok_or_else(|| ApiError::Internal("stage expansion produced no promotion".to_owned()))?;
+    let stable_import_id = promotions[0].stable_import_id.clone();
+    let generation_id = promotions[0].generation_id.clone();
+    if promotions.iter().any(|promotion| {
+        promotion.base_revision_id != base_revision_id
+            || promotion.stable_import_id != stable_import_id
+            || promotion.generation_id != generation_id
+    }) {
+        return Err(ApiError::conflict(
+            "import_generation_mismatch",
+            "all stages in an atomic import must share a revision, vault identity, and generation",
+            json!({}),
+        ));
+    }
+    if promotions
+        .iter()
+        .filter(|promotion| promotion.snapshot_paths.is_some())
+        .count()
+        > 1
+    {
+        return Err(ApiError::invalid(
+            "an atomic import generation may provide snapshot_paths only once",
+        ));
+    }
+    if expanded_items.len() > 100_000 {
+        return Err(ApiError::invalid(
+            "an atomic import generation is limited to 100,000 promoted files",
+        ));
+    }
+    request.items = expanded_items;
+    request.base_corpus_revision = Some(revision_ref(base_revision_id));
+    Ok((request, promotions, None))
+}
+
+async fn expand_single_stage_promotion(
+    state: &AppState,
+    auth: &AuthContext,
+    request: &SaveRequest,
+    payload: &Value,
+    item_order_offset: usize,
+) -> ApiResult<StageExpansion> {
     let stage_ref = payload_string(payload, "stage_ref")
         .ok_or_else(|| ApiError::invalid("stage promotion requires stage_ref"))?;
     let raw_stage_ref = stage_ref
@@ -1439,6 +2093,43 @@ async fn expand_stage_promotion(
             "selected_entries cannot contain duplicate paths",
         ));
     }
+    let (snapshot_paths, snapshot_hash) = match payload.get("snapshot_paths") {
+        None => (None, None),
+        Some(Value::Array(values)) => {
+            if values.len() > 100_000 {
+                return Err(ApiError::invalid(
+                    "snapshot_paths is limited to 100,000 paths",
+                ));
+            }
+            let mut paths = values
+                .iter()
+                .map(|value| {
+                    value.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                        ApiError::invalid("snapshot_paths must contain only strings")
+                    })
+                })
+                .collect::<ApiResult<Vec<_>>>()?;
+            if paths.iter().map(String::len).sum::<usize>() > 4 * 1024 * 1024 {
+                return Err(ApiError::invalid(
+                    "snapshot_paths exceeds the 4 MiB path budget",
+                ));
+            }
+            for path in &paths {
+                validate_stage_path(path)?;
+            }
+            paths.sort();
+            let original_len = paths.len();
+            paths.dedup();
+            if paths.len() != original_len {
+                return Err(ApiError::invalid(
+                    "snapshot_paths cannot contain duplicate paths",
+                ));
+            }
+            let hash = hash_json(&json!(&paths))?;
+            (Some(paths), Some(hash))
+        }
+        Some(_) => return Err(ApiError::invalid("snapshot_paths must be an array")),
+    };
 
     let mut tx = state.begin_read(auth).await?;
     let stage = sqlx::query(
@@ -1451,11 +2142,13 @@ async fn expand_stage_promotion(
           ON scope.user_id=stage.user_id AND scope.id=stage.scope_id
         WHERE stage.user_id=$1 AND stage.id=$2
           AND scope.scope_ref=ANY($3::text[])
+          AND stage.credential_id=$4
         "#,
     )
     .bind(auth.user_id.0)
     .bind(stage_id)
     .bind(&auth.scope_refs)
+    .bind(auth.credential_id.0)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| ApiError::not_found("stage_not_found", &stage_ref))?;
@@ -1469,9 +2162,23 @@ async fn expand_stage_promotion(
         ));
     }
     let base_revision_id: Uuid = stage.try_get("base_corpus_revision_id")?;
-    let stable_import_id = stage
+    let stage_import_id = stage
         .try_get::<Option<String>, _>("stable_import_id")?
         .unwrap_or_else(|| format!("stage:{stage_id}"));
+    let stable_import_id =
+        payload_string(payload, "stable_import_id").unwrap_or_else(|| stage_import_id.clone());
+    let generation_id =
+        payload_string(payload, "generation_id").unwrap_or_else(|| stage_import_id.clone());
+    for (name, value) in [
+        ("stable_import_id", stable_import_id.as_str()),
+        ("generation_id", generation_id.as_str()),
+    ] {
+        if value.is_empty() || value.len() > 240 || value.chars().any(char::is_control) {
+            return Err(ApiError::invalid(format!(
+                "{name} must contain 1 to 240 non-control characters"
+            )));
+        }
+    }
     let input_hash: String = stage.try_get("input_hash")?;
     let inventory_hash = stage
         .try_get::<Option<String>, _>("inventory_hash")?
@@ -1492,8 +2199,9 @@ async fn expand_stage_promotion(
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.entry_kind,entry.media_type,
-               entry.content_hash,entry.readability,entry.asset_id,
-               entry.asset_version,asset.object_key
+               entry.size_bytes,entry.content_hash,entry.readability,entry.asset_id,
+               entry.asset_version,entry.inspection,asset.object_key,
+               asset.object_version_id
         FROM straylight.staged_entries AS entry
         LEFT JOIN straylight.asset_versions AS asset
           ON asset.user_id=entry.user_id AND asset.asset_id=entry.asset_id
@@ -1538,6 +2246,10 @@ async fn expand_stage_promotion(
         WHERE receipt.user_id=$1 AND receipt.scope_id=$2
           AND receipt.stable_import_id=$3 AND receipt.input_hash=$4
           AND receipt.inventory_hash=$5
+          AND coalesce(
+            receipt.receipt->>'generation_id',
+            receipt.stable_import_id
+          )=$6
         ORDER BY receipt.created_at DESC
         "#,
     )
@@ -1546,6 +2258,7 @@ async fn expand_stage_promotion(
     .bind(&stable_import_id)
     .bind(&input_hash)
     .bind(&inventory_hash)
+    .bind(&generation_id)
     .fetch_all(&mut *tx)
     .await?;
     let mut prior_selection = None;
@@ -1562,7 +2275,11 @@ async fn expand_stage_promotion(
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        if prior_paths == selected_paths {
+        let prior_snapshot_hash = import_receipt
+            .get("snapshot_manifest_hash")
+            .and_then(Value::as_str)
+            .map(|value| strip_sha256(value).to_owned());
+        if prior_paths == selected_paths && prior_snapshot_hash == snapshot_hash {
             let receipt_id: Uuid = prior.try_get("id")?;
             let mut receipt: Value = prior.try_get("commit_receipt")?;
             if let Some(object) = receipt.as_object_mut() {
@@ -1575,9 +2292,14 @@ async fn expand_stage_promotion(
                 object.insert("replay_outcome".to_owned(), json!("exact_replay"));
             }
             tx.commit().await?;
-            return Ok((request, None, Some(receipt)));
+            return Ok(StageExpansion::Replay {
+                receipt,
+                import_receipt: format!("import:{receipt_id}"),
+            });
         }
-        prior_selection.get_or_insert(prior_paths);
+        if prior_paths != selected_paths || prior_snapshot_hash != snapshot_hash {
+            prior_selection.get_or_insert(prior_paths);
+        }
     }
     if let Some(prior_selection) = prior_selection {
         return Err(ApiError::conflict(
@@ -1617,7 +2339,10 @@ async fn expand_stage_promotion(
 
     let mut save_items = Vec::with_capacity(rows.len());
     let mut entries = Vec::with_capacity(rows.len());
-    for (item_order, row) in rows.into_iter().enumerate() {
+    for (local_order, row) in rows.into_iter().enumerate() {
+        let item_order = item_order_offset
+            .checked_add(local_order)
+            .ok_or_else(|| ApiError::Internal("stage item order overflow".to_owned()))?;
         let staged_entry_id: Uuid = row.try_get("id")?;
         let path: String = row.try_get("path")?;
         let entry_kind: String = row.try_get("entry_kind")?;
@@ -1633,20 +2358,31 @@ async fn expand_stage_promotion(
         let object_key = object_key.ok_or_else(|| {
             ApiError::invalid(format!("stage entry has no immutable asset: {path}"))
         })?;
-        let bytes = state.object_store.get(&object_key).await?;
+        let object_version_id: Option<String> = row.try_get("object_version_id")?;
         let expected_hash: String = row.try_get("content_hash")?;
-        let actual_hash = hex::encode(Sha256::digest(&bytes));
-        if actual_hash != expected_hash {
-            return Err(ApiError::conflict(
-                "content_hash_mismatch",
-                "staged content no longer matches its inspected hash",
-                json!({"path": path}),
-            ));
-        }
+        let expected_size = u64::try_from(row.try_get::<i64, _>("size_bytes")?)
+            .map_err(|_| ApiError::Internal("staged asset size is negative".to_owned()))?;
         let media_type = row
             .try_get::<Option<String>, _>("media_type")?
             .unwrap_or_else(|| "application/octet-stream".to_owned());
+        let inspection: Value = row.try_get("inspection")?;
+        let generated_description =
+            inspection.get("source").and_then(Value::as_str) == Some("asset_description");
         let content = if readability == "readable" {
+            let bytes = state
+                .object_store
+                .get_version(&object_key, object_version_id.as_deref())
+                .await?;
+            let actual_hash = hex::encode(Sha256::digest(&bytes));
+            if actual_hash != expected_hash
+                || u64::try_from(bytes.len()).unwrap_or(u64::MAX) != expected_size
+            {
+                return Err(ApiError::conflict(
+                    "content_hash_mismatch",
+                    "staged content no longer matches its inspected identity",
+                    json!({"path": path}),
+                ));
+            }
             let content = String::from_utf8(bytes.to_vec()).map_err(|_| {
                 ApiError::conflict(
                     "content_classification_mismatch",
@@ -1663,6 +2399,19 @@ async fn expand_stage_promotion(
             }
             Some(content)
         } else {
+            state
+                .object_store
+                .verify_object_content_version(
+                    &object_key,
+                    object_version_id.as_deref(),
+                    &expected_hash,
+                    expected_size,
+                )
+                .await
+                .map_err(|error| {
+                    tracing::warn!(?error, %path, "opaque staged asset verification failed");
+                    error
+                })?;
             None
         };
         let asset_id: Uuid = row
@@ -1673,18 +2422,21 @@ async fn expand_stage_promotion(
                 .ok_or_else(|| {
                     ApiError::invalid(format!("stage entry has no asset version: {path}"))
                 })?;
-        let mut source_identity = Sha256::new();
-        source_identity.update(request.scope.as_bytes());
-        source_identity.update([0]);
-        source_identity.update(stable_import_id.as_bytes());
-        source_identity.update([0]);
-        source_identity.update(path.as_bytes());
-        let source_ref = format!("staged-import:{}", hex::encode(source_identity.finalize()));
+        let source_ref = staged_source_ref(&request.scope, &stable_import_id, &path);
+        let source_version = staged_source_version(
+            &expected_hash,
+            &media_type,
+            inspection.get("import_metadata"),
+        )?;
         let mut source_payload = json!({
             "path": &path,
             "source_ref": source_ref,
-            "source_kind": "content_pack",
-            "source_version": &expected_hash,
+            "source_kind": if generated_description {
+                "derived_asset_description"
+            } else {
+                "content_pack"
+            },
+            "source_version": source_version,
             "content_hash": &expected_hash,
             "title": path.rsplit('/').next().unwrap_or(&path),
             "media_type": &media_type,
@@ -1695,7 +2447,15 @@ async fn expand_stage_promotion(
                 "input_hash": format!("sha256:{input_hash}"),
                 "inventory_hash": format!("sha256:{inventory_hash}"),
                 "readability": &readability,
-                "entry_kind": &entry_kind
+                "entry_kind": &entry_kind,
+                "import_metadata": inspection.get("import_metadata"),
+                "generated": generated_description,
+                "derivative": generated_description,
+                "authoritative": !generated_description,
+                "description_status": inspection.get("description_status"),
+                "description_method": inspection.get("description_method"),
+                "prompt_version": inspection.get("prompt_version"),
+                "original_path": inspection.get("original_path")
             },
             "staged_asset": {
                 "entry_ref": format!("stage-entry:{staged_entry_id}"),
@@ -1705,6 +2465,30 @@ async fn expand_stage_promotion(
                 "media_type": &media_type
             }
         });
+        if generated_description {
+            let describes_asset_ref = inspection
+                .get("describes_asset_ref")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    ApiError::Internal(
+                        "generated asset description lacks describes_asset_ref".to_owned(),
+                    )
+                })?;
+            let describes_asset_version = inspection
+                .get("describes_asset_version")
+                .and_then(Value::as_i64)
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| {
+                    ApiError::Internal(
+                        "generated asset description lacks describes_asset_version".to_owned(),
+                    )
+                })?;
+            source_payload["describes_asset"] = json!({
+                "asset_ref": describes_asset_ref,
+                "asset_version": describes_asset_version,
+                "description_of_entry_ref": inspection.get("description_of_entry_ref")
+            });
+        }
         if let Some(content) = content {
             source_payload["content"] = Value::String(content);
         }
@@ -1739,21 +2523,21 @@ async fn expand_stage_promotion(
             })
             .collect(),
     ))?;
-    request.items = save_items;
-    request.base_corpus_revision = Some(revision_ref(base_revision_id));
-    Ok((
-        request,
-        Some(StagePromotion {
+    Ok(StageExpansion::Fresh {
+        items: save_items,
+        promotion: StagePromotion {
             stage_id,
             stable_import_id,
+            generation_id,
             input_hash,
             inventory_hash,
             selection_hash,
+            snapshot_paths,
+            snapshot_hash,
             base_revision_id,
             entries,
-        }),
-        None,
-    ))
+        },
+    })
 }
 
 fn processing_order(kind: SaveKind) -> u8 {
@@ -2031,7 +2815,7 @@ fn manifest_hash(members: &BTreeMap<Uuid, Member>) -> String {
         hasher.update(member.record_version.unwrap_or(0).to_be_bytes());
         hasher.update([0]);
         hasher.update(member.disposition.as_bytes());
-        hasher.update([b'\n']);
+        hasher.update(b"\n");
     }
     hex::encode(hasher.finalize())
 }
@@ -2252,6 +3036,266 @@ async fn link_staged_asset(
     Ok(())
 }
 
+async fn described_asset_binding(
+    tx: &mut Transaction<'_, Postgres>,
+    context: &WriteContext<'_>,
+    payload: &Map<String, Value>,
+    staged_asset: Option<&StagedAssetBinding>,
+) -> ApiResult<Option<DescribedAssetBinding>> {
+    let Some(described) = payload.get("describes_asset").and_then(Value::as_object) else {
+        return Ok(None);
+    };
+    let staged_asset = staged_asset.ok_or_else(|| {
+        ApiError::invalid("describes_asset is only valid for a promoted staged source")
+    })?;
+    let asset_id = described
+        .get("asset_ref")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value.trim_start_matches("asset:")).ok())
+        .ok_or_else(|| ApiError::invalid("describes_asset asset_ref is invalid"))?;
+    let asset_version = described
+        .get("asset_version")
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| ApiError::invalid("describes_asset asset_version is invalid"))?;
+    let raw_entry_id = described
+        .get("description_of_entry_ref")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value.trim_start_matches("stage-entry:")).ok())
+        .ok_or_else(|| ApiError::invalid("describes_asset description_of_entry_ref is invalid"))?;
+    let exists = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+          SELECT 1
+          FROM straylight.staged_entries AS description_entry
+          JOIN straylight.staged_entries AS raw_entry
+            ON raw_entry.user_id=description_entry.user_id
+           AND raw_entry.stage_id=description_entry.stage_id
+          JOIN straylight.assets AS asset
+            ON asset.user_id=raw_entry.user_id AND asset.id=raw_entry.asset_id
+          JOIN straylight.stages AS stage
+            ON stage.user_id=raw_entry.user_id AND stage.id=raw_entry.stage_id
+          WHERE description_entry.user_id=$1
+            AND description_entry.scope_id=$2
+            AND description_entry.id=$3
+            AND raw_entry.id=$4
+            AND raw_entry.asset_id=$5
+            AND raw_entry.asset_version=$6
+            AND asset.scope_id=$2
+            AND stage.status IN ('ready','promoted')
+            AND stage.expires_at > clock_timestamp()
+        )
+        "#,
+    )
+    .bind(context.auth.user_id.0)
+    .bind(context.scope_id)
+    .bind(staged_asset.staged_entry_id)
+    .bind(raw_entry_id)
+    .bind(asset_id)
+    .bind(asset_version)
+    .fetch_one(&mut **tx)
+    .await?;
+    if !exists {
+        return Err(ApiError::not_found(
+            "described_asset_not_found",
+            &format!("asset:{asset_id}"),
+        ));
+    }
+    Ok(Some(DescribedAssetBinding {
+        asset_id,
+        asset_version,
+    }))
+}
+
+async fn link_described_asset(
+    tx: &mut Transaction<'_, Postgres>,
+    context: &mut WriteContext<'_>,
+    source_id: Uuid,
+    binding: &DescribedAssetBinding,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.source_asset_links (
+          user_id,source_episode_id,asset_id,asset_version,role
+        ) VALUES ($1,$2,$3,$4,'describes')
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(context.auth.user_id.0)
+    .bind(source_id)
+    .bind(binding.asset_id)
+    .bind(binding.asset_version)
+    .execute(&mut **tx)
+    .await?;
+    add_member(
+        context,
+        binding.asset_id,
+        "asset",
+        Some(binding.asset_version),
+        "active",
+    );
+    Ok(())
+}
+
+async fn supersede_prior_source_versions(
+    tx: &mut Transaction<'_, Postgres>,
+    context: &mut WriteContext<'_>,
+    source_ref: &str,
+    retained_version: &str,
+) -> ApiResult<()> {
+    let rows = sqlx::query(
+        r#"
+        WITH prior_sources AS (
+          SELECT source.id
+          FROM straylight.source_episodes AS source
+          WHERE source.user_id=$1 AND source.scope_id=$2
+            AND source.source_ref=$3
+            AND source.source_version IS DISTINCT FROM $4
+        ), prior_documents AS (
+          SELECT revision.document_id
+          FROM straylight.document_revisions AS revision
+          WHERE revision.user_id=$1
+            AND revision.source_episode_id IN (SELECT id FROM prior_sources)
+        )
+        SELECT id,'source_episode'::text AS record_kind
+        FROM prior_sources
+        UNION ALL
+        SELECT evidence.id,'evidence'
+        FROM straylight.evidence_items AS evidence
+        WHERE evidence.user_id=$1
+          AND evidence.source_episode_id IN (SELECT id FROM prior_sources)
+        UNION ALL
+        SELECT document_id,'document'
+        FROM prior_documents
+        UNION ALL
+        SELECT chunk.id,'chunk'
+        FROM straylight.chunks AS chunk
+        WHERE chunk.user_id=$1
+          AND chunk.document_id IN (SELECT document_id FROM prior_documents)
+        "#,
+    )
+    .bind(context.auth.user_id.0)
+    .bind(context.scope_id)
+    .bind(source_ref)
+    .bind(retained_version)
+    .fetch_all(&mut **tx)
+    .await?;
+    for row in rows {
+        let record_id: Uuid = row.try_get("id")?;
+        if let Some(member) = context.members.get_mut(&record_id) {
+            member.disposition = "superseded".to_owned();
+        }
+    }
+    Ok(())
+}
+
+async fn reconcile_import_snapshot(
+    tx: &mut Transaction<'_, Postgres>,
+    context: &mut WriteContext<'_>,
+    stable_import_id: &str,
+    snapshot_paths: &[String],
+) -> ApiResult<()> {
+    let stale_source_ids = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT source.id
+        FROM straylight.source_episodes AS source
+        WHERE source.user_id=$1 AND source.scope_id=$2
+          AND source.metadata->>'stable_import_id'=$3
+          AND NOT (
+            coalesce(source.native_locator->>'path','') = ANY($4::text[])
+          )
+        ORDER BY source.id
+        "#,
+    )
+    .bind(context.auth.user_id.0)
+    .bind(context.scope_id)
+    .bind(stable_import_id)
+    .bind(snapshot_paths)
+    .fetch_all(&mut **tx)
+    .await?;
+    if stale_source_ids.is_empty() {
+        return Ok(());
+    }
+    let stale_sources: HashSet<Uuid> = stale_source_ids.iter().copied().collect();
+    let dependent_rows = sqlx::query(
+        r#"
+        WITH stale_sources AS (
+          SELECT unnest($2::uuid[]) AS id
+        ), stale_documents AS (
+          SELECT DISTINCT revision.document_id
+          FROM straylight.document_revisions AS revision
+          WHERE revision.user_id=$1
+            AND revision.source_episode_id IN (SELECT id FROM stale_sources)
+        )
+        SELECT id,'source_episode'::text AS record_kind
+        FROM stale_sources
+        UNION ALL
+        SELECT evidence.id,'evidence'
+        FROM straylight.evidence_items AS evidence
+        WHERE evidence.user_id=$1
+          AND evidence.source_episode_id IN (SELECT id FROM stale_sources)
+        UNION ALL
+        SELECT document_id,'document'
+        FROM stale_documents
+        UNION ALL
+        SELECT chunk.id,'chunk'
+        FROM straylight.chunks AS chunk
+        WHERE chunk.user_id=$1
+          AND chunk.document_id IN (SELECT document_id FROM stale_documents)
+        "#,
+    )
+    .bind(context.auth.user_id.0)
+    .bind(&stale_source_ids)
+    .fetch_all(&mut **tx)
+    .await?;
+    for row in dependent_rows {
+        let record_id: Uuid = row.try_get("id")?;
+        if let Some(member) = context.members.get_mut(&record_id) {
+            member.disposition = "superseded".to_owned();
+        }
+    }
+
+    let affected_asset_ids = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT DISTINCT link.asset_id
+        FROM straylight.source_asset_links AS link
+        WHERE link.user_id=$1 AND link.source_episode_id=ANY($2::uuid[])
+        ORDER BY link.asset_id
+        "#,
+    )
+    .bind(context.auth.user_id.0)
+    .bind(&stale_source_ids)
+    .fetch_all(&mut **tx)
+    .await?;
+    for asset_id in affected_asset_ids {
+        let linked_source_ids = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT DISTINCT link.source_episode_id
+            FROM straylight.source_asset_links AS link
+            WHERE link.user_id=$1 AND link.asset_id=$2
+            "#,
+        )
+        .bind(context.auth.user_id.0)
+        .bind(asset_id)
+        .fetch_all(&mut **tx)
+        .await?;
+        let retained = linked_source_ids.iter().any(|source_id| {
+            !stale_sources.contains(source_id)
+                && context
+                    .members
+                    .get(source_id)
+                    .is_some_and(|member| member.disposition == "active")
+        });
+        if !retained && let Some(member) = context.members.get_mut(&asset_id) {
+            member.disposition = "superseded".to_owned();
+        }
+    }
+    metrics::counter!("import.snapshot.superseded_sources")
+        .increment(u64::try_from(stale_source_ids.len()).unwrap_or(u64::MAX));
+    Ok(())
+}
+
 async fn process_source(
     tx: &mut Transaction<'_, Postgres>,
     context: &mut WriteContext<'_>,
@@ -2261,6 +3305,8 @@ async fn process_source(
 ) -> ApiResult<()> {
     let payload = payload_object(&item.payload)?;
     let staged_asset = staged_asset_binding(tx, context, payload).await?;
+    let described_asset =
+        described_asset_binding(tx, context, payload, staged_asset.as_ref()).await?;
     let supplied_content = payload
         .get("content")
         .and_then(Value::as_str)
@@ -2302,6 +3348,7 @@ async fn process_source(
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| content_hash.clone());
+    supersede_prior_source_versions(tx, context, &source_ref, &source_version).await?;
     if let Some(existing_id) = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT id FROM straylight.source_episodes
@@ -2316,6 +3363,9 @@ async fn process_source(
     {
         if let Some(binding) = &staged_asset {
             link_staged_asset(tx, context, existing_id, binding).await?;
+        }
+        if let Some(binding) = &described_asset {
+            link_described_asset(tx, context, existing_id, binding).await?;
         }
         context
             .local_refs
@@ -2356,6 +3406,10 @@ async fn process_source(
         .get("title")
         .and_then(Value::as_str)
         .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(&path));
+    let source_kind = payload
+        .get("source_kind")
+        .and_then(Value::as_str)
+        .unwrap_or("document");
     sqlx::query(
         r#"
         INSERT INTO straylight.source_episodes (
@@ -2368,12 +3422,7 @@ async fn process_source(
     .bind(context.auth.user_id.0)
     .bind(context.scope_id)
     .bind(&source_ref)
-    .bind(
-        payload
-            .get("source_kind")
-            .and_then(Value::as_str)
-            .unwrap_or("document"),
-    )
+    .bind(source_kind)
     .bind(&source_version)
     .bind(title)
     .bind(&content_hash)
@@ -2395,18 +3444,24 @@ async fn process_source(
     .await?;
 
     let evidence_id = Uuid::now_v7();
+    let evidence_kind = if source_kind == "derived_asset_description" {
+        "derived_non_authoritative"
+    } else {
+        "source_native"
+    };
     sqlx::query(
         r#"
         INSERT INTO straylight.evidence_items (
           id,user_id,scope_id,source_episode_id,evidence_kind,locator,
           text_content,content_hash,asset_id,asset_version,policy_id,policy_version
-        ) VALUES ($1,$2,$3,$4,'source_native',$5,$6,$7,$8,$9,$10,$11)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         "#,
     )
     .bind(evidence_id)
     .bind(context.auth.user_id.0)
     .bind(context.scope_id)
     .bind(proposed_id)
+    .bind(evidence_kind)
     .bind(json!({"path": path, "start_line": 1, "end_line": content_text.lines().count().max(1)}))
     .bind(content.as_deref())
     .bind(&content_hash)
@@ -2425,6 +3480,10 @@ async fn process_source(
     add_member(context, evidence_id, "evidence", None, "active");
     if let Some(binding) = &staged_asset {
         link_staged_asset(tx, context, proposed_id, binding).await?;
+        created_refs.push(format!("asset:{}", binding.asset_id));
+    }
+    if let Some(binding) = &described_asset {
+        link_described_asset(tx, context, proposed_id, binding).await?;
         created_refs.push(format!("asset:{}", binding.asset_id));
     }
     context
@@ -2485,7 +3544,8 @@ async fn process_source(
         created_refs.push(format!("document:{document_id}"));
         let mut chunk_ids = Vec::new();
         for chunk in normalized.chunks {
-            let chunk_id = RecordRef::parse(&chunk.chunk_ref)?.id;
+            let chunk_id = document_chunk_id(document_id, &chunk.chunk_ref);
+            let chunk_ref = format!("chunk:{chunk_id}");
             sqlx::query(
                 r#"
                 INSERT INTO straylight.chunks (
@@ -2504,7 +3564,8 @@ async fn process_source(
                 "path": path,
                 "start_line": chunk.start_line,
                 "end_line": chunk.end_line,
-                "ordinal": chunk.ordinal
+                "ordinal": chunk.ordinal,
+                "normalized_chunk_ref": chunk.chunk_ref
             }))
             .bind(&chunk.content)
             .bind(strip_sha256(&chunk.content_hash))
@@ -2514,7 +3575,7 @@ async fn process_source(
             add_member(context, chunk_id, "chunk", None, "active");
             context
                 .local_refs
-                .insert(chunk.chunk_ref.clone(), (chunk_id, RecordKind::Chunk));
+                .insert(chunk_ref, (chunk_id, RecordKind::Chunk));
             chunk_ids.push(chunk_id);
         }
         if !chunk_ids.is_empty() {
@@ -2553,6 +3614,18 @@ async fn process_source(
         }),
     });
     Ok(())
+}
+
+fn document_chunk_id(document_id: Uuid, normalized_chunk_ref: &str) -> Uuid {
+    let mut identity = Sha256::new();
+    identity.update(b"carrystate:document-chunk:v1\0");
+    identity.update(document_id.as_bytes());
+    identity.update([0]);
+    identity.update(normalized_chunk_ref.as_bytes());
+    let digest = identity.finalize();
+    let mut uuid_bytes = [0u8; 16];
+    uuid_bytes.copy_from_slice(&digest[..16]);
+    Uuid::from_bytes(uuid_bytes)
 }
 
 async fn process_evidence(
@@ -3029,15 +4102,10 @@ async fn resolve_record(
                 "{reference} has the wrong record kind"
             )));
         }
-        let exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM straylight.record_keys WHERE user_id=$1 AND record_id=$2 AND record_kind=$3)",
-        )
-        .bind(context.auth.user_id.0)
-        .bind(parsed.id)
-        .bind(parsed.kind.database_kind())
-        .fetch_one(&mut **tx)
-        .await?;
-        if exists {
+        let active_in_base_revision = context.members.get(&parsed.id).is_some_and(|member| {
+            member.record_kind == parsed.kind.database_kind() && member.disposition == "active"
+        });
+        if active_in_base_revision {
             return Ok((parsed.id, parsed.kind));
         }
     }
@@ -4784,7 +5852,8 @@ mod tests {
             prepare_stage_entries(vec![StageUpload {
                 path: "pack.zip".to_owned(),
                 media_type: Some("application/zip".to_owned()),
-                bytes,
+                import_metadata: json!({}),
+                content: StageUploadContent::Bytes(bytes),
             }])
             .unwrap();
 
@@ -4813,12 +5882,14 @@ mod tests {
             StageUpload {
                 path: "b.txt".to_owned(),
                 media_type: None,
-                bytes: Bytes::from_static(b"second"),
+                import_metadata: json!({}),
+                content: StageUploadContent::Bytes(Bytes::from_static(b"second")),
             },
             StageUpload {
                 path: "a.txt".to_owned(),
                 media_type: None,
-                bytes: Bytes::from_static(b"first"),
+                import_metadata: json!({}),
+                content: StageUploadContent::Bytes(Bytes::from_static(b"first")),
             },
         ];
         let mut right = left.clone();
@@ -4834,11 +5905,72 @@ mod tests {
     fn staged_paths_and_binary_text_indexes_remain_safe() {
         assert!(validate_stage_path("../escape.txt").is_err());
         assert!(validate_stage_path("archive.zip!/escape.txt").is_err());
+        assert!(validate_stage_path(".carrystate/generated/descriptions/owned.md").is_err());
+        assert!(validate_stage_path("nested/.CARRYSTATE/Generated/Descriptions/owned.md").is_err());
         assert!(validate_stage_path("safe/path.txt").is_ok());
 
         let (readability, text) = stage_text_index(b"not text\0with a payload");
         assert_eq!(readability, "unsupported");
         assert!(text.is_none());
+    }
+
+    #[test]
+    fn staged_import_metadata_rejects_special_permission_bits() {
+        assert!(validate_stage_import_metadata(&json!({"mode": 0o640})).is_ok());
+        assert!(validate_stage_import_metadata(&json!({"mode": 0o4755})).is_err());
+        assert!(validate_stage_import_metadata(&json!({"mode": "0644"})).is_err());
+    }
+
+    #[test]
+    fn chunk_ids_are_stable_within_and_isolated_across_documents() {
+        let first_document = Uuid::from_u128(1);
+        let second_document = Uuid::from_u128(2);
+        let normalized_ref = "chunk:00000000-0000-0000-0000-000000000003";
+
+        assert_eq!(
+            document_chunk_id(first_document, normalized_ref),
+            document_chunk_id(first_document, normalized_ref)
+        );
+        assert_ne!(
+            document_chunk_id(first_document, normalized_ref),
+            document_chunk_id(second_document, normalized_ref)
+        );
+    }
+
+    #[test]
+    fn staged_source_versions_include_portable_file_metadata() {
+        let content_hash = "a".repeat(64);
+        let first = staged_source_version(
+            &content_hash,
+            "application/octet-stream",
+            Some(&json!({"modified_unix_ns": 1, "mode": 420})),
+        )
+        .unwrap();
+        let same = staged_source_version(
+            &content_hash,
+            "application/octet-stream",
+            Some(&json!({"mode": 420, "modified_unix_ns": 1})),
+        )
+        .unwrap();
+        let changed_mtime = staged_source_version(
+            &content_hash,
+            "application/octet-stream",
+            Some(&json!({"modified_unix_ns": 2, "mode": 420})),
+        )
+        .unwrap();
+        let changed_media_type = staged_source_version(
+            &content_hash,
+            "application/pdf",
+            Some(&json!({
+                "modified_unix_ns": 1,
+                "mode": 420
+            })),
+        )
+        .unwrap();
+
+        assert_eq!(first, same);
+        assert_ne!(first, changed_mtime);
+        assert_ne!(first, changed_media_type);
     }
 
     #[test]

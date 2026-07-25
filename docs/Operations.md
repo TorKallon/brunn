@@ -187,6 +187,57 @@ The non-strict command skips distributions that have not reported yet and is
 safe to rerun. The strict form is the release gate for every percentile widget
 in the production dashboard.
 
+## Vault And Asset CLI
+
+The same `carrystate` binary is present in the API image. A local dry run needs
+no token and performs no write:
+
+```bash
+docker compose run --rm --no-deps \
+  --entrypoint /usr/local/bin/carrystate \
+  --volume /path/to/vault:/vault:ro api vault import \
+  --root /vault --scope scope:root --vault-id owner-vault --dry-run
+```
+
+For a live import, mount the vault read-only, set `CARRYSTATE_API_TOKEN` through
+the environment or a secret file, and omit `--dry-run`. Missing files are
+retained. To make local absence authoritative, first run with `--mirror`; the
+CLI prints the paths it would remove and an exact `--confirm-mirror` value.
+Run again with that value only after reviewing the preview.
+
+Portable export never overwrites an existing destination:
+
+```bash
+carrystate vault export \
+  --vault-id owner-vault --scope scope:root --output /backups/owner-vault
+```
+
+Add `--history` to include superseded source versions. Verify
+`CHECKSUMS.sha256` before treating an export as usable. This portable directory
+is for source-native files and human-readable workspace state; the separate
+account export remains the complete service disaster-recovery artifact.
+
+To restore a portable export through the vault importer, pass its `sources/`
+directory as `--root` and keep `manifest.json` plus `CHECKSUMS.sha256` beside
+it. CarryState verifies the manifest checksum and each source hash before
+reusing the exported MIME type, nanosecond modification time, and mode.
+Generated companions in any reserved
+`.carrystate/generated/descriptions/` subtree are ignored and recreated. An
+identical repeat reports `status: unchanged`; it does not create a new
+authoritative revision.
+
+An agent fetches one pinned native version without loading it into the protocol
+response:
+
+```bash
+carrystate asset fetch \
+  --session-id session:... --asset-ref asset:... --version 1 \
+  --output /private/work/receipt.png
+```
+
+The CLI creates the output privately, streams to a temporary file, verifies
+size and SHA-256, and refuses overwrite or symlink traversal.
+
 ## Evaluation
 
 Set the native adapter environment without printing the token:
@@ -234,6 +285,13 @@ and paused. This prevents synthetic benchmark corpora from consuming dream
 work or changing retrieval during a comparison; ordinary user scopes retain
 the configured automatic scheduler behavior.
 
+`interface_eval.py` is the complete agent-interface gate. With no agent,
+interface, suite, or case filters it runs all frozen cases through Codex and
+OpenClaw using CarryState CLI, MCP, raw HTTP, and the matched local-file
+control. The current 52-case suite therefore schedules 416 fresh-agent runs.
+Use `--interface` only for a deliberate focused diagnostic; a release
+comparison must retain the filesystem cells.
+
 Always pass `--filesystem-native` for the product gate. The legacy `workspace`
 condition intentionally exercises the frozen Python/SQLite reference harness,
 not the Rust service.
@@ -278,8 +336,11 @@ as an asserted conclusion.
 ## Storage And Backup
 
 Postgres is canonical for records, revisions, manifests, credentials, jobs,
-and audit. MinIO is canonical for source and artifact blobs. A usable backup
-must capture both stores and preserve their shared revision point.
+and audit. The configured S3-compatible object store is canonical for exact
+source and artifact bytes. MinIO supplies that store in development and in the
+self-hosted production option; a managed cloud bucket is the preferred hosted
+option. A usable backup must capture both stores and preserve their shared
+revision point.
 
 `scripts/backup.sh` implements a quiesced, coordinated, checksummed backup of a
 serializable PostgreSQL dump and every object-store version. The v2 manifest
@@ -290,9 +351,95 @@ into a resource-bounded isolated Compose project and verifies database/object
 inventories, storage invariants, migrations, API health, and operator
 onboarding/recovery.
 
+Before either backup mode snapshots data, it stops the API and worker, applies
+the current migrations, pins any legacy durable locator to an immutable object
+version, and streams every database-referenced object to verify its exact
+version, size, and SHA-256. A restore drill performs the same reference check
+against the restored stores. The drill writes a passing receipt only after that
+check, restored API health, worker startup, and operator recovery all pass.
+
 Use `make production-backup` with the production overlay and an approved
 backup root. The schedule, off-host encrypted destination, key custody, and
 final RPO/RTO are launch-owner decisions. See `Alpha Launch Runbook.md`.
+
+### Deletion and backup erasure
+
+Deleting an account export is a resumable two-phase operation. PostgreSQL first
+commits `deleting` while retaining the exact object locator, the object store is
+purged second, and PostgreSQL removes the locator last. A failed or interrupted
+request can therefore be retried without reporting a missing object as a
+completed deletion.
+
+Account deletion similarly does not treat elapsed time as proof that retained
+backups are gone. After canonical data and object versions are purged, the
+request remains `awaiting_backup_expiry`. Backup pruning must write a
+checksummed prune receipt and prove that the oldest retained verified backup
+was created after the canonical purge. Record that watermark only as part of a
+successful applying prune:
+
+```bash
+STRAYLIGHT_RECORD_BACKUP_WATERMARK=true \
+  ENV_FILE=/path/to/production.env \
+  make backup-prune BACKUP_ROOT=/durable/backups
+```
+
+Only then can the worker complete eligible account deletions. The status API
+exposes the verification time, retained-backup watermark, receipt SHA-256, and
+receipt source. Datadog queue metrics retain `account_export:deleting` and
+`account_deletion:awaiting_backup_expiry` as visible states.
+
+### Managed S3 production
+
+Start from `production.managed-s3.env.example`. Set
+`STRAYLIGHT_OBJECT_STORE_MODE=managed-s3`, an existing private bucket, its
+region, and an absolute durable `STRAYLIGHT_MANAGED_BACKUP_ROOT`. Keep
+`STRAYLIGHT_S3_CREATE_BUCKET=false`. Prefer a workload identity with access
+limited to that bucket. Static credentials must be mounted as secret files and
+selected with both `STRAYLIGHT_S3_ACCESS_KEY_FILE` and
+`STRAYLIGHT_S3_SECRET_KEY_FILE`; direct key values are rejected by the
+production validator and never expanded into rendered Compose configuration.
+The bucket must have versioning enabled and must permit
+listing, reading, writing, and deleting exact object versions. Do not attach a
+lifecycle rule that can delete live CarryState versions.
+
+Validate the hosted shape before deployment:
+
+```bash
+make managed-production-config ENV_FILE=/path/to/production.env
+make production-images ENV_FILE=/path/to/production.env
+make production-deploy ENV_FILE=/path/to/production.env
+```
+
+The production deploy and rollback scripts select the managed overlay from
+`STRAYLIGHT_OBJECT_STORE_MODE`; they do not start or depend on MinIO in this
+mode. A pre-deploy backup pauses the API and worker, takes one PostgreSQL
+snapshot, and exports every cloud object version and delete marker into the
+durable backup root.
+
+Run and verify a coordinated cloud backup with:
+
+```bash
+make managed-production-backup ENV_FILE=/path/to/production.env
+```
+
+For a restore drill, prepare a separate environment file and empty bucket,
+using different database secrets and `STRAYLIGHT_RESTORE_DRILL=true`. The drill
+restores the database and every object version into an isolated Compose
+project, applies the current migrations, pins restored legacy references,
+remaps provider-specific version IDs, verifies every remapped database
+reference against the restored bytes, checks row counts and storage invariants,
+starts the restored API, then removes only the objects it created:
+
+```bash
+make managed-production-restore-drill \
+  ENV_FILE=/path/to/production.env \
+  DRILL_ENV_FILE=/path/to/restore-drill.env \
+  BACKUP_DIR=/durable/backups/BACKUP_ID
+```
+
+Do not point the drill at the production bucket. A backup is not considered
+usable until `verify-managed-backup.sh` passes and a restore drill has passed
+against the same backup format.
 
 ## Security Notes
 

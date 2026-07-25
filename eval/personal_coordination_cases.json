@@ -44,8 +44,8 @@
         {
           "id": "c2",
           "checks": [
-            {"any": ["matching name"]},
-            {"any": ["matching email"]},
+            {"any": ["matching name", "share the name", "both have the name", "same name"]},
+            {"any": ["matching email", "share the email", "both have the email", "avery.lin@example.com"]},
             {"any": ["did not trigger a merge"]}
           ],
           "sources_any": ["Identity/resolution-review.md"]
@@ -497,8 +497,8 @@
           "checks": [
             {"any": ["artifact:guardian-consent-602", "guardian consent completed"]},
             {"any": ["artifact:registration-ledger-604", "registration completed"]},
-            {"any": ["equipment inspection remains pending", "equipment inspection is still pending", "equipment inspection is pending", "equipment inspection pending with no artifact"]},
-            {"any": ["readiness packet itself remains incomplete", "readiness packet remains incomplete", "packet is not complete", "The packet itself is not complete"]}
+            {"any": ["equipment inspection remains pending", "equipment inspection is still pending", "equipment inspection is pending", "equipment inspection pending with no artifact", "inspection remains pending", "inspection is pending"]},
+            {"any": ["readiness packet itself remains incomplete", "readiness packet remains incomplete", "packet itself remains incomplete", "packet is not complete", "The packet itself is not complete"]}
           ],
           "sources_any": ["Work/readiness-plan.md", "Work/completion-evidence.json"]
         }

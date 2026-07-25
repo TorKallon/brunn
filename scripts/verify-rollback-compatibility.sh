@@ -12,6 +12,7 @@ target_image=$1
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 env_file=${ENV_FILE:-"$root/production.env"}
 compose_override_file=${COMPOSE_OVERRIDE_FILE-"$root/compose.production.yaml"}
+compose_managed_s3_file=${COMPOSE_MANAGED_S3_FILE:-}
 project=${COMPOSE_PROJECT_NAME:-straylight}
 probe_name="$project-rollback-probe-$$"
 temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/straylight-rollback-probe.XXXXXX")
@@ -31,7 +32,20 @@ printf '%s\n' \
   >"$override_file"
 
 compose() {
-  if [ -n "$compose_override_file" ]; then
+  if [ -n "$compose_managed_s3_file" ]; then
+    [ -n "$compose_override_file" ] || {
+      echo "COMPOSE_OVERRIDE_FILE is required with COMPOSE_MANAGED_S3_FILE" >&2
+      exit 64
+    }
+    docker compose \
+      --project-name "$project" \
+      --env-file "$env_file" \
+      --file "$root/compose.yaml" \
+      --file "$compose_override_file" \
+      --file "$compose_managed_s3_file" \
+      --file "$override_file" \
+      "$@"
+  elif [ -n "$compose_override_file" ]; then
     docker compose \
       --project-name "$project" \
       --env-file "$env_file" \

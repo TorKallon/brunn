@@ -1,4 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use rand::RngCore;
 use serde_json::{Value, json};
 use sqlx::Row;
@@ -253,6 +254,103 @@ pub async fn recover_user(
             "lost"
         },
         "revoked_existing_owner_credentials": revoked_existing_owner_credentials
+    }))
+}
+
+pub async fn record_backup_watermark(
+    database_url: &str,
+    oldest_retained_created_at: &str,
+    receipt_sha256: &str,
+    source: &str,
+) -> ApiResult<Value> {
+    validate_name(source, 240, "source")?;
+    let watermark = DateTime::parse_from_rfc3339(oldest_retained_created_at.trim())
+        .map_err(|_| ApiError::invalid("oldest_retained_created_at must be an RFC 3339 timestamp"))?
+        .with_timezone(&Utc);
+    if watermark > Utc::now() + ChronoDuration::minutes(5) {
+        return Err(ApiError::invalid(
+            "oldest_retained_created_at cannot be in the future",
+        ));
+    }
+    let receipt_sha256 = receipt_sha256
+        .trim()
+        .strip_prefix("sha256:")
+        .unwrap_or(receipt_sha256.trim())
+        .to_ascii_lowercase();
+    if receipt_sha256.len() != 64
+        || !receipt_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err(ApiError::invalid(
+            "receipt_sha256 must be a lowercase SHA-256 digest",
+        ));
+    }
+
+    let pool = db::operator_pool(database_url).await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('straylight.operator.backup_watermark'))")
+        .execute(&mut *tx)
+        .await?;
+    let rows = sqlx::query(
+        r#"
+        UPDATE straylight.account_deletion_requests
+        SET backup_erasure_verified_at=clock_timestamp(),
+            backup_erasure_watermark_at=$1,
+            backup_erasure_receipt_sha256=$2,
+            backup_erasure_source=$3,
+            terminal_result=coalesce(terminal_result,'{}'::jsonb)
+              || jsonb_build_object(
+                'backup_status','prune_verified',
+                'backup_erasure_watermark_at',$1,
+                'backup_erasure_receipt_sha256','sha256:' || $2,
+                'backup_erasure_source',$3
+              )
+        WHERE status='awaiting_backup_expiry'
+          AND backup_expiry_due_at <= clock_timestamp()
+          AND terminal_result ? 'canonical_purged_at'
+          AND (terminal_result->>'canonical_purged_at')::timestamptz < $1
+          AND (
+            backup_erasure_verified_at IS NULL
+            OR backup_erasure_watermark_at < $1
+          )
+        RETURNING user_id,id
+        "#,
+    )
+    .bind(watermark)
+    .bind(&receipt_sha256)
+    .bind(source.trim())
+    .fetch_all(&mut *tx)
+    .await?;
+    for row in &rows {
+        let user_id: Uuid = row.try_get("user_id")?;
+        let request_id: Uuid = row.try_get("id")?;
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.audit_events (
+              user_id,actor_ref,action,details,content_free
+            ) VALUES (
+              $1,'operator:local','operator.backup_erasure.verify',$2,true
+            )
+            "#,
+        )
+        .bind(user_id)
+        .bind(json!({
+            "request_id": request_id,
+            "oldest_retained_created_at": watermark,
+            "receipt_sha256": format!("sha256:{receipt_sha256}"),
+            "source": source.trim()
+        }))
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(json!({
+        "status": "recorded",
+        "oldest_retained_created_at": watermark,
+        "receipt_sha256": format!("sha256:{receipt_sha256}"),
+        "source": source.trim(),
+        "account_deletions_verified": rows.len()
     }))
 }
 

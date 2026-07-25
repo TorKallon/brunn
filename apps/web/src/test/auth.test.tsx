@@ -10,7 +10,7 @@ describe("token authentication", () => {
     const user = userEvent.setup();
     renderApp("/work");
 
-    expect(await screen.findByRole("heading", { name: "Straylight" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "CarryState" })).toBeInTheDocument();
     await user.type(screen.getByLabelText("Access token"), "session-secret");
     await user.click(screen.getByRole("button", { name: "Connect" }));
 

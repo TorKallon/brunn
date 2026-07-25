@@ -49,13 +49,6 @@ container_running() {
     [ "$(docker inspect --format '{{.State.Running}}' "$container_id")" = "true" ]
 }
 
-for service in db minio api worker; do
-  container_running "$service" || {
-    echo "$service must be running before a coordinated backup" >&2
-    exit 1
-  }
-done
-
 container_env() {
   docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$1" |
     awk -F= -v key="$2" '
@@ -68,40 +61,106 @@ container_env() {
 }
 
 backup_id=$(date -u +%Y%m%dT%H%M%SZ)-$(uuidgen | tr '[:upper:]' '[:lower:]')
+leave_services_stopped=${LEAVE_WRITERS_STOPPED:-false}
+case "$leave_services_stopped" in
+  true|false)
+    ;;
+  *)
+    echo "LEAVE_WRITERS_STOPPED must be true or false" >&2
+    exit 64
+    ;;
+esac
+
 mkdir -p "$backup_root"
-lock_dir="$backup_root/.backup.lock"
-mkdir "$lock_dir" 2>/dev/null || {
-  echo "another coordinated backup appears to be running: $lock_dir" >&2
-  exit 1
-}
+backup_root=$(CDPATH= cd -- "$backup_root" && pwd)
+operation_lock_dir="$backup_root/.recovery-operation.lock"
 work_dir="$backup_root/.$backup_id.partial"
 final_dir="$backup_root/$backup_id"
-mkdir "$work_dir"
-
-writers_stopped=false
-minio_stopped=false
+operation_lock_acquired=false
+work_dir_created=false
+writers_stop_attempted=false
+minio_stop_attempted=false
 completed=false
+db_container=
+api_container=
+worker_container=
+minio_container=
+
+wait_original_container_ready() {
+  container_id=$1
+  service=$2
+  expected=$3
+  attempts=0
+  state=
+  while [ "$attempts" -lt 90 ]; do
+    state=$(docker inspect \
+      --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+      "$container_id" 2>/dev/null || true)
+    if [ "$state" = "$expected" ]; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 1
+  done
+  echo "$service did not return to $expected after backup recovery" >&2
+  return 1
+}
+
+restart_original_services() {
+  docker start "$minio_container" >/dev/null || return $?
+  wait_original_container_ready "$minio_container" minio healthy || return $?
+  docker start "$api_container" >/dev/null || return $?
+  docker start "$worker_container" >/dev/null || return $?
+  wait_original_container_ready "$api_container" api healthy || return $?
+  wait_original_container_ready "$worker_container" worker running || return $?
+}
 
 recover_services() {
   status=$?
+  recovery_failed=false
   trap - EXIT INT TERM
-  if [ "$minio_stopped" = true ]; then
-    compose up -d minio >/dev/null 2>&1 || true
+  if [ "$minio_stop_attempted" = true ] ||
+    [ "$writers_stop_attempted" = true ]; then
+    if [ "$completed" != true ] || [ "$leave_services_stopped" != true ]; then
+      if ! restart_original_services; then
+        echo "backup recovery could not restore the original services to readiness" >&2
+        recovery_failed=true
+      fi
+    fi
   fi
-  if [ "$writers_stopped" = true ]; then
-    compose up -d minio-init api worker >/dev/null 2>&1 || true
-  fi
-  if [ "$completed" != true ]; then
+  if [ "$completed" != true ] && [ "$work_dir_created" = true ]; then
     rm -rf "$work_dir"
   fi
-  rmdir "$lock_dir" >/dev/null 2>&1 || true
+  if [ "$operation_lock_acquired" = true ]; then
+    rmdir "$operation_lock_dir" >/dev/null 2>&1 || true
+  fi
+  if [ "$recovery_failed" = true ]; then
+    exit 1
+  fi
   exit "$status"
 }
 trap recover_services EXIT INT TERM
 
+mkdir "$operation_lock_dir" 2>/dev/null || {
+  echo "another backup, restore, or prune operation holds $operation_lock_dir" >&2
+  exit 1
+}
+operation_lock_acquired=true
+mkdir "$work_dir"
+work_dir_created=true
+
+for service in db minio api worker; do
+  container_running "$service" || {
+    echo "$service must be running before a coordinated backup" >&2
+    exit 1
+  }
+done
+
 db_container=$(compose ps -q db)
 api_container=$(compose ps -q api)
+worker_container=$(compose ps -q worker)
 minio_container=$(compose ps -q minio)
+
 db_user=$(container_env "$db_container" POSTGRES_USER)
 db_name=$(container_env "$db_container" POSTGRES_DB)
 bucket=$(container_env "$api_container" STRAYLIGHT_MINIO_BUCKET)
@@ -112,19 +171,6 @@ for value_name in db_user db_name bucket; do
     exit 1
   }
 done
-
-active_deletions=$(docker exec "$db_container" psql \
-  --username "$db_user" \
-  --dbname "$db_name" \
-  --tuples-only \
-  --no-align \
-  --no-psqlrc \
-  --command "SELECT count(*) FROM straylight.account_deletion_requests WHERE status IN ('queued','running')" |
-  tr -d '[:space:]')
-[ "$active_deletions" = "0" ] || {
-  echo "cannot snapshot while $active_deletions account deletion request(s) are mutating canonical data" >&2
-  exit 1
-}
 
 expires_at=$(docker exec "$db_container" psql \
   --username "$db_user" \
@@ -138,8 +184,55 @@ expires_at=$(docker exec "$db_container" psql \
 started_epoch=$(date +%s)
 created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "quiescing API and worker"
+writers_stop_attempted=true
 compose stop --timeout 30 api worker >/dev/null
-writers_stopped=true
+
+echo "bringing the quiesced database to the current schema"
+compose run --rm migrate >/dev/null
+
+active_deletions=$(docker exec "$db_container" psql \
+  --username "$db_user" \
+  --dbname "$db_name" \
+  --tuples-only \
+  --no-align \
+  --no-psqlrc \
+  --command "SELECT count(*) FROM straylight.account_deletion_requests WHERE status IN ('queued','running')" |
+  tr -d '[:space:]')
+[ "$active_deletions" = "0" ] || {
+  echo "cannot snapshot while $active_deletions account deletion request(s) are mutating canonical data" >&2
+  exit 1
+}
+active_uploads=$(docker exec "$db_container" psql \
+  --username "$db_user" \
+  --dbname "$db_name" \
+  --tuples-only \
+  --no-align \
+  --no-psqlrc \
+  --command "SELECT count(*) FROM straylight.asset_uploads WHERE status IN ('uploading','verifying')" |
+  tr -d '[:space:]')
+[ "$active_uploads" = "0" ] || {
+  echo "cannot snapshot while $active_uploads resumable upload(s) are incomplete" >&2
+  exit 1
+}
+
+echo "pinning legacy database references to exact object versions"
+compose run --rm -T migrate object-store-backup pin-database \
+  >"$work_dir/database-object-pinning.json"
+jq -e '
+  (.asset_versions_pinned | type == "number" and . >= 0)
+  and (.upload_canonical_versions_pinned | type == "number" and . >= 0)
+  and (.account_export_versions_pinned | type == "number" and . >= 0)
+  and (.objects_stream_verified | type == "number" and . >= 0)
+' "$work_dir/database-object-pinning.json" >/dev/null
+
+echo "verifying database references against exact object bytes"
+compose run --rm -T migrate object-store-backup verify-database \
+  >"$work_dir/database-object-verification.json"
+jq -e '
+  (.references_verified | type == "number" and . >= 0)
+  and (.unique_object_versions_verified | type == "number" and . >= 0)
+  and (.logical_bytes_verified | type == "number" and . >= 0)
+' "$work_dir/database-object-verification.json" >/dev/null
 
 minio_volume=$(docker inspect --format \
   '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' \
@@ -223,8 +316,8 @@ jq -s 'sort_by(.service, .container_name)' \
 rm "$runtime_inspect"
 
 echo "capturing stopped MinIO volume with all versions"
+minio_stop_attempted=true
 compose stop --timeout 30 minio >/dev/null
-minio_stopped=true
 docker run --rm --network none \
   --volume "$minio_volume:/source:ro" \
   --volume "$work_dir:/backup" \
@@ -275,24 +368,33 @@ jq -n \
     runtime_identity: {
       images: "runtime-images.json",
       compose_service_hashes: "compose-service-hashes.txt",
-      database_invariants: "database-invariants.json"
+      database_invariants: "database-invariants.json",
+      database_object_pinning: "database-object-pinning.json",
+      database_object_verification: "database-object-verification.json"
     }
   }' >"$work_dir/manifest.json"
 
 (
   cd "$work_dir"
   shasum -a 256 postgres.dump minio-data.tar \
-    db-inventory.txt database-invariants.json minio-versions.jsonl runtime-images.json \
+    db-inventory.txt database-invariants.json database-object-pinning.json \
+    database-object-verification.json minio-versions.jsonl runtime-images.json \
     compose-service-hashes.txt manifest.json >CHECKSUMS.sha256
 )
 
+"$root/scripts/verify-backup.sh" "$work_dir" >/dev/null
 mv "$work_dir" "$final_dir"
+work_dir_created=false
 completed=true
 
-echo "restarting MinIO, API, and worker"
-compose up -d minio minio-init api worker >/dev/null
-minio_stopped=false
-writers_stopped=false
+if [ "$leave_services_stopped" = true ]; then
+  echo "leaving the original MinIO, API, and worker stopped for the deployment gate"
+else
+  echo "restarting the exact MinIO, API, and worker containers stopped for this backup"
+  restart_original_services
+  minio_stop_attempted=false
+  writers_stop_attempted=false
+fi
 
 "$root/scripts/verify-backup.sh" "$final_dir"
 echo "coordinated backup complete: $final_dir"

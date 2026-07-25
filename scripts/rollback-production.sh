@@ -25,20 +25,38 @@ read_value() {
 target_image=$(read_value STRAYLIGHT_API_IMAGE)
 target_revision=$(read_value STRAYLIGHT_RELEASE_REVISION)
 host=$(read_value STRAYLIGHT_PUBLIC_HOST)
+object_store_mode=$(read_value STRAYLIGHT_OBJECT_STORE_MODE)
+object_store_mode=${object_store_mode:-self-hosted-minio}
+managed_overlay=
+if [ "$object_store_mode" = "managed-s3" ]; then
+  managed_overlay="$root/compose.managed-s3.yaml"
+fi
 
 ENV_FILE="$env_file" \
   COMPOSE_PROJECT_NAME="$project" \
   COMPOSE_OVERRIDE_FILE="$root/compose.production.yaml" \
+  COMPOSE_MANAGED_S3_FILE="$managed_overlay" \
   "$root/scripts/verify-rollback-compatibility.sh" "$target_image"
 
 compose() {
-  docker compose \
-    --project-name "$project" \
-    --env-file "$env_file" \
-    --file "$root/compose.yaml" \
-    --file "$root/compose.production.yaml" \
-    --profile observability \
-    "$@"
+  if [ -n "$managed_overlay" ]; then
+    docker compose \
+      --project-name "$project" \
+      --env-file "$env_file" \
+      --file "$root/compose.yaml" \
+      --file "$root/compose.production.yaml" \
+      --file "$managed_overlay" \
+      --profile observability \
+      "$@"
+  else
+    docker compose \
+      --project-name "$project" \
+      --env-file "$env_file" \
+      --file "$root/compose.yaml" \
+      --file "$root/compose.production.yaml" \
+      --profile observability \
+      "$@"
+  fi
 }
 
 compose up -d --no-build --pull never --no-deps api worker web edge

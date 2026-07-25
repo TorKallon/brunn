@@ -1,0 +1,1037 @@
+{
+  "benchmark_version": "1.0",
+  "name": "CarryState mixed Markdown and binary reasoning evaluation",
+  "fixture": {
+    "generator": "eval/binary_asset_fixture.py",
+    "format": "carrystate-binary-fixture-v1",
+    "snapshot": "r2"
+  },
+  "grading_mode": "evidence_claims_and_cost_v1",
+  "scorecard": {
+    "priority": "quality_first",
+    "quality_gate": {
+      "all_claims_required": true,
+      "forbidden_any_fails": true,
+      "native_hash_verification_required": true,
+      "authority_attribution_required": true
+    },
+    "comparison": {
+      "primary": "claim_and_forbidden_error_parity_or_better",
+      "secondary": "tokens_calls_bytes_latency_and_cost",
+      "paired_seed_required": true
+    }
+  },
+  "conditions": {
+    "carrystate": {
+      "interface": "memory open/query/read plus asset metadata/range/full download",
+      "corpus_projection": "The complete r2 fixture is imported. Search may return source Markdown and explicitly non-authoritative generated descriptions; native bytes are fetched only when useful.",
+      "source_parity": "Every source byte available to either filesystem condition is retained and addressable by hash and logical path.",
+      "allowed_tools": [
+        "memory.open",
+        "memory.query",
+        "memory.read",
+        "asset.metadata",
+        "asset.fetch",
+        "memory.verify"
+      ],
+      "cost_accounting": [
+        "model_input_tokens",
+        "model_output_tokens",
+        "uncached_input_tokens",
+        "tool_calls",
+        "tool_bytes",
+        "wall_time_ms",
+        "provider_cost_usd"
+      ]
+    },
+    "matched-filesystem": {
+      "interface": "filesystem tools over a per-card directory containing exactly the evidence bytes selected in the successful CarryState run",
+      "corpus_projection": "Content-matched control. Discovery is removed, but source Markdown, generated descriptions, and native files are byte-identical to CarryState.",
+      "source_parity": "The model receives no fact or file that was unavailable to the paired CarryState run.",
+      "allowed_tools": [
+        "rg",
+        "read_file",
+        "read_range",
+        "sha256",
+        "sqlite3",
+        "unzip",
+        "view_image"
+      ],
+      "cost_accounting": [
+        "model_input_tokens",
+        "model_output_tokens",
+        "uncached_input_tokens",
+        "tool_calls",
+        "tool_bytes",
+        "wall_time_ms",
+        "provider_cost_usd"
+      ]
+    },
+    "operational-filesystem": {
+      "interface": "ordinary agent filesystem tools over the complete r2 mixed vault",
+      "corpus_projection": "Realistic local-vault control. The agent must discover relevant files in the full current snapshot and may inspect native files with standard local utilities.",
+      "source_parity": "The full current fixture has the same logical paths and native bytes as CarryState; no preselected context pack is supplied.",
+      "allowed_tools": [
+        "find",
+        "rg",
+        "read_file",
+        "read_range",
+        "sha256",
+        "file",
+        "sqlite3",
+        "unzip",
+        "view_image"
+      ],
+      "cost_accounting": [
+        "model_input_tokens",
+        "model_output_tokens",
+        "uncached_input_tokens",
+        "tool_calls",
+        "tool_bytes",
+        "wall_time_ms",
+        "provider_cost_usd"
+      ]
+    }
+  },
+  "cards": [
+    {
+      "id": "receipt-expense-evidence",
+      "workload": "receipts_images",
+      "capability": "source_fidelity_and_authority",
+      "scope": "personal",
+      "task": "Prepare the Switzerland lodging expense record. State the merchant, date, total, and VAT; read the receipt number and masked payment hint from the native image; distinguish the manually verified Markdown record from the generated image description; and identify the exact native receipt retained for audit or taxes. Verify the native hash rather than treating generated extraction as authority.",
+      "withheld_values": [
+        "AL-0718-442",
+        "VISA *4812"
+      ],
+      "native_only_values": [
+        "AL-0718-442",
+        "VISA *4812"
+      ],
+      "native_requirements": [
+        {
+          "evidence_id": "receipt_native",
+          "operations": ["metadata", "verified_fetch", "local_inspection"]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "expense_ledger",
+          "kind": "source_path",
+          "path": "Trips/Switzerland/Expenses/Expense Ledger.md",
+          "authority": "source",
+          "required_access": "search"
+        },
+        {
+          "id": "receipt_description",
+          "kind": "generated_description",
+          "path": "Trips/Switzerland/Expenses/alpine-lodge-receipt.png",
+          "authority": "derived_non_authoritative",
+          "required_access": "search"
+        },
+        {
+          "id": "receipt_native",
+          "kind": "asset_path",
+          "path": "Trips/Switzerland/Expenses/alpine-lodge-receipt.png",
+          "authority": "native",
+          "required_access": "full"
+        }
+      ],
+      "claims": [
+        {
+          "id": "c1",
+          "prompt": "Report the verified merchant, date, total, and VAT.",
+          "expectation": "The verified expense values are reported.",
+          "checks": [
+            {
+              "any": [
+                "Alpine Lodge Saas-Fee"
+              ]
+            },
+            {
+              "any": [
+                "2026-07-18",
+                "July 18, 2026"
+              ]
+            },
+            {
+              "any": [
+                "CHF 184.70"
+              ]
+            },
+            {
+              "any": [
+                "CHF 6.83"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "expense_ledger",
+            "receipt_native"
+          ]
+        },
+        {
+          "id": "c2",
+          "prompt": "Distinguish the generated description from the manually verified record.",
+          "expectation": "The generated description is called derived and non-authoritative.",
+          "checks": [
+            {
+              "any": [
+                "non-authoritative",
+                "derived"
+              ]
+            },
+            {
+              "any": [
+                "manually verified",
+                "source-backed Markdown",
+                "expense ledger"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "expense_ledger",
+            "receipt_description"
+          ]
+        },
+        {
+          "id": "c3",
+          "prompt": "Report the retained native receipt identity, image-only receipt details, and hash verification.",
+          "expectation": "The native PNG, image-only receipt number and payment hint, and SHA-256 are retained as literal evidence.",
+          "checks": [
+            {
+              "any": [
+                "alpine-lodge-receipt.png"
+              ]
+            },
+            {
+              "any": [
+                "SHA-256",
+                "sha256"
+              ]
+            },
+            {
+              "any": [
+                "AL-0718-442"
+              ]
+            },
+            {
+              "any": [
+                "VISA *4812",
+                "VISA ending 4812",
+                "4812"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "receipt_native"
+          ]
+        }
+      ],
+      "forbidden": [
+        "The generated description is the authoritative receipt.",
+        "The literal receipt can be discarded after extraction."
+      ],
+      "verification_steps": [
+        "Compare the downloaded byte count and SHA-256 with asset metadata.",
+        "Cite the verified Markdown ledger for expense values and the PNG as retained evidence."
+      ]
+    },
+    {
+      "id": "factory-sqlite-current-state",
+      "workload": "sqlite_sql_datasets",
+      "capability": "versioned_quantitative_artifact_reasoning",
+      "scope": "personal",
+      "task": "Resume StarRupture factory analysis from the current data. Query the native SQLite database, report site count and total ingots, state the current Grand Basin and Oil Mesa values, explain why the SQL dump is historical rather than current, and identify the blocked route. Do not answer exact quantities from the generated description alone.",
+      "withheld_values": [
+        "258",
+        "45",
+        "18"
+      ],
+      "description_forbidden_values": [
+        "258",
+        "45",
+        "18"
+      ],
+      "native_only_values": [
+        "total ingots 258",
+        "Grand Basin 45",
+        "Oil Mesa 18"
+      ],
+      "native_requirements": [
+        {
+          "evidence_id": "factory_database",
+          "operations": ["metadata", "verified_fetch", "local_inspection"]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "factory_notes",
+          "kind": "source_path",
+          "path": "Topics/StarRupture/Factory Notes.md",
+          "authority": "source",
+          "required_access": "search"
+        },
+        {
+          "id": "factory_sql",
+          "kind": "source_path",
+          "path": "Data/StarRupture/factory-baseline.sql",
+          "authority": "source",
+          "required_access": "search"
+        },
+        {
+          "id": "factory_description",
+          "kind": "generated_description",
+          "path": "Data/StarRupture/factory.sqlite",
+          "authority": "derived_non_authoritative",
+          "required_access": "search"
+        },
+        {
+          "id": "factory_database",
+          "kind": "asset_path",
+          "path": "Data/StarRupture/factory.sqlite",
+          "authority": "native",
+          "required_access": "full"
+        }
+      ],
+      "claims": [
+        {
+          "id": "c1",
+          "prompt": "Report the current site count and aggregate ingot total from SQLite.",
+          "expectation": "Current SQLite totals are queried exactly.",
+          "checks": [
+            {
+              "any": [
+                "4 sites",
+                "four sites"
+              ]
+            },
+            {
+              "any": [
+                "258"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "factory_database"
+          ]
+        },
+        {
+          "id": "c2",
+          "prompt": "Report current Grand Basin and Oil Mesa quantities and distinguish them from the baseline.",
+          "expectation": "Current site quantities are distinguished from the baseline.",
+          "checks": [
+            {
+              "any": [
+                "Grand Basin"
+              ]
+            },
+            {
+              "any": [
+                "45"
+              ]
+            },
+            {
+              "any": [
+                "Oil Mesa"
+              ]
+            },
+            {
+              "any": [
+                "18"
+              ]
+            },
+            {
+              "any": [
+                "revision 2",
+                "current SQLite"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "factory_database",
+            "factory_sql"
+          ]
+        },
+        {
+          "id": "c3",
+          "prompt": "Report the blocked direct connection and approved workaround.",
+          "expectation": "The blocked direct rail is identified and routed around.",
+          "checks": [
+            {
+              "any": [
+                "Grand Basin to Oil Mesa",
+                "Oil Mesa rail"
+              ]
+            },
+            {
+              "any": [
+                "blocked"
+              ]
+            },
+            {
+              "any": [
+                "southern freight"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "factory_database",
+            "factory_notes"
+          ]
+        }
+      ],
+      "forbidden": [
+        "The revision 1 SQL dump is current.",
+        "The generated description is sufficient verification for exact totals."
+      ],
+      "verification_steps": [
+        "Download and hash-check factory.sqlite.",
+        "Run SELECT count(*), sum(ingots) FROM sites.",
+        "Query sites and routes before reconciling the historical SQL dump."
+      ]
+    },
+    {
+      "id": "factory-map-route",
+      "workload": "maps_images",
+      "capability": "cross_modal_spatial_reasoning",
+      "scope": "personal",
+      "task": "Use the current factory notes and retained world map to brief the next delivery route. Locate Faraday Works, Landerworks, Grand Basin, and Oil Mesa relative to one another, identify the blocked connection, recommend the recorded next route, and report the checkpoint label shown only on that route in the native map. State which conclusions come from source notes and which are only visually corroborated.",
+      "withheld_values": [
+        "S-3"
+      ],
+      "native_only_values": [
+        "S-3"
+      ],
+      "native_requirements": [
+        {
+          "evidence_id": "map_native",
+          "operations": ["metadata", "verified_fetch", "local_inspection"]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "map_notes",
+          "kind": "source_path",
+          "path": "Topics/StarRupture/Factory Notes.md",
+          "authority": "source",
+          "required_access": "search"
+        },
+        {
+          "id": "map_description",
+          "kind": "generated_description",
+          "path": "Topics/StarRupture/Maps/world-map.png",
+          "authority": "derived_non_authoritative",
+          "required_access": "search"
+        },
+        {
+          "id": "map_native",
+          "kind": "asset_path",
+          "path": "Topics/StarRupture/Maps/world-map.png",
+          "authority": "native",
+          "required_access": "full"
+        }
+      ],
+      "claims": [
+        {
+          "id": "c1",
+          "prompt": "Report the complete relative-location chain.",
+          "expectation": "The relative location chain is complete.",
+          "checks": [
+            {
+              "any": [
+                "Faraday Works"
+              ]
+            },
+            {
+              "any": [
+                "west"
+              ]
+            },
+            {
+              "any": [
+                "Grand Basin"
+              ]
+            },
+            {
+              "any": [
+                "north"
+              ]
+            },
+            {
+              "any": [
+                "Oil Mesa"
+              ]
+            },
+            {
+              "any": [
+                "southeast"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "map_notes",
+            "map_native"
+          ]
+        },
+        {
+          "id": "c2",
+          "prompt": "Report the blocked connection and approved next route.",
+          "expectation": "The blocked connection and next route are correct.",
+          "checks": [
+            {
+              "any": [
+                "direct rail",
+                "Oil Mesa rail"
+              ]
+            },
+            {
+              "any": [
+                "blocked"
+              ]
+            },
+            {
+              "any": [
+                "southern freight"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "map_notes",
+            "map_native"
+          ]
+        },
+        {
+          "id": "c3",
+          "prompt": "Attribute authority correctly and report the image-only checkpoint label.",
+          "expectation": "Authority is attributed to Factory Notes, while the image corroborates the route and supplies checkpoint S-3.",
+          "checks": [
+            {
+              "any": [
+                "Factory Notes",
+                "source notes"
+              ]
+            },
+            {
+              "any": [
+                "corroborate",
+                "visual"
+              ]
+            },
+            {
+              "any": [
+                "S-3"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "map_notes",
+            "map_description",
+            "map_native"
+          ]
+        }
+      ],
+      "forbidden": [
+        "The generated map description is canonical route state.",
+        "The direct Oil Mesa rail is open."
+      ],
+      "verification_steps": [
+        "Inspect the native map after checking its hash.",
+        "Use Factory Notes as the source of current route status."
+      ]
+    },
+    {
+      "id": "switzerland-booking-state",
+      "workload": "vacation_planning",
+      "capability": "booked_vs_proposed_temporal_state",
+      "scope": "personal",
+      "task": "Prepare the current Switzerland trip handoff. State the athlete camp dates, family window, booked lake-transfer time and confirmation, and the evidence that makes the transfer booked rather than proposed. Do not revive the deleted August 12 proposal as current state.",
+      "withheld_values": [
+        "LK-2048"
+      ],
+      "native_only_values": [],
+      "native_requirements": [
+        {
+          "evidence_id": "transfer_confirmation",
+          "operations": ["metadata", "verified_fetch", "local_inspection"]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "trip_plan",
+          "kind": "source_path",
+          "path": "Trips/Switzerland/Switzerland Trip.md",
+          "authority": "source",
+          "required_access": "search"
+        },
+        {
+          "id": "transfer_description",
+          "kind": "generated_description",
+          "path": "Trips/Switzerland/Confirmations/Lake Transfer LK-2048.pdf",
+          "authority": "derived_non_authoritative",
+          "required_access": "search"
+        },
+        {
+          "id": "transfer_confirmation",
+          "kind": "asset_path",
+          "path": "Trips/Switzerland/Confirmations/Lake Transfer LK-2048.pdf",
+          "authority": "native",
+          "required_access": "full"
+        }
+      ],
+      "claims": [
+        {
+          "id": "c1",
+          "prompt": "Report both the athlete camp and family travel windows.",
+          "expectation": "Camp and family windows are both preserved.",
+          "checks": [
+            {
+              "any": [
+                "August 3-15",
+                "August 3 to 15"
+              ]
+            },
+            {
+              "any": [
+                "August 8-16",
+                "August 8 to 16"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "trip_plan"
+          ]
+        },
+        {
+          "id": "c2",
+          "prompt": "Report the exact current transfer date, time, and confirmation ID.",
+          "expectation": "The current transfer booking is exact.",
+          "checks": [
+            {
+              "any": [
+                "August 13",
+                "2026-08-13"
+              ]
+            },
+            {
+              "any": [
+                "09:20"
+              ]
+            },
+            {
+              "any": [
+                "LK-2048"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "trip_plan",
+            "transfer_confirmation"
+          ]
+        },
+        {
+          "id": "c3",
+          "prompt": "Distinguish the current confirmation from the superseded proposal.",
+          "expectation": "The confirmation is current and the older proposal is not.",
+          "checks": [
+            {
+              "any": [
+                "booked",
+                "confirmation"
+              ]
+            },
+            {
+              "any": [
+                "proposal is not current",
+                "deleted proposal",
+                "not August 12"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "trip_plan",
+            "transfer_confirmation"
+          ]
+        }
+      ],
+      "forbidden": [
+        "The transfer is booked for August 12 at 10:00.",
+        "A generated description alone proves the reservation."
+      ],
+      "verification_steps": [
+        "Verify and inspect the native confirmation PDF.",
+        "Use the current trip plan to reject the superseded proposal."
+      ]
+    },
+    {
+      "id": "kids-ski-schedule-change",
+      "workload": "kids_sports",
+      "capability": "schedule_exception_and_next_action",
+      "scope": "personal",
+      "task": "Prepare the next kids ski-team briefing. Reconcile the current Markdown schedule with the calendar asset, report the weather-driven Crystal Slalom date and time, registration state, RSVP deadline, and the next logistical action. Do not use the prior December 12 schedule.",
+      "withheld_values": [
+        "UID:crystal-training-20261213"
+      ],
+      "native_only_values": [
+        "UID:crystal-training-20261213"
+      ],
+      "native_requirements": [
+        {
+          "evidence_id": "ski_calendar",
+          "operations": ["metadata", "verified_fetch", "local_inspection"]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "ski_schedule",
+          "kind": "source_path",
+          "path": "Areas/Skiing/Kids Team/Schedule.md",
+          "authority": "source",
+          "required_access": "search"
+        },
+        {
+          "id": "ski_calendar",
+          "kind": "asset_path",
+          "path": "Areas/Skiing/Kids Team/team-schedule.ics",
+          "authority": "native",
+          "required_access": "full"
+        }
+      ],
+      "claims": [
+        {
+          "id": "c1",
+          "prompt": "Report the current changed event time and cause.",
+          "expectation": "The changed event time and cause are current.",
+          "checks": [
+            {
+              "any": [
+                "December 13",
+                "2026-12-13"
+              ]
+            },
+            {
+              "any": [
+                "08:30",
+                "8:30"
+              ]
+            },
+            {
+              "any": [
+                "weather"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "ski_schedule",
+            "ski_calendar"
+          ]
+        },
+        {
+          "id": "c2",
+          "prompt": "Report participation and registration-deadline state.",
+          "expectation": "Participation and deadline state are retained.",
+          "checks": [
+            {
+              "any": [
+                "registration is confirmed",
+                "registered"
+              ]
+            },
+            {
+              "any": [
+                "December 5"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "ski_schedule"
+          ]
+        },
+        {
+          "id": "c3",
+          "prompt": "Report the next concrete logistics action with its date and time.",
+          "expectation": "The next concrete logistics action is reported.",
+          "checks": [
+            {
+              "any": [
+                "wax pickup"
+              ]
+            },
+            {
+              "any": [
+                "December 11"
+              ]
+            },
+            {
+              "any": [
+                "18:00",
+                "6:00"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "ski_schedule"
+          ]
+        }
+      ],
+      "forbidden": [
+        "Crystal Slalom remains December 12 at 09:00.",
+        "Registration is still proposed."
+      ],
+      "verification_steps": [
+        "Read the current schedule source and inspect the ICS event.",
+        "Treat matching source and calendar values as corroboration, not as duplicate events."
+      ]
+    },
+    {
+      "id": "carrystate-alpha-artifact",
+      "workload": "product_work",
+      "capability": "artifact_backed_launch_readiness",
+      "scope": "work",
+      "task": "Review the CarryState owner-alpha candidate. Identify the build and commit, inspect the native release archive manifest, state what asset capability passed, and decide whether the candidate is launch-ready. Preserve the pending restore gate as a blocker.",
+      "withheld_values": [
+        "0123456789abcdef"
+      ],
+      "native_only_values": [],
+      "native_requirements": [
+        {
+          "evidence_id": "artifact_native",
+          "operations": ["metadata", "verified_fetch", "local_inspection"]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "alpha_checklist",
+          "kind": "source_path",
+          "path": "Projects/CarryState/Alpha Checklist.md",
+          "authority": "source",
+          "required_access": "search"
+        },
+        {
+          "id": "artifact_description",
+          "kind": "generated_description",
+          "path": "Projects/CarryState/Artifacts/cs-alpha-17.zip",
+          "authority": "derived_non_authoritative",
+          "required_access": "search"
+        },
+        {
+          "id": "artifact_native",
+          "kind": "asset_path",
+          "path": "Projects/CarryState/Artifacts/cs-alpha-17.zip",
+          "authority": "native",
+          "required_access": "full"
+        }
+      ],
+      "claims": [
+        {
+          "id": "c1",
+          "prompt": "Report the exact build identity.",
+          "expectation": "Build identity is exact.",
+          "checks": [
+            {
+              "any": [
+                "cs-alpha-17"
+              ]
+            },
+            {
+              "any": [
+                "0123456789abcdef"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "alpha_checklist",
+            "artifact_native"
+          ]
+        },
+        {
+          "id": "c2",
+          "prompt": "Report the passed native-asset capability.",
+          "expectation": "The passed asset capability is named.",
+          "checks": [
+            {
+              "any": [
+                "asset retrieval passed",
+                "asset retrieval"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "alpha_checklist",
+            "artifact_native"
+          ]
+        },
+        {
+          "id": "c3",
+          "prompt": "Report the pending gate that still blocks launch readiness.",
+          "expectation": "The pending restore gate blocks launch readiness.",
+          "checks": [
+            {
+              "any": [
+                "off-host restore",
+                "restore gate"
+              ]
+            },
+            {
+              "any": [
+                "pending",
+                "not launch-ready"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "alpha_checklist",
+            "artifact_native"
+          ]
+        }
+      ],
+      "forbidden": [
+        "The candidate is launch-ready.",
+        "The generated archive description replaces ZIP inspection."
+      ],
+      "verification_steps": [
+        "Hash-check and inspect manifest.json inside cs-alpha-17.zip.",
+        "Reconcile archive metadata with the source-backed alpha checklist."
+      ]
+    },
+    {
+      "id": "office-image-layout",
+      "workload": "room_images",
+      "capability": "image_grounded_personal_planning",
+      "scope": "personal",
+      "task": "Recommend a network-cable route for the office while keeping the walkway clear. Reconcile the room image with the source-backed layout constraints, name the desk, window, and outlet walls, report the cable-anchor label visible only in the image, and state the image limitation.",
+      "withheld_values": [
+        "A3"
+      ],
+      "native_only_values": [
+        "cable anchor A3"
+      ],
+      "native_requirements": [
+        {
+          "evidence_id": "layout_native",
+          "operations": ["metadata", "verified_fetch", "local_inspection"]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "layout_constraints",
+          "kind": "source_path",
+          "path": "Rooms/Office/Layout Constraints.md",
+          "authority": "source",
+          "required_access": "search"
+        },
+        {
+          "id": "layout_description",
+          "kind": "generated_description",
+          "path": "Rooms/Office/office-layout.png",
+          "authority": "derived_non_authoritative",
+          "required_access": "search"
+        },
+        {
+          "id": "layout_native",
+          "kind": "asset_path",
+          "path": "Rooms/Office/office-layout.png",
+          "authority": "native",
+          "required_access": "full"
+        }
+      ],
+      "claims": [
+        {
+          "id": "c1",
+          "prompt": "Report all three wall constraints.",
+          "expectation": "All three wall constraints are correct.",
+          "checks": [
+            {
+              "any": [
+                "desk"
+              ]
+            },
+            {
+              "any": [
+                "north"
+              ]
+            },
+            {
+              "any": [
+                "window"
+              ]
+            },
+            {
+              "any": [
+                "east"
+              ]
+            },
+            {
+              "any": [
+                "outlet"
+              ]
+            },
+            {
+              "any": [
+                "west"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "layout_constraints",
+            "layout_native"
+          ]
+        },
+        {
+          "id": "c2",
+          "prompt": "Recommend the route that protects the walkway.",
+          "expectation": "The recommended route protects the walkway.",
+          "checks": [
+            {
+              "any": [
+                "west wall"
+              ]
+            },
+            {
+              "any": [
+                "east walkway",
+                "walkway clear"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "layout_constraints",
+            "layout_native"
+          ]
+        },
+        {
+          "id": "c3",
+          "prompt": "Report the image-only cable anchor while preserving the hidden-wiring uncertainty.",
+          "expectation": "The native image's A3 cable anchor is reported while hidden wiring remains explicitly unknown.",
+          "checks": [
+            {
+              "any": [
+                "hidden wiring",
+                "behind the walls",
+                "cannot establish wiring"
+              ]
+            },
+            {
+              "any": [
+                "A3",
+                "anchor A3"
+              ]
+            }
+          ],
+          "evidence_ids": [
+            "layout_description",
+            "layout_native"
+          ]
+        }
+      ],
+      "forbidden": [
+        "The image proves where hidden wiring runs.",
+        "Route the cable across the east walkway."
+      ],
+      "verification_steps": [
+        "Inspect the native room image after hash verification.",
+        "Use Layout Constraints as authority for the route."
+      ]
+    }
+  ]
+}

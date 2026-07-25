@@ -2,12 +2,21 @@
 set -eu
 
 usage() {
-  echo "usage: $0 SECRETS_DIR" >&2
+  echo "usage: $0 SECRETS_DIR [self-hosted-minio|managed-s3]" >&2
   exit 64
 }
 
-[ "$#" -eq 1 ] || usage
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage
 secrets_dir=$1
+object_store_mode=${2:-self-hosted-minio}
+case "$object_store_mode" in
+  self-hosted-minio|managed-s3)
+    ;;
+  *)
+    echo "unsupported object-store mode: $object_store_mode" >&2
+    exit 64
+    ;;
+esac
 [ -d "$secrets_dir" ] || {
   echo "production secrets directory does not exist: $secrets_dir" >&2
   exit 1
@@ -34,14 +43,18 @@ postgres_app_ro_password
 database_url_rw
 database_url_ro
 database_url_admin
-minio_root_user
-minio_root_password
-minio_app_access_key
-minio_app_secret_key
 continuation_signing_key
 openai_api_key
 dd_api_key
 "
+if [ "$object_store_mode" = "self-hosted-minio" ]; then
+  required="$required
+minio_root_user
+minio_root_password
+minio_app_access_key
+minio_app_secret_key
+"
+fi
 
 count=0
 for name in $required; do
@@ -79,21 +92,31 @@ require_minimum_bytes() {
 require_minimum_bytes postgres_admin_password 16
 require_minimum_bytes postgres_app_rw_password 16
 require_minimum_bytes postgres_app_ro_password 16
-require_minimum_bytes minio_root_password 16
-require_minimum_bytes minio_app_secret_key 16
 require_minimum_bytes continuation_signing_key 32
 require_minimum_bytes openai_api_key 20
 require_minimum_bytes dd_api_key 20
+if [ "$object_store_mode" = "self-hosted-minio" ]; then
+  require_minimum_bytes minio_root_password 16
+  require_minimum_bytes minio_app_secret_key 16
+fi
 
 for name in postgres_admin_password postgres_app_rw_password \
-  postgres_app_ro_password minio_root_password minio_app_secret_key \
-  continuation_signing_key openai_api_key dd_api_key; do
+  postgres_app_ro_password continuation_signing_key openai_api_key dd_api_key; do
   if grep -Eiq '(^|[_-])(replace|change-?me|placeholder|example)([_-]|$)' \
     "$secrets_dir/$name"; then
     echo "$name contains a placeholder value" >&2
     exit 1
   fi
 done
+if [ "$object_store_mode" = "self-hosted-minio" ]; then
+  for name in minio_root_password minio_app_secret_key; do
+    if grep -Eiq '(^|[_-])(replace|change-?me|placeholder|example)([_-]|$)' \
+      "$secrets_dir/$name"; then
+      echo "$name contains a placeholder value" >&2
+      exit 1
+    fi
+  done
+fi
 
 for name in database_url_rw database_url_ro database_url_admin; do
   first_line=$(sed -n '1p' "$secrets_dir/$name")
@@ -132,4 +155,4 @@ case "$(sed -n '1p' "$secrets_dir/database_url_admin")" in
     ;;
 esac
 
-echo "production secret contract valid: files=$count directory=$secrets_dir"
+echo "production secret contract valid: mode=$object_store_mode files=$count directory=$secrets_dir"

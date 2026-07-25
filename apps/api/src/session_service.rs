@@ -353,11 +353,13 @@ pub async fn refresh(state: &AppState, auth: &AuthContext, session_ref: &str) ->
         JOIN straylight.scopes AS scope
           ON scope.user_id=session.user_id AND scope.id=session.scope_id
         WHERE session.user_id=$1 AND session.id=$2
-          AND scope.scope_ref=ANY($3::text[])
+          AND session.credential_id=$3
+          AND scope.scope_ref=ANY($4::text[])
         "#,
     )
     .bind(auth.user_id.0)
     .bind(previous_session_id)
+    .bind(auth.credential_id.0)
     .bind(&auth.scope_refs)
     .fetch_optional(&mut *tx)
     .await?

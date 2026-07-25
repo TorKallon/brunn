@@ -318,6 +318,84 @@ export interface SourceRecord {
   audit?: AuditEvent[];
 }
 
+export interface AssetAccessTelemetry {
+  access_count?: number;
+  metadata_access_count?: number;
+  download_count?: number;
+  first_accessed_at?: string | null;
+  last_accessed_at?: string | null;
+  first_used_at?: string | null;
+  last_used_at?: string | null;
+  session_count?: number;
+  never_used?: boolean;
+  most_used_rank?: number | null;
+  least_used_rank?: number | null;
+  least_recently_used_rank?: number | null;
+}
+
+export interface AssetDescriptionSummary {
+  available?: boolean;
+  status?: string;
+  method?: string;
+  source_ref?: string;
+  generated_at?: string | null;
+}
+
+export interface AssetSummary extends AssetAccessTelemetry {
+  asset_ref: string;
+  version: number;
+  path?: string | null;
+  name?: string | null;
+  content_hash: string;
+  size_bytes: number;
+  media_type: string;
+  stored_at?: string;
+  description_available?: boolean;
+  description_status?: string;
+  description_method?: string;
+  description?: AssetDescriptionSummary | null;
+  access?: AssetAccessTelemetry | null;
+  usage?: AssetAccessTelemetry | null;
+  telemetry?: AssetAccessTelemetry | null;
+}
+
+export interface AssetSourceLink {
+  role: string;
+  source_ref: string;
+  title?: string | null;
+  source_kind?: string;
+  path?: string | null;
+  content_hash?: string | null;
+}
+
+export interface AssetRecord extends AssetSummary {
+  ref?: string;
+  corpus_revision?: string;
+  etag?: string | null;
+  metadata?: JsonObject;
+  sources?: AssetSourceLink[];
+  download?: {
+    path?: string;
+    supports_ranges?: boolean;
+    integrity_header?: string;
+  };
+}
+
+export interface AssetListData {
+  items: AssetSummary[];
+  limit?: number;
+  offset?: number;
+  has_more?: boolean;
+  continuation_token?: string | null;
+  total?: number;
+}
+
+export interface AssetDownload {
+  blob: Blob;
+  filename?: string;
+  contentHash?: string;
+}
+
 export interface CommitReceipt {
   id: string;
   operation_id?: string;

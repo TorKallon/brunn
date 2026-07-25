@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Check, GitCompareArrows, RefreshCw, Save, ShieldQuestion } from "lucide-react";
+import {
+  Check,
+  FileArchive,
+  GitCompareArrows,
+  RefreshCw,
+  Save,
+  ShieldQuestion,
+} from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { DataTable } from "../components/DataTable";
 import { JsonView } from "../components/JsonView";
@@ -163,10 +170,20 @@ export function WorkspacePage() {
         title={session.title ?? "Workspace"}
         description={`Session ${session.id}`}
         actions={
-          <button className="button secondary" type="button" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
-            <RefreshCw size={17} className={refreshMutation.isPending ? "spin" : undefined} />
-            Refresh revision
-          </button>
+          <>
+            <Link
+              className="button secondary"
+              to="/assets/$sessionId"
+              params={{ sessionId }}
+            >
+              <FileArchive size={17} aria-hidden="true" />
+              Assets
+            </Link>
+            <button className="button secondary" type="button" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
+              <RefreshCw size={17} className={refreshMutation.isPending ? "spin" : undefined} />
+              Refresh revision
+            </button>
+          </>
         }
       />
       <ProtocolNotice status={sessionQuery.data.status} gaps={sessionQuery.data.gaps?.length} conflicts={sessionQuery.data.conflicts?.length} />

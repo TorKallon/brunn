@@ -4,9 +4,11 @@ umask 077
 
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 env_file=${ENV_FILE:-"$root/production.env"}
-backup_root=${BACKUP_ROOT:-"$root/backups"}
+backup_root_override=${BACKUP_ROOT:-}
 record_root=${DEPLOYMENT_RECORD_ROOT:-"$root/deployment-records"}
 project=${COMPOSE_PROJECT_NAME:-straylight}
+
+. "$root/scripts/deploy-steps.sh"
 
 "$root/scripts/validate-production-config.sh" "$env_file"
 "$root/scripts/verify-production-images.sh" "$env_file"
@@ -23,6 +25,22 @@ read_value() {
 
 revision=$(read_value STRAYLIGHT_RELEASE_REVISION)
 host=$(read_value STRAYLIGHT_PUBLIC_HOST)
+object_store_mode=$(read_value STRAYLIGHT_OBJECT_STORE_MODE)
+object_store_mode=${object_store_mode:-self-hosted-minio}
+managed_overlay=
+case "$object_store_mode" in
+  self-hosted-minio)
+    backup_root=${backup_root_override:-"$root/backups"}
+    ;;
+  managed-s3)
+    managed_overlay="$root/compose.managed-s3.yaml"
+    backup_root=${backup_root_override:-$(read_value STRAYLIGHT_MANAGED_BACKUP_ROOT)}
+    ;;
+  *)
+    echo "unsupported object-store mode: $object_store_mode" >&2
+    exit 1
+    ;;
+esac
 head_revision=$(git -C "$root" rev-parse HEAD)
 [ "$head_revision" = "$revision" ] || {
   echo "production revision $revision does not match checked-out commit $head_revision" >&2
@@ -36,17 +54,33 @@ git -C "$root" diff --cached --quiet
 }
 
 compose() {
-  docker compose \
-    --project-name "$project" \
-    --env-file "$env_file" \
-    --file "$root/compose.yaml" \
-    --file "$root/compose.production.yaml" \
-    --profile observability \
-    "$@"
+  if [ -n "$managed_overlay" ]; then
+    docker compose \
+      --project-name "$project" \
+      --env-file "$env_file" \
+      --file "$root/compose.yaml" \
+      --file "$root/compose.production.yaml" \
+      --file "$managed_overlay" \
+      --profile observability \
+      "$@"
+  else
+    docker compose \
+      --project-name "$project" \
+      --env-file "$env_file" \
+      --file "$root/compose.yaml" \
+      --file "$root/compose.production.yaml" \
+      --profile observability \
+      "$@"
+  fi
 }
 
 running=0
-for service in db minio api worker; do
+expected_running=0
+running_services="db api worker"
+[ "$object_store_mode" = "managed-s3" ] ||
+  running_services="db minio api worker"
+for service in $running_services; do
+  expected_running=$((expected_running + 1))
   container_id=$(compose ps -q "$service")
   if [ -n "$container_id" ] &&
     [ "$(docker inspect --format '{{.State.Running}}' "$container_id")" = "true" ]; then
@@ -55,14 +89,24 @@ for service in db minio api worker; do
 done
 
 predeploy_backup=
-if [ "$running" -eq 4 ]; then
+if [ "$running" -eq "$expected_running" ]; then
   backup_log=$(mktemp "${TMPDIR:-/tmp}/straylight-predeploy-backup.XXXXXX")
+  if [ "$object_store_mode" = "managed-s3" ]; then
+    backup_command="$root/scripts/managed-s3-backup.sh"
+  else
+    backup_command="$root/scripts/backup.sh"
+  fi
   if ENV_FILE="$env_file" \
     COMPOSE_PROJECT_NAME="$project" \
     COMPOSE_OVERRIDE_FILE="$root/compose.production.yaml" \
-    "$root/scripts/backup.sh" "$backup_root" >"$backup_log" 2>&1; then
+    COMPOSE_MANAGED_S3_FILE="$managed_overlay" \
+    LEAVE_WRITERS_STOPPED=true \
+    "$backup_command" "$backup_root" >"$backup_log" 2>&1; then
     cat "$backup_log"
-    predeploy_backup=$(sed -n 's/^coordinated backup complete: //p' "$backup_log")
+    predeploy_backup=$(sed -n \
+      -e 's/^coordinated backup complete: //p' \
+      -e 's/^managed S3 coordinated backup complete: //p' \
+      "$backup_log")
     rm "$backup_log"
   else
     cat "$backup_log" >&2
@@ -72,6 +116,19 @@ if [ "$running" -eq 4 ]; then
 elif [ "$running" -ne 0 ]; then
   echo "refusing deployment over a partially running canonical stack" >&2
   exit 1
+else
+  existing_db_container=$(compose ps -a -q db)
+  existing_db_volume=$(docker volume ls -q \
+    --filter "label=com.docker.compose.project=$project" \
+    --filter "label=com.docker.compose.volume=postgres_data" | head -n 1)
+  if [ -n "$existing_db_container" ] || [ -n "$existing_db_volume" ]; then
+    echo "refusing deployment over a stopped database without a verified pre-deploy backup" >&2
+    exit 1
+  fi
+  [ "${INITIAL_DEPLOY:-false}" = "true" ] || {
+    echo "an empty installation requires explicit INITIAL_DEPLOY=true" >&2
+    exit 1
+  }
 fi
 
 wait_healthy() {
@@ -115,26 +172,59 @@ wait_completed() {
   return 1
 }
 
-deploy_candidate() {
-  compose up -d --no-build --pull never db minio
-  wait_healthy db
-  wait_healthy minio
-  compose up -d --no-build --pull never --force-recreate minio-init
-  wait_completed minio-init
+qualify_candidate_object_store() {
   ENV_FILE="$env_file" \
     COMPOSE_PROJECT_NAME="$project" \
     COMPOSE_OVERRIDE_FILE="$root/compose.production.yaml" \
+    COMPOSE_MANAGED_S3_FILE="$managed_overlay" \
     "$root/scripts/qualify-object-store.sh"
-  compose up -d --no-build --pull never --force-recreate migrate
-  wait_completed migrate
-  compose up -d --no-build --pull never api worker web datadog-agent edge
-  wait_healthy api
-  wait_healthy web
-  wait_healthy datadog-agent
-  wait_healthy edge
-  worker_id=$(compose ps -q worker)
-  [ "$(docker inspect --format '{{.State.Running}}' "$worker_id")" = "true" ]
-  "$root/scripts/check-public-health.sh" "$host"
+}
+
+verify_candidate_worker() {
+  worker_id=$(compose ps -q worker) || return $?
+  [ -n "$worker_id" ] || {
+    echo "worker has no candidate container" >&2
+    return 1
+  }
+  worker_state=$(docker inspect --format '{{.State.Running}}' "$worker_id") ||
+    return $?
+  [ "$worker_state" = "true" ] || {
+    echo "worker candidate is not running" >&2
+    return 1
+  }
+}
+
+deploy_candidate() {
+  deploy_step database-start \
+    compose up -d --no-build --pull never db || return $?
+  deploy_step database-ready wait_healthy db || return $?
+  if [ "$object_store_mode" = "self-hosted-minio" ]; then
+    deploy_step object-store-start \
+      compose up -d --no-build --pull never minio || return $?
+    deploy_step object-store-ready wait_healthy minio || return $?
+    deploy_step object-store-init-start \
+      compose up -d --no-build --pull never --force-recreate minio-init ||
+      return $?
+    deploy_step object-store-init-complete wait_completed minio-init ||
+      return $?
+  fi
+  deploy_step object-store-qualify qualify_candidate_object_store || return $?
+  # Migrations may strengthen write-path invariants. Keep every old writer
+  # quiescent from the first schema change until the candidate is running.
+  deploy_step writers-stop compose stop api worker || return $?
+  deploy_step migration-start \
+    compose up -d --no-build --pull never --force-recreate migrate || return $?
+  deploy_step migration-complete wait_completed migrate || return $?
+  deploy_step candidate-start \
+    compose up -d --no-build --pull never api worker web datadog-agent edge ||
+    return $?
+  deploy_step api-ready wait_healthy api || return $?
+  deploy_step web-ready wait_healthy web || return $?
+  deploy_step datadog-ready wait_healthy datadog-agent || return $?
+  deploy_step edge-ready wait_healthy edge || return $?
+  deploy_step worker-ready verify_candidate_worker || return $?
+  deploy_step public-health \
+    "$root/scripts/check-public-health.sh" "$host" || return $?
 }
 
 if ! deploy_candidate; then
@@ -160,12 +250,14 @@ jq -n \
   --arg deployed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --arg revision "$revision" \
   --arg host "$host" \
+  --arg object_store_mode "$object_store_mode" \
   --arg predeploy_backup "$predeploy_backup" \
   '{
     format: $format,
     deployed_at: $deployed_at,
     revision: $revision,
     public_host: $host,
+    object_store_mode: $object_store_mode,
     predeploy_backup: (
       if $predeploy_backup == "" then null else $predeploy_backup end
     ),

@@ -138,8 +138,23 @@
   {
     "name": "[Straylight] Object integrity failure",
     "type": "query alert",
-    "query": "sum(last_5m):sum:straylight.object_store.integrity_failures{env:__DD_ENV__,service:__DD_SERVICE__} by {operation}.as_count() >= 1",
+    "query": "sum(last_5m):sum:straylight.object_store.integrity_failures{env:__DD_ENV__,service:__DD_SERVICE__} by {failure}.as_count() >= 1",
     "message": "Stored bytes did not match their committed hash. Treat this as a data-integrity incident and preserve the evidence.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 15,
+      "new_group_delay": 60,
+      "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Straylight] Resumable upload integrity failure",
+    "type": "query alert",
+    "query": "sum(last_5m):sum:straylight.asset.upload.integrity_failures{env:__DD_ENV__,service:__DD_SERVICE__} by {failure}.as_count() >= 1",
+    "message": "A resumable upload part or completed object did not match its declared hash. Preserve the upload audit trail and investigate before retrying.__NOTIFY__",
     "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
     "options": {
       "include_tags": true,

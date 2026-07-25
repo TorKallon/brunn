@@ -82,6 +82,50 @@ case "$format" in
           exit 1
         }
       fi
+      pinning=$(jq -r '.runtime_identity.database_object_pinning // ""' \
+        "$backup_dir/manifest.json")
+      verification=$(jq -r '.runtime_identity.database_object_verification // ""' \
+        "$backup_dir/manifest.json")
+      for evidence in "$pinning" "$verification"; do
+        [ -n "$evidence" ] || continue
+        case "$evidence" in
+          database-object-pinning.json|database-object-verification.json)
+            ;;
+          *)
+            echo "unsupported database object evidence path: $evidence" >&2
+            exit 1
+            ;;
+        esac
+        [ -f "$backup_dir/$evidence" ] || {
+          echo "backup runtime identity is missing $evidence" >&2
+          exit 1
+        }
+        grep -Eq "[[:space:]]$evidence$" "$backup_dir/CHECKSUMS.sha256" || {
+          echo "backup checksum manifest does not protect $evidence" >&2
+          exit 1
+        }
+      done
+      if [ -n "$pinning" ]; then
+        jq -e '
+          (.asset_versions_pinned | type == "number" and . >= 0)
+          and (.upload_canonical_versions_pinned | type == "number" and . >= 0)
+          and (.account_export_versions_pinned | type == "number" and . >= 0)
+          and (.objects_stream_verified | type == "number" and . >= 0)
+        ' "$backup_dir/$pinning" >/dev/null || {
+          echo "backup database object-pinning evidence is invalid" >&2
+          exit 1
+        }
+      fi
+      if [ -n "$verification" ]; then
+        jq -e '
+          (.references_verified | type == "number" and . >= 0)
+          and (.unique_object_versions_verified | type == "number" and . >= 0)
+          and (.logical_bytes_verified | type == "number" and . >= 0)
+        ' "$backup_dir/$verification" >/dev/null || {
+          echo "backup database object-verification evidence is invalid" >&2
+          exit 1
+        }
+      fi
     fi
     ;;
   *)

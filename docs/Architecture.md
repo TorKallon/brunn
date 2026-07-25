@@ -249,6 +249,47 @@ the normal read/query/compute/verify API. Promotion selects explicit entries and
 commits a replay-safe import receipt; archives are never indexed as opaque
 containers.
 
+Native files remain authoritative, immutable bytes in the versioned object
+store. A logical path keeps one stable asset identity while changed bytes
+create a new version; equal bytes at different paths remain distinct logical
+assets but share content-addressed physical storage. Every opaque native
+version can receive a searchable Markdown companion. That companion is
+explicitly derivative and non-authoritative, and its extracted text or linked
+Markdown context cannot override the native bytes or act as instructions.
+
+Files larger than the inline staging limit use authenticated, credential-bound
+multipart uploads. Parts are fixed-size, individually hashed, replay-safe, and
+resumable. Completion streams the whole object through SHA-256 verification
+before promotion to a user-scoped content-addressed key. Temporary uploads are
+expired by the worker and aborted before account deletion.
+
+Canonical object creation, asset-reference commit, generated-description bind,
+expiry cleanup, and deletion cleanup share one per-user database advisory lock.
+Rollback cleanup releases its failed transaction first, reacquires that lock,
+and rechecks committed asset and completed-upload references before purging a
+content-addressed key. Promotion verifies opaque objects with a bounded stream;
+the advertised multi-gigabyte limit never requires a whole-object memory read.
+
+The vault importer inventories paths deterministically, opens files without
+following symlinks, checks file identity again at upload time, and preserves
+hash, size, MIME type, modification time, and portable mode. Missing local
+paths never imply deletion. `--mirror` computes a server-backed removal
+preview and requires its exact confirmation hash before advancing a revision.
+The `.carrystate/generated/descriptions/` path component is reserved at every
+depth: imported copies are ignored and regenerated from the authoritative
+native version so a derivative can never return as source evidence. Repeating
+an identical import is an explicit no-write `unchanged` result. Portable export
+metadata is reused only when the source bytes match its hash and size and the
+manifest itself matches `CHECKSUMS.sha256`; this preserves exact timestamp and
+mode values even when an intermediate mounted filesystem rounded them.
+
+Portable export opens a read-only session and pins one corpus revision. It
+writes exact current source bytes, optional historical versions, generated
+companions, and deterministic Markdown projections of first-class native
+records. Paths are traversal-checked and collision-checked under case-folded
+Unicode normalization; every file is hashed, a manifest and checksum ledger
+are written, and the completed directory is published atomically.
+
 Checkpoint convenience calls map to the canonical checkpoint save contract and
 do not define a second persistence model.
 

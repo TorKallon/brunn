@@ -61,6 +61,7 @@ function compactOpenData(data: JsonObject): JsonObject {
   const learnedContext = compactLearnedContext(data.learned_context);
   if (hasKeys(learnedContext)) compact.learned_context = learnedContext;
 
+  const evidenceRefsBySource = collectEvidenceRefsBySource(data.initial_evidence);
   const hydrated = Array.isArray(data.hydrated_sources)
     ? data.hydrated_sources
       .map(asObject)
@@ -73,12 +74,20 @@ function compactOpenData(data: JsonObject): JsonObject {
     const [textSources, leads] = partitionOpenSources(hydrated);
     textSourceCount = textSources.length;
     pointerSourceCount = leads.length;
-    compact.initial_evidence = textSources.map((item) => compactHydratedSource(item, true));
+    compact.initial_evidence = textSources.map((item) => compactHydratedSource(
+      item,
+      true,
+      evidenceRefsForSource(item, evidenceRefsBySource),
+    ));
     for (const item of hydrated) {
       representedSources.add(String(item.source_ref ?? item.path ?? ""));
     }
     if (leads.length > 0) {
-      compact.evidence_leads = leads.map((item) => compactHydratedSource(item, false));
+      compact.evidence_leads = leads.map((item) => compactHydratedSource(
+        item,
+        false,
+        evidenceRefsForSource(item, evidenceRefsBySource),
+      ));
     }
   }
 
@@ -272,10 +281,16 @@ function compactCandidate(candidate: JsonObject): JsonObject {
   if (isPresent(candidate.source_ref) && candidate.source_ref !== candidate.path) {
     compact.source_ref = candidate.source_ref;
   }
+  const evidenceRefs = uniqueStrings(candidate.evidence_refs);
+  if (evidenceRefs.length > 0) compact.evidence_refs = evidenceRefs;
   return compact;
 }
 
-function compactHydratedSource(source: JsonObject, includeText: boolean): JsonObject {
+function compactHydratedSource(
+  source: JsonObject,
+  includeText: boolean,
+  evidenceRefs: string[] = [],
+): JsonObject {
   const compact = pick(source, [
     "path",
     "title",
@@ -286,6 +301,7 @@ function compactHydratedSource(source: JsonObject, includeText: boolean): JsonOb
   if (isPresent(source.source_ref) && source.source_ref !== source.path) {
     compact.source_ref = source.source_ref;
   }
+  if (evidenceRefs.length > 0) compact.evidence_refs = evidenceRefs;
   if (
     source.complete !== true
     && Array.isArray(source.selected_references)
@@ -308,6 +324,46 @@ function compactHydratedSource(source: JsonObject, includeText: boolean): JsonOb
     compact.content_scope = "source_lead";
   }
   return compact;
+}
+
+function collectEvidenceRefsBySource(value: unknown): Map<string, string[]> {
+  const bySource = new Map<string, string[]>();
+  if (!Array.isArray(value)) return bySource;
+  for (const rawCandidate of value) {
+    const candidate = asObject(rawCandidate);
+    if (!candidate) continue;
+    const refs = uniqueStrings(candidate.evidence_refs);
+    for (const key of [candidate.source_ref, candidate.path]) {
+      if (typeof key !== "string" || key.length === 0) continue;
+      const existing = bySource.get(key) ?? [];
+      for (const ref of refs) {
+        if (!existing.includes(ref)) existing.push(ref);
+      }
+      bySource.set(key, existing);
+    }
+  }
+  return bySource;
+}
+
+function evidenceRefsForSource(
+  source: JsonObject,
+  bySource: Map<string, string[]>,
+): string[] {
+  const refs: string[] = [];
+  for (const key of [source.source_ref, source.path]) {
+    if (typeof key !== "string") continue;
+    for (const ref of bySource.get(key) ?? []) {
+      if (!refs.includes(ref)) refs.push(ref);
+    }
+  }
+  return refs;
+}
+
+function uniqueStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter(
+    (item): item is string => typeof item === "string" && item.length > 0,
+  ))];
 }
 
 function compactResolvedScope(value: unknown): JsonObject {

@@ -3,7 +3,7 @@ ENV_FILE ?= .env
 BACKUP_ROOT ?= backups
 COMPOSE := docker compose --env-file $(ENV_FILE) -f compose.yaml
 
-.PHONY: config production-config production-images production-secrets pull build up down ps logs migrate mcp db-shell minio-version object-store-check backup production-backup backup-prune restore-drill production-restore-drill production-deploy production-rollback rollback-compatibility public-health observability-up observability-status observability-logs datadog-configure datadog-validate release-artifacts validate
+.PHONY: config production-config managed-production-config production-images production-secrets pull build up down ps logs migrate mcp db-shell minio-version object-store-check backup production-backup managed-production-backup backup-prune restore-drill production-restore-drill managed-production-restore-drill production-deploy production-rollback rollback-compatibility public-health observability-up observability-status observability-logs datadog-configure datadog-validate release-artifacts validate
 
 config:
 	@test -f $(ENV_FILE) || { echo "missing $(ENV_FILE); start from .env.example" >&2; exit 1; }
@@ -13,6 +13,11 @@ production-config:
 	@test -f $(ENV_FILE) || { echo "missing $(ENV_FILE); start from .env.example" >&2; exit 1; }
 	./scripts/validate-production-config.sh $(ENV_FILE)
 	$(COMPOSE) -f compose.production.yaml config --quiet
+
+managed-production-config:
+	@test -f $(ENV_FILE) || { echo "missing $(ENV_FILE); start from production.managed-s3.env.example" >&2; exit 1; }
+	./scripts/validate-production-config.sh $(ENV_FILE)
+	$(COMPOSE) -f compose.production.yaml -f compose.managed-s3.yaml config --quiet
 
 production-images:
 	./scripts/verify-production-images.sh $(ENV_FILE)
@@ -62,6 +67,9 @@ backup:
 production-backup:
 	ENV_FILE=$(ENV_FILE) COMPOSE_OVERRIDE_FILE=compose.production.yaml ./scripts/backup.sh "$(BACKUP_ROOT)"
 
+managed-production-backup:
+	ENV_FILE=$(ENV_FILE) ./scripts/managed-s3-backup.sh
+
 backup-prune:
 	./scripts/prune-backups.sh --apply "$(BACKUP_ROOT)"
 
@@ -72,6 +80,11 @@ restore-drill:
 production-restore-drill:
 	@test -n "$(BACKUP_DIR)" || { echo "set BACKUP_DIR=/path/to/backup" >&2; exit 1; }
 	ENV_FILE=$(ENV_FILE) COMPOSE_OVERRIDE_FILE=compose.production.yaml ./scripts/restore-drill.sh "$(BACKUP_DIR)"
+
+managed-production-restore-drill:
+	@test -n "$(BACKUP_DIR)" || { echo "set BACKUP_DIR=/path/to/managed-backup" >&2; exit 1; }
+	@test -n "$(DRILL_ENV_FILE)" || { echo "set DRILL_ENV_FILE=/path/to/dedicated-drill.env" >&2; exit 1; }
+	./scripts/managed-s3-restore-drill.sh "$(BACKUP_DIR)" "$(DRILL_ENV_FILE)"
 
 production-deploy:
 	ENV_FILE=$(ENV_FILE) BACKUP_ROOT=$(BACKUP_ROOT) ./scripts/deploy-production.sh

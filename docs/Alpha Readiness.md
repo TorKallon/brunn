@@ -1,29 +1,60 @@
-# Straylight Alpha Readiness
+# CarryState Alpha Readiness
 
-Status: autonomous qualification complete; identity, deployment, recovery,
-exact provider qualification, and launch approval remain before launch
+Status: **no-go for owner alpha as of 2026-07-25**; core, destructive-safety,
+binary-lifecycle, and local recovery qualification are green, but the live
+embedding dependency and exact release identity are not
 
-This is the evidence register for one exact candidate commit. It separates
-work Codex can complete and verify autonomously from choices that require the
-owner's approval. No owner decision may weaken the frozen read, write,
-capture, dreaming, reasoning-quality, token-efficiency, isolation, or
-provenance contracts.
+This is the evidence register for release-candidate qualification. A launch
+record must bind all evidence to one exact clean commit; the current working
+candidate has not reached that state. The register separates work Codex can
+complete and verify autonomously from choices that require the owner's
+approval. No owner decision may weaken the frozen read, write, capture,
+dreaming, reasoning-quality, token-efficiency, isolation, or provenance
+contracts.
+
+## Current Launch Call
+
+The private Nyx/Tailscale owner alpha is close, but it should not be enabled
+yet:
+
+1. A direct OpenAI embeddings request currently returns
+   `429 insufficient_quota`. New semantic imports, descriptions, semantic
+   retrieval, and learning therefore cannot be qualified or relied on. The
+   service's `/ready` endpoint confirms configuration and local dependencies;
+   it does not prove that the external OpenAI account can accept a billed
+   request.
+2. The current implementation is an uncommitted working tree based on
+   `f858763`. It has passed the gates below, but it is not yet a clean,
+   fingerprinted, reproducible release candidate.
+3. Historical and screening evaluations favor the workspace approach, but a
+   current matched CarryState-versus-filesystem reasoning and token run cannot
+   be certified until embeddings work. The 2026-07-25 Codex/OpenClaw runtime
+   smoke proves both runtimes can execute and use the filesystem tools; it is
+   not publishable parity evidence because it used one repetition, had no
+   matched CarryState cells, and two successfully retried parent requests did
+   not produce complete token receipts.
+
+Once working OpenAI quota is available, the remaining private-owner launch
+sequence is: live semantic smoke, a matched current reasoning regression,
+freeze and fingerprint the exact commit, and explicit go/no-go. A managed-S3
+backup/restore drill is required before a hosted or invited-user alpha, but
+not before the temporary owner-only Nyx deployment.
 
 ## Autonomous Release Gates
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
-| Reasoning contract | Frozen source/evaluation fingerprint and no unreviewed semantic changes | Pass |
-| Deterministic tests | Rust, Python, SPA, MCP, Compose, Caddy, and workflow contracts | Pass |
+| Reasoning contract | Frozen source/evaluation fingerprint and no unreviewed semantic changes | Historical pass; current recertification blocked on embeddings |
+| Deterministic tests | Rust, Python, SPA, MCP, Compose, Caddy, and workflow contracts | Pass: 193 Rust; 182 offline Python plus 5 separately live; 21 MCP; and 18 SPA tests |
 | Live API safety | Full API smoke, read-only denial, credential boundaries, export, and deletion | Pass |
 | Dependency failure safety | Database/object-store outage and recovery, proxy recovery, request limits | Pass |
 | Database safety | Built-in `C.UTF-8`, page checksums, pgvector 0.8.5, fresh and no-op migrations | Pass |
-| Object-store safety | Versioning, conditional create, metadata, versions, delete markers, exact purge | Behavior pass; provider approval pending |
-| Backup and restore | Checksummed coordinated backup, exact inventories, isolated restore, measured RTO | Pass |
+| Object-store safety | Versioning, conditional create, metadata, versions, delete markers, exact purge | Local MinIO behavior pass; managed S3 qualification pending |
+| Backup and restore | Checksummed coordinated backup, exact inventories, isolated restore, measured RTO | Pass for Nyx: exact full restore in 45m42s; managed S3 pending |
 | Rollback | Current and saved N-1 API images ready against the current schema | Pass |
-| Supply chain | Pinned bases, SBOMs, repository scan, application image scan, residual inventory | Application pass; Community MinIO blocked |
+| Supply chain | Pinned bases, SBOMs, repository scan, application image scan, residual inventory | Application pass; Community MinIO restricted to temporary private Nyx use |
 | Browser experience | Desktop and mobile workflow, accessibility, layout, and console checks | Pass |
-| Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Pass |
+| Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Historical pass; current matched recertification pending |
 | Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment dry run | Pending |
 
 ## Owner Decisions
@@ -33,21 +64,55 @@ on an unsettled provider or public identity.
 
 | Decision | Status | Recorded direction |
 | --- | --- | --- |
-| Public identity | Pending, highest priority | Select a durable product name and short URL. A descriptor near "agent-first workspace and memory" is under discussion. Logo approval follows the name. |
-| Deployment | Recommendation ready | Render is recommended for application compute and managed PostgreSQL; see `docs/Production Platform Evaluation.md`. No provider-specific deployment is approved yet. |
-| Object storage | Architecture approved; exact qualification pending | Production uses a managed, versioned cloud S3 store. AWS S3 is the recommended first provider. MinIO is development and destructive-test infrastructure only. |
-| Recovery | Explicitly deferred | Off-host backup destination, key custody, RPO, and RTO remain a launch blocker and will be decided after deployment selection. |
+| Public identity | Product name settled | CarryState is the product name. Domain acquisition and logo approval remain, but neither blocks an owner-only Nyx alpha. |
+| Deployment | Initial path settled | Start owner-only on Nyx over Tailscale; Railway is the intended first hosted evaluation. |
+| Object storage | Architecture approved; exact hosted qualification pending | Use local MinIO only for the temporary private Nyx deployment. Production uses a managed, versioned S3-compatible store. |
+| Recovery | Nyx qualified; hosted pending | The exact local database and object set restored successfully. Off-host destination, key custody, RPO/RTO policy, and managed-S3 restoration remain required before hosted or invited use. |
 | Monitoring | Approved in part | Datadog metrics and structured logs are approved. Alert recipients, escalation path, and retention still need exact values. Browser RUM remains outside the alpha. |
 | Source control | Created; plan-limited protections pending | Private `TorKallon/straylight` repository on GitHub with `main`, CI, Dependabot alerts, and automated security fixes. The current GitHub plan does not provide branch protection or secret scanning for a private repository; do not make it public without separate identity and launch approval. |
 | Alpha cohort | Approved | Owner first, then only people the owner explicitly invites. No public signup. Every person receives a separate user account and credential. |
 | Operating visibility | Approved | Begin with the owner's real usage. Keep source-use rankings visible in the Control UI and aggregate model, embedding, storage, and request consumption prominent in Datadog. Set hard spend limits only after observing the initial workload. |
 | Policy and support | Pending | Final retention, privacy wording, and support expectations are not yet selected. |
-| Launch | Pending | Explicit go/no-go on the exact fingerprinted and provider-qualified candidate. |
+| Launch | Pending | Restore OpenAI quota, certify the current reasoning path, retain the exact candidate, then make an explicit go/no-go decision. |
 
 Secrets, private keys, and bearer tokens must be supplied through approved
 files or secret stores, never pasted into chat or committed to the repository.
 
 ## Candidate Record
+
+### Current working candidate - 2026-07-25
+
+The working candidate has 48 applied migrations and passed:
+
+- Rust formatting, check, Clippy, 191 unit tests, and two integration tests;
+- 182 offline Python tests, with five designated live binary tests separately
+  passed against disposable live read/write and read-only accounts;
+- 21 MCP tests and production build;
+- 18 SPA tests and production build;
+- destructive live alpha safety for administrator isolation, credential
+  delegation and rotation, upload-fault compensation, orphan multipart
+  reconciliation, complete export, schema-derived deletion, exact object
+  purge, and proof-gated account deletion;
+- exact-once upload finalization, read-only exact/range/version downloads,
+  expired-stage rollback, atomic multi-batch import, and a 72 MB resumable
+  upload with byte-exact round trip.
+
+The coordinated backup is:
+
+`runs/live-backups/20260725T062858Z-df1fddcd-f6a4-414c-8976-ed0e26645af8`
+
+It contains a 4.2 GB PostgreSQL dump and 217 MB object-store snapshot. An
+isolated full restore reproduced the database inventory and every object
+version, byte-verified every database object reference, applied no new
+migrations, passed operator credential-loss and compromise recovery, and
+started healthy isolated API and worker processes. The original stack remained
+online, and the isolated stack and volumes were removed afterward. Measured
+recovery time was 2,742 seconds (45m42s).
+
+This backup records `git_dirty: true` at `f858763`. It establishes data
+recoverability, not reproducible release identity.
+
+### Prior autonomous candidate - 2026-07-23/24
 
 The autonomous candidate passed:
 

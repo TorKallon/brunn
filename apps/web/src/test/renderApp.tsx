@@ -10,7 +10,17 @@ interface MockResponse {
   body: unknown;
 }
 
-type MockRoute = unknown | MockResponse | ((request: Request) => unknown | MockResponse | Promise<unknown | MockResponse>);
+type MockRoute =
+  | unknown
+  | MockResponse
+  | Response
+  | ((
+      request: Request,
+    ) =>
+      | unknown
+      | MockResponse
+      | Response
+      | Promise<unknown | MockResponse | Response>);
 
 const now = "2026-07-11T18:00:00Z";
 
@@ -71,6 +81,7 @@ export function installApiMock(routes: Record<string, MockRoute> = {}) {
     const route = allRoutes[key];
     if (route === undefined) throw new Error(`Unhandled API request: ${key}`);
     const result = typeof route === "function" ? await route(request) : route;
+    if (result instanceof Response) return result;
     const response: MockResponse = isMockResponse(result) ? result : { body: result };
     return new Response(JSON.stringify(response.body), {
       status: response.status ?? 200,

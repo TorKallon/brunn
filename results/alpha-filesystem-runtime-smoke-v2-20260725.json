@@ -1,0 +1,1919 @@
+{
+  "experiment_version": "carrystate-interface-v3-screening",
+  "run_id": "interface-20260725T002745-0700",
+  "run_at": "2026-07-25T00:31:24-07:00",
+  "output_path": "results/alpha-filesystem-runtime-smoke-v2-20260725.json",
+  "report_path": "results/alpha-filesystem-runtime-smoke-v2-20260725.md",
+  "protocol": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "xhigh",
+    "agents": [
+      "openclaw",
+      "codex"
+    ],
+    "interfaces": [
+      "filesystem"
+    ],
+    "suites": [
+      "work"
+    ],
+    "case_count": 1,
+    "claim_count": 4,
+    "repetitions": 1,
+    "randomization_seed": 8207292676607004745,
+    "fresh_agent_runs": 2,
+    "isolation": "one service user and credential per CarryState cell; one frozen run directory per filesystem control",
+    "max_service_calls": {
+      "ordinary": 4,
+      "binary_asset": 8
+    },
+    "runtime_comparability": "The task and model ID are held constant. Codex and OpenClaw remain different agent runtimes with different system prompts, tool plumbing, and structured-output enforcement; interface comparisons are primary only within the same agent.",
+    "network_isolation": "macOS Seatbelt screening boundary with denied user data, known same-user escape tools, and non-allowlisted network destinations; parent-owned gateways inject credentials and record receipts. A separate OS identity or VM remains required for publishable hostile-agent containment.",
+    "quality_grading": "Deterministic rubric scores are screening-only and cannot by themselves support a public parity claim."
+  },
+  "validation": {
+    "errors": [],
+    "suites": {
+      "work": {
+        "cases": 13,
+        "claims": 52,
+        "corpus_root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+        "corpus_sha256": "b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2",
+        "artifact_tree_sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+        "documents": 73,
+        "chunks": 1563
+      },
+      "personal": {
+        "cases": 15,
+        "claims": 60,
+        "corpus_root": "/Users/Shared/projects/straylight/eval/corpus-personal-coordination-v0.1",
+        "corpus_sha256": "1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18",
+        "artifact_tree_sha256": "1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18",
+        "documents": 29,
+        "chunks": 36
+      },
+      "rupture": {
+        "cases": 12,
+        "claims": 48,
+        "corpus_root": "/Users/Shared/projects/straylight/eval/corpus-rupture-ops-v0.1",
+        "corpus_sha256": "aa9c33e39777f0899dacecee61a94f5fd11ec1315f7a6e820a41bc217e1a9803",
+        "artifact_tree_sha256": "aa434eb3ffd5f4b6b9c766000d34ec6c30fd14b5ec6f94a4ff625306396b7b50",
+        "documents": 65,
+        "chunks": 587
+      },
+      "transition": {
+        "cases": 5,
+        "claims": 20,
+        "corpus_root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+        "corpus_sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+        "artifact_tree_sha256": "5abfdc37b21cf00401faa40a19b5ffe702cc5e8c9b4d006733e3fb52bb1154f1",
+        "documents": 73,
+        "chunks": null,
+        "workspace_max_completed_calls": 4
+      },
+      "binary": {
+        "cases": 7,
+        "claims": 21,
+        "corpus_root": "/Users/Shared/projects/straylight/runs/.fixtures/binary-5980eef1d911ad747074/evaluation/r2",
+        "corpus_sha256": "da04aed8d3f1d391345f756f264c3c55d84c1e23d32faa8b6e9984298784915e",
+        "artifact_tree_sha256": "7f008e593f096f293750e31ce5fe443d3f1619adf4897d65c99cd52c4d4bdcf4",
+        "documents": 57,
+        "chunks": null,
+        "native_assets": 7
+      }
+    },
+    "case_count": 52,
+    "claim_count": 201
+  },
+  "run_manifest": {
+    "format": "carrystate-interface-run-manifest-v3",
+    "run_id": "interface-20260725T002745-0700",
+    "selection": {
+      "jobs": [
+        "work__codex__filesystem__straylight-product-resume__rep01",
+        "work__openclaw__filesystem__straylight-product-resume__rep01"
+      ],
+      "execution_order": [
+        "work__openclaw__filesystem__straylight-product-resume__rep01",
+        "work__codex__filesystem__straylight-product-resume__rep01"
+      ],
+      "agents": [
+        "codex",
+        "openclaw"
+      ],
+      "interfaces": [
+        "filesystem"
+      ],
+      "suites": [
+        "work"
+      ],
+      "repetitions": 1,
+      "randomization_seed": 8207292676607004745
+    },
+    "model": {
+      "id": "gpt-5.6-sol",
+      "reasoning_effort": "xhigh"
+    },
+    "runtime": {
+      "execution_root": "/Users/Shared/carrystate-eval-runs",
+      "service_api_url": null,
+      "timeout_seconds": 420,
+      "native_index_timeout_seconds": 600.0,
+      "direct_openai": false,
+      "agents": {
+        "codex": {
+          "mode": "codex_cli",
+          "executable": {
+            "path": "/Users/aether/.local/bin/codex",
+            "resolved_path": "/Applications/ChatGPT.app/Contents/Resources/codex",
+            "sha256": "6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223",
+            "missing": false
+          }
+        },
+        "openclaw": {
+          "mode": "codex_runtime",
+          "executable": {
+            "path": "/Users/aether/.npm-global/bin/openclaw",
+            "resolved_path": "/Users/aether/.npm-global/lib/node_modules/openclaw/openclaw.mjs",
+            "sha256": "ee861ae6f3298a0c2062ff52a682b5ce4786ae515a3eb816921f9a128341c733",
+            "missing": false
+          },
+          "package": {
+            "path": "/Users/aether/.openclaw/npm/package.json",
+            "resolved_path": "/Users/aether/.openclaw/npm/package.json",
+            "sha256": "e66073851865f6701702031afdcaae58c364fa4ad8a21ef541a52fe3c07266be",
+            "missing": false
+          },
+          "package_lock": {
+            "path": "/Users/aether/.openclaw/npm/package-lock.json",
+            "resolved_path": "/Users/aether/.openclaw/npm/package-lock.json",
+            "sha256": "97463f49f973ba87d54a8bb5501ea8fde4bc32959e25494c857c52b912456620",
+            "missing": false
+          }
+        }
+      },
+      "service": null
+    },
+    "harness": {
+      "interface_eval": {
+        "path": "/Users/Shared/projects/straylight/interface_eval.py",
+        "resolved_path": "/Users/Shared/projects/straylight/interface_eval.py",
+        "sha256": "f8e094a8b8a0fe582bc0d473a3aac38f5578cd911d312652fda556c469a5172e",
+        "missing": false
+      },
+      "agent_work_eval": {
+        "path": "/Users/Shared/projects/straylight/agent_work_eval.py",
+        "resolved_path": "/Users/Shared/projects/straylight/agent_work_eval.py",
+        "sha256": "69c5c1e155dc5ee10a508b80db04d449996a9226e6e4f91f671d2a17eaa355c4",
+        "missing": false
+      },
+      "transition_eval": {
+        "path": "/Users/Shared/projects/straylight/transition_eval.py",
+        "resolved_path": "/Users/Shared/projects/straylight/transition_eval.py",
+        "sha256": "d149aad00e30ed2faba163c65e87b9c84280909b274b04c9469c83a0d462f5d6",
+        "missing": false
+      },
+      "native_eval": {
+        "path": "/Users/Shared/projects/straylight/native_eval.py",
+        "resolved_path": "/Users/Shared/projects/straylight/native_eval.py",
+        "sha256": "63183d688bb184d098090c7344446372ce4f29a313c758bbe44aa7ac786b1708",
+        "missing": false
+      }
+    },
+    "fixtures": {
+      "schema": {
+        "path": "/Users/Shared/projects/straylight/eval/work_answer_schema.json",
+        "resolved_path": "/Users/Shared/projects/straylight/eval/work_answer_schema.json",
+        "sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+        "missing": false
+      },
+      "suite_manifests": {
+        "work": {
+          "path": "/Users/Shared/projects/straylight/eval/work_cases.json",
+          "resolved_path": "/Users/Shared/projects/straylight/eval/work_cases.json",
+          "sha256": "c2504d44aec95c1be19f594740a3796c64c7ca1cf2a8513e67ab5602a557b984",
+          "missing": false
+        }
+      },
+      "cases": {
+        "work:straylight-product-resume": {
+          "corpus_root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+          "sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41"
+        }
+      }
+    },
+    "helpers": {},
+    "section_sha256": {
+      "selection": "027d8e93596d184a02802cc2dd89a1c49fe4cf4469152a768132b82d4a4ecdd5",
+      "model": "cce0ded989b075de2ffc6b3ed9f43deac28275615b03cc3500823b1a22643570",
+      "runtime": "5b4c1ea48aea61f438d72462549e9a5a90414ca15af0142371612acc520f2d3a",
+      "harness": "1a927fc6a341e1d881bc752a61b695374777d7bf046b8abca61f0a2f62941d3f",
+      "fixtures": "d8d3b1c1e75537b3f8a5f1b7cf237661d8d2649443b996d61fb8412b7e744d21",
+      "helpers": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    }
+  },
+  "hashes": {
+    "run_manifest_sha256": "a0f9b00fdeec4d5944cf90857e5a1a977405e7d652dba251086f7ef23944aa7a",
+    "harness_sha256": "f8e094a8b8a0fe582bc0d473a3aac38f5578cd911d312652fda556c469a5172e",
+    "cli_sha256": "94e63664357932fa179984e6d81811d92cd8dbff13b60446929bc96f6dadfe03",
+    "api_sha256": "61c2faf8c5f3843b5ba3f8ae374ed2854466260014e0ce6527e25bd3922d9b8e",
+    "mcp_sha256": "eab8cc6aa7be63fd058dd29dc23e41e6e293469e62d5d5831f038e3284dc2381",
+    "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+    "manifests": {
+      "work": "c2504d44aec95c1be19f594740a3796c64c7ca1cf2a8513e67ab5602a557b984",
+      "personal": "ad3a20cd4019d9ba574241b78924b51fcf69261d3cab802037ed9dff09abb7a2",
+      "rupture": "c920fafbcc79958719eb4cfd8e4d85dec5b037c25b9f28add1721cd633ea189b",
+      "transition": "667e2b3813eb882f55708d13810347b926ffc7ac8bf3876711833b3799904881",
+      "binary": "7f008e593f096f293750e31ce5fe443d3f1619adf4897d65c99cd52c4d4bdcf4"
+    }
+  },
+  "provisioning": {},
+  "records": [
+    {
+      "suite": "work",
+      "qualified_case_id": "work:straylight-product-resume",
+      "case_id": "straylight-product-resume",
+      "workload": "Straylight",
+      "capability": "project_continuation",
+      "agent": "codex",
+      "interface": "filesystem",
+      "repetition": 1,
+      "cell": "codex/filesystem",
+      "transition": false,
+      "expected_claims": 4,
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 218.092,
+      "prompt_chars": 2491,
+      "answer_path": "/Users/Shared/carrystate-eval-runs/interface-20260725T002745-0700/work/codex/filesystem/straylight-product-resume/rep01/answer.json",
+      "error": null,
+      "events": {
+        "events": 16,
+        "commands": 5,
+        "command_output_chars": 96778,
+        "tokens": {
+          "input_tokens": 123075,
+          "cached_input_tokens": 77824,
+          "output_tokens": 8248
+        },
+        "token_provenance": "runtime_reported_unverified_model_gateway_incomplete",
+        "token_accounting_complete": false
+      },
+      "trusted_asset_inspections": [],
+      "trusted_service_operations": [],
+      "trusted_service_session_id": null,
+      "trusted_service_corpus_revision": null,
+      "trusted_service_checkpoint": null,
+      "trusted_checkpoint_verification": null,
+      "trusted_model_gateway_requests": [
+        {
+          "at": "2026-07-25T00:27:46.038-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 47067,
+          "request_sha256": "sha256:ba1042cce64c6d6dac9023776215ad54210738331167834799e16400b11c2420",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 127445,
+          "response_body_bytes": 123774,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 9299,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 507,
+            "uncached_input_tokens": 9299
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:00.208-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 57369,
+          "request_sha256": "sha256:8e981eee0f8380e91d29a01c124c5555b2c7b3173e8d9560e8a89941ef404eed",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 92300,
+          "response_body_bytes": 89470,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 11155,
+            "cached_input_tokens": 8960,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 144,
+            "uncached_input_tokens": 2195
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:04.106-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 99822,
+          "request_sha256": "sha256:eb2d993ae1c8b1398154bfc2757f4dc78c2468fa9926542381eb37551eed6006",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 103372,
+          "response_body_bytes": 100194,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 20262,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 254,
+            "uncached_input_tokens": 20262
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:18.622-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 125345,
+          "request_sha256": "sha256:003ec45ab658341815610853dc158bd0c23ccd772ec18f06bd4c87a472b05802",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 101454,
+          "response_body_bytes": 98541,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 24977,
+            "cached_input_tokens": 19200,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 227,
+            "uncached_input_tokens": 5777
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:27.721-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 131587,
+          "request_sha256": "sha256:d7ca9777b7159b893d57eecb0a6cc18b99481b65ead52c4596ae9318b86bbd2e",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": false,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": false,
+          "error": "Connection lost"
+        },
+        {
+          "at": "2026-07-25T00:29:24.634-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 165728,
+          "request_sha256": "sha256:fcd3bf27cf0998b39f1da93b67c5ed1c10ad53b48aecce11650bf10965e5f855",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 656076,
+          "response_body_bytes": 644758,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 31303,
+            "cached_input_tokens": 25344,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 4984,
+            "uncached_input_tokens": 5959
+          }
+        }
+      ],
+      "trusted_model_gateway_contract": {
+        "generation_requests": 6,
+        "complete": false,
+        "invalid_request_indexes": [
+          4
+        ],
+        "failed_request_indexes": [
+          4
+        ],
+        "missing_usage_indexes": [
+          4
+        ],
+        "token_accounting_complete": false,
+        "proof_source": "parent_model_gateway_dechunked_response_receipts"
+      },
+      "token_accounting_complete": false,
+      "containment": {
+        "mode": "macos_seatbelt_screening",
+        "pass": true,
+        "checks": [
+          {
+            "name": "run_copy_readable",
+            "pass": true,
+            "returncode": 0
+          },
+          {
+            "name": "protected_path_0_denied",
+            "pass": true,
+            "returncode": 1
+          },
+          {
+            "name": "protected_path_2_denied",
+            "pass": true,
+            "returncode": 1
+          },
+          {
+            "name": "launchd_escape_denied",
+            "pass": true,
+            "returncode": 71
+          },
+          {
+            "name": "keychain_escape_denied",
+            "pass": true,
+            "returncode": 71
+          },
+          {
+            "name": "container_daemon_escape_denied",
+            "pass": true,
+            "returncode": 71
+          }
+        ],
+        "publishable_containment": false,
+        "limitation": "Seatbelt is a same-user screening boundary, not a separately credentialed VM or OS account."
+      },
+      "credential_scope_complete": true,
+      "parent_evidence_custody": "hmac_canonical_record_v2",
+      "frozen_corpus_sha256_before": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+      "frozen_corpus_sha256_after": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+      "frozen_corpus_unchanged": true,
+      "answer": {
+        "answer": "Straylight is a user-owned, portable, agent-first context and durable-work layer and protocol, not an Obsidian knowledge base or retrieval product. Beyond learned knowledge, it must preserve the live, provenance-bearing state needed to resume and advance work: goals/current state, evidence, decisions, hypotheses, plans, source artifacts, computations, unresolved questions, rejected paths, checkpoints, and resumable next actions. Obsidian/Markdown and Metis are prototype and evaluation corpora, human projections, and export formats; the product boundary is durable machine continuity across agent workflows. The completed first benchmark was too narrow because it tested retrieval over 44 notes, 20 questions, and 53 evidence items: tuned workspace policy 0.2 tied one-shot top-k at 17/20 cases but recovered fewer evidence items (46/53 versus 48/53), used more estimated context (2,932 versus about 1,070 mean tokens), and exercised only `memory.open`, `memory.query`, and `memory.read`. It is therefore only a frozen regression baseline. The new, still-incomplete gate is a blinded model-answer evaluation on an untouched holdout comparing model-directed workspace calls, direct filesystem tools, and fixed handoff packs; it must demonstrate that a fresh agent can resume, iterate under changed constraints, compute, verify, reason through time and contradictions, inspect complete sources, and leave correct durable next-state artifacts on representative real workloads. No canonical storage engine may be selected before that gate; the holdout design and material-improvement threshold remain open.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The current product decision, Updated 2026-07-10 23:30 PDT, defines Straylight as a user-owned, portable, agent-first context and durable-work layer and protocol for agents\u2014including Codex, Claude Code, personal laptop agents, OpenClaw/Hermes-style systems, and future agent runtimes\u2014to learn, resume, and iteratively advance complex work. It is distinct from Metis and is not primarily a notes app, wiki, synchronized folder, transcript archive, retrieval system/product, or memory database; the public-facing descriptor remains deliberately unselected.",
+            "source_paths": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Beyond learned knowledge, Straylight must preserve the live state required to resume and advance work: goals, current state, evidence, decisions, hypotheses, plans, artifacts and their full sources, computations, unresolved/open questions, rejected paths or approaches, checkpoints, and resumable next safe actions. These belong in snapshot-pinned durable working sets that can be reopened, queried, computed over, revised, verified, checkpointed, and handed off; task-scoped checkpoints are refreshed independently of durable semantic-memory promotion so a later agent can inspect how the state was reached, revise it when evidence changes, and leave a better durable state.",
+            "source_paths": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Metis organizes the human knowledge base and supplies the first representative corpus; Straylight is the portable agent context and durable-work product designed over that kind of corpus. Obsidian vault material and Markdown are valuable prototype inputs, evaluation corpora, human-readable projections, and export formats, but they are neither the canonical interaction model nor an assumed sole/canonical storage representation. The boundary is agent-first durable machine continuity across research, planning, implementation, operations, verification, and handoff, with reopen/query/compute/revise/verify/checkpoint behavior\u2014not a particular notes application or folder format.",
+            "source_paths": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Historical evidence: the completed 2026-07-10 retrieval-readiness benchmark used 44 non-private notes from Metis, N24 RaceWatch, Home Network Improvements, and Straylight, with 20 frozen questions and 53 gold evidence items. It compared direct full-file access, one-shot BM25 top-k, and a minimal deterministic stateful Memory Workspace. The workspace initially passed 12/20 cases; after one policy-only tuning pass that did not change the manifest or corpus, policy 0.2 passed 17/20 and recovered 46/53 evidence items at P95 context of 11,999 characters. One-shot top-k also passed 17/20, recovered 48/53, and used about 1,070 mean estimated tokens versus 2,932 for the workspace. Because the workspace did not beat one-shot top-k on aggregate evidence recall or cost, its tuned result is not holdout evidence; policy 0.2 is frozen only as a regression baseline, one-shot top-k remains the strongest default with direct-source escalation, and the workspace hypothesis is unproved. The first prototype exercised `memory.open`, `memory.query`, and `memory.read`; model-directed `memory.compute` and `memory.verify` and the broader durable-work loop were untested. The expanded gate is therefore a blinded model-answer evaluation on an untouched holdout comparing (1) direct filesystem search, range reads, and scripts, (2) an agent-first workspace with model-directed `memory.open`, `memory.query`, `memory.read`, `memory.compute`, `memory.verify`, checkpoint, and revision behavior, and (3) a fixed handoff/context pack. It must test whether a fresh agent can resume, iterate, verify, compute, and leave correct durable next-state artifacts, including project resumption, changed-constraint planning, quantitative artifact work, temporal and supersession reasoning, contradictions, operational learning, incident continuation, full-source inspection, verification before action, durable handoff construction, and booked-versus-proposed vacation state. Required workloads are Warmind/Charlemagne performance and incident work, StarRupture factory planning, Switzerland trip planning, and Straylight's own evolution. Final-answer correctness, completeness, evidence-chain recall, temporal accuracy, contradiction handling, source fidelity, project continuation, reasoning quality, durable-state quality, and ability to iterate outrank latency and cost. No canonical storage-engine decision is allowed until this gate runs; the untouched holdout's size/composition and the improvement threshold that justifies extra calls and context cost remain unresolved.",
+            "source_paths": [
+              "Projects/Straylight/Worklog.md",
+              "Projects/Straylight/Open questions.md",
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Validate Straylight's corrected product thesis\u2014durable machine continuity and advancement of real work, rather than retrieval recall alone\u2014through the expanded agent-work evaluation.",
+          "current_state": [
+            "The corrected product frame and product boundary are recorded in the overview and decision register, both Updated 2026-07-10 23:30 PDT.",
+            "The first retrieval-readiness benchmark is complete, but it did not demonstrate the stateful workspace hypothesis; its Worklog and open-question records were Updated 2026-07-10 22:56 PDT.",
+            "Retrieval policy 0.2 is frozen as a regression baseline; one-shot top-k remains the strongest first-run default, with direct source access as an escalation path.",
+            "The expanded agent-work evaluation has been specified but not run; model-directed `memory.compute` and `memory.verify` remain untested, and storage, schema, deployment, and commercial choices remain open."
+          ],
+          "decisions": [
+            "Keep Straylight agent-first and treat it as a portable context and durable-work layer, distinct from Metis.",
+            "Preserve learned knowledge together with resumable work state, full evidence and artifacts, provenance, freshness, corrections, and independently refreshed task checkpoints.",
+            "Treat Obsidian and Markdown as prototype corpora, projections, and exports rather than the canonical product boundary.",
+            "Use retrieval-only results as a regression lane, not product proof; do not choose a canonical storage engine before a blinded model-answer evaluation on an untouched holdout."
+          ],
+          "open_questions": [
+            "What untouched holdout is large and varied enough to expose policy overfitting?",
+            "What improvement threshold justifies the stateful workspace's extra calls and context cost?",
+            "Which of the three remaining workspace failures are solved by model-directed exploration rather than deterministic ranking changes?",
+            "Which Codex surface is the narrowest viable first client: plugin, MCP tools, CLI, local API, or file-native projection?",
+            "What canonical storage engine, physical schema, primitive object model, and public product descriptor should ultimately be selected?"
+          ],
+          "next_actions": [
+            "Run the expanded evaluation using model-directed workspace calls, direct filesystem tools, and fixed handoff/context packs.",
+            "Measure continuation, iteration, computation, verification, source fidelity, and durable next-state quality on the required Warmind/Charlemagne, StarRupture, Switzerland, and Straylight workloads.",
+            "Define the first typed object model and common evidence envelope against real corpus material.",
+            "Choose the narrowest Codex integration path for `memory.open`, explicit `memory.save`, and task checkpoints.",
+            "Keep dreaming shadow-only until retrieval and transition evaluations show no material regression."
+          ],
+          "artifacts": [
+            "Projects/Straylight/Straylight.md \u2014 current project overview and expanded evaluation posture",
+            "Projects/Straylight/Decisions.md \u2014 current product and evaluation decisions",
+            "Projects/Straylight/Worklog.md \u2014 historical benchmark implementation and quantitative results",
+            "Projects/Straylight/Open questions.md \u2014 unresolved benchmark and architecture gates",
+            "Retrieval policy 0.2 \u2014 frozen regression baseline",
+            "`/Users/Shared/projects/straylight/eval/corpus-v0.1` \u2014 source-recorded historical evaluated corpus; the Worklog says its SHA-256 matched the recorded run, but no digest is present in the frozen evidence"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 10,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "agent context",
+                  "durable-work",
+                  "durable work"
+                ],
+                "matched": "agent context"
+              },
+              {
+                "alternatives": [
+                  "agent-first",
+                  "agent first"
+                ],
+                "matched": "agent-first"
+              },
+              {
+                "alternatives": [
+                  "learn",
+                  "continue",
+                  "advance"
+                ],
+                "matched": "learn"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "goals",
+                  "evidence"
+                ],
+                "matched": "goals"
+              },
+              {
+                "alternatives": [
+                  "hypotheses",
+                  "plans"
+                ],
+                "matched": "hypotheses"
+              },
+              {
+                "alternatives": [
+                  "artifacts",
+                  "computations"
+                ],
+                "matched": "artifacts"
+              },
+              {
+                "alternatives": [
+                  "open questions",
+                  "rejected",
+                  "checkpoints",
+                  "next actions"
+                ],
+                "matched": "open questions"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "projection",
+                  "prototype input",
+                  "export"
+                ],
+                "matched": "projection"
+              },
+              {
+                "alternatives": [
+                  "not the product",
+                  "not canonical",
+                  "not the boundary"
+                ],
+                "matched": "not the product"
+              },
+              {
+                "alternatives": [
+                  "Markdown",
+                  "Obsidian"
+                ],
+                "matched": "Markdown"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "resume",
+                  "continuation"
+                ],
+                "matched": "resume"
+              },
+              {
+                "alternatives": [
+                  "iterate",
+                  "planning",
+                  "constraints"
+                ],
+                "matched": "iterate"
+              },
+              {
+                "alternatives": [
+                  "compute",
+                  "verify",
+                  "checkpoint",
+                  "next-state"
+                ],
+                "matched": "compute"
+              },
+              {
+                "alternatives": [
+                  "Warmind",
+                  "StarRupture",
+                  "Switzerland"
+                ],
+                "matched": "Warmind"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Worklog.md",
+              "Projects/Straylight/Open questions.md",
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "service_operations": [],
+      "service_calls": 0,
+      "service_http_calls": 0,
+      "service_binary_bytes": 0,
+      "service_result_chars": 0,
+      "service_source_text_chars": 0,
+      "service_metadata_chars": 0,
+      "service_replay_weighted_chars": 0,
+      "service_latency_ms": 0,
+      "service_checkpoint": null,
+      "service_session_id": null,
+      "service_corpus_revision": null,
+      "workspace_operations": [],
+      "workspace_result_chars": 0,
+      "workspace_checkpoint": null,
+      "workspace_state_error": null,
+      "run_id": "interface-20260725T002745-0700",
+      "job_key": "work__codex__filesystem__straylight-product-resume__rep01",
+      "answer_pass": true,
+      "checkpoint_required": false,
+      "checkpoint_persisted": false,
+      "read_only_write_attempted": false,
+      "workflow_pass": false,
+      "model_contract_error": "one or more model requests or responses lacked a complete parent-validated contract",
+      "token_accounting_error": "parent-owned usage receipts were incomplete",
+      "service_call_budget": 4,
+      "within_four_calls": true,
+      "within_call_budget": true
+    },
+    {
+      "suite": "work",
+      "qualified_case_id": "work:straylight-product-resume",
+      "case_id": "straylight-product-resume",
+      "workload": "Straylight",
+      "capability": "project_continuation",
+      "agent": "openclaw",
+      "interface": "filesystem",
+      "repetition": 1,
+      "cell": "openclaw/filesystem",
+      "transition": false,
+      "expected_claims": 4,
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 150.581,
+      "prompt_chars": 2491,
+      "answer_path": "/Users/Shared/carrystate-eval-runs/interface-20260725T002745-0700/work/openclaw/filesystem/straylight-product-resume/rep01/answer.json",
+      "error": null,
+      "events": {
+        "events": 1,
+        "commands": 6,
+        "command_output_chars": 0,
+        "tokens": {
+          "input_tokens": 35585,
+          "cached_input_tokens": 32512,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4372,
+          "uncached_input_tokens": 3073
+        },
+        "system_prompt_chars": 8208,
+        "project_context_chars": 529,
+        "non_project_context_chars": 7679,
+        "reported_prompt_tokens": 35585,
+        "duration_ms": 133183,
+        "tool_summary": {
+          "calls": 6,
+          "tools": [
+            "bash"
+          ],
+          "failures": 0
+        },
+        "token_provenance": "runtime_reported_unverified_model_gateway_incomplete",
+        "token_accounting_complete": false
+      },
+      "trusted_asset_inspections": [],
+      "trusted_service_operations": [],
+      "trusted_service_session_id": null,
+      "trusted_service_corpus_revision": null,
+      "trusted_service_checkpoint": null,
+      "trusted_checkpoint_verification": null,
+      "trusted_model_gateway_requests": [
+        {
+          "at": "2026-07-25T00:28:10.066-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 59061,
+          "request_sha256": "sha256:720d85dba4b4438d263a9453f9d1a6bc6f12266c1067070530b1e9992f53887e",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 90834,
+          "response_body_bytes": 88150,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 11977,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 244,
+            "uncached_input_tokens": 11977
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:16.565-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 66602,
+          "request_sha256": "sha256:f42aeb4396c2ce5fa910a8de4156957baa4a52d1f5bd722a8d593e1d17f2886e",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 99937,
+          "response_body_bytes": 97003,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 13576,
+            "cached_input_tokens": 11008,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 154,
+            "uncached_input_tokens": 2568
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:20.858-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 109087,
+          "request_sha256": "sha256:acca82198f152af71c384764e6691f2e3dd3cc94b6222ec4641e339355af298a",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": false,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": false,
+          "error": "Connection lost"
+        },
+        {
+          "at": "2026-07-25T00:28:25.828-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 134292,
+          "request_sha256": "sha256:be766d12b8ad90118f010860aec02277329eaa05f26e7636130e624f7e342434",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 99529,
+          "response_body_bytes": 96658,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 27355,
+            "cached_input_tokens": 22272,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 232,
+            "uncached_input_tokens": 5083
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:31.759-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 148566,
+          "request_sha256": "sha256:b62a64df1e26e7e9bebfb8f49fa2fb881c4346dbcdb0ad840808fbf1d620d450",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 109549,
+          "response_body_bytes": 106450,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 30458,
+            "cached_input_tokens": 26368,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 228,
+            "uncached_input_tokens": 4090
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:37.295-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 165278,
+          "request_sha256": "sha256:e04c7c55e360b615bac1d4e1a103280f1785b5e8a99b2560358eaca34d5a8164",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 115785,
+          "response_body_bytes": 112579,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 33504,
+            "cached_input_tokens": 29440,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 606,
+            "uncached_input_tokens": 4064
+          }
+        },
+        {
+          "at": "2026-07-25T00:28:49.678-07:00",
+          "upstream_host": "chatgpt.com",
+          "method": "POST",
+          "path": "/backend-api/codex/responses",
+          "request_bytes": 177522,
+          "request_sha256": "sha256:3d347e47dbb185070d9bdb552c3b0173e0644a80d216342fa7a3f874c6aeef43",
+          "model": "gpt-5.6-sol",
+          "reasoning_effort": "xhigh",
+          "tool_types": [],
+          "contract_valid": true,
+          "store": false,
+          "has_previous_response": false,
+          "allowed": true,
+          "upstream_http_status": 200,
+          "response_bytes": 636320,
+          "response_body_bytes": 622036,
+          "response_body_complete": true,
+          "usage": {
+            "input_tokens": 35585,
+            "cached_input_tokens": 32512,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 4372,
+            "uncached_input_tokens": 3073
+          }
+        }
+      ],
+      "trusted_model_gateway_contract": {
+        "generation_requests": 7,
+        "complete": false,
+        "invalid_request_indexes": [
+          2
+        ],
+        "failed_request_indexes": [
+          2
+        ],
+        "missing_usage_indexes": [
+          2
+        ],
+        "token_accounting_complete": false,
+        "proof_source": "parent_model_gateway_dechunked_response_receipts"
+      },
+      "token_accounting_complete": false,
+      "containment": {
+        "mode": "macos_seatbelt_screening",
+        "pass": true,
+        "checks": [
+          {
+            "name": "run_copy_readable",
+            "pass": true,
+            "returncode": 0
+          },
+          {
+            "name": "protected_path_0_denied",
+            "pass": true,
+            "returncode": 1
+          },
+          {
+            "name": "protected_path_2_denied",
+            "pass": true,
+            "returncode": 1
+          },
+          {
+            "name": "launchd_escape_denied",
+            "pass": true,
+            "returncode": 71
+          },
+          {
+            "name": "keychain_escape_denied",
+            "pass": true,
+            "returncode": 71
+          },
+          {
+            "name": "container_daemon_escape_denied",
+            "pass": true,
+            "returncode": 71
+          }
+        ],
+        "publishable_containment": false,
+        "limitation": "Seatbelt is a same-user screening boundary, not a separately credentialed VM or OS account."
+      },
+      "credential_scope_complete": true,
+      "parent_evidence_custody": "hmac_canonical_record_v2",
+      "frozen_corpus_sha256_before": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+      "frozen_corpus_sha256_after": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+      "frozen_corpus_unchanged": true,
+      "answer": {
+        "answer": "Straylight is a user-owned, portable, agent-first context and durable-work layer\u2014not an Obsidian vault, notes system, or retrieval product. Beyond learned knowledge, it must preserve the provenance-bearing live state needed to resume and advance work, including goals, evidence, decisions, hypotheses, plans, artifacts, computations, unresolved questions, rejected paths, checkpoints, and next actions. The first benchmark measured a narrow deterministic retrieval slice and did not establish the workspace hypothesis; the expanded blinded evaluation must show that a fresh agent can continue real workloads, compute and verify against sources, adapt to changed constraints, and leave correct durable next-state artifacts.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The current product category is a user-owned, portable agent context and durable-work layer and protocol whose primary interaction model is agent-first machine continuity across research, planning, implementation, operations, verification, and handoff. It is not primarily a notes app, wiki, transcript archive, synchronized folder, retrieval system, or memory database. Straylight is distinct from Metis, which is the knowledge-base system; no public-facing descriptor beyond the working name Straylight has yet been selected.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Beyond durable learned knowledge, Straylight must preserve the live state required to resume and advance work: goals, evidence, decisions, hypotheses, plans, artifacts, computations, unresolved questions, rejected paths, checkpoints, and next actions. A later agent must be able to inspect how that state was reached, revise it when evidence changes, and leave a better durable state. Task-scoped resumable checkpoints are independent of semantic-memory promotion, and the workspace requires versioned checkpoint, revision, and handoff writes; full sources and artifacts remain available while summaries, embeddings, indexes, and context packs are only derived aids.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Obsidian is not the product boundary because the Obsidian vault and Markdown are prototype/evaluation corpora, human-readable projections, and export formats rather than the canonical interaction or storage representation. Metis organizes the human knowledge base and supplies the first representative corpus; Straylight is the portable agent context and durable-work product built over that kind of corpus. The agent-facing boundary must support reopening, querying, full-source reading, computation, verification, revision, checkpointing, and handoff, rather than limiting agents to raw Markdown or a prepared context pack.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The completed 2026-07-10 benchmark was too narrow because it tested deterministic retrieval readiness rather than end-to-end durable work. It used 44 non-private notes from Metis, N24 RaceWatch, Home Network Improvements, and Straylight, with 20 frozen questions and 53 gold evidence items, and compared direct full-file access, one-shot BM25 top-k, and a minimal stateful Memory Workspace. The workspace initially passed 12/20 cases; after one policy-only tuning pass with the manifest and corpus unchanged, policy 0.2 passed 17/20 and recovered 46/53 evidence items at P95 context of 11,999 characters. One-shot top-k also passed 17/20, recovered 48/53, and used about 1,070 mean estimated tokens versus 2,932 for the workspace. Thus the workspace did not beat top-k on aggregate recall or cost, policy 0.2 is only a frozen regression baseline rather than holdout evidence, and the hypothesis remains unproved; the worklog reports the evaluated artifact as `/Users/Shared/projects/straylight/eval/corpus-v0.1` with a SHA-256 matching the recorded run, but the hash value and artifact are not present in the frozen corpus. The first prototype exercised `memory.open`, `memory.query`, and `memory.read`; model-directed `memory.compute` and `memory.verify` remain untested. The new gate is a blinded model-answer evaluation on an untouched holdout set comparing direct filesystem tools, an agent-first workspace with model-directed `open`, `query`, `read`, `compute`, `verify`, checkpoint, and revision behavior, and fixed handoff/context packs as a control. It must prove that a fresh agent can resume, iterate, compute, verify, handle temporal change, supersession and contradictions, inspect full sources, and leave correct durable next-state artifacts on Warmind/Charlemagne performance and incident work, StarRupture planning, Switzerland trip planning under changing constraints, and Straylight's own evolution. No canonical storage-engine decision may be made before that gate; the required improvement threshold remains open.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Worklog.md",
+              "Projects/Straylight/Open questions.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Demonstrate that Straylight's agent-first context and durable-work abstraction improves successful continuation and advancement of real work, including the quality of the durable state handed to the next agent.",
+          "current_state": [
+            "The product framing is corrected and recorded: Straylight is an agent context and durable-work layer, while Metis/Obsidian provide a human knowledge base and representative prototype corpus.",
+            "The concept and three initial technical contracts\u2014write/capture, dreaming, and retrieval\u2014are captured; storage, schema, deployment, commercial shape, and public descriptor remain open.",
+            "The first retrieval-readiness benchmark is complete, but policy 0.2 is only a regression baseline and the stateful workspace hypothesis is not demonstrated.",
+            "One-shot top-k remains the strongest default from the first retrieval-only run, with direct source access as an escalation path.",
+            "Model-directed `memory.compute` and `memory.verify`, end-to-end work continuation, and durable next-state production have not yet been evaluated."
+          ],
+          "decisions": [
+            "Optimize for reasoning quality, source fidelity, durable-state quality, iteration, and successful continuation rather than retrieval recall, latency, or cost alone.",
+            "Compare direct filesystem access, model-directed agent-workspace operations, and fixed handoff/context packs.",
+            "Keep full evidence and artifacts inspectable; treat summaries, embeddings, indexes, context packs, and consolidated memory as derived rather than authoritative.",
+            "Do not choose a canonical storage engine until the blinded model-answer evaluation against an untouched holdout set is complete.",
+            "Keep dreaming shadow-only until retrieval and transition evaluations show no material regression."
+          ],
+          "open_questions": [
+            "What untouched holdout set is large and varied enough to detect policy overfitting?",
+            "What improvement threshold justifies the extra calls and context cost of a stateful workspace?",
+            "Which remaining failures are solved by model-directed exploration rather than additional deterministic ranking rules?",
+            "Which first Codex client is narrowest and viable: plugin, MCP tools, CLI, local API, or file-native projection?",
+            "What are the canonical storage engine, physical schema, typed object model, and common evidence envelope?",
+            "The referenced `Memory Usage Audit - 2026-07-10` is absent from the supplied source material and must be located or recreated before the research record is treated as complete."
+          ],
+          "next_actions": [
+            "Build and run the expanded blinded agent-work evaluation across Warmind/Charlemagne, StarRupture, Switzerland planning, and Straylight itself.",
+            "Exercise continuation, changed-constraint iteration, quantitative artifact work, temporal and supersession reasoning, contradiction handling, full-source inspection, verification, and durable handoff construction.",
+            "Score final-answer correctness, source fidelity, computation and verification quality, and the correctness of durable next-state artifacts, while retaining retrieval-only scores as a regression lane.",
+            "Define the first typed object model and common evidence envelope against real corpus material.",
+            "Choose the narrowest integration path for `memory.open`, explicit `memory.save`, and task checkpoints."
+          ],
+          "artifacts": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md",
+            "Projects/Straylight/Worklog.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Write API and Dreaming - Initial Design.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 10,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "agent context",
+                  "durable-work",
+                  "durable work"
+                ],
+                "matched": "agent context"
+              },
+              {
+                "alternatives": [
+                  "agent-first",
+                  "agent first"
+                ],
+                "matched": "agent-first"
+              },
+              {
+                "alternatives": [
+                  "learn",
+                  "continue",
+                  "advance"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "goals",
+                  "evidence"
+                ],
+                "matched": "goals"
+              },
+              {
+                "alternatives": [
+                  "hypotheses",
+                  "plans"
+                ],
+                "matched": "hypotheses"
+              },
+              {
+                "alternatives": [
+                  "artifacts",
+                  "computations"
+                ],
+                "matched": "artifacts"
+              },
+              {
+                "alternatives": [
+                  "open questions",
+                  "rejected",
+                  "checkpoints",
+                  "next actions"
+                ],
+                "matched": "rejected"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "projection",
+                  "prototype input",
+                  "export"
+                ],
+                "matched": "projection"
+              },
+              {
+                "alternatives": [
+                  "not the product",
+                  "not canonical",
+                  "not the boundary"
+                ],
+                "matched": "not the product"
+              },
+              {
+                "alternatives": [
+                  "Markdown",
+                  "Obsidian"
+                ],
+                "matched": "Markdown"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "resume",
+                  "continuation"
+                ],
+                "matched": "resume"
+              },
+              {
+                "alternatives": [
+                  "iterate",
+                  "planning",
+                  "constraints"
+                ],
+                "matched": "iterate"
+              },
+              {
+                "alternatives": [
+                  "compute",
+                  "verify",
+                  "checkpoint",
+                  "next-state"
+                ],
+                "matched": "compute"
+              },
+              {
+                "alternatives": [
+                  "Warmind",
+                  "StarRupture",
+                  "Switzerland"
+                ],
+                "matched": "Warmind"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Worklog.md",
+              "Projects/Straylight/Open questions.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "service_operations": [],
+      "service_calls": 0,
+      "service_http_calls": 0,
+      "service_binary_bytes": 0,
+      "service_result_chars": 0,
+      "service_source_text_chars": 0,
+      "service_metadata_chars": 0,
+      "service_replay_weighted_chars": 0,
+      "service_latency_ms": 0,
+      "service_checkpoint": null,
+      "service_session_id": null,
+      "service_corpus_revision": null,
+      "workspace_operations": [],
+      "workspace_result_chars": 0,
+      "workspace_checkpoint": null,
+      "workspace_state_error": null,
+      "run_id": "interface-20260725T002745-0700",
+      "job_key": "work__openclaw__filesystem__straylight-product-resume__rep01",
+      "answer_pass": false,
+      "checkpoint_required": false,
+      "checkpoint_persisted": false,
+      "read_only_write_attempted": false,
+      "workflow_pass": false,
+      "model_contract_error": "one or more model requests or responses lacked a complete parent-validated contract",
+      "token_accounting_error": "parent-owned usage receipts were incomplete",
+      "service_call_budget": 4,
+      "within_four_calls": true,
+      "within_call_budget": true
+    }
+  ],
+  "integrity": {
+    "pass": true,
+    "errors": []
+  },
+  "summary": {
+    "cells": {
+      "codex/filesystem": {
+        "runs": 1,
+        "successful_processes": 1,
+        "process_failures": 0,
+        "valid_answers": 1,
+        "answer_cases_passed": 1,
+        "workflow_cases_passed": 0,
+        "evaluated_answer_case_pass_rate": 1.0,
+        "evaluated_workflow_case_pass_rate": 0.0,
+        "answer_case_pass_rate": 1.0,
+        "workflow_case_pass_rate": 0.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "evaluated_claims_total": 4,
+        "evaluated_claim_pass_rate": 1.0,
+        "claim_pass_rate": 1.0,
+        "mean_score": 1.0,
+        "checkpoints_required": 0,
+        "checkpoints_persisted": 0,
+        "within_four_calls": 1,
+        "within_call_budget": 1,
+        "mean_service_calls": 0.0,
+        "median_service_calls": 0,
+        "p95_service_calls": 0.0,
+        "mean_service_http_calls": 0.0,
+        "total_service_binary_bytes": 0,
+        "mean_service_binary_bytes": 0.0,
+        "mean_agent_tool_calls": 5.0,
+        "median_agent_tool_calls": 5,
+        "p95_agent_tool_calls": 5.0,
+        "mean_service_result_chars": 0.0,
+        "mean_service_source_text_chars": 0.0,
+        "mean_service_metadata_chars": 0.0,
+        "mean_service_latency_ms": 0.0,
+        "mean_elapsed_seconds": 218.09,
+        "median_elapsed_seconds": 218.09,
+        "p95_elapsed_seconds": 218.09,
+        "mean_prompt_chars": 2491.0,
+        "mean_system_prompt_chars": 0.0,
+        "tokens_total": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_mean": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        },
+        "tokens_median": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_p95": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        }
+      },
+      "openclaw/filesystem": {
+        "runs": 1,
+        "successful_processes": 1,
+        "process_failures": 0,
+        "valid_answers": 1,
+        "answer_cases_passed": 0,
+        "workflow_cases_passed": 0,
+        "evaluated_answer_case_pass_rate": 0.0,
+        "evaluated_workflow_case_pass_rate": 0.0,
+        "answer_case_pass_rate": 0.0,
+        "workflow_case_pass_rate": 0.0,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "evaluated_claims_total": 4,
+        "evaluated_claim_pass_rate": 0.75,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.9433,
+        "checkpoints_required": 0,
+        "checkpoints_persisted": 0,
+        "within_four_calls": 1,
+        "within_call_budget": 1,
+        "mean_service_calls": 0.0,
+        "median_service_calls": 0,
+        "p95_service_calls": 0.0,
+        "mean_service_http_calls": 0.0,
+        "total_service_binary_bytes": 0,
+        "mean_service_binary_bytes": 0.0,
+        "mean_agent_tool_calls": 6.0,
+        "median_agent_tool_calls": 6,
+        "p95_agent_tool_calls": 6.0,
+        "mean_service_result_chars": 0.0,
+        "mean_service_source_text_chars": 0.0,
+        "mean_service_metadata_chars": 0.0,
+        "mean_service_latency_ms": 0.0,
+        "mean_elapsed_seconds": 150.58,
+        "median_elapsed_seconds": 150.58,
+        "p95_elapsed_seconds": 150.58,
+        "mean_prompt_chars": 2491.0,
+        "mean_system_prompt_chars": 8208.0,
+        "tokens_total": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_mean": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        },
+        "tokens_median": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_p95": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        }
+      }
+    },
+    "by_suite": {
+      "work": {
+        "codex/filesystem": {
+          "runs": 1,
+          "successful_processes": 1,
+          "process_failures": 0,
+          "valid_answers": 1,
+          "answer_cases_passed": 1,
+          "workflow_cases_passed": 0,
+          "evaluated_answer_case_pass_rate": 1.0,
+          "evaluated_workflow_case_pass_rate": 0.0,
+          "answer_case_pass_rate": 1.0,
+          "workflow_case_pass_rate": 0.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "evaluated_claims_total": 4,
+          "evaluated_claim_pass_rate": 1.0,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "checkpoints_required": 0,
+          "checkpoints_persisted": 0,
+          "within_four_calls": 1,
+          "within_call_budget": 1,
+          "mean_service_calls": 0.0,
+          "median_service_calls": 0,
+          "p95_service_calls": 0.0,
+          "mean_service_http_calls": 0.0,
+          "total_service_binary_bytes": 0,
+          "mean_service_binary_bytes": 0.0,
+          "mean_agent_tool_calls": 5.0,
+          "median_agent_tool_calls": 5,
+          "p95_agent_tool_calls": 5.0,
+          "mean_service_result_chars": 0.0,
+          "mean_service_source_text_chars": 0.0,
+          "mean_service_metadata_chars": 0.0,
+          "mean_service_latency_ms": 0.0,
+          "mean_elapsed_seconds": 218.09,
+          "median_elapsed_seconds": 218.09,
+          "p95_elapsed_seconds": 218.09,
+          "mean_prompt_chars": 2491.0,
+          "mean_system_prompt_chars": 0.0,
+          "tokens_total": {
+            "input_tokens": 0,
+            "uncached_input_tokens": 0,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0
+          },
+          "tokens_mean": {
+            "input_tokens": 0.0,
+            "uncached_input_tokens": 0.0,
+            "cached_input_tokens": 0.0,
+            "cache_write_input_tokens": 0.0,
+            "output_tokens": 0.0
+          },
+          "tokens_median": {
+            "input_tokens": 0,
+            "uncached_input_tokens": 0,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0
+          },
+          "tokens_p95": {
+            "input_tokens": 0.0,
+            "uncached_input_tokens": 0.0,
+            "cached_input_tokens": 0.0,
+            "cache_write_input_tokens": 0.0,
+            "output_tokens": 0.0
+          }
+        },
+        "openclaw/filesystem": {
+          "runs": 1,
+          "successful_processes": 1,
+          "process_failures": 0,
+          "valid_answers": 1,
+          "answer_cases_passed": 0,
+          "workflow_cases_passed": 0,
+          "evaluated_answer_case_pass_rate": 0.0,
+          "evaluated_workflow_case_pass_rate": 0.0,
+          "answer_case_pass_rate": 0.0,
+          "workflow_case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "evaluated_claims_total": 4,
+          "evaluated_claim_pass_rate": 0.75,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9433,
+          "checkpoints_required": 0,
+          "checkpoints_persisted": 0,
+          "within_four_calls": 1,
+          "within_call_budget": 1,
+          "mean_service_calls": 0.0,
+          "median_service_calls": 0,
+          "p95_service_calls": 0.0,
+          "mean_service_http_calls": 0.0,
+          "total_service_binary_bytes": 0,
+          "mean_service_binary_bytes": 0.0,
+          "mean_agent_tool_calls": 6.0,
+          "median_agent_tool_calls": 6,
+          "p95_agent_tool_calls": 6.0,
+          "mean_service_result_chars": 0.0,
+          "mean_service_source_text_chars": 0.0,
+          "mean_service_metadata_chars": 0.0,
+          "mean_service_latency_ms": 0.0,
+          "mean_elapsed_seconds": 150.58,
+          "median_elapsed_seconds": 150.58,
+          "p95_elapsed_seconds": 150.58,
+          "mean_prompt_chars": 2491.0,
+          "mean_system_prompt_chars": 8208.0,
+          "tokens_total": {
+            "input_tokens": 0,
+            "uncached_input_tokens": 0,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0
+          },
+          "tokens_mean": {
+            "input_tokens": 0.0,
+            "uncached_input_tokens": 0.0,
+            "cached_input_tokens": 0.0,
+            "cache_write_input_tokens": 0.0,
+            "output_tokens": 0.0
+          },
+          "tokens_median": {
+            "input_tokens": 0,
+            "uncached_input_tokens": 0,
+            "cached_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "output_tokens": 0
+          },
+          "tokens_p95": {
+            "input_tokens": 0.0,
+            "uncached_input_tokens": 0.0,
+            "cached_input_tokens": 0.0,
+            "cache_write_input_tokens": 0.0,
+            "output_tokens": 0.0
+          }
+        }
+      }
+    },
+    "by_agent": {
+      "codex": {
+        "runs": 1,
+        "successful_processes": 1,
+        "process_failures": 0,
+        "valid_answers": 1,
+        "answer_cases_passed": 1,
+        "workflow_cases_passed": 0,
+        "evaluated_answer_case_pass_rate": 1.0,
+        "evaluated_workflow_case_pass_rate": 0.0,
+        "answer_case_pass_rate": 1.0,
+        "workflow_case_pass_rate": 0.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "evaluated_claims_total": 4,
+        "evaluated_claim_pass_rate": 1.0,
+        "claim_pass_rate": 1.0,
+        "mean_score": 1.0,
+        "checkpoints_required": 0,
+        "checkpoints_persisted": 0,
+        "within_four_calls": 1,
+        "within_call_budget": 1,
+        "mean_service_calls": 0.0,
+        "median_service_calls": 0,
+        "p95_service_calls": 0.0,
+        "mean_service_http_calls": 0.0,
+        "total_service_binary_bytes": 0,
+        "mean_service_binary_bytes": 0.0,
+        "mean_agent_tool_calls": 5.0,
+        "median_agent_tool_calls": 5,
+        "p95_agent_tool_calls": 5.0,
+        "mean_service_result_chars": 0.0,
+        "mean_service_source_text_chars": 0.0,
+        "mean_service_metadata_chars": 0.0,
+        "mean_service_latency_ms": 0.0,
+        "mean_elapsed_seconds": 218.09,
+        "median_elapsed_seconds": 218.09,
+        "p95_elapsed_seconds": 218.09,
+        "mean_prompt_chars": 2491.0,
+        "mean_system_prompt_chars": 0.0,
+        "tokens_total": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_mean": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        },
+        "tokens_median": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_p95": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        }
+      },
+      "openclaw": {
+        "runs": 1,
+        "successful_processes": 1,
+        "process_failures": 0,
+        "valid_answers": 1,
+        "answer_cases_passed": 0,
+        "workflow_cases_passed": 0,
+        "evaluated_answer_case_pass_rate": 0.0,
+        "evaluated_workflow_case_pass_rate": 0.0,
+        "answer_case_pass_rate": 0.0,
+        "workflow_case_pass_rate": 0.0,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "evaluated_claims_total": 4,
+        "evaluated_claim_pass_rate": 0.75,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.9433,
+        "checkpoints_required": 0,
+        "checkpoints_persisted": 0,
+        "within_four_calls": 1,
+        "within_call_budget": 1,
+        "mean_service_calls": 0.0,
+        "median_service_calls": 0,
+        "p95_service_calls": 0.0,
+        "mean_service_http_calls": 0.0,
+        "total_service_binary_bytes": 0,
+        "mean_service_binary_bytes": 0.0,
+        "mean_agent_tool_calls": 6.0,
+        "median_agent_tool_calls": 6,
+        "p95_agent_tool_calls": 6.0,
+        "mean_service_result_chars": 0.0,
+        "mean_service_source_text_chars": 0.0,
+        "mean_service_metadata_chars": 0.0,
+        "mean_service_latency_ms": 0.0,
+        "mean_elapsed_seconds": 150.58,
+        "median_elapsed_seconds": 150.58,
+        "p95_elapsed_seconds": 150.58,
+        "mean_prompt_chars": 2491.0,
+        "mean_system_prompt_chars": 8208.0,
+        "tokens_total": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_mean": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        },
+        "tokens_median": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_p95": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        }
+      }
+    },
+    "by_interface": {
+      "filesystem": {
+        "runs": 2,
+        "successful_processes": 2,
+        "process_failures": 0,
+        "valid_answers": 2,
+        "answer_cases_passed": 1,
+        "workflow_cases_passed": 0,
+        "evaluated_answer_case_pass_rate": 0.5,
+        "evaluated_workflow_case_pass_rate": 0.0,
+        "answer_case_pass_rate": 0.5,
+        "workflow_case_pass_rate": 0.0,
+        "claims_passed": 7,
+        "claims_total": 8,
+        "evaluated_claims_total": 8,
+        "evaluated_claim_pass_rate": 0.875,
+        "claim_pass_rate": 0.875,
+        "mean_score": 0.9717,
+        "checkpoints_required": 0,
+        "checkpoints_persisted": 0,
+        "within_four_calls": 2,
+        "within_call_budget": 2,
+        "mean_service_calls": 0.0,
+        "median_service_calls": 0.0,
+        "p95_service_calls": 0.0,
+        "mean_service_http_calls": 0.0,
+        "total_service_binary_bytes": 0,
+        "mean_service_binary_bytes": 0.0,
+        "mean_agent_tool_calls": 5.5,
+        "median_agent_tool_calls": 5.5,
+        "p95_agent_tool_calls": 6.0,
+        "mean_service_result_chars": 0.0,
+        "mean_service_source_text_chars": 0.0,
+        "mean_service_metadata_chars": 0.0,
+        "mean_service_latency_ms": 0.0,
+        "mean_elapsed_seconds": 184.34,
+        "median_elapsed_seconds": 184.34,
+        "p95_elapsed_seconds": 218.09,
+        "mean_prompt_chars": 2491.0,
+        "mean_system_prompt_chars": 4104.0,
+        "tokens_total": {
+          "input_tokens": 0,
+          "uncached_input_tokens": 0,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 0
+        },
+        "tokens_mean": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        },
+        "tokens_median": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        },
+        "tokens_p95": {
+          "input_tokens": 0.0,
+          "uncached_input_tokens": 0.0,
+          "cached_input_tokens": 0.0,
+          "cache_write_input_tokens": 0.0,
+          "output_tokens": 0.0
+        }
+      }
+    },
+    "paired_comparisons": {}
+  },
+  "evaluation_status": {
+    "all_attempts_recorded": true,
+    "integrity_pass": true,
+    "stochastic_confidence_available": false,
+    "full_predeclared_profile": false,
+    "trusted_parent_receipts": true,
+    "keyed_parent_evidence_custody": true,
+    "containment_complete": false,
+    "model_contracts_complete": false,
+    "token_accounting_complete": false,
+    "credential_scopes_complete": true,
+    "binary_semantics_complete": true,
+    "cross_agent_quality_comparable": false,
+    "process_failures": 0,
+    "quality_grader": "deterministic_screening_only",
+    "comparison_checks": {},
+    "blockers": [
+      "run is not the full predeclared matrix",
+      "fewer than five randomized repetitions were run",
+      "filesystem and CarryState matched pairs are incomplete",
+      "same-user Seatbelt containment is screening-only; publishable containment requires a separate OS identity or VM",
+      "one or more model request/response contracts is incomplete",
+      "parent-owned token accounting is incomplete",
+      "deterministic keyword rubrics are screening evidence; blind semantic or human adjudication is required for a quality claim"
+    ],
+    "publishable_for_quality_comparison": false
+  },
+  "pricing": {
+    "checked_at": "2026-07-24",
+    "source": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+    "long_context_threshold_tokens": 272000,
+    "short_context_per_million": {
+      "input": 5.0,
+      "cached_input": 0.5,
+      "cache_write": 6.25,
+      "output": 30.0
+    },
+    "basis": "unavailable: parent-owned token receipts are incomplete",
+    "complete": false
+  }
+}

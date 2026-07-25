@@ -263,7 +263,7 @@
       "task": "Reopen the Straylight project checkpoint and advance it from evaluation into implementation using the new API gate. Correct the interpretation of the token result, define the first persistent build slice, and leave a child checkpoint with measurable acceptance criteria and source lineage.",
       "claim_slots": {
         "c1": "recovered product thesis",
-        "c2": "corrected evaluation interpretation",
+      "c2": "corrected cached-replay versus uncached-input interpretation and BM25 baseline",
         "c3": "first persistent build slice",
         "c4": "measurable transition gate"
       },
@@ -275,7 +275,10 @@
             {"any": ["durable workspace", "durable-work"]},
             {"any": ["not retrieval", "more than retrieval", "not primarily", "portable context"]}
           ],
-          "sources_any": ["Projects/Straylight/Straylight.md"]
+          "sources_any": [
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Decisions.md"
+          ]
         },
         {
           "id": "c2",

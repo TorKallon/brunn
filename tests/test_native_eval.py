@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -40,7 +41,11 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
     deny_checkpoint = False
     open_delay = 0.0
     import_failures = 0
+    issued_credential_token: str | None = "case-token"
+    issued_authorization_scope: str | None = None
     session_revision = "revision:delta"
+    evidence_sources: dict[str, str] = {}
+    asset_bytes = b"verified asset bytes"
     child = {
         "checkpoint_id": "checkpoint:child",
         "parent_checkpoint_id": "checkpoint:seed",
@@ -76,7 +81,15 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         self.record()
-        if self.path == "/v1/admin/eval/imports/import:1":
+        if self.path == "/asset.bin":
+            digest = hashlib.sha256(self.asset_bytes).hexdigest()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(self.asset_bytes)))
+            self.send_header("X-CarryState-SHA256", f"sha256:{digest}")
+            self.end_headers()
+            self.wfile.write(self.asset_bytes)
+        elif self.path == "/v1/admin/eval/imports/import:1":
             self.send_json(200, {
                 "status": "complete",
                 "corpus_revision": "revision:delta",
@@ -117,18 +130,25 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                     },
                 })
                 return
+            data = {
+                "import_id": "import:1",
+                "status_url": "/v1/admin/eval/imports/import:1",
+                "checkpoint_id": "checkpoint:seed" if body.get("seed_checkpoint") else None,
+                "base_corpus_revision": "revision:base",
+                "corpus_revision": "revision:delta",
+                "index_status": {"exact": "ready", "lexical": "building", "semantic": "building"},
+            }
+            if self.issued_authorization_scope != "__missing__":
+                data["authorization_scope"] = (
+                    self.issued_authorization_scope
+                    if self.issued_authorization_scope is not None
+                    else body["authorization_scope"]
+                )
+            if self.issued_credential_token is not None:
+                data["credential_token"] = self.issued_credential_token
             self.send_json(200, {
                 "status": "accepted_processing",
-                "data": {
-                    "import_id": "import:1",
-                    "status_url": "/v1/admin/eval/imports/import:1",
-                    "authorization_scope": body["authorization_scope"],
-                    "credential_token": "case-token",
-                    "checkpoint_id": "checkpoint:seed" if body.get("seed_checkpoint") else None,
-                    "base_corpus_revision": "revision:base",
-                    "corpus_revision": "revision:delta",
-                    "index_status": {"exact": "ready", "lexical": "building", "semantic": "building"},
-                },
+                "data": data,
             })
         elif self.path == "/v1/memory/open":
             time.sleep(self.open_delay)
@@ -157,6 +177,29 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                 "status": "committed",
                 "data": child,
             })
+        elif self.path == "/v1/memory/read" and self.evidence_sources:
+            self.send_json(200, {
+                "request_id": "req-read",
+                "session_id": body.get("session_id", "session:s1"),
+                "corpus_revision": "revision:delta",
+                "status": "complete",
+                "data": {
+                    "items": [{
+                        "reference": request["ref"],
+                        "status": "complete",
+                        "data": {
+                            "metadata": {
+                                "ref": request["ref"],
+                                "source_ref": self.evidence_sources[request["ref"]],
+                                "locator": {
+                                    "path": self.evidence_sources[request["ref"]],
+                                },
+                            },
+                            "text": "x",
+                        },
+                    } for request in body["requests"]],
+                },
+            })
         elif self.path.startswith("/v1/memory/"):
             operation = self.path.rsplit("/", 1)[-1]
             self.send_json(200, {
@@ -172,14 +215,23 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
 
 @contextmanager
 def fake_server(
-    *, deny_checkpoint: bool = False, open_delay: float = 0.0, import_failures: int = 0
+    *,
+    deny_checkpoint: bool = False,
+    open_delay: float = 0.0,
+    import_failures: int = 0,
+    issued_credential_token: str | None = "case-token",
+    issued_authorization_scope: str | None = None,
 ) -> Iterator[tuple[str, type[FakeNativeHandler]]]:
     handler = type("ConfiguredFakeNativeHandler", (FakeNativeHandler,), {})
     handler.requests = []
     handler.deny_checkpoint = deny_checkpoint
     handler.open_delay = open_delay
     handler.import_failures = import_failures
+    handler.issued_credential_token = issued_credential_token
+    handler.issued_authorization_scope = issued_authorization_scope
     handler.session_revision = FakeNativeHandler.session_revision
+    handler.evidence_sources = {}
+    handler.asset_bytes = FakeNativeHandler.asset_bytes
     handler.child = dict(FakeNativeHandler.child)
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -193,28 +245,193 @@ def fake_server(
 
 
 class NativeEvaluationTests(unittest.TestCase):
-    def test_persisted_provisioning_validates_requested_not_effective_scope(self):
-        metadata = {
+    def test_filesystem_asset_helper_refuses_symlink_outside_root_and_wrong_hash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            corpus = root / "corpus"
+            corpus.mkdir()
+            expected_bytes = b"authoritative asset bytes"
+            expected_hash = hashlib.sha256(expected_bytes).hexdigest()
+            (corpus / "asset.bin").write_bytes(expected_bytes)
+            (corpus / "link.bin").symlink_to(corpus / "asset.bin")
+            (corpus / "wrong.bin").write_bytes(b"tampered bytes")
+            (root / "outside.bin").write_bytes(expected_bytes)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "corpus_root": str(corpus),
+                "assets": [
+                    {
+                        "path": logical_path,
+                        "content_hash": f"sha256:{expected_hash}",
+                        "size_bytes": len(expected_bytes),
+                    }
+                    for logical_path in (
+                        "asset.bin",
+                        "link.bin",
+                        "wrong.bin",
+                        "../outside.bin",
+                    )
+                ],
+            }), encoding="utf-8")
+            trace = root / "trace.jsonl"
+            base = [
+                sys.executable,
+                str(ROOT / "filesystem_asset.py"),
+                "--manifest",
+                str(manifest),
+                "--trace",
+                str(trace),
+            ]
+            attempts = {
+                "symlink": [*base, "metadata", "link.bin"],
+                "outside": [*base, "metadata", "../outside.bin"],
+                "wrong_hash": [*base, "fetch", "wrong.bin"],
+            }
+
+            for label, command in attempts.items():
+                with self.subTest(label=label):
+                    result = subprocess.run(
+                        command,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+
+            self.assertFalse(trace.exists())
+
+    def test_local_inspection_helper_refuses_symlink_outside_root_and_wrong_hash(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            corpus = root / "corpus"
+            run_root = root / "run"
+            corpus.mkdir()
+            run_root.mkdir()
+            expected_bytes = b"authoritative asset bytes"
+            expected_hash = hashlib.sha256(expected_bytes).hexdigest()
+            expected = corpus / "asset.bin"
+            expected.write_bytes(expected_bytes)
+            symlink = run_root / "link.bin"
+            symlink.symlink_to(expected)
+            outside = root / "outside.bin"
+            outside.write_bytes(expected_bytes)
+            wrong = run_root / "wrong.bin"
+            wrong.write_bytes(b"tampered bytes")
+            manifest = run_root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "corpus_root": str(corpus),
+                "assets": [{
+                    "path": "asset.bin",
+                    "content_hash": f"sha256:{expected_hash}",
+                    "size_bytes": len(expected_bytes),
+                }],
+            }), encoding="utf-8")
+            trace = run_root / "trace.jsonl"
+            base = [
+                sys.executable,
+                str(ROOT / "local_asset_inspect.py"),
+                "--manifest",
+                str(manifest),
+                "--trace",
+                str(trace),
+                "--run-root",
+                str(run_root),
+            ]
+
+            for label, target in {
+                "symlink": symlink,
+                "outside": outside,
+                "wrong_hash": wrong,
+            }.items():
+                with self.subTest(label=label):
+                    result = subprocess.run(
+                        [*base, str(target)],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+
+            self.assertFalse(trace.exists())
+
+    def test_verified_download_privately_reuses_only_exact_existing_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
+            destination = Path(temporary) / "asset.bin"
+            digest = hashlib.sha256(handler.asset_bytes).hexdigest()
+            client = NativeApiClient(url, "case-token")
+
+            first = client.download_verified(
+                "/asset.bin",
+                destination,
+                expected_hash=f"sha256:{digest}",
+                expected_size=len(handler.asset_bytes),
+            )
+            second = client.download_verified(
+                "/asset.bin",
+                destination,
+                expected_hash=f"sha256:{digest}",
+                expected_size=len(handler.asset_bytes),
+            )
+
+            self.assertEqual(first.content_hash, second.content_hash)
+            self.assertEqual(destination.read_bytes(), handler.asset_bytes)
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(
+                [request["path"] for request in handler.requests].count("/asset.bin"),
+                1,
+            )
+
+            destination.chmod(0o644)
+            with self.assertRaises(PermissionError):
+                client.download_verified(
+                    "/asset.bin",
+                    destination,
+                    expected_hash=f"sha256:{digest}",
+                    expected_size=len(handler.asset_bytes),
+                )
+
+    def test_persisted_provisioning_requires_exact_effective_scope_and_provenance(self):
+        mismatched = {
             "authorization_scope": "scope:root",
+            "requested_authorization_scope": "eval:run-a/case-a",
             "token": "one-time-secret",
+            "credential_provenance": "service_issued_case_scope",
             "provisioning": {
                 "import_response": {
                     "requested_authorization_scope": "eval:run-a/case-a",
                 }
             },
         }
+        self.assertFalse(
+            provisioning_matches_run_case(
+                mismatched,
+                run_id="run-a",
+                case_id="case-a",
+            )
+        )
+        valid = {
+            **mismatched,
+            "authorization_scope": "eval:run-a/case-a",
+        }
         self.assertTrue(
             provisioning_matches_run_case(
-                metadata,
+                valid,
                 run_id="run-a",
                 case_id="case-a",
             )
         )
         self.assertFalse(
             provisioning_matches_run_case(
-                metadata,
+                valid,
                 run_id="run-a",
                 case_id="case-b",
+            )
+        )
+        self.assertFalse(
+            provisioning_matches_run_case(
+                {**valid, "credential_provenance": None},
+                run_id="run-a",
+                case_id="case-a",
             )
         )
 
@@ -286,6 +503,7 @@ class NativeEvaluationTests(unittest.TestCase):
                         "reference": "chunk:1",
                         "path": "Source.md",
                         "content": "Exact evidence.",
+                        "evidence_refs": ["evidence:1"],
                         "content_hash": "sha256:noise",
                         "lane_scores": {"lexical": 10},
                         "score": 0.4,
@@ -300,6 +518,7 @@ class NativeEvaluationTests(unittest.TestCase):
         self.assertNotIn("records", rendered["data"]["corpus_map"])
         candidate = rendered["data"]["initial_evidence"][0]
         self.assertEqual(candidate["content"], "Exact evidence.")
+        self.assertEqual(candidate["evidence_refs"], ["evidence:1"])
         self.assertNotIn("content_hash", candidate)
         self.assertNotIn("lane_scores", candidate)
         self.assertEqual(
@@ -317,6 +536,7 @@ class NativeEvaluationTests(unittest.TestCase):
             "source_ref": "Source.md",
             "path": "Source.md",
             "content": "Exact evidence.",
+            "evidence_refs": ["evidence:1"],
             "content_hash": "sha256:noise",
             "source_version": "sha256:source-version",
             "why_selected": ["semantic_recall"],
@@ -338,6 +558,7 @@ class NativeEvaluationTests(unittest.TestCase):
         self.assertEqual(len(rendered["data"]["items"]), 1)
         compact_candidate = rendered["data"]["items"][0]["results"][0]
         self.assertEqual(compact_candidate["reference"], "chunk:1")
+        self.assertEqual(compact_candidate["evidence_refs"], ["evidence:1"])
         self.assertNotIn("source_ref", compact_candidate)
         self.assertNotIn("source_version", compact_candidate)
         self.assertNotIn("why_selected", compact_candidate)
@@ -358,11 +579,18 @@ class NativeEvaluationTests(unittest.TestCase):
                         }
                         for index in range(13)
                     ],
+                    "initial_evidence": [
+                        {
+                            "source_ref": f"Source-{index}.md",
+                            "path": f"Source-{index}.md",
+                            "evidence_refs": [f"evidence:{index}"],
+                        }
+                        for index in range(13)
+                    ],
                     "retrieval_sufficiency": {
                         "status": "likely_sufficient",
                         "complete_source_count": 4,
                     },
-                    "initial_evidence": [],
                 },
             },
             http_status=200,
@@ -379,6 +607,7 @@ class NativeEvaluationTests(unittest.TestCase):
         )
         complete_source = rendered["data"]["initial_evidence"][0]
         self.assertEqual(complete_source["path"], "Source-0.md")
+        self.assertEqual(complete_source["evidence_refs"], ["evidence:0"])
         self.assertNotIn("source_ref", complete_source)
         self.assertNotIn("reference", complete_source)
         self.assertNotIn("ranges", complete_source)
@@ -387,6 +616,10 @@ class NativeEvaluationTests(unittest.TestCase):
         self.assertEqual(
             rendered["data"]["evidence_leads"][0]["content_scope"],
             "source_lead",
+        )
+        self.assertEqual(
+            rendered["data"]["evidence_leads"][0]["evidence_refs"],
+            ["evidence:12"],
         )
         self.assertNotIn("content", rendered["data"]["evidence_leads"][0])
 
@@ -543,6 +776,50 @@ class NativeEvaluationTests(unittest.TestCase):
             self.assertEqual(metadata["token"], "case-token")
             imports = [item for item in handler.requests if item["path"] == "/v1/admin/eval/import"]
             self.assertEqual(len(imports), 2)
+
+    def test_provision_fails_closed_without_distinct_exact_scoped_credential(self):
+        scenarios = (
+            (
+                {"issued_credential_token": None},
+                "did not issue a case-scoped credential",
+            ),
+            (
+                {"issued_credential_token": "admin-token"},
+                "parent/admin credential",
+            ),
+            (
+                {"issued_authorization_scope": "scope:root"},
+                "exact requested scope",
+            ),
+            (
+                {"issued_authorization_scope": "__missing__"},
+                "exact requested scope",
+            ),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            corpus = Path(temporary) / "corpus"
+            corpus.mkdir()
+            (corpus / "one.md").write_text("# One\n\nEvidence.\n", encoding="utf-8")
+            documents = text_documents(corpus)
+            for server_options, expected_error in scenarios:
+                with self.subTest(server_options=server_options):
+                    with fake_server(**server_options) as (url, _):
+                        client = NativeApiClient(
+                            url,
+                            "admin-token",
+                            run_id="run",
+                            case_id="case",
+                        )
+                        with self.assertRaisesRegex(RuntimeError, expected_error):
+                            provision_evaluation(
+                                client,
+                                run_id="run",
+                                case_id="case",
+                                display_scope="Alpha",
+                                access_mode="read_only",
+                                documents=documents,
+                                timeout_seconds=2,
+                            )
 
     def test_provision_streams_text_waits_for_indexes_and_redacts_token(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
@@ -920,6 +1197,64 @@ class NativeEvaluationTests(unittest.TestCase):
                 self.assertTrue(record["lineage"]["parent_match"])
                 self.assertEqual(record["service_calls"], 2)
                 self.assertTrue(any(item["path"] == "/v1/sessions/session:s1" for item in handler.requests))
+            finally:
+                if old_url is None:
+                    os.environ.pop("STRAYLIGHT_API_URL", None)
+                else:
+                    os.environ["STRAYLIGHT_API_URL"] = old_url
+
+    def test_native_transition_resolves_evidence_refs_to_source_paths(self):
+        with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
+            old_url = os.environ.get("STRAYLIGHT_API_URL")
+            os.environ["STRAYLIGHT_API_URL"] = url
+            try:
+                prior_ref = "source:11111111-1111-7111-8111-111111111111"
+                delta_ref = "evidence:22222222-2222-7222-8222-222222222222"
+                handler.evidence_sources = {
+                    prior_ref: "prior.md",
+                    delta_ref: "delta.md",
+                }
+                handler.child = {
+                    "checkpoint_id": "checkpoint:aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa",
+                    "parent_checkpoint_id": "checkpoint:bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+                    "corpus_revision": "revision:cccccccc-cccc-7ccc-8ccc-cccccccccccc",
+                    "source_refs": [prior_ref, delta_ref],
+                }
+                handler.session_revision = "revision:dddddddd-dddd-7ddd-8ddd-dddddddddddd"
+                run_dir = Path(temporary)
+                (run_dir / "native-session.json").write_text(json.dumps({
+                    "session_id": "session:s1",
+                    "checkpoint_id": handler.child["checkpoint_id"],
+                    "checkpoint": handler.child,
+                    "operations": [
+                        {"operation": "resume", "result_chars": 100, "elapsed_ms": 2.5},
+                        {"operation": "checkpoint", "result_chars": 80, "elapsed_ms": 3.5},
+                    ],
+                }))
+                record = {
+                    "answer_path": str(run_dir / "answer.json"),
+                    "condition": "service_api_resume",
+                    "grade": {"pass": True},
+                    "run_id": "run",
+                }
+                case = {"id": "case", "delta_path": "delta.md"}
+                metadata = {
+                    "token": "case-token",
+                    "checkpoint_id": "checkpoint:bbbbbbbbbbbb7bbb8bbbbbbbbbbbbbbb",
+                    "corpus_revision": "revision:dddddddddddd7ddd8ddddddddddddddd",
+                    "seed_source_refs": ["prior.md"],
+                }
+                attach_native_lineage(record, case, metadata, max_calls=4)
+                self.assertTrue(record["transition_pass"])
+                self.assertIsNone(
+                    record["lineage"]["provenance_resolution_error"]
+                )
+                self.assertTrue(record["lineage"]["prior_source_preserved"])
+                self.assertTrue(record["lineage"]["delta_source_preserved"])
+                self.assertTrue(any(
+                    item["path"] == "/v1/memory/read"
+                    for item in handler.requests
+                ))
             finally:
                 if old_url is None:
                     os.environ.pop("STRAYLIGHT_API_URL", None)

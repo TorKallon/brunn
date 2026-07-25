@@ -6,17 +6,21 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use flate2::{Compression, write::GzEncoder};
 use futures::TryStreamExt;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Row, Transaction};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 use crate::{
     db::AppState,
     error::{ApiError, ApiResult},
+    models::UserId,
+    quota, upload_service,
 };
 
 struct ExportJob {
@@ -26,6 +30,7 @@ struct ExportJob {
 
 struct ExportResult {
     object_key: String,
+    object_version_id: Option<String>,
     content_hash: String,
     size_bytes: u64,
     table_count: usize,
@@ -38,6 +43,7 @@ struct AccountDeletionJob {
     requested_by_credential_id: Uuid,
     status: String,
     backup_expiry_due_at: DateTime<Utc>,
+    backup_erasure_verified: bool,
 }
 
 const ACCOUNT_DELETION_RECORD_KINDS: &[&str] = &[
@@ -53,6 +59,7 @@ const ACCOUNT_DELETION_RECORD_KINDS: &[&str] = &[
     "checkpoint",
     "stage",
 ];
+const ACCOUNT_EXPORT_PART_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
 pub async fn process_account_export(state: &AppState, worker_id: &str) -> ApiResult<bool> {
     let pool = state.admin_pool.as_ref().expect("checked at worker start");
@@ -66,29 +73,7 @@ pub async fn process_account_export(state: &AppState, worker_id: &str) -> ApiRes
     let started = Instant::now();
     let result = build_export(state, &job).await;
     match result {
-        Ok(result) => {
-            let ttl_seconds =
-                i64::try_from(state.config.account_export_ttl.as_secs()).unwrap_or(i64::MAX);
-            sqlx::query(
-                r#"
-                UPDATE straylight.account_exports
-                SET status='ready',object_key=$1,content_hash=$2,size_bytes=$3,
-                    table_count=$4,object_count=$5,completed_at=clock_timestamp(),
-                    expires_at=clock_timestamp()+make_interval(secs => $6),
-                    locked_at=NULL,locked_by=NULL,failure_code=NULL
-                WHERE user_id=$7 AND id=$8 AND status='running'
-                "#,
-            )
-            .bind(&result.object_key)
-            .bind(&result.content_hash)
-            .bind(i64::try_from(result.size_bytes).unwrap_or(i64::MAX))
-            .bind(i32::try_from(result.table_count).unwrap_or(i32::MAX))
-            .bind(i32::try_from(result.object_count).unwrap_or(i32::MAX))
-            .bind(ttl_seconds)
-            .bind(job.user_id)
-            .bind(job.id)
-            .execute(pool)
-            .await?;
+        Ok(_) => {
             record_export_metric("ready", started);
         }
         Err(error) => {
@@ -109,17 +94,21 @@ pub async fn process_account_export(state: &AppState, worker_id: &str) -> ApiRes
             .bind(export_failure_code(&error))
             .bind(job.user_id)
             .bind(job.id)
-            .fetch_one(pool)
+            .fetch_optional(pool)
             .await?;
-            let status: String = row.try_get("status")?;
-            record_export_metric(
-                if status == "failed" {
-                    "failed"
-                } else {
-                    "retry"
-                },
-                started,
-            );
+            if let Some(row) = row {
+                let status: String = row.try_get("status")?;
+                record_export_metric(
+                    if status == "failed" {
+                        "failed"
+                    } else {
+                        "retry"
+                    },
+                    started,
+                );
+            } else {
+                record_export_metric("canceled", started);
+            }
         }
     }
     Ok(true)
@@ -136,7 +125,9 @@ pub async fn process_account_deletion(state: &AppState, worker_id: &str) -> ApiR
     let result = match job.status.as_str() {
         "queued" => prepare_account_deletion(pool, &job).await,
         "running" => advance_account_deletion(state, &job).await,
-        "awaiting_backup_expiry" if job.backup_expiry_due_at <= Utc::now() => {
+        "awaiting_backup_expiry"
+            if job.backup_expiry_due_at <= Utc::now() && job.backup_erasure_verified =>
+        {
             finalize_account_deletion(pool, &job).await
         }
         "awaiting_backup_expiry" => clear_account_deletion_lock(pool, &job).await,
@@ -196,14 +187,38 @@ async fn claim_account_deletion(
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
         r#"
-        SELECT id,user_id,requested_by_credential_id,status,backup_expiry_due_at
+        SELECT id,user_id,requested_by_credential_id,status,backup_expiry_due_at,
+               (
+                 backup_erasure_verified_at IS NOT NULL
+                 AND backup_erasure_watermark_at IS NOT NULL
+                 AND backup_erasure_receipt_sha256 IS NOT NULL
+                 AND backup_erasure_source IS NOT NULL
+                 AND terminal_result ? 'canonical_purged_at'
+                 AND (terminal_result->>'canonical_purged_at')::timestamptz
+                       < backup_erasure_watermark_at
+               ) AS backup_erasure_verified
         FROM straylight.account_deletion_requests
-        WHERE status IN ('queued','running','awaiting_backup_expiry')
+        WHERE (
+            status IN ('queued','running')
+            OR (
+              status='awaiting_backup_expiry'
+              AND backup_expiry_due_at <= clock_timestamp()
+              AND backup_erasure_verified_at IS NOT NULL
+              AND backup_erasure_watermark_at IS NOT NULL
+              AND backup_erasure_receipt_sha256 IS NOT NULL
+              AND backup_erasure_source IS NOT NULL
+              AND terminal_result ? 'canonical_purged_at'
+              AND (terminal_result->>'canonical_purged_at')::timestamptz
+                    < backup_erasure_watermark_at
+            )
+          )
           AND (
             locked_at IS NULL
             OR locked_at < clock_timestamp()-make_interval(secs => $1)
           )
-        ORDER BY created_at,id
+        ORDER BY
+          CASE status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END,
+          created_at,id
         FOR UPDATE SKIP LOCKED
         LIMIT 1
         "#,
@@ -221,6 +236,7 @@ async fn claim_account_deletion(
         requested_by_credential_id: row.try_get("requested_by_credential_id")?,
         status: row.try_get("status")?,
         backup_expiry_due_at: row.try_get("backup_expiry_due_at")?,
+        backup_erasure_verified: row.try_get("backup_erasure_verified")?,
     };
     sqlx::query(
         r#"
@@ -478,16 +494,50 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
         return Ok(());
     }
 
-    let purge = state
-        .object_store
-        .purge_prefix(&format!("{}/", job.user_id))
-        .await?;
     let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
+        .bind(job.user_id)
+        .execute(&mut *tx)
+        .await?;
+    let fenced = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+          SELECT 1
+          FROM straylight.account_deletion_fences AS fence
+          JOIN straylight.users AS user_row ON user_row.id=fence.user_id
+          WHERE fence.user_id=$1 AND fence.request_id=$2
+            AND user_row.account_status='deleting'
+        )
+        "#,
+    )
+    .bind(job.user_id)
+    .bind(job.id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !fenced {
+        return Err(ApiError::Internal(
+            "account deletion cannot purge storage without its durable fence".to_owned(),
+        ));
+    }
+    let abandoned_uploads =
+        upload_service::abort_active_for_user(state, &mut tx, job.user_id).await?;
+    let prefix = format!("{}/", job.user_id);
+    let first_multipart_abort = upload_service::abort_multipart_prefix(state, &prefix).await?;
+    let first_purge = state.object_store.purge_prefix(&prefix).await?;
+    let second_multipart_abort = upload_service::abort_multipart_prefix(state, &prefix).await?;
+    let second_purge = state.object_store.purge_prefix(&prefix).await?;
+    let object_versions_deleted = first_purge
+        .versions_deleted
+        .saturating_add(second_purge.versions_deleted);
+    let delete_markers_deleted = first_purge
+        .delete_markers_deleted
+        .saturating_add(second_purge.delete_markers_deleted);
+    let multipart_uploads_aborted = first_multipart_abort.saturating_add(second_multipart_abort);
     redact_account_for_retention(&mut tx, job).await?;
     sqlx::query(
         r#"
         UPDATE straylight.account_exports
-        SET status='deleted',object_key=NULL,
+        SET status='deleted',object_key=NULL,object_version_id=NULL,
             completed_at=coalesce(completed_at,clock_timestamp())
         WHERE user_id=$1
         "#,
@@ -504,6 +554,10 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
               'canonical_redaction','complete',
               'object_versions_deleted',$3,
               'delete_markers_deleted',$4,
+              'multipart_uploads_aborted',$7,
+              'asset_upload_sessions_aborted',$8,
+              'storage_reconciliation_passes',2,
+              'canonical_purged_at',clock_timestamp(),
               'backup_expiry_due_at',backup_expiry_due_at,
               'backup_status','retained_until_deadline'
             ),
@@ -513,10 +567,12 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
     )
     .bind(total)
     .bind(completed)
-    .bind(i64::try_from(purge.versions_deleted).unwrap_or(i64::MAX))
-    .bind(i64::try_from(purge.delete_markers_deleted).unwrap_or(i64::MAX))
+    .bind(i64::try_from(object_versions_deleted).unwrap_or(i64::MAX))
+    .bind(i64::try_from(delete_markers_deleted).unwrap_or(i64::MAX))
     .bind(job.user_id)
     .bind(job.id)
+    .bind(i64::try_from(multipart_uploads_aborted).unwrap_or(i64::MAX))
+    .bind(i64::try_from(abandoned_uploads).unwrap_or(i64::MAX))
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -620,7 +676,8 @@ async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> A
     sqlx::query(
         r#"
         UPDATE straylight.account_exports
-        SET status='deleted',object_key=NULL,failure_code=NULL
+        SET status='deleted',object_key=NULL,object_version_id=NULL,
+            failure_code=NULL
         WHERE user_id=$1
         "#,
     )
@@ -650,23 +707,36 @@ async fn finalize_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> A
     .bind(job.user_id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query(
+    let completion = sqlx::query(
         r#"
         UPDATE straylight.account_deletion_requests
         SET status='completed',completed_at=clock_timestamp(),
             failure_code=NULL,locked_at=NULL,locked_by=NULL,
             terminal_result=coalesce(terminal_result,'{}'::jsonb) || jsonb_build_object(
-              'backup_status','retention_expired',
+              'backup_status','prune_verified',
               'identity_redaction','complete',
               'completed_at',clock_timestamp()
             )
         WHERE user_id=$1 AND id=$2 AND status='awaiting_backup_expiry'
+          AND backup_expiry_due_at <= clock_timestamp()
+          AND backup_erasure_verified_at IS NOT NULL
+          AND backup_erasure_watermark_at IS NOT NULL
+          AND backup_erasure_receipt_sha256 IS NOT NULL
+          AND backup_erasure_source IS NOT NULL
+          AND terminal_result ? 'canonical_purged_at'
+          AND (terminal_result->>'canonical_purged_at')::timestamptz
+                < backup_erasure_watermark_at
         "#,
     )
     .bind(job.user_id)
     .bind(job.id)
     .execute(&mut *tx)
     .await?;
+    if completion.rows_affected() != 1 {
+        return Err(ApiError::Internal(
+            "account deletion cannot complete without verified backup erasure".to_owned(),
+        ));
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -871,29 +941,88 @@ async fn build_export_inner(
 
     let object_rows = sqlx::query(
         r#"
-        SELECT object_key,content_hash,max(size_bytes)::bigint AS size_bytes
-        FROM straylight.asset_versions
-        WHERE user_id=$1 AND size_bytes > 0
-        GROUP BY object_key,content_hash
-        ORDER BY object_key
+        WITH object_references AS (
+          SELECT bucket::text AS bucket,
+                 object_key,
+                 object_version_id,
+                 content_hash::text AS content_hash,
+                 size_bytes,
+                 'asset_version'::text AS reference_kind,
+                 asset_id::text || ':' || version::text AS reference_ref
+	          FROM straylight.asset_versions
+	          WHERE user_id=$1
+	            AND NOT (
+	              object_key::text = user_id::text || '/deleted-assets/'
+	                || asset_id::text || '/' || version::text
+	              AND content_hash::text =
+	                'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+	              AND size_bytes=0
+	              AND media_type::text='application/x-straylight-deleted'
+	              AND metadata ? 'redacted_by_deletion_job'
+	            )
+	          UNION ALL
+          SELECT $2::text AS bucket,
+                 canonical_object_key AS object_key,
+                 canonical_object_version_id AS object_version_id,
+                 expected_content_hash::text AS content_hash,
+                 expected_size_bytes AS size_bytes,
+                 'completed_upload'::text AS reference_kind,
+                 id::text AS reference_ref
+          FROM straylight.asset_uploads
+          WHERE user_id=$1
+            AND status IN ('completed','consumed')
+            AND canonical_object_key IS NOT NULL
+            AND canonical_object_version_id IS NOT NULL
+        )
+        SELECT bucket,object_key,object_version_id,
+               min(content_hash) AS content_hash,
+               min(size_bytes) AS size_bytes,
+               count(DISTINCT content_hash)::bigint AS content_hash_count,
+               count(DISTINCT size_bytes)::bigint AS size_count,
+               jsonb_agg(
+                 jsonb_build_object(
+                   'kind',reference_kind,
+                   'ref',reference_ref
+                 )
+                 ORDER BY reference_kind,reference_ref
+               ) AS object_references
+        FROM object_references
+        GROUP BY bucket,object_key,object_version_id
+        ORDER BY bucket,object_key,object_version_id NULLS FIRST
         "#,
     )
     .bind(job.user_id)
+    .bind(&state.config.s3_bucket)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
 
     let mut objects = Vec::with_capacity(object_rows.len());
     for (index, row) in object_rows.iter().enumerate() {
+        let bucket: String = row.try_get("bucket")?;
         let object_key: String = row.try_get("object_key")?;
         let content_hash: String = row.try_get("content_hash")?;
         let expected_size: i64 = row.try_get("size_bytes")?;
+        let object_version_id: Option<String> = row.try_get("object_version_id")?;
+        let content_hash_count: i64 = row.try_get("content_hash_count")?;
+        let size_count: i64 = row.try_get("size_count")?;
+        let object_references: Value = row.try_get("object_references")?;
+        if bucket != state.config.s3_bucket {
+            return Err(ApiError::Internal(format!(
+                "export object {index} references a bucket outside the active object store"
+            )));
+        }
+        if content_hash_count != 1 || size_count != 1 {
+            return Err(ApiError::Internal(format!(
+                "export object {index} has inconsistent integrity metadata"
+            )));
+        }
         let path = root
             .join("objects")
             .join(format!("{index:08}-{content_hash}"));
         let stored = state
             .object_store
-            .download_to_path(&object_key, &path)
+            .download_version_to_path(&object_key, object_version_id.as_deref(), &path)
             .await?;
         if stored.sha256.strip_prefix("sha256:") != Some(content_hash.as_str())
             || stored.size_bytes != u64::try_from(expected_size).unwrap_or(u64::MAX)
@@ -904,9 +1033,12 @@ async fn build_export_inner(
         }
         objects.push(json!({
             "path": format!("objects/{index:08}-{content_hash}"),
+            "bucket": bucket,
             "object_key": object_key,
+            "object_version_id": object_version_id,
             "content_hash": format!("sha256:{content_hash}"),
-            "size_bytes": stored.size_bytes
+            "size_bytes": stored.size_bytes,
+            "references": object_references
         }));
     }
 
@@ -922,22 +1054,302 @@ async fn build_export_inner(
     });
     write_json(root.join("manifest.json"), &manifest).await?;
     create_archive(root.to_owned(), archive_path.to_owned()).await?;
-    let object_key = format!("{}/exports/{}.tar.gz", job.user_id, job.id);
-    let stored = state
-        .object_store
-        .put_file(&object_key, "application/gzip", archive_path)
+    publish_account_export(
+        state,
+        pool,
+        job,
+        archive_path,
+        tables.len(),
+        object_rows.len(),
+    )
+    .await
+}
+
+async fn publish_account_export(
+    state: &AppState,
+    pool: &PgPool,
+    job: &ExportJob,
+    archive_path: &Path,
+    table_count: usize,
+    object_count: usize,
+) -> ApiResult<ExportResult> {
+    let (content_hash, size_bytes) = hash_file(archive_path).await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT straylight.assert_storage_write_allowed($1)")
+        .bind(job.user_id)
+        .execute(&mut *tx)
         .await?;
-    Ok(ExportResult {
-        object_key: stored.object_key,
-        content_hash: stored
-            .sha256
-            .strip_prefix("sha256:")
-            .unwrap_or(&stored.sha256)
-            .to_owned(),
-        size_bytes: stored.size_bytes,
-        table_count: tables.len(),
-        object_count: object_rows.len(),
-    })
+    let expected_key = format!("{}/uploads/{}", job.user_id, job.id);
+    quota::ensure_temporary_export_capacity(&mut tx, job.user_id, size_bytes).await?;
+    let multipart = state
+        .object_store
+        .create_multipart_upload(
+            UserId(job.user_id),
+            job.id,
+            "application/gzip",
+            &content_hash,
+        )
+        .await?;
+    if multipart.object_key != expected_key {
+        let _ = tx.rollback().await;
+        let _ = state
+            .object_store
+            .abort_multipart_upload(&multipart.object_key, &multipart.upload_id)
+            .await;
+        return Err(ApiError::Internal(
+            "object storage created an account export under an unexpected key".to_owned(),
+        ));
+    }
+    let parts = match upload_export_parts(
+        state,
+        archive_path,
+        &multipart.object_key,
+        &multipart.upload_id,
+    )
+    .await
+    {
+        Ok(parts) => parts,
+        Err(error) => {
+            let _ = tx.rollback().await;
+            let _ = state
+                .object_store
+                .abort_multipart_upload(&multipart.object_key, &multipart.upload_id)
+                .await;
+            compensate_export_object(state, job, &multipart.object_key).await;
+            return Err(error);
+        }
+    };
+    let object_version_id = match state
+        .object_store
+        .complete_multipart_upload(&multipart.object_key, &multipart.upload_id, &parts)
+        .await
+    {
+        Ok(Some(version_id)) if !version_id.is_empty() && version_id != "null" => version_id,
+        Ok(_) => {
+            let _ = tx.rollback().await;
+            compensate_export_object(state, job, &multipart.object_key).await;
+            return Err(ApiError::Internal(
+                "object storage completed an account export without an exact version ID".to_owned(),
+            ));
+        }
+        Err(error) => {
+            let _ = tx.rollback().await;
+            let _ = state
+                .object_store
+                .abort_multipart_upload(&multipart.object_key, &multipart.upload_id)
+                .await;
+            compensate_export_object(state, job, &multipart.object_key).await;
+            return Err(error);
+        }
+    };
+    let result = ExportResult {
+        object_key: multipart.object_key,
+        object_version_id: Some(object_version_id),
+        content_hash,
+        size_bytes,
+        table_count,
+        object_count,
+    };
+    let ttl_seconds = i64::try_from(state.config.account_export_ttl.as_secs()).unwrap_or(i64::MAX);
+    let published = sqlx::query(
+        r#"
+        UPDATE straylight.account_exports
+        SET status='ready',object_key=$1,object_version_id=$2,
+            content_hash=$3,size_bytes=$4,
+            table_count=$5,object_count=$6,completed_at=clock_timestamp(),
+            expires_at=clock_timestamp()+make_interval(secs => $7),
+            locked_at=NULL,locked_by=NULL,failure_code=NULL
+        WHERE user_id=$8 AND id=$9 AND status='running'
+        "#,
+    )
+    .bind(&result.object_key)
+    .bind(&result.object_version_id)
+    .bind(&result.content_hash)
+    .bind(i64::try_from(result.size_bytes).unwrap_or(i64::MAX))
+    .bind(i32::try_from(result.table_count).unwrap_or(i32::MAX))
+    .bind(i32::try_from(result.object_count).unwrap_or(i32::MAX))
+    .bind(ttl_seconds)
+    .bind(job.user_id)
+    .bind(job.id)
+    .execute(&mut *tx)
+    .await;
+    let published = match published {
+        Ok(result) => result.rows_affected(),
+        Err(error) => {
+            let _ = tx.rollback().await;
+            compensate_export_object(state, job, &result.object_key).await;
+            return Err(ApiError::Database(error));
+        }
+    };
+    if published != 1 {
+        tx.rollback().await?;
+        compensate_export_object(state, job, &result.object_key).await;
+        return Err(ApiError::conflict(
+            "account_export_publication_lost",
+            "the account export was canceled before object publication committed",
+            json!({"export_ref": format!("export:{}", job.id)}),
+        ));
+    }
+    if let Err(error) = tx.commit().await {
+        compensate_export_object(state, job, &result.object_key).await;
+        return Err(ApiError::Database(error));
+    }
+    Ok(result)
+}
+
+async fn upload_export_parts(
+    state: &AppState,
+    archive_path: &Path,
+    object_key: &str,
+    upload_id: &str,
+) -> ApiResult<Vec<(i32, String)>> {
+    let size_bytes = tokio::fs::metadata(archive_path)
+        .await
+        .map_err(|error| {
+            ApiError::Internal(format!("could not inspect account export size: {error}"))
+        })?
+        .len();
+    let expected_parts = account_export_part_count(size_bytes)?;
+    let mut file = tokio::fs::File::open(archive_path).await.map_err(|error| {
+        ApiError::Internal(format!("could not open account export for upload: {error}"))
+    })?;
+    let mut buffer = vec![0_u8; ACCOUNT_EXPORT_PART_SIZE_BYTES];
+    let mut parts = Vec::with_capacity(usize::try_from(expected_parts).unwrap_or(10_000));
+    loop {
+        let mut filled = 0;
+        while filled < buffer.len() {
+            let read = file.read(&mut buffer[filled..]).await.map_err(|error| {
+                ApiError::Internal(format!("could not read account export for upload: {error}"))
+            })?;
+            if read == 0 {
+                break;
+            }
+            filled += read;
+        }
+        if filled == 0 {
+            break;
+        }
+        let part_number = i32::try_from(parts.len() + 1)
+            .map_err(|_| ApiError::Internal("account export has too many parts".to_owned()))?;
+        if part_number > 10_000 {
+            return Err(ApiError::Internal(
+                "account export exceeds the multipart upload part limit".to_owned(),
+            ));
+        }
+        let uploaded = state
+            .object_store
+            .upload_multipart_part(
+                object_key,
+                upload_id,
+                part_number,
+                Bytes::copy_from_slice(&buffer[..filled]),
+            )
+            .await?;
+        parts.push((part_number, uploaded.etag));
+        if filled < buffer.len() {
+            break;
+        }
+    }
+    if parts.is_empty() {
+        return Err(ApiError::Internal(
+            "account export archive is unexpectedly empty".to_owned(),
+        ));
+    }
+    if u64::try_from(parts.len()).unwrap_or(u64::MAX) != expected_parts {
+        return Err(ApiError::Internal(
+            "account export changed while its multipart upload was streaming".to_owned(),
+        ));
+    }
+    Ok(parts)
+}
+
+fn account_export_part_count(size_bytes: u64) -> ApiResult<u64> {
+    let count = size_bytes.div_ceil(ACCOUNT_EXPORT_PART_SIZE_BYTES as u64);
+    if count == 0 || count > 10_000 {
+        return Err(ApiError::Internal(
+            "account export exceeds the multipart upload part limit".to_owned(),
+        ));
+    }
+    Ok(count)
+}
+
+async fn hash_file(path: &Path) -> ApiResult<(String, u64)> {
+    let mut file = tokio::fs::File::open(path).await.map_err(|error| {
+        ApiError::Internal(format!(
+            "could not open account export for hashing: {error}"
+        ))
+    })?;
+    let mut digest = Sha256::new();
+    let mut size_bytes = 0_u64;
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read = file.read(&mut buffer).await.map_err(|error| {
+            ApiError::Internal(format!("could not hash account export: {error}"))
+        })?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+        size_bytes = size_bytes.saturating_add(read as u64);
+    }
+    Ok((hex::encode(digest.finalize()), size_bytes))
+}
+
+async fn compensate_export_object(state: &AppState, job: &ExportJob, object_key: &str) {
+    let result = async {
+        let pool = state.admin_pool.as_ref().expect("checked at worker start");
+        let mut tx = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
+            .bind(job.user_id)
+            .execute(&mut *tx)
+            .await?;
+        let referenced = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS(
+              SELECT 1
+              FROM straylight.account_exports
+              WHERE user_id=$1 AND object_key=$2
+                AND status='ready'
+              UNION ALL
+              SELECT 1
+              FROM straylight.asset_uploads
+              WHERE user_id=$1
+                AND (
+                  temporary_object_key=$2
+                  OR canonical_object_key=$2
+                )
+            )
+            "#,
+        )
+        .bind(job.user_id)
+        .bind(object_key)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !referenced {
+            state.object_store.purge_all_versions(object_key).await?;
+        }
+        tx.commit().await?;
+        Ok::<bool, ApiError>(referenced)
+    }
+    .await;
+    match result {
+        Ok(true) => tracing::warn!(
+            export_id = %job.id,
+            object_key,
+            "failed export publication was already referenced; retained its object"
+        ),
+        Ok(false) => tracing::warn!(
+            export_id = %job.id,
+            object_key,
+            "purged unreferenced account export after publication failure"
+        ),
+        Err(error) => tracing::error!(
+            ?error,
+            export_id = %job.id,
+            object_key,
+            "could not compensate failed account export publication"
+        ),
+    }
 }
 
 async fn write_json(path: PathBuf, value: &Value) -> ApiResult<()> {
@@ -1007,7 +1419,8 @@ async fn expire_one_export(state: &AppState) -> ApiResult<bool> {
     sqlx::query(
         r#"
         UPDATE straylight.account_exports
-        SET status='expired',object_key=NULL,completed_at=coalesce(completed_at,clock_timestamp())
+        SET status='expired',object_key=NULL,object_version_id=NULL,
+            completed_at=coalesce(completed_at,clock_timestamp())
         WHERE user_id=$1 AND id=$2 AND status='ready'
         "#,
     )
@@ -1056,5 +1469,18 @@ mod tests {
     fn export_failure_codes_do_not_expose_error_details() {
         let error = ApiError::Internal("secret path".to_owned());
         assert_eq!(export_failure_code(&error), "export_error");
+    }
+
+    #[test]
+    fn five_gib_account_export_uses_bounded_multipart_upload() {
+        let five_gib = 5_u64 * 1024 * 1024 * 1024;
+        assert_eq!(account_export_part_count(five_gib).unwrap(), 320);
+        assert_eq!(
+            account_export_part_count(ACCOUNT_EXPORT_PART_SIZE_BYTES as u64).unwrap(),
+            1
+        );
+        assert!(
+            account_export_part_count(ACCOUNT_EXPORT_PART_SIZE_BYTES as u64 * 10_000 + 1).is_err()
+        );
     }
 }

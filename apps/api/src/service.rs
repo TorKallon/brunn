@@ -1,13 +1,14 @@
 use axum::{
     Extension, Json,
     extract::{Multipart, Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
+use bytes::Bytes;
 use serde_json::{Value, json};
 
 use crate::{
-    account_service, admin_service,
+    account_service, admin_service, asset_service,
     auth::AuthContext,
     capture_service,
     continuation::ContinuationCodec,
@@ -19,7 +20,7 @@ use crate::{
         OpenRequest, QueryRequest, ReadRequest, ResponseStatus, SaveRequest, VerifyRequest,
     },
     quota::{self, UsageReservation},
-    read_service, session_service, telemetry, usage_service,
+    read_service, session_service, telemetry, upload_service, usage_service, vault_service,
     write_service::{self, StageUpload},
 };
 
@@ -97,6 +98,27 @@ pub async fn openapi() -> Json<Value> {
             "/v1/memory/save": {"post": {"operationId": "memorySave"}},
             "/v1/memory/stage": {"post": {"operationId": "memoryStage"}},
             "/v1/memory/checkpoint": {"post": {"operationId": "memoryCheckpoint"}},
+            "/v1/assets": {"get": {"operationId": "listAssets"}},
+            "/v1/assets/{asset_ref}": {"get": {"operationId": "getAsset"}},
+            "/v1/assets/{asset_ref}/versions/{version}/content": {
+                "get": {"operationId": "downloadAssetVersion"}
+            },
+            "/v1/asset-uploads": {"post": {"operationId": "createAssetUpload"}},
+            "/v1/asset-uploads/{upload_ref}": {
+                "get": {"operationId": "getAssetUpload"},
+                "delete": {"operationId": "abortAssetUpload"}
+            },
+            "/v1/asset-uploads/{upload_ref}/parts/{part_number}": {
+                "put": {"operationId": "putAssetUploadPart"}
+            },
+            "/v1/asset-uploads/{upload_ref}/complete": {
+                "post": {"operationId": "completeAssetUpload"}
+            },
+            "/v1/vault/manifest": {"get": {"operationId": "getVaultManifest"}},
+            "/v1/vault/assets/{asset_ref}/versions/{version}/content": {
+                "get": {"operationId": "downloadVaultAssetVersion"}
+            },
+            "/v1/stages/{stage_ref}": {"get": {"operationId": "getStage"}},
             "/v1/usage": {"get": {"operationId": "getDataUsage"}},
             "/v1/deletions/{deletion_ref}": {"get": {"operationId": "getDeletion"}}
         },
@@ -474,6 +496,9 @@ pub async fn stage(
     auth.require(Capability::Stage)?;
     let mut scope = None;
     let mut stable_import_id = None;
+    let mut describe_binaries = false;
+    let mut pending_path = None;
+    let mut pending_metadata = None;
     let mut uploads = Vec::new();
     while let Some(field) = multipart
         .next_field()
@@ -495,8 +520,50 @@ pub async fn stage(
                     .await
                     .map_err(|error| ApiError::invalid(format!("invalid import ID: {error}")))?,
             );
+        } else if name == "describe_binaries" {
+            let value = field.text().await.map_err(|error| {
+                ApiError::invalid(format!("invalid describe_binaries value: {error}"))
+            })?;
+            describe_binaries = match value.trim().to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" => true,
+                "false" | "0" | "no" | "" => false,
+                _ => {
+                    return Err(ApiError::invalid("describe_binaries must be true or false"));
+                }
+            };
+        } else if name == "path" {
+            if pending_path.is_some() {
+                return Err(ApiError::invalid(
+                    "each staged path must be followed by exactly one file",
+                ));
+            }
+            pending_path = Some(
+                field
+                    .text()
+                    .await
+                    .map_err(|error| ApiError::invalid(format!("invalid stage path: {error}")))?,
+            );
+            pending_metadata = None;
+        } else if name == "metadata" {
+            if pending_path.is_none() || pending_metadata.is_some() {
+                return Err(ApiError::invalid(
+                    "each staged metadata value must follow one path and precede its file",
+                ));
+            }
+            let value = field
+                .text()
+                .await
+                .map_err(|error| ApiError::invalid(format!("invalid staged metadata: {error}")))?;
+            let metadata: Value = serde_json::from_str(&value)
+                .map_err(|_| ApiError::invalid("staged metadata must be valid JSON"))?;
+            if !metadata.is_object() {
+                return Err(ApiError::invalid("staged metadata must be a JSON object"));
+            }
+            pending_metadata = Some(metadata);
         } else if name == "file" || field.file_name().is_some() {
-            let path = field.file_name().unwrap_or("upload.bin").to_owned();
+            let path = pending_path
+                .take()
+                .unwrap_or_else(|| field.file_name().unwrap_or("upload.bin").to_owned());
             let media_type = field.content_type().map(ToOwned::to_owned);
             let bytes = field.bytes().await.map_err(|error| {
                 ApiError::invalid(format!("could not read staged file: {error}"))
@@ -504,36 +571,109 @@ pub async fn stage(
             uploads.push(StageUpload {
                 path,
                 media_type,
-                bytes,
+                import_metadata: pending_metadata.take().unwrap_or_else(|| json!({})),
+                content: write_service::StageUploadContent::Bytes(bytes),
             });
         }
+    }
+    if pending_path.is_some() {
+        return Err(ApiError::invalid(
+            "a staged path was supplied without a following file",
+        ));
     }
     let scope = scope
         .or_else(|| auth.scope_refs.first().cloned())
         .ok_or_else(|| ApiError::invalid("stage requires scope"))?;
     let upload_count = uploads.len();
-    let upload_bytes = uploads.iter().map(|upload| upload.bytes.len()).sum();
-    let result =
-        write_service::stage_uploads(&state, &auth, &scope, stable_import_id, uploads).await?;
+    let upload_bytes = uploads
+        .iter()
+        .map(|upload| match &upload.content {
+            write_service::StageUploadContent::Bytes(bytes) => bytes.len(),
+            write_service::StageUploadContent::Stored { size_bytes, .. } => {
+                usize::try_from(*size_bytes).unwrap_or(usize::MAX)
+            }
+        })
+        .sum();
+    let result = write_service::stage_uploads(
+        &state,
+        &auth,
+        &scope,
+        stable_import_id,
+        describe_binaries,
+        uploads,
+    )
+    .await?;
     telemetry::record_stage(upload_count, upload_bytes, &result);
     let stage_ref = result
         .get("stage_ref")
         .and_then(Value::as_str)
         .ok_or_else(|| ApiError::Internal("stage response lacks stage_ref".to_owned()))?
         .to_owned();
-    let data = session_service::project_response(
-        &state,
-        &auth,
-        &stage_ref,
-        "memory.stage",
-        "read",
-        result,
-    )
-    .await?;
+    let processing = result.get("status").and_then(Value::as_str) == Some("inspecting");
+    let data = if processing {
+        result
+    } else {
+        session_service::project_response(&state, &auth, &stage_ref, "memory.stage", "read", result)
+            .await?
+    };
     let mut envelope = ApiEnvelope::complete(data);
-    envelope.status = ResponseStatus::Complete;
+    envelope.status = if processing {
+        ResponseStatus::AcceptedProcessing
+    } else {
+        ResponseStatus::Complete
+    };
     telemetry::record_operation("stage", envelope.status, &envelope);
     Ok(Json(envelope))
+}
+
+pub async fn create_asset_upload(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(request): Json<upload_service::CreateUploadRequest>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(upload_service::create(&state, &auth, request).await?))
+}
+
+pub async fn get_asset_upload(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(upload_ref): Path<String>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        upload_service::status(&state, &auth, &upload_ref).await?,
+    ))
+}
+
+pub async fn put_asset_upload_part(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((upload_ref, part_number)): Path<(String, i32)>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        upload_service::put_part(&state, &auth, &upload_ref, part_number, &headers, bytes).await?,
+    ))
+}
+
+pub async fn complete_asset_upload(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(upload_ref): Path<String>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        upload_service::complete(&state, &auth, &upload_ref).await?,
+    ))
+}
+
+pub async fn abort_asset_upload(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(upload_ref): Path<String>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        upload_service::abort(&state, &auth, &upload_ref).await?,
+    ))
 }
 
 pub async fn list_sessions(
@@ -563,6 +703,63 @@ pub async fn list_sources(
 ) -> ApiResult<Json<Value>> {
     Ok(Json(
         control_service::list_sources(&state, &auth, &query).await?,
+    ))
+}
+
+pub async fn list_assets(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Query(query): Query<asset_service::AssetListQuery>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(asset_service::list(&state, &auth, &query).await?))
+}
+
+pub async fn get_asset(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(asset_ref): Path<String>,
+    Query(query): Query<asset_service::AssetQuery>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        asset_service::metadata(&state, &auth, &asset_ref, &query).await?,
+    ))
+}
+
+pub async fn get_asset_content(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((asset_ref, version)): Path<(String, i32)>,
+    Query(query): Query<asset_service::AssetQuery>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    asset_service::content(&state, &auth, &asset_ref, version, &query, &headers).await
+}
+
+pub async fn get_vault_manifest(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Query(query): Query<vault_service::VaultManifestQuery>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(vault_service::manifest(&state, &auth, &query).await?))
+}
+
+pub async fn get_vault_asset_content(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((asset_ref, version)): Path<(String, i32)>,
+    Query(query): Query<vault_service::VaultContentQuery>,
+    headers: HeaderMap,
+) -> ApiResult<Response> {
+    vault_service::content(&state, &auth, &asset_ref, version, &query, &headers).await
+}
+
+pub async fn get_stage(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(stage_ref): Path<String>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        write_service::stage_status(&state, &auth, &stage_ref).await?,
     ))
 }
 
@@ -679,7 +876,25 @@ pub async fn get_source_content(
     Path(source_ref): Path<String>,
 ) -> ApiResult<Response> {
     let (media_type, content) = control_service::source_content(&state, &auth, &source_ref).await?;
-    Ok(([(axum::http::header::CONTENT_TYPE, media_type)], content).into_response())
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, media_type),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                "attachment".to_owned(),
+            ),
+            (
+                axum::http::header::CACHE_CONTROL,
+                "private, no-store".to_owned(),
+            ),
+            (
+                axum::http::header::X_CONTENT_TYPE_OPTIONS,
+                "nosniff".to_owned(),
+            ),
+        ],
+        content,
+    )
+        .into_response())
 }
 
 pub async fn create_credential(

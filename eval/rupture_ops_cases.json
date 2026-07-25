@@ -215,7 +215,10 @@
           ],
           "sources_any": [
             "Topics/StarRupture/Player save - sites and freight network.md",
-            "Topics/StarRupture/Player save - exploration and combat.md"
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
           ]
         },
         {
@@ -283,7 +286,10 @@
           ],
           "sources_any": [
             "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
-            "Topics/StarRupture/Player save - exploration and combat.md"
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Game mechanics - Update 1.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
           ]
         },
         {
@@ -341,20 +347,24 @@
           ],
           "sources_any": [
             "Topics/StarRupture/Player save - exploration and combat.md",
-            "Topics/StarRupture/Game mechanics - Update 1.md"
+            "Topics/StarRupture/Game mechanics - Update 1.md",
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
           ]
         },
         {
           "id": "c3",
           "checks": [
-            {"any": ["direct field observation", "direct observation", "player observation"]},
+            {"any": ["direct field observation", "direct observation", "directly observed", "player observation", "direct_player_report"]},
             {"any": ["one encounter", "that encounter", "this encounter"]},
             {"any": ["not universal", "unverified", "does not establish"]},
             {"any": ["corruption threshold", "complete formula"]}
           ],
           "sources_any": [
             "Topics/StarRupture/Game mechanics - Update 1.md",
-            "Topics/StarRupture/Player save - exploration and combat.md"
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json"
           ]
         },
         {
@@ -553,7 +563,11 @@
           ],
           "sources_any": [
             "Topics/StarRupture/Player save - play history.md",
-            "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt"
           ]
         },
         {
@@ -578,7 +592,10 @@
             {"any": ["Glowcap", "medicine", "2 Blocks/hour", "two Blocks"]}
           ],
           "sources_any": [
-            "Topics/StarRupture/Food strategy - permanent low-chore system.md"
+            "Topics/StarRupture/Food strategy - permanent low-chore system.md",
+            "Topics/StarRupture/Player save - play history.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt"
           ]
         }
       ],
@@ -773,7 +790,10 @@
           ],
           "sources_any": [
             "Projects/RuptureOps/Rupture cycle timer - research and product design.md",
-            "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md"
+            "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md",
+            "Projects/RuptureOps/Repository/ios/Tools/generate_audio.swift",
+            "Projects/RuptureOps/Repository/README.md",
+            "CORPUS.md"
           ]
         },
         {

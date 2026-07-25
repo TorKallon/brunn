@@ -37,6 +37,7 @@ test("open removes corpus samples and ranking mechanics while preserving evidenc
         reference: "chunk:1",
         path: "Source.md",
         content: "Exact evidence.",
+        evidence_refs: ["evidence:1"],
         content_hash: "sha256:noise",
         lane_scores: { lexical: 10 },
         score: 0.4,
@@ -52,6 +53,7 @@ test("open removes corpus samples and ranking mechanics while preserving evidenc
   assert.equal(evidence.content_hash, undefined);
   assert.equal(evidence.score, undefined);
   assert.equal(evidence.content, "Exact evidence.");
+  assert.deepEqual(evidence.evidence_refs, ["evidence:1"]);
   assert.deepEqual(compact.coverage, {
     absence_safe: false,
     searched: [{ lane: "lexical", completeness: "best_effort", candidate_count: 12 }],
@@ -64,6 +66,7 @@ test("query keeps one candidate list instead of the flattened duplicate", () => 
     source_ref: "Source.md",
     path: "Source.md",
     content: "Evidence.",
+    evidence_refs: ["evidence:1"],
     content_hash: "sha256:noise",
     source_version: "sha256:source-version",
     why_selected: ["semantic_recall"],
@@ -81,6 +84,7 @@ test("query keeps one candidate list instead of the flattened duplicate", () => 
   const item = (data.items as Array<Record<string, unknown>>)[0];
   const compactCandidate = (item?.results as Array<Record<string, unknown>>)[0];
   assert.equal(compactCandidate?.reference, "chunk:1");
+  assert.deepEqual(compactCandidate?.evidence_refs, ["evidence:1"]);
   assert.equal(compactCandidate?.source_ref, undefined);
   assert.equal(compactCandidate?.source_version, undefined);
   assert.equal(compactCandidate?.why_selected, undefined);
@@ -98,11 +102,15 @@ test("open returns complete source text with pointer-only tail leads", () => {
         ranges: [{ start_line: 1, end_line: 2 }],
         selected_references: [`chunk:${index}`],
       })),
+      initial_evidence: Array.from({ length: 13 }, (_, index) => ({
+        source_ref: `Source-${index}.md`,
+        path: `Source-${index}.md`,
+        evidence_refs: [`evidence:${index}`],
+      })),
       retrieval_sufficiency: {
         status: "likely_sufficient",
         complete_source_count: 4,
       },
-      initial_evidence: [],
     },
   });
   const data = compact.data as Record<string, unknown>;
@@ -112,12 +120,14 @@ test("open returns complete source text with pointer-only tail leads", () => {
   assert.equal(evidence[0]?.content_scope, "complete_source");
   assert.equal(evidence[0]?.content, "Evidence 0");
   assert.equal(evidence[0]?.path, "Source-0.md");
+  assert.deepEqual(evidence[0]?.evidence_refs, ["evidence:0"]);
   assert.equal(evidence[0]?.source_ref, undefined);
   assert.equal(evidence[0]?.reference, undefined);
   assert.equal(evidence[0]?.ranges, undefined);
   assert.equal(evidence[0]?.complete, undefined);
   assert.equal(leads.length, 1);
   assert.equal(leads[0]?.content_scope, "source_lead");
+  assert.deepEqual(leads[0]?.evidence_refs, ["evidence:12"]);
   assert.equal(leads[0]?.content, undefined);
 });
 
@@ -175,7 +185,10 @@ test("read keeps exact source text and continuation without audit-only duplicati
     },
   });
   const item = ((compact.data as Record<string, unknown>).items as Array<Record<string, unknown>>)[0];
+  const source = item?.source as Record<string, unknown>;
   assert.equal(item?.text, "Exact text.");
+  assert.equal(source.reference, "document:1");
+  assert.equal(source.path, "Source.md");
   assert.deepEqual(item?.lines, [1, 2]);
   assert.deepEqual(item?.truncation, {
     truncated: true,

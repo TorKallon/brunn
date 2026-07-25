@@ -420,24 +420,86 @@ def parse_event_metrics(path: Path) -> dict:
 
 
 def source_matches(cited: str, expected: Sequence[str]) -> bool:
-    normalized = cited.strip().lstrip("./")
-    if normalized.startswith("corpus/"):
-        normalized = normalized[len("corpus/"):]
-    return any(normalized == item or normalized.endswith(item) for item in expected)
+    normalized = normalize_citation_path(cited)
+    return normalized in expected
 
 
 def normalize_citation_path(cited: str) -> str:
-    normalized = cited.strip().lstrip("./")
-    return normalized[len("corpus/"):] if normalized.startswith("corpus/") else normalized
+    normalized = cited.strip()
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized.startswith("corpus/"):
+        normalized = normalized[len("corpus/"):]
+    if (
+        not normalized
+        or normalized.startswith("/")
+        or any(part in {"", ".", ".."} for part in normalized.split("/"))
+    ):
+        return ""
+    return normalized
+
+
+def recompute_grade(grade: dict) -> None:
+    claims = grade.get("claims", [])
+    claim_score = (
+        statistics.fmean(float(item.get("score") or 0) for item in claims)
+        if claims
+        else 0.0
+    )
+    full_claims = sum(1 for item in claims if item.get("pass"))
+    checkpoint_score = float(grade.get("checkpoint_score") or 0)
+    citation_validity = float(grade.get("citation_validity") or 0)
+    score = 0.85 * claim_score + 0.1 * checkpoint_score + 0.05 * citation_validity
+    grade["score"] = round(score, 4)
+    grade["claims_passed"] = full_claims
+    grade["claims_total"] = len(claims)
+    grade["claim_score"] = round(claim_score, 4)
+    grade["pass"] = bool(
+        score >= 0.8
+        and full_claims == len(claims)
+        and grade.get("claim_set_valid") is True
+        and not grade.get("forbidden_hits")
+    )
 
 
 def grade_answer(case: dict, answer: dict, corpus_paths: set[str]) -> dict:
-    claims_by_id = {claim.get("id"): claim for claim in answer.get("claims", [])}
+    answer_claims = answer.get("claims", [])
+    if not isinstance(answer_claims, list):
+        answer_claims = []
+    actual_claim_ids = [
+        str(claim.get("id"))
+        for claim in answer_claims
+        if isinstance(claim, dict) and isinstance(claim.get("id"), str)
+    ]
+    expected_claim_ids = [str(rubric["id"]) for rubric in case["rubric"]]
+    duplicate_claim_ids = sorted({
+        claim_id
+        for claim_id in actual_claim_ids
+        if actual_claim_ids.count(claim_id) > 1
+    })
+    missing_claim_ids = sorted(set(expected_claim_ids) - set(actual_claim_ids))
+    extra_claim_ids = sorted(set(actual_claim_ids) - set(expected_claim_ids))
+    malformed_claim_count = sum(
+        not isinstance(claim, dict) or not isinstance(claim.get("id"), str)
+        for claim in answer_claims
+    )
+    claim_set_valid = bool(
+        not duplicate_claim_ids
+        and not missing_claim_ids
+        and not extra_claim_ids
+        and malformed_claim_count == 0
+        and len(actual_claim_ids) == len(expected_claim_ids)
+    )
+    claims_by_id = {
+        claim["id"]: claim
+        for claim in answer_claims
+        if isinstance(claim, dict) and isinstance(claim.get("id"), str)
+    }
     claim_results = []
     all_citations: list[str] = []
     for rubric in case["rubric"]:
         claim = claims_by_id.get(rubric["id"], {})
-        value = f"{claim.get('value', '')} {answer.get('answer', '')}"
+        value = str(claim.get("value", ""))
         grading_mode = case.get("grading_mode", "exact_substring_v1")
         checks = []
         for check in rubric["checks"]:
@@ -452,17 +514,28 @@ def grade_answer(case: dict, answer: dict, corpus_paths: set[str]) -> dict:
             checks.append({"alternatives": check["any"], "matched": matched})
         citations = claim.get("source_paths", []) if isinstance(claim.get("source_paths", []), list) else []
         all_citations.extend(citations)
-        source_hit = any(source_matches(citation, rubric["sources_any"]) for citation in citations)
+        expected_all = rubric.get("sources_all")
+        if isinstance(expected_all, list):
+            source_hit = bool(expected_all) and all(
+                any(source_matches(citation, [expected]) for citation in citations)
+                for expected in expected_all
+            )
+        else:
+            source_hit = any(
+                source_matches(citation, rubric["sources_any"])
+                for citation in citations
+            )
         content_fraction = sum(1 for check in checks if check["matched"]) / max(1, len(checks))
         score = 0.8 * content_fraction + 0.2 * int(source_hit)
         claim_results.append({
             "id": rubric["id"],
             "score": round(score, 4),
-        "pass": content_fraction >= (2 / 3 - 1e-9) and source_hit,
+            "pass": content_fraction == 1.0 and source_hit,
             "content_fraction": round(content_fraction, 4),
             "source_hit": source_hit,
             "checks": checks,
             "citations": citations,
+            "native_paths": list(rubric.get("native_paths", [])),
         })
 
     checkpoint = answer.get("checkpoint", {})
@@ -482,27 +555,28 @@ def grade_answer(case: dict, answer: dict, corpus_paths: set[str]) -> dict:
         if normalize_citation_path(citation) in corpus_paths
     ]
     citation_validity = len(valid_citations) / max(1, len(all_citations))
-    claim_score = statistics.fmean(item["score"] for item in claim_results) if claim_results else 0.0
-    full_claims = sum(1 for item in claim_results if item["pass"])
-    score = 0.85 * claim_score + 0.1 * checkpoint_score + 0.05 * citation_validity
-    passed = (
-        score >= 0.8
-        and full_claims == len(claim_results)
-        and not forbidden_hits
-    )
-    return {
-        "score": round(score, 4),
-        "pass": passed,
-        "claims_passed": full_claims,
+    result = {
+        "score": 0.0,
+        "pass": False,
+        "claims_passed": 0,
         "claims_total": len(claim_results),
-        "claim_score": round(claim_score, 4),
+        "claim_score": 0.0,
         "checkpoint_score": round(checkpoint_score, 4),
         "checkpoint_fields": checkpoint_fields,
         "citation_validity": round(citation_validity, 4),
         "citation_count": len(all_citations),
         "forbidden_hits": forbidden_hits,
         "claims": claim_results,
+        "claim_set_valid": claim_set_valid,
+        "expected_claim_ids": expected_claim_ids,
+        "actual_claim_ids": actual_claim_ids,
+        "duplicate_claim_ids": duplicate_claim_ids,
+        "missing_claim_ids": missing_claim_ids,
+        "extra_claim_ids": extra_claim_ids,
+        "malformed_claim_count": malformed_claim_count,
     }
+    recompute_grade(result)
+    return result
 
 
 def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
@@ -513,6 +587,8 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     record["service_metadata_chars"] = 0
     record["service_replay_weighted_chars"] = 0
     record["service_latency_ms"] = 0.0
+    record["service_http_calls"] = 0
+    record["service_binary_bytes"] = 0
     record["service_checkpoint"] = None
     record["service_session_id"] = None
     record["service_corpus_revision"] = None
@@ -544,6 +620,12 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     operations = native.get("operations", [])
     record["service_operations"] = operations
     record["service_calls"] = len(operations)
+    record["service_http_calls"] = sum(
+        int(operation.get("http_calls", 1)) for operation in operations
+    )
+    record["service_binary_bytes"] = sum(
+        int(operation.get("binary_bytes", 0)) for operation in operations
+    )
     record["service_result_chars"] = sum(operation.get("result_chars", 0) for operation in operations)
     record["service_source_text_chars"] = sum(
         operation.get("source_text_chars", 0) for operation in operations

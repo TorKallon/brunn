@@ -1,10 +1,11 @@
-use std::{str::FromStr, time::Instant};
+use std::{str::FromStr, sync::Arc, time::Instant};
 
 use sha2::Digest;
 use sqlx::{
     PgPool, Postgres, Row, Transaction,
     postgres::{PgConnectOptions, PgPoolOptions},
 };
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::{
@@ -25,6 +26,7 @@ pub struct AppState {
     pub admin_pool: Option<PgPool>,
     pub embedder: SharedEmbedder,
     pub object_store: ObjectStore,
+    pub transfer_limiter: Arc<Semaphore>,
     pub preauth_rate_limiter: PreauthRateLimiter,
     pub request_rate_limiter: RequestRateLimiter,
 }
@@ -55,10 +57,11 @@ impl AppState {
         };
         let embedder = embedder_from_config(&config)?;
         let object_store = ObjectStore::new(&config).await?;
-        object_store.ensure_bucket().await?;
+        object_store.ensure_versioned_bucket().await?;
         let preauth_rate_limiter =
             PreauthRateLimiter::new(config.requests_per_minute.saturating_mul(10));
         let request_rate_limiter = RequestRateLimiter::new(config.requests_per_minute);
+        let transfer_limiter = Arc::new(Semaphore::new(config.max_concurrent_transfers));
         Ok(Self {
             config,
             auth_pool,
@@ -67,6 +70,7 @@ impl AppState {
             admin_pool,
             embedder,
             object_store,
+            transfer_limiter,
             preauth_rate_limiter,
             request_rate_limiter,
         })

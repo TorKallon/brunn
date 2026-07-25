@@ -14,6 +14,9 @@ use crate::{
     error::{ApiError, ApiResult},
 };
 
+const TEMPORARY_EXPORT_MIN_OVERHEAD_BYTES: i64 = 64 * 1024 * 1024;
+const TEMPORARY_EXPORT_MAX_OVERHEAD_BYTES: i64 = 1024 * 1024 * 1024;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UsageReservation {
     pub embedding_input_chars: u64,
@@ -147,6 +150,18 @@ pub async fn ensure_storage_capacity(
     user_id: Uuid,
     pending_blobs: &[(String, usize)],
 ) -> ApiResult<()> {
+    let pending_objects = pending_blobs
+        .iter()
+        .map(|(hash, size)| (format!("{user_id}/blobs/{hash}"), *size))
+        .collect::<Vec<_>>();
+    ensure_storage_capacity_for_objects(tx, user_id, &pending_objects).await
+}
+
+pub async fn ensure_storage_capacity_for_objects(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    pending_objects: &[(String, usize)],
+) -> ApiResult<()> {
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
         .bind(user_id)
         .execute(&mut **tx)
@@ -167,8 +182,25 @@ pub async fn ensure_storage_capacity(
         SELECT coalesce(sum(stored.size_bytes),0)::bigint
         FROM (
           SELECT object_key,max(size_bytes)::bigint AS size_bytes
-          FROM straylight.asset_versions
-          WHERE user_id=$1 AND size_bytes > 0
+          FROM (
+            SELECT object_key,size_bytes
+            FROM straylight.asset_versions
+            WHERE user_id=$1 AND size_bytes > 0
+            UNION ALL
+            SELECT temporary_object_key,expected_size_bytes
+            FROM straylight.asset_uploads
+            WHERE user_id=$1
+              AND temporary_cleaned_at IS NULL
+              AND status IN (
+                'uploading','verifying','completed','failed','aborted','expired'
+              )
+            UNION ALL
+            SELECT canonical_object_key,expected_size_bytes
+            FROM straylight.asset_uploads
+            WHERE user_id=$1
+              AND canonical_object_key IS NOT NULL
+              AND status IN ('completed','consumed')
+          ) AS physical_objects
           GROUP BY object_key
         ) AS stored
         "#,
@@ -176,15 +208,29 @@ pub async fn ensure_storage_capacity(
     .bind(user_id)
     .fetch_one(&mut **tx)
     .await?;
-    let keys: Vec<_> = pending_blobs
+    let keys = pending_objects
         .iter()
-        .map(|(hash, _)| format!("{user_id}/blobs/{hash}"))
-        .collect();
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
     let existing: Vec<String> = if keys.is_empty() {
         Vec::new()
     } else {
         sqlx::query_scalar(
-            "SELECT DISTINCT object_key FROM straylight.asset_versions WHERE user_id=$1 AND object_key=ANY($2::text[])",
+            r#"
+            SELECT DISTINCT existing.object_key
+            FROM (
+              SELECT object_key
+              FROM straylight.asset_versions
+              WHERE user_id=$1
+              UNION ALL
+              SELECT canonical_object_key
+              FROM straylight.asset_uploads
+              WHERE user_id=$1
+                AND canonical_object_key IS NOT NULL
+                AND status IN ('completed','consumed')
+            ) AS existing
+            WHERE existing.object_key=ANY($2::text[])
+            "#,
         )
         .bind(user_id)
         .bind(&keys)
@@ -192,11 +238,20 @@ pub async fn ensure_storage_capacity(
         .await?
     };
     let existing: std::collections::HashSet<_> = existing.into_iter().collect();
-    let additional = pending_blobs
-        .iter()
-        .zip(keys)
-        .filter(|(_, key)| !existing.contains(key))
-        .map(|((_, size), _)| i64::try_from(*size).unwrap_or(i64::MAX))
+    let pending_sizes = pending_objects.iter().fold(
+        std::collections::HashMap::<&str, usize>::new(),
+        |mut sizes, (key, size)| {
+            sizes
+                .entry(key.as_str())
+                .and_modify(|current| *current = (*current).max(*size))
+                .or_insert(*size);
+            sizes
+        },
+    );
+    let additional = pending_sizes
+        .into_iter()
+        .filter(|(key, _)| !existing.contains(*key))
+        .map(|(_, size)| i64::try_from(size).unwrap_or(i64::MAX))
         .fold(0_i64, i64::saturating_add);
     if current_usage.saturating_add(additional) > storage_limit {
         metrics::counter!("quota.denials", "quota" => "storage").increment(1);
@@ -212,6 +267,54 @@ pub async fn ensure_storage_capacity(
         ));
     }
     Ok(())
+}
+
+// One active export plus its TTL bounds object count and lifetime; this cap
+// bounds temporary bytes without charging the archive against durable content.
+pub async fn ensure_temporary_export_capacity(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    export_size_bytes: u64,
+) -> ApiResult<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await?;
+    let row =
+        sqlx::query("SELECT account_status,storage_limit_bytes FROM straylight.users WHERE id=$1")
+            .bind(user_id)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| ApiError::not_found("user_not_found", &format!("user:{user_id}")))?;
+    let account_status: String = row.try_get("account_status")?;
+    if account_status != "active" {
+        return Err(account_locked(&account_status));
+    }
+    let storage_limit: i64 = row.try_get("storage_limit_bytes")?;
+    let temporary_limit = temporary_export_limit(storage_limit);
+    let export_size = i64::try_from(export_size_bytes).unwrap_or(i64::MAX);
+    if export_size > temporary_limit {
+        metrics::counter!("quota.denials", "quota" => "temporary_export").increment(1);
+        return Err(ApiError::with_details(
+            http::StatusCode::PAYLOAD_TOO_LARGE,
+            "account_export_temporary_limit_exceeded",
+            "the account export exceeds the bounded temporary export allowance",
+            json!({
+                "export_bytes": export_size,
+                "temporary_limit_bytes": temporary_limit,
+                "storage_limit_bytes": storage_limit
+            }),
+        ));
+    }
+    Ok(())
+}
+
+fn temporary_export_limit(storage_limit: i64) -> i64 {
+    let proportional_overhead = storage_limit.saturating_div(10).clamp(
+        TEMPORARY_EXPORT_MIN_OVERHEAD_BYTES,
+        TEMPORARY_EXPORT_MAX_OVERHEAD_BYTES,
+    );
+    storage_limit.saturating_add(proportional_overhead)
 }
 
 impl UsageReservation {
@@ -352,5 +455,26 @@ mod tests {
         assert!(limiter.check().is_ok());
         assert!(limiter.check().is_ok());
         assert!(limiter.check().is_err());
+    }
+
+    #[test]
+    fn temporary_export_allowance_is_bounded_above_durable_storage() {
+        let ten_gib = 10 * 1024 * 1024 * 1024;
+        assert_eq!(
+            temporary_export_limit(ten_gib),
+            ten_gib + TEMPORARY_EXPORT_MAX_OVERHEAD_BYTES
+        );
+
+        let small_limit = 128 * 1024 * 1024;
+        assert_eq!(
+            temporary_export_limit(small_limit),
+            small_limit + TEMPORARY_EXPORT_MIN_OVERHEAD_BYTES
+        );
+
+        assert_eq!(
+            temporary_export_limit(i64::MAX),
+            i64::MAX,
+            "temporary allowance must saturate instead of wrapping"
+        );
     }
 }

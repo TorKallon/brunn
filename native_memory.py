@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import time
+import urllib.parse
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -99,6 +100,7 @@ def response_payload_metrics(rendered: str) -> dict[str, Any]:
     evidence_items = 0
     complete_sources = 0
     pointer_sources = 0
+    source_paths: set[str] = set()
 
     def visit(value: Any, parent_key: str | None = None) -> None:
         nonlocal source_text_chars, evidence_items, complete_sources, pointer_sources
@@ -115,6 +117,13 @@ def response_payload_metrics(rendered: str) -> dict[str, Any]:
                 source_text_chars += len(value["text"])
                 evidence_items += 1
             for key, child in value.items():
+                if (
+                    key == "path"
+                    and isinstance(child, str)
+                    and child
+                    and not Path(child).is_absolute()
+                ):
+                    source_paths.add(child.removeprefix("./"))
                 if key not in {"content", "text"}:
                     visit(child, key)
         elif isinstance(value, list):
@@ -127,16 +136,26 @@ def response_payload_metrics(rendered: str) -> dict[str, Any]:
         if isinstance(body, dict) and isinstance(body.get("data"), dict)
         else None
     )
-    return {
+    result = {
         "source_text_chars": source_text_chars,
         "metadata_chars": max(0, len(rendered) - source_text_chars),
         "evidence_items": evidence_items,
         "complete_sources": complete_sources,
         "pointer_sources": pointer_sources,
+        "source_paths": sorted(source_paths),
         "sufficiency_status": (
             sufficiency.get("status") if isinstance(sufficiency, dict) else None
         ),
     }
+    asset = body.get("data", body) if isinstance(body, dict) else {}
+    if isinstance(asset, dict) and isinstance(asset.get("asset_ref"), str):
+        result.update({
+            "asset_ref": asset["asset_ref"],
+            "asset_version": asset.get("version"),
+            "asset_content_hash": asset.get("content_hash"),
+            "asset_size_bytes": asset.get("size_bytes"),
+        })
+    return result
 
 
 def initialization_marker(path: Path) -> Path:
@@ -319,6 +338,8 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
     if learned_context:
         compact["learned_context"] = learned_context
 
+    evidence = data.get("initial_evidence")
+    evidence_refs_by_source = collect_evidence_refs_by_source(evidence)
     hydrated = data.get("hydrated_sources")
     represented_sources: set[str] = set()
     text_sources: list[dict[str, Any]] = []
@@ -327,7 +348,14 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
         source_rows = [item for item in hydrated if isinstance(item, dict)]
         text_sources, leads = partition_open_sources(source_rows)
         compact["initial_evidence"] = [
-            compact_hydrated_source(item, include_text=True)
+            compact_hydrated_source(
+                item,
+                include_text=True,
+                evidence_refs=evidence_refs_for_source(
+                    item,
+                    evidence_refs_by_source,
+                ),
+            )
             for item in text_sources
         ]
         represented_sources = {
@@ -336,11 +364,17 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
         }
         if leads:
             compact["evidence_leads"] = [
-                compact_hydrated_source(item, include_text=False)
+                compact_hydrated_source(
+                    item,
+                    include_text=False,
+                    evidence_refs=evidence_refs_for_source(
+                        item,
+                        evidence_refs_by_source,
+                    ),
+                )
                 for item in leads
             ]
 
-    evidence = data.get("initial_evidence")
     if isinstance(evidence, list) and evidence:
         remaining = [
             compact_candidate(item)
@@ -574,6 +608,11 @@ def compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     source_ref = candidate.get("source_ref")
     if source_ref and source_ref != candidate.get("path"):
         compact["source_ref"] = source_ref
+    evidence_refs = candidate.get("evidence_refs")
+    if isinstance(evidence_refs, list):
+        compact["evidence_refs"] = list(dict.fromkeys(
+            value for value in evidence_refs if isinstance(value, str) and value
+        ))
     return compact
 
 
@@ -581,6 +620,7 @@ def compact_hydrated_source(
     source: dict[str, Any],
     *,
     include_text: bool,
+    evidence_refs: list[str] | None = None,
 ) -> dict[str, Any]:
     selected = source.get("selected_references")
     selected = selected if isinstance(selected, list) else []
@@ -598,6 +638,8 @@ def compact_hydrated_source(
     source_ref = source.get("source_ref")
     if source_ref and source_ref != source.get("path"):
         compact["source_ref"] = source_ref
+    if evidence_refs:
+        compact["evidence_refs"] = evidence_refs
     if selected and not source.get("complete"):
         compact["reference"] = selected[0]
     ranges = source.get("ranges")
@@ -613,6 +655,42 @@ def compact_hydrated_source(
     else:
         compact["content_scope"] = "source_lead"
     return compact
+
+
+def collect_evidence_refs_by_source(value: Any) -> dict[str, list[str]]:
+    by_source: dict[str, list[str]] = {}
+    if not isinstance(value, list):
+        return by_source
+    for candidate in value:
+        if not isinstance(candidate, dict):
+            continue
+        keys = {
+            str(candidate.get(key))
+            for key in ("source_ref", "path")
+            if candidate.get(key)
+        }
+        refs = [
+            ref
+            for ref in candidate.get("evidence_refs", [])
+            if isinstance(ref, str) and ref
+        ]
+        for key in keys:
+            existing = by_source.setdefault(key, [])
+            existing.extend(ref for ref in refs if ref not in existing)
+    return by_source
+
+
+def evidence_refs_for_source(
+    source: dict[str, Any],
+    by_source: dict[str, list[str]],
+) -> list[str]:
+    refs: list[str] = []
+    for key in ("source_ref", "path"):
+        value = source.get(key)
+        if not value:
+            continue
+        refs.extend(ref for ref in by_source.get(str(value), []) if ref not in refs)
+    return refs
 
 
 def compact_source_range(value: dict[str, Any]) -> list[int | None]:
@@ -733,6 +811,19 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
     session_id = require_session(state)
     if args.command == "status":
         return "GET", f"/v1/sessions/{session_id}", None
+
+    if args.command == "assets":
+        query = urllib.parse.urlencode({
+            "session_id": session_id,
+            "offset": args.offset,
+            "limit": args.limit,
+        })
+        return "GET", f"/v1/assets?{query}", None
+
+    if args.command == "asset-metadata":
+        query = urllib.parse.urlencode({"session_id": session_id})
+        asset_ref = urllib.parse.quote(args.asset_ref, safe="")
+        return "GET", f"/v1/assets/{asset_ref}?{query}", None
 
     if args.command == "query":
         if args.batch:
@@ -964,6 +1055,13 @@ def build_parser() -> argparse.ArgumentParser:
     save = subparsers.add_parser("save")
     save.add_argument("payload")
     subparsers.add_parser("status")
+    assets = subparsers.add_parser("assets")
+    assets.add_argument("--offset", type=int, default=0)
+    assets.add_argument("--limit", type=int, default=100)
+    metadata = subparsers.add_parser("asset-metadata")
+    metadata.add_argument("asset_ref")
+    fetch = subparsers.add_parser("asset-fetch")
+    fetch.add_argument("asset_ref")
     return parser
 
 
@@ -988,6 +1086,66 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
             "message": "This adapter state is already open; no service call was made.",
         }, pretty=args.pretty), 0
     try:
+        if args.command == "asset-fetch":
+            session_id = require_session(state)
+            client = NativeApiClient(run_id=args.run_id, case_id=args.case_id)
+            encoded_ref = urllib.parse.quote(args.asset_ref, safe="")
+            query = urllib.parse.urlencode({"session_id": session_id})
+            metadata = client.get(f"/v1/assets/{encoded_ref}?{query}")
+            data = metadata.data
+            if data.get("asset_ref") != args.asset_ref:
+                raise RuntimeError("asset metadata returned an unexpected reference")
+            version = int(data["version"])
+            expected_hash = str(data["content_hash"])
+            expected_size = int(data["size_bytes"])
+            original_path = str(data.get("path") or "")
+            suffix = Path(original_path).suffix
+            if not re.fullmatch(r"\.[A-Za-z0-9]{1,12}", suffix):
+                suffix = ""
+            asset_id = args.asset_ref.removeprefix("asset:")
+            destination = (
+                args.state.parent
+                / "assets"
+                / f"{asset_id}.v{version}{suffix.casefold()}"
+            )
+            downloaded = client.download_verified(
+                f"/v1/assets/{encoded_ref}/versions/{version}/content?{query}",
+                destination,
+                expected_hash=expected_hash,
+                expected_size=expected_size,
+            )
+            body = {
+                "status": "complete",
+                "asset_ref": args.asset_ref,
+                "version": version,
+                "local_path": str(downloaded.path),
+                "content_hash": downloaded.content_hash,
+                "size_bytes": downloaded.size_bytes,
+                "media_type": downloaded.media_type,
+            }
+            rendered = render_json(body, pretty=args.pretty)
+            record_state(
+                args.state,
+                state,
+                args.command,
+                result_chars=len(rendered),
+                elapsed_ms=metadata.elapsed_ms + downloaded.elapsed_ms,
+                http_status=200,
+                request_id=None,
+                service_status="complete",
+                response=metadata,
+                result_metrics={
+                    **response_payload_metrics(rendered),
+                    "binary_bytes": downloaded.size_bytes,
+                    "http_calls": 2,
+                    "asset_ref": args.asset_ref,
+                    "asset_version": version,
+                    "asset_content_hash": downloaded.content_hash,
+                    "asset_size_bytes": downloaded.size_bytes,
+                    "asset_local_path": str(downloaded.path),
+                },
+            )
+            return rendered, 0
         method, path, payload = operation_request(args, state)
         client = NativeApiClient(run_id=args.run_id, case_id=args.case_id)
         response = client.request(method, path, payload)
@@ -1020,7 +1178,7 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
         )
         exit_code = 77 if exc.status == 403 or error_code(exc.body) == "capability_denied" else 1
         return rendered, exit_code
-    except (ValueError, json.JSONDecodeError, OSError) as exc:
+    except (ValueError, RuntimeError, json.JSONDecodeError, OSError) as exc:
         body = {"error": {"code": "invalid_request", "message": str(exc)}}
         rendered = render_json(body, pretty=args.pretty)
         record_state(

@@ -23,6 +23,7 @@ import { ReadOnlyNotice, StatusBadge } from "./StateViews";
 const navItems = [
   { to: "/work", label: "Work", icon: Gauge },
   { to: "/explore", label: "Explore", icon: Search },
+  { to: "/assets", label: "Assets", icon: Archive },
   { to: "/capture", label: "Capture", icon: ScanLine },
   { to: "/dreams", label: "Dreams", icon: BrainCircuit },
   { to: "/control", label: "Control", icon: ShieldCheck },
@@ -62,7 +63,7 @@ export function AppShell({ children }: PropsWithChildren) {
         <Link to="/work" className="brand" onClick={() => setNavOpen(false)}>
           <span className="brand-mark">S</span>
           <div>
-            <strong>Straylight</strong>
+            <strong>CarryState</strong>
             <span>Control plane</span>
           </div>
         </Link>

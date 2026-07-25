@@ -64,6 +64,11 @@ Datadog outage cannot change a memory operation.
 | `straylight.db.*` | Are transactions or connection pools under pressure? |
 | `straylight.object_store.*` | Is object storage healthy, slow, or moving unusual volume? |
 | `straylight.stage.*` | Are staged imports large, warned, or quarantined? |
+| `straylight.asset.access.*` | Are native files being found and downloaded successfully, and at what volume? |
+| `straylight.asset.description.*` | Are searchable derivative descriptions completing, falling back, or failing? |
+| `straylight.asset.upload.*` | Are resumable uploads progressing, replaying safely, or failing integrity checks? |
+| `straylight.asset.storage.*` | How much logical data exists versus physically deduplicated object data? |
+| `straylight.vault.export.*` | Are revision-pinned portable manifests being produced successfully? |
 | `straylight.dependency.*` | Is a required external dependency ready or degraded? |
 | `straylight.telemetry.*` | Did periodic observability snapshots fail? |
 | `datadog.dogstatsd.client.*` | Is the exporter sending or dropping packets and bytes? |
@@ -86,6 +91,7 @@ and `component`. The groups are ordered for incident use:
 6. models and embeddings
 7. background work and deletion
 8. dependencies and telemetry health
+9. native assets and portability
 
 The model-and-embedding group keeps exact model token totals, cached-input
 tokens, output tokens, embedding request volume, and embedding input size

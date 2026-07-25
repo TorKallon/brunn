@@ -1,0 +1,410 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://carrystate.test/schemas/binary-asset-reasoning-cards-v1.json",
+  "title": "CarryState binary asset reasoning evaluation cards",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "benchmark_version",
+    "name",
+    "fixture",
+    "grading_mode",
+    "scorecard",
+    "conditions",
+    "cards"
+  ],
+  "properties": {
+    "benchmark_version": {
+      "const": "1.0"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generator",
+        "format",
+        "snapshot"
+      ],
+      "properties": {
+        "generator": {
+          "const": "eval/binary_asset_fixture.py"
+        },
+        "format": {
+          "const": "carrystate-binary-fixture-v1"
+        },
+        "snapshot": {
+          "const": "r2"
+        }
+      }
+    },
+    "grading_mode": {
+      "const": "evidence_claims_and_cost_v1"
+    },
+    "scorecard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "priority",
+        "quality_gate",
+        "comparison"
+      ],
+      "properties": {
+        "priority": {
+          "const": "quality_first"
+        },
+        "quality_gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "all_claims_required",
+            "forbidden_any_fails",
+            "native_hash_verification_required",
+            "authority_attribution_required"
+          ],
+          "properties": {
+            "all_claims_required": {
+              "const": true
+            },
+            "forbidden_any_fails": {
+              "const": true
+            },
+            "native_hash_verification_required": {
+              "const": true
+            },
+            "authority_attribution_required": {
+              "const": true
+            }
+          }
+        },
+        "comparison": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "primary",
+            "secondary",
+            "paired_seed_required"
+          ],
+          "properties": {
+            "primary": {
+              "const": "claim_and_forbidden_error_parity_or_better"
+            },
+            "secondary": {
+              "const": "tokens_calls_bytes_latency_and_cost"
+            },
+            "paired_seed_required": {
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "conditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrystate",
+        "matched-filesystem",
+        "operational-filesystem"
+      ],
+      "properties": {
+        "carrystate": {
+          "$ref": "#/$defs/condition"
+        },
+        "matched-filesystem": {
+          "$ref": "#/$defs/condition"
+        },
+        "operational-filesystem": {
+          "$ref": "#/$defs/condition"
+        }
+      }
+    },
+    "cards": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "$ref": "#/$defs/card"
+      }
+    }
+  },
+  "$defs": {
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interface",
+        "corpus_projection",
+        "source_parity",
+        "allowed_tools",
+        "cost_accounting"
+      ],
+      "properties": {
+        "interface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "corpus_projection": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_parity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_tools": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "cost_accounting": {
+          "type": "array",
+          "minItems": 4,
+          "items": {
+            "enum": [
+              "model_input_tokens",
+              "model_output_tokens",
+              "uncached_input_tokens",
+              "tool_calls",
+              "tool_bytes",
+              "wall_time_ms",
+              "provider_cost_usd"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "path",
+        "authority"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]+$"
+        },
+        "kind": {
+          "enum": [
+            "source_path",
+            "asset_path",
+            "generated_description"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authority": {
+          "enum": [
+            "source",
+            "native",
+            "derived_non_authoritative"
+          ]
+        },
+        "required_access": {
+          "enum": [
+            "search",
+            "metadata",
+            "range",
+            "full",
+            "query"
+          ]
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "prompt",
+        "expectation",
+        "checks",
+        "evidence_ids"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^c[1-9][0-9]*$"
+        },
+        "expectation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "any"
+            ],
+            "properties": {
+              "any": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "native_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "operations"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]+$"
+        },
+        "operations": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "enum": [
+              "metadata",
+              "verified_fetch",
+              "local_inspection"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "workload",
+        "capability",
+        "scope",
+        "task",
+        "withheld_values",
+        "native_only_values",
+        "native_requirements",
+        "evidence",
+        "claims",
+        "forbidden",
+        "verification_steps"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]+$"
+        },
+        "workload": {
+          "enum": [
+            "receipts_images",
+            "sqlite_sql_datasets",
+            "maps_images",
+            "vacation_planning",
+            "kids_sports",
+            "product_work",
+            "room_images"
+          ]
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "enum": [
+            "personal",
+            "work"
+          ]
+        },
+        "task": {
+          "type": "string",
+          "minLength": 1
+        },
+        "withheld_values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 2
+          },
+          "uniqueItems": true
+        },
+        "native_only_values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 2
+          },
+          "uniqueItems": true
+        },
+        "native_requirements": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/native_requirement"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "claims": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "$ref": "#/$defs/claim"
+          }
+        },
+        "forbidden": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "verification_steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
