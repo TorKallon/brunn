@@ -1775,62 +1775,87 @@ async fn current_vault_assets(
                 .and_then(Value::as_str)
         })
         .ok_or_else(|| anyhow!("verification session did not open"))?;
-    let mut offset = 0_i64;
-    let mut assets = HashMap::<String, CurrentVaultAsset>::new();
     let stable_import_id = format!("vault:{}", manifest.vault_id);
-    loop {
-        let offset_string = offset.to_string();
-        let response = client
-            .get_json(
-                "/v1/assets",
-                &[
-                    ("session_id", session_id),
-                    ("limit", "500"),
-                    ("offset", offset_string.as_str()),
-                ],
-            )
-            .await?;
-        let items = response
-            .get("items")
-            .and_then(Value::as_array)
-            .ok_or_else(|| anyhow!("asset verification response lacks items"))?;
-        for item in items {
-            if item.get("stable_import_id").and_then(Value::as_str)
-                != Some(stable_import_id.as_str())
-                || item.get("source_kind").and_then(Value::as_str) != Some("content_pack")
-            {
-                continue;
-            }
-            if let (Some(path), Some(hash), Some(size)) = (
-                item.get("path").and_then(Value::as_str),
-                item.get("content_hash").and_then(Value::as_str),
-                item.get("size_bytes").and_then(Value::as_u64),
-            ) {
-                let current = CurrentVaultAsset {
-                    sha256: strip_sha256(hash).to_owned(),
-                    size_bytes: size,
-                    description_available: item
-                        .get("description_available")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
-                    description_status: item
-                        .get("description_status")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
-                    description_method: item
-                        .get("description_method")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
-                };
-                if assets.insert(path.to_owned(), current).is_some() {
-                    bail!("current corpus contains duplicate active path {path}");
-                }
-            }
+    let response = client
+        .get_json(
+            "/v1/vault/manifest",
+            &[
+                ("session_id", session_id),
+                ("stable_import_id", stable_import_id.as_str()),
+                ("include_history", "false"),
+                ("include_scope_memory", "false"),
+            ],
+        )
+        .await?;
+    current_vault_assets_from_manifest(&response)
+}
+
+fn current_vault_assets_from_manifest(
+    response: &Value,
+) -> Result<HashMap<String, CurrentVaultAsset>> {
+    let entries = unwrap_data(response)
+        .get("entries")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("vault manifest response lacks entries"))?;
+    let mut descriptions = HashMap::<String, (Option<String>, Option<String>)>::new();
+    for entry in entries {
+        if entry.get("source_kind").and_then(Value::as_str) != Some("derived_asset_description")
+            || entry.get("active").and_then(Value::as_bool) != Some(true)
+        {
+            continue;
         }
-        if items.len() < 500 {
-            break;
+        let original_path = entry
+            .get("original_path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("generated description lacks original_path"))?;
+        let description = (
+            entry
+                .get("description_status")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            entry
+                .get("description_method")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        );
+        if descriptions
+            .insert(original_path.to_owned(), description)
+            .is_some()
+        {
+            bail!("current corpus contains duplicate description for {original_path}");
         }
-        offset += 500;
+    }
+
+    let mut assets = HashMap::<String, CurrentVaultAsset>::new();
+    for entry in entries {
+        if entry.get("source_kind").and_then(Value::as_str) != Some("content_pack")
+            || entry.get("active").and_then(Value::as_bool) != Some(true)
+        {
+            continue;
+        }
+        let path = entry
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("vault manifest source lacks path"))?;
+        let hash = entry
+            .get("content_hash")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow!("vault manifest source lacks content_hash"))?;
+        let size_bytes = entry
+            .get("size_bytes")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| anyhow!("vault manifest source lacks size_bytes"))?;
+        let description = descriptions.get(path);
+        let current = CurrentVaultAsset {
+            sha256: strip_sha256(hash).to_owned(),
+            size_bytes,
+            description_available: description.is_some(),
+            description_status: description.and_then(|value| value.0.clone()),
+            description_method: description.and_then(|value| value.1.clone()),
+        };
+        if assets.insert(path.to_owned(), current).is_some() {
+            bail!("current corpus contains duplicate active path {path}");
+        }
     }
     Ok(assets)
 }
@@ -2314,6 +2339,45 @@ mod tests {
         assert_eq!(paths.len(), 2);
         assert!(paths[0].starts_with(".carrystate/generated/descriptions/"));
         assert_eq!(paths[1], "Trips/receipt.jpg");
+    }
+
+    #[test]
+    fn current_vault_assets_use_manifest_descriptions_without_usage_rankings() {
+        let source_path = "Trips/receipt.jpg";
+        let response = json!({
+            "format": "carrystate-vault-manifest@v1",
+            "entries": [
+                {
+                    "path": source_path,
+                    "source_kind": "content_pack",
+                    "content_hash": format!("sha256:{}", "a".repeat(64)),
+                    "size_bytes": 10,
+                    "active": true
+                },
+                {
+                    "path": description_path(source_path),
+                    "original_path": source_path,
+                    "source_kind": "derived_asset_description",
+                    "description_status": "complete",
+                    "description_method": "openai_responses",
+                    "content_hash": format!("sha256:{}", "b".repeat(64)),
+                    "size_bytes": 20,
+                    "active": true
+                }
+            ]
+        });
+
+        let assets = current_vault_assets_from_manifest(&response).unwrap();
+        let source = assets.get(source_path).unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(source.sha256, "a".repeat(64));
+        assert_eq!(source.size_bytes, 10);
+        assert!(source.description_available);
+        assert_eq!(source.description_status.as_deref(), Some("complete"));
+        assert_eq!(
+            source.description_method.as_deref(),
+            Some("openai_responses")
+        );
     }
 
     #[test]
