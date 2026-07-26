@@ -105,22 +105,7 @@ fn split_section(
             next += 1;
         }
         let content = lines[cursor..next].join("\n");
-        if !content.trim().is_empty() {
-            let digest =
-                Sha256::digest(format!("{path}\0{}\0{}\0{content}", cursor + 1, next).as_bytes());
-            let mut uuid_bytes = [0u8; 16];
-            uuid_bytes.copy_from_slice(&digest[..16]);
-            chunks.push(DocumentChunk {
-                chunk_ref: format!("chunk:{}", Uuid::from_bytes(uuid_bytes)),
-                ordinal: 0,
-                heading: heading.to_owned(),
-                start_line: cursor + 1,
-                end_line: next,
-                estimated_tokens: estimate_tokens(&content),
-                content_hash: format!("sha256:{}", hex::encode(Sha256::digest(content.as_bytes()))),
-                content,
-            });
-        }
+        push_bounded_chunks(path, heading, cursor + 1, next, content, chunks);
         if next >= end {
             break;
         }
@@ -136,6 +121,92 @@ fn split_section(
         }
         cursor = rewind.max(cursor + 1);
     }
+}
+
+fn push_bounded_chunks(
+    path: &str,
+    heading: &str,
+    start_line: usize,
+    end_line: usize,
+    content: String,
+    chunks: &mut Vec<DocumentChunk>,
+) {
+    if content.trim().is_empty() {
+        return;
+    }
+    let boundaries = content
+        .char_indices()
+        .map(|(byte, _)| byte)
+        .chain(std::iter::once(content.len()))
+        .collect::<Vec<_>>();
+    let character_count = boundaries.len().saturating_sub(1);
+    if character_count <= CHUNK_TARGET_CHARS {
+        push_chunk(path, heading, start_line, end_line, content, None, chunks);
+        return;
+    }
+
+    let mut start_character = 0usize;
+    while start_character < character_count {
+        let end_character = (start_character + CHUNK_TARGET_CHARS).min(character_count);
+        let start_byte = boundaries[start_character];
+        let end_byte = boundaries[end_character];
+        let segment = content[start_byte..end_byte].to_owned();
+        if !segment.trim().is_empty() {
+            let prior_newlines = content[..start_byte]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count();
+            let segment_newlines = segment.bytes().filter(|byte| *byte == b'\n').count();
+            let segment_start_line = start_line + prior_newlines;
+            let segment_end_line = segment_start_line + segment_newlines;
+            push_chunk(
+                path,
+                heading,
+                segment_start_line,
+                segment_end_line,
+                segment,
+                Some((start_character, end_character)),
+                chunks,
+            );
+        }
+        if end_character == character_count {
+            break;
+        }
+        start_character = end_character
+            .saturating_sub(CHUNK_OVERLAP_CHARS)
+            .max(start_character + 1);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_chunk(
+    path: &str,
+    heading: &str,
+    start_line: usize,
+    end_line: usize,
+    content: String,
+    character_range: Option<(usize, usize)>,
+    chunks: &mut Vec<DocumentChunk>,
+) {
+    let identity = match character_range {
+        Some((start, end)) => {
+            format!("{path}\0{start_line}\0{end_line}\0chars:{start}-{end}\0{content}")
+        }
+        None => format!("{path}\0{start_line}\0{end_line}\0{content}"),
+    };
+    let digest = Sha256::digest(identity.as_bytes());
+    let mut uuid_bytes = [0u8; 16];
+    uuid_bytes.copy_from_slice(&digest[..16]);
+    chunks.push(DocumentChunk {
+        chunk_ref: format!("chunk:{}", Uuid::from_bytes(uuid_bytes)),
+        ordinal: 0,
+        heading: heading.to_owned(),
+        start_line,
+        end_line,
+        estimated_tokens: estimate_tokens(&content),
+        content_hash: format!("sha256:{}", hex::encode(Sha256::digest(content.as_bytes()))),
+        content,
+    });
 }
 
 pub fn estimate_tokens(text: &str) -> usize {
@@ -179,11 +250,49 @@ mod tests {
         let text = format!("## Current state\n\n{long_line}\n\nNext line.\n");
         let document = normalize_document("handoff.md", &text);
 
+        assert!(document.chunks.len() > 1);
         assert!(
             document.chunks[0]
                 .content
                 .starts_with("## Current state\n\ncurrent target")
         );
-        assert!(document.chunks[0].content.contains(&long_line));
+        assert!(
+            document
+                .chunks
+                .iter()
+                .all(|chunk| chunk.content.chars().count() <= CHUNK_TARGET_CHARS)
+        );
+        assert!(
+            document
+                .chunks
+                .iter()
+                .all(|chunk| chunk.heading == "Current state")
+        );
+        assert!(
+            document
+                .chunks
+                .last()
+                .is_some_and(|chunk| chunk.content.ends_with("Next line."))
+        );
+    }
+
+    #[test]
+    fn oversized_unicode_lines_remain_within_the_embedding_safe_byte_bound() {
+        let text = format!("# Map\n{}\n", "🗺".repeat(CHUNK_TARGET_CHARS * 3));
+        let document = normalize_document("map.md", &text);
+
+        assert!(document.chunks.len() > 3);
+        assert!(
+            document
+                .chunks
+                .iter()
+                .all(|chunk| chunk.content.chars().count() <= CHUNK_TARGET_CHARS)
+        );
+        assert!(
+            document
+                .chunks
+                .iter()
+                .all(|chunk| chunk.content.len() <= CHUNK_TARGET_CHARS * 4)
+        );
     }
 }

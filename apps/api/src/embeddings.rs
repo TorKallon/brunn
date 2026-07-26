@@ -13,6 +13,9 @@ use crate::{
 };
 
 static TOKEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?u)[\p{L}\p{N}_-]+").expect("token regex"));
+const MAX_OPENAI_INPUT_CHARS: usize = 1_900;
+const MAX_OPENAI_REQUEST_BYTES: usize = 100_000;
+const MAX_OPENAI_REQUEST_ITEMS: usize = 128;
 
 #[async_trait]
 pub trait Embedder: Send + Sync {
@@ -56,6 +59,135 @@ pub fn from_config(config: &Config) -> ApiResult<SharedEmbedder> {
         other => Err(ApiError::configuration(format!(
             "unsupported STRAYLIGHT_EMBEDDING_PROVIDER: {other}"
         ))),
+    }
+}
+
+pub async fn embed_indexing_inputs(
+    embedder: &dyn Embedder,
+    input: &[String],
+) -> ApiResult<Vec<Vec<f32>>> {
+    if input.is_empty() || embedder.provider() != "openai" {
+        return embedder.embed(input).await;
+    }
+
+    let mut segments = Vec::new();
+    let mut segmented_inputs = 0usize;
+    for (input_index, text) in input.iter().enumerate() {
+        let parts = split_at_character_limit(text, MAX_OPENAI_INPUT_CHARS);
+        segmented_inputs += usize::from(parts.len() > 1);
+        for part in parts {
+            segments.push(EmbeddingSegment {
+                input_index,
+                weight: part.chars().count().max(1) as f32,
+                text: part.to_owned(),
+            });
+        }
+    }
+
+    let mut sums = vec![vec![0.0f32; embedder.dimensions()]; input.len()];
+    let mut weights = vec![0.0f32; input.len()];
+    let mut segment_counts = vec![0usize; input.len()];
+    let mut single_vectors = vec![None; input.len()];
+    let mut batch_count = 0usize;
+    let mut cursor = 0usize;
+    while cursor < segments.len() {
+        let mut end = cursor;
+        let mut request_bytes = 0usize;
+        while end < segments.len() && end - cursor < MAX_OPENAI_REQUEST_ITEMS {
+            let next_bytes = segments[end].text.len();
+            if end > cursor && request_bytes + next_bytes > MAX_OPENAI_REQUEST_BYTES {
+                break;
+            }
+            request_bytes += next_bytes;
+            end += 1;
+        }
+        let batch = segments[cursor..end]
+            .iter()
+            .map(|segment| segment.text.clone())
+            .collect::<Vec<_>>();
+        let vectors = embedder.embed(&batch).await?;
+        if vectors.len() != batch.len() {
+            return Err(ApiError::Internal(
+                "embedding provider returned an unexpected result shape".to_owned(),
+            ));
+        }
+        for (segment, vector) in segments[cursor..end].iter().zip(vectors) {
+            if vector.len() != embedder.dimensions() {
+                return Err(ApiError::Internal(
+                    "embedding provider returned an unexpected result shape".to_owned(),
+                ));
+            }
+            let input_index = segment.input_index;
+            if segment_counts[input_index] == 0 {
+                single_vectors[input_index] = Some(vector.clone());
+            } else {
+                single_vectors[input_index] = None;
+            }
+            for (sum, value) in sums[input_index].iter_mut().zip(&vector) {
+                *sum += *value * segment.weight;
+            }
+            weights[input_index] += segment.weight;
+            segment_counts[input_index] += 1;
+        }
+        batch_count += 1;
+        cursor = end;
+    }
+
+    let output = sums
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut vector)| {
+            if segment_counts[index] == 1 {
+                return single_vectors[index]
+                    .take()
+                    .expect("one segment must retain its provider vector");
+            }
+            if weights[index] > 0.0 {
+                for value in &mut vector {
+                    *value /= weights[index];
+                }
+            }
+            normalize(&mut vector);
+            vector
+        })
+        .collect::<Vec<_>>();
+    metrics::histogram!("embedding.index.expanded_segments").record(segments.len() as f64);
+    metrics::histogram!("embedding.index.segmented_inputs").record(segmented_inputs as f64);
+    metrics::histogram!("embedding.index.provider_batches").record(batch_count as f64);
+    Ok(output)
+}
+
+struct EmbeddingSegment {
+    input_index: usize,
+    weight: f32,
+    text: String,
+}
+
+fn split_at_character_limit(text: &str, limit: usize) -> Vec<&str> {
+    if text.is_empty() {
+        return vec![text];
+    }
+    let mut segments = Vec::new();
+    let mut start_byte = 0usize;
+    let mut characters = 0usize;
+    for (byte, _) in text.char_indices() {
+        if characters == limit {
+            segments.push(&text[start_byte..byte]);
+            start_byte = byte;
+            characters = 0;
+        }
+        characters += 1;
+    }
+    segments.push(&text[start_byte..]);
+    segments
+}
+
+fn normalize(vector: &mut [f32]) {
+    let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+    if norm > 0.0 {
+        for value in vector {
+            *value /= norm;
+        }
     }
 }
 
@@ -325,6 +457,8 @@ fn record_embedding_call(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
 
     #[tokio::test]
@@ -362,5 +496,88 @@ mod tests {
             }
             other => panic!("unexpected error classification: {other:?}"),
         }
+    }
+
+    struct LengthLimitedEmbedder {
+        calls: Mutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl Embedder for LengthLimitedEmbedder {
+        async fn embed(&self, input: &[String]) -> ApiResult<Vec<Vec<f32>>> {
+            assert!(
+                input
+                    .iter()
+                    .all(|text| text.chars().count() <= MAX_OPENAI_INPUT_CHARS)
+            );
+            assert!(input.iter().map(String::len).sum::<usize>() <= MAX_OPENAI_REQUEST_BYTES);
+            assert!(input.len() <= MAX_OPENAI_REQUEST_ITEMS);
+            self.calls.lock().unwrap().push(input.to_vec());
+            Ok(input
+                .iter()
+                .map(|text| {
+                    let first = text.chars().next().unwrap_or_default() as u32;
+                    vec![text.chars().count() as f32, first as f32, 1.0]
+                })
+                .collect())
+        }
+
+        fn provider(&self) -> &'static str {
+            "openai"
+        }
+
+        fn model(&self) -> &str {
+            "test"
+        }
+
+        fn dimensions(&self) -> usize {
+            3
+        }
+
+        fn is_degraded(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn indexing_embeddings_segment_oversized_inputs_without_losing_coverage() {
+        let embedder = LengthLimitedEmbedder {
+            calls: Mutex::new(Vec::new()),
+        };
+        let oversized = format!("{}{}", "a".repeat(4_000), "b".repeat(1_000));
+        let vectors = embed_indexing_inputs(&embedder, &["short".to_owned(), oversized.clone()])
+            .await
+            .unwrap();
+
+        assert_eq!(vectors.len(), 2);
+        assert_eq!(vectors[0], vec![5.0, 's' as u32 as f32, 1.0]);
+        let calls = embedder.calls.lock().unwrap();
+        let flattened = calls
+            .iter()
+            .flatten()
+            .skip(1)
+            .map(String::as_str)
+            .collect::<String>();
+        assert_eq!(flattened, oversized);
+        let pooled_norm = vectors[1]
+            .iter()
+            .map(|value| value * value)
+            .sum::<f32>()
+            .sqrt();
+        assert!((pooled_norm - 1.0).abs() < 0.0001);
+    }
+
+    #[tokio::test]
+    async fn indexing_embeddings_bound_aggregate_request_size() {
+        let embedder = LengthLimitedEmbedder {
+            calls: Mutex::new(Vec::new()),
+        };
+        let input = (0..80)
+            .map(|index| format!("{index:04}{}", "x".repeat(1_800)))
+            .collect::<Vec<_>>();
+        let vectors = embed_indexing_inputs(&embedder, &input).await.unwrap();
+
+        assert_eq!(vectors.len(), input.len());
+        assert!(embedder.calls.lock().unwrap().len() > 1);
     }
 }

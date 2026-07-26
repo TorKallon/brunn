@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::{
     account_worker, asset_description,
     db::AppState,
-    dream_service,
+    dream_service, embeddings,
     error::{ApiError, ApiResult},
     quota::{self, UsageReservation},
     telemetry, upload_service,
@@ -517,7 +517,7 @@ async fn index_embeddings(
         },
     )
     .await?;
-    let vectors = state.embedder.embed(&contents).await?;
+    let vectors = embeddings::embed_indexing_inputs(state.embedder.as_ref(), &contents).await?;
     if rows.len() != vectors.len() {
         return Err(ApiError::Internal(
             "embedding row count mismatch".to_owned(),
