@@ -1,4 +1,8 @@
-use std::{str::FromStr, sync::Arc, time::Instant};
+use std::{
+    str::FromStr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use sha2::Digest;
 use sqlx::{
@@ -87,10 +91,28 @@ impl AppState {
         .record(started.elapsed().as_secs_f64() * 1_000.0);
         let mut transaction = result?;
         set_context(&mut transaction, auth).await?;
+        set_statement_timeout(&mut transaction, self.config.request_timeout).await?;
         Ok(transaction)
     }
 
     pub async fn begin_write(&self, auth: &AuthContext) -> ApiResult<Transaction<'_, Postgres>> {
+        self.begin_write_with_timeout(auth, self.config.request_timeout)
+            .await
+    }
+
+    pub async fn begin_transfer_write(
+        &self,
+        auth: &AuthContext,
+    ) -> ApiResult<Transaction<'_, Postgres>> {
+        self.begin_write_with_timeout(auth, self.config.transfer_timeout)
+            .await
+    }
+
+    async fn begin_write_with_timeout(
+        &self,
+        auth: &AuthContext,
+        timeout: Duration,
+    ) -> ApiResult<Transaction<'_, Postgres>> {
         let started = Instant::now();
         let result = self.rw_pool.begin().await;
         metrics::histogram!(
@@ -101,6 +123,7 @@ impl AppState {
         .record(started.elapsed().as_secs_f64() * 1_000.0);
         let mut transaction = result?;
         set_context(&mut transaction, auth).await?;
+        set_statement_timeout(&mut transaction, timeout).await?;
         let status = sqlx::query_scalar::<_, String>(
             "SELECT account_status FROM straylight.users WHERE id=$1",
         )
@@ -117,6 +140,24 @@ impl AppState {
         }
         Ok(transaction)
     }
+}
+
+async fn set_statement_timeout(
+    transaction: &mut Transaction<'_, Postgres>,
+    request_timeout: Duration,
+) -> ApiResult<()> {
+    let timeout = statement_timeout(request_timeout);
+    sqlx::query("SELECT set_config('statement_timeout', $1, true)")
+        .bind(format!("{}ms", timeout.as_millis()))
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
+fn statement_timeout(request_timeout: Duration) -> Duration {
+    request_timeout
+        .saturating_sub(Duration::from_secs(5))
+        .max(Duration::from_secs(1))
 }
 
 async fn pool(url: &str, max: u32, application_name: &str) -> ApiResult<PgPool> {
@@ -340,4 +381,25 @@ pub async fn ensure_initial_manifest(
     .execute(&mut **tx)
     .await?;
     Ok(initial_revision_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn statement_timeout_precedes_the_request_deadline() {
+        assert_eq!(
+            statement_timeout(Duration::from_secs(30)),
+            Duration::from_secs(25)
+        );
+        assert_eq!(
+            statement_timeout(Duration::from_secs(3)),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            statement_timeout(Duration::from_secs(3_600)),
+            Duration::from_secs(3_595)
+        );
+    }
 }

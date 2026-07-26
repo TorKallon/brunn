@@ -2749,7 +2749,7 @@ async fn exact_lane_tx(
           AND (c.id = $5 OR lower(c.content_hash) = lower(regexp_replace($4, '^sha256:', ''))
             OR lower(coalesce(dr.title, '')) = lower($4)
             OR lower(se.source_ref) = lower($4)
-            OR position(lower($4) in lower(c.content)) > 0)
+            OR lower(c.content) LIKE lower($8) ESCAPE '\')
           AND (cardinality($7::uuid[]) = 0 OR c.id = ANY($7::uuid[])
             OR c.document_id = ANY($7::uuid[]) OR dr.source_episode_id = ANY($7::uuid[]))
         ORDER BY score DESC, se.source_ref, c.ordinal
@@ -2763,6 +2763,7 @@ async fn exact_lane_tx(
     .bind(parsed_id)
     .bind(limit)
     .bind(root_ids)
+    .bind(sql_like_literal_contains(query))
     .fetch_all(&mut **tx)
     .await?;
     let mut candidates = chunk_rows(rows, "exact")?;
@@ -2842,6 +2843,29 @@ async fn lexical_lane_tx(
         WITH requested AS (
           SELECT websearch_to_tsquery('english', $4) AS terms,
                  $7::text[] AS raw_terms
+        ), matching_sources AS MATERIALIZED (
+          SELECT se.id
+          FROM straylight.source_episodes se
+          CROSS JOIN requested
+          WHERE se.user_id = $1 AND se.scope_id = $2
+            AND to_tsvector(
+              'english',
+              straylight.lexical_source_text(se.source_ref)
+            ) @@ requested.terms
+        ), candidate_chunks AS MATERIALIZED (
+          SELECT c.id
+          FROM straylight.chunks c
+          CROSS JOIN requested
+          WHERE c.user_id = $1 AND c.scope_id = $2
+            AND c.search_vector @@ requested.terms
+          UNION
+          SELECT c.id
+          FROM matching_sources source
+          JOIN straylight.document_revisions dr
+            ON dr.user_id = $1 AND dr.source_episode_id = source.id
+          JOIN straylight.chunks c
+            ON c.user_id = dr.user_id AND c.document_id = dr.document_id
+           AND c.document_version = dr.version
         )
         SELECT c.id, se.source_ref, dr.native_locator ->> 'path' AS path,
                array_to_string(c.heading_path, ' / ') AS heading, c.content,
@@ -2882,7 +2906,9 @@ async fn lexical_lane_tx(
                  1
                )::float8 AS score,
                coverage.term_coverage + 3 * coverage.path_coverage AS term_coverage
-        FROM straylight.chunks c
+        FROM candidate_chunks candidate
+        JOIN straylight.chunks c
+          ON c.user_id = $1 AND c.id = candidate.id
         JOIN straylight.corpus_members cm
           ON cm.user_id = c.user_id AND cm.record_id = c.id
         JOIN straylight.document_revisions dr
@@ -2943,6 +2969,19 @@ fn lexical_discovery_query(query: &str) -> String {
             .collect::<Vec<_>>()
             .join(" OR ")
     }
+}
+
+fn sql_like_literal_contains(value: &str) -> String {
+    let mut pattern = String::with_capacity(value.len() + 2);
+    pattern.push('%');
+    for character in value.chars() {
+        if matches!(character, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    pattern
 }
 
 fn lexical_discovery_terms(query: &str) -> Vec<String> {
@@ -9210,6 +9249,14 @@ mod tests {
         assert!(terms.contains(&"pgcr".to_owned()));
         assert!(terms.contains(&"archive".to_owned()));
         assert!(!terms.contains(&"starrupture".to_owned()));
+    }
+
+    #[test]
+    fn exact_substring_patterns_keep_like_metacharacters_literal() {
+        assert_eq!(
+            sql_like_literal_contains(r"50%_complete\path"),
+            r"%50\%\_complete\\path%"
+        );
     }
 
     fn retrieval_candidate(path: &str, content: &str) -> RetrievalCandidate {

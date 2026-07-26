@@ -123,6 +123,12 @@ impl IntoResponse for ApiError {
                 message,
                 details,
             } => (status, code, message, details),
+            Self::Database(error) if database_statement_timed_out(&error) => (
+                StatusCode::REQUEST_TIMEOUT,
+                "database_timeout",
+                "the database operation exceeded the request deadline".to_owned(),
+                None,
+            ),
             other => {
                 error!(error = ?other, request_id, "unhandled API error");
                 (
@@ -153,4 +159,11 @@ impl IntoResponse for ApiError {
         )
             .into_response()
     }
+}
+
+fn database_statement_timed_out(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .is_some_and(|code| code == "57014")
 }

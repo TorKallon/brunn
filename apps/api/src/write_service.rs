@@ -159,7 +159,7 @@ pub async fn save(state: &AppState, auth: &AuthContext, request: SaveRequest) ->
     validate_expanded_save(&request, !stage_promotions.is_empty())?;
     let receipt_scope = request.scope.clone();
     let receipt_idempotency_key = request.idempotency_key.clone();
-    let mut tx = state.begin_write(auth).await?;
+    let mut tx = state.begin_transfer_write(auth).await?;
     let scope_id = resolve_scope(&mut tx, auth, &request.scope).await?;
 
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
