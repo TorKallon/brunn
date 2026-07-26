@@ -2878,6 +2878,152 @@ async fn exact_lane_tx(
     Ok(candidates)
 }
 
+const LEXICAL_CHUNK_LANE_SQL: &str = r#"
+    WITH requested AS MATERIALIZED (
+      SELECT websearch_to_tsquery('english', $4) AS terms
+    ), requested_terms AS MATERIALIZED (
+      SELECT term.ordinality AS ordinal,
+             plainto_tsquery('english', term.value) AS terms
+      FROM unnest($7::text[]) WITH ORDINALITY AS term(value, ordinality)
+    ), chunk_term_hits AS MATERIALIZED (
+      SELECT chunk.id, term.ordinal
+      FROM requested_terms term
+      CROSS JOIN LATERAL (
+        SELECT c.id
+        FROM straylight.chunks c
+        WHERE c.user_id = $1 AND c.scope_id = $2
+          AND c.search_vector @@ term.terms
+      ) chunk
+    ), source_term_hits AS MATERIALIZED (
+      SELECT source.id AS source_episode_id, term.ordinal
+      FROM requested_terms term
+      CROSS JOIN LATERAL (
+        SELECT se.id
+        FROM straylight.source_episodes se
+        WHERE se.user_id = $1 AND se.scope_id = $2
+          AND to_tsvector(
+            'english',
+            straylight.lexical_source_text(se.source_ref)
+          ) @@ term.terms
+      ) source
+    ), path_term_hits AS MATERIALIZED (
+      SELECT c.id, hit.ordinal
+      FROM source_term_hits hit
+      JOIN straylight.document_revisions dr
+        ON dr.user_id = $1 AND dr.source_episode_id = hit.source_episode_id
+      JOIN straylight.chunks c
+        ON c.user_id = dr.user_id AND c.document_id = dr.document_id
+       AND c.document_version = dr.version
+    ), candidate_coverage AS MATERIALIZED (
+      SELECT hit.id,
+             count(DISTINCT hit.ordinal) AS term_coverage,
+             count(DISTINCT hit.ordinal)
+               FILTER (WHERE hit.path_match) AS path_coverage
+      FROM (
+        SELECT chunk.id, chunk.ordinal, false AS path_match
+        FROM chunk_term_hits chunk
+        UNION ALL
+        SELECT path.id, path.ordinal, true AS path_match
+        FROM path_term_hits path
+      ) hit
+      GROUP BY hit.id
+    ), eligible_candidates AS MATERIALIZED (
+      SELECT coverage.id, coverage.term_coverage, coverage.path_coverage,
+             c.document_id, c.document_version, c.ordinal,
+             dr.source_episode_id
+      FROM candidate_coverage coverage
+      JOIN straylight.chunks c
+        ON c.user_id = $1 AND c.id = coverage.id
+      CROSS JOIN LATERAL (
+        SELECT 1
+        FROM straylight.corpus_members cm
+        WHERE cm.user_id = $1 AND cm.scope_id = $2
+          AND cm.corpus_revision_id = $3
+          AND cm.record_id = coverage.id
+          AND cm.disposition = 'active'
+        LIMIT 1
+      ) active_member
+      JOIN straylight.document_revisions dr
+        ON dr.user_id = c.user_id AND dr.document_id = c.document_id
+       AND dr.version = c.document_version
+      WHERE cardinality($6::uuid[]) = 0 OR c.id = ANY($6::uuid[])
+        OR c.document_id = ANY($6::uuid[])
+        OR dr.source_episode_id = ANY($6::uuid[])
+    ), coverage_cutoff AS MATERIALIZED (
+      SELECT candidate.term_coverage + 3 * candidate.path_coverage
+               AS weighted_coverage
+      FROM eligible_candidates candidate
+      ORDER BY weighted_coverage DESC
+      OFFSET GREATEST($5::bigint - 1, 0)
+      LIMIT 1
+    ), finalists AS MATERIALIZED (
+      SELECT candidate.*
+      FROM eligible_candidates candidate
+      WHERE candidate.term_coverage + 3 * candidate.path_coverage
+        >= coalesce(
+          (SELECT cutoff.weighted_coverage FROM coverage_cutoff cutoff),
+          -1
+        )
+    )
+    SELECT c.id, se.source_ref, dr.native_locator ->> 'path' AS path,
+           array_to_string(c.heading_path, ' / ') AS heading, c.content,
+           c.content_hash, se.source_version, se.source_kind,
+           se.metadata AS source_metadata,
+           (
+             SELECT jsonb_build_object(
+               'asset_ref','asset:' || described.asset_id::text,
+               'version',described.asset_version,
+               'path',se.metadata->>'original_path'
+             )
+             FROM straylight.source_asset_links AS described
+             WHERE described.user_id=se.user_id
+               AND described.source_episode_id=se.id
+               AND described.role='describes'
+             ORDER BY described.asset_id,described.asset_version
+             LIMIT 1
+           ) AS described_asset,
+           dr.recorded_at, c.locator,
+           ARRAY(
+             SELECT 'evidence:' || replace(ei.id::text, '-', '')
+             FROM straylight.evidence_items ei
+             JOIN straylight.corpus_members ecm
+               ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
+             WHERE ei.user_id = c.user_id AND ei.scope_id = c.scope_id
+               AND ei.source_episode_id = dr.source_episode_id
+               AND ei.evidence_kind = 'source_native'
+               AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
+             ORDER BY ei.created_at, ei.id LIMIT 32
+           ) AS evidence_refs,
+           finalists.term_coverage::float8
+             + 3.0 * finalists.path_coverage::float8
+             + ts_rank_cd(
+             setweight(to_tsvector('english', straylight.lexical_source_text(
+               se.source_ref
+             )), 'A') || c.search_vector,
+             requested.terms,
+             1
+           )::float8 AS score,
+           finalists.term_coverage + 3 * finalists.path_coverage AS term_coverage
+    FROM finalists
+    JOIN straylight.chunks c
+      ON c.user_id = $1 AND c.id = finalists.id
+    JOIN straylight.document_revisions dr
+      ON dr.user_id = c.user_id AND dr.document_id = c.document_id
+     AND dr.version = c.document_version
+    JOIN straylight.source_episodes se
+      ON se.user_id = dr.user_id AND se.id = dr.source_episode_id
+    CROSS JOIN requested
+    WHERE (
+      setweight(to_tsvector('english', straylight.lexical_source_text(
+        se.source_ref
+      )), 'A') || c.search_vector
+    ) @@ requested.terms
+    ORDER BY term_coverage DESC,
+             CASE WHEN $8 THEN c.ordinal ELSE 0 END,
+             score DESC, se.source_ref, c.ordinal
+    LIMIT $5
+"#;
+
 async fn lexical_lane_tx(
     tx: &mut Transaction<'_, Postgres>,
     session: &PinnedSession,
@@ -2888,123 +3034,17 @@ async fn lexical_lane_tx(
     let discovery_terms = lexical_discovery_terms(query);
     let discovery_query = lexical_discovery_query(query);
     let prefer_source_start = source_start_intent(query);
-    let rows = sqlx::query(
-        r#"
-        WITH requested AS (
-          SELECT websearch_to_tsquery('english', $4) AS terms,
-                 $7::text[] AS raw_terms
-        ), matching_sources AS MATERIALIZED (
-          SELECT se.id
-          FROM straylight.source_episodes se
-          CROSS JOIN requested
-          WHERE se.user_id = $1 AND se.scope_id = $2
-            AND to_tsvector(
-              'english',
-              straylight.lexical_source_text(se.source_ref)
-            ) @@ requested.terms
-        ), candidate_chunks AS MATERIALIZED (
-          SELECT c.id
-          FROM straylight.chunks c
-          CROSS JOIN requested
-          WHERE c.user_id = $1 AND c.scope_id = $2
-            AND c.search_vector @@ requested.terms
-          UNION
-          SELECT c.id
-          FROM matching_sources source
-          JOIN straylight.document_revisions dr
-            ON dr.user_id = $1 AND dr.source_episode_id = source.id
-          JOIN straylight.chunks c
-            ON c.user_id = dr.user_id AND c.document_id = dr.document_id
-           AND c.document_version = dr.version
-        )
-        SELECT c.id, se.source_ref, dr.native_locator ->> 'path' AS path,
-               array_to_string(c.heading_path, ' / ') AS heading, c.content,
-               c.content_hash, se.source_version, se.source_kind,
-               se.metadata AS source_metadata,
-               (
-                 SELECT jsonb_build_object(
-                   'asset_ref','asset:' || described.asset_id::text,
-                   'version',described.asset_version,
-                   'path',se.metadata->>'original_path'
-                 )
-                 FROM straylight.source_asset_links AS described
-                 WHERE described.user_id=se.user_id
-                   AND described.source_episode_id=se.id
-                   AND described.role='describes'
-                 ORDER BY described.asset_id,described.asset_version
-                 LIMIT 1
-               ) AS described_asset,
-               dr.recorded_at, c.locator,
-               ARRAY(
-                 SELECT 'evidence:' || replace(ei.id::text, '-', '')
-                 FROM straylight.evidence_items ei
-                 JOIN straylight.corpus_members ecm
-                   ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
-                 WHERE ei.user_id = c.user_id AND ei.scope_id = c.scope_id
-                   AND ei.source_episode_id = dr.source_episode_id
-                   AND ei.evidence_kind = 'source_native'
-                   AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
-                 ORDER BY ei.created_at, ei.id LIMIT 32
-               ) AS evidence_refs,
-               coverage.term_coverage::float8
-                 + 3.0 * coverage.path_coverage::float8
-                 + ts_rank_cd(
-                 setweight(to_tsvector('english', straylight.lexical_source_text(
-                   se.source_ref
-                 )), 'A') || c.search_vector,
-                 requested.terms,
-                 1
-               )::float8 AS score,
-               coverage.term_coverage + 3 * coverage.path_coverage AS term_coverage
-        FROM candidate_chunks candidate
-        JOIN straylight.chunks c
-          ON c.user_id = $1 AND c.id = candidate.id
-        JOIN straylight.corpus_members cm
-          ON cm.user_id = c.user_id AND cm.record_id = c.id
-        JOIN straylight.document_revisions dr
-          ON dr.user_id = c.user_id AND dr.document_id = c.document_id
-         AND dr.version = c.document_version
-        JOIN straylight.source_episodes se
-          ON se.user_id = dr.user_id AND se.id = dr.source_episode_id
-        CROSS JOIN requested
-        CROSS JOIN LATERAL (
-          SELECT
-            count(*) FILTER (WHERE (
-              setweight(to_tsvector('english', straylight.lexical_source_text(
-                se.source_ref
-              )), 'A') || c.search_vector
-            ) @@ plainto_tsquery('english', term.value)) AS term_coverage,
-            count(*) FILTER (WHERE
-              to_tsvector('english', straylight.lexical_source_text(se.source_ref))
-                @@ plainto_tsquery('english', term.value)
-            ) AS path_coverage
-          FROM unnest(requested.raw_terms) AS term(value)
-        ) coverage
-        WHERE c.user_id = $1 AND c.scope_id = $2
-          AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
-          AND (
-            setweight(to_tsvector('english', straylight.lexical_source_text(
-              se.source_ref
-            )), 'A') || c.search_vector
-          ) @@ requested.terms
-          AND (cardinality($6::uuid[]) = 0 OR c.id = ANY($6::uuid[])
-            OR c.document_id = ANY($6::uuid[]) OR dr.source_episode_id = ANY($6::uuid[]))
-        ORDER BY term_coverage DESC,
-                 CASE WHEN $8 THEN c.ordinal ELSE 0 END,
-                 score DESC, se.source_ref, c.ordinal
-        LIMIT $5
-        "#,
-    )
-    .bind(session.user_id)
-    .bind(session.scope_id)
-    .bind(session.corpus_revision_id)
-    .bind(discovery_query)
-    .bind(lane_limit(spec.limit))
-    .bind(root_ids)
-    .bind(discovery_terms)
-    .bind(prefer_source_start)
-    .fetch_all(&mut **tx)
-    .await?;
+    let rows = sqlx::query(LEXICAL_CHUNK_LANE_SQL)
+        .bind(session.user_id)
+        .bind(session.scope_id)
+        .bind(session.corpus_revision_id)
+        .bind(discovery_query)
+        .bind(lane_limit(spec.limit))
+        .bind(root_ids)
+        .bind(discovery_terms)
+        .bind(prefer_source_start)
+        .fetch_all(&mut **tx)
+        .await?;
     chunk_rows(rows, "lexical")
 }
 
@@ -9557,6 +9597,26 @@ mod tests {
         assert!(terms.contains(&"pgcr".to_owned()));
         assert!(terms.contains(&"archive".to_owned()));
         assert!(!terms.contains(&"starrupture".to_owned()));
+    }
+
+    #[test]
+    fn lexical_ranking_preserves_coverage_ties_before_full_text_scoring() {
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("requested_terms AS MATERIALIZED"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("chunk_term_hits AS MATERIALIZED"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("source_term_hits AS MATERIALIZED"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("count(DISTINCT hit.ordinal)"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("coverage_cutoff AS MATERIALIZED"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("OFFSET GREATEST($5::bigint - 1, 0)"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("FROM finalists"));
+        assert_eq!(LEXICAL_CHUNK_LANE_SQL.matches("ts_rank_cd").count(), 1);
+    }
+
+    #[test]
+    fn lexical_membership_lookup_cannot_start_from_a_new_full_manifest() {
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("eligible_candidates AS MATERIALIZED"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("CROSS JOIN LATERAL"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("cm.record_id = coverage.id"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("LIMIT 1"));
     }
 
     #[test]
