@@ -2763,12 +2763,18 @@ const EXACT_CHUNK_LANE_SQL: &str = r#"
            ARRAY(
              SELECT 'evidence:' || replace(ei.id::text, '-', '')
              FROM straylight.evidence_items ei
-             JOIN straylight.corpus_members ecm
-               ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
+             CROSS JOIN LATERAL (
+               SELECT 1
+               FROM straylight.corpus_members member
+               WHERE member.user_id = ei.user_id AND member.scope_id = ei.scope_id
+                 AND member.corpus_revision_id = $3
+                 AND member.record_id = ei.id
+                 AND member.disposition = 'active'
+               LIMIT 1
+             ) active_evidence
              WHERE ei.user_id = c.user_id AND ei.scope_id = c.scope_id
                AND ei.source_episode_id = dr.source_episode_id
                AND ei.evidence_kind = 'source_native'
-               AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
              ORDER BY ei.created_at, ei.id LIMIT 32
            ) AS evidence_refs,
            (CASE WHEN c.id = $5 THEN 4.0
@@ -2779,15 +2785,21 @@ const EXACT_CHUNK_LANE_SQL: &str = r#"
     FROM candidate_chunks candidate
     JOIN straylight.chunks c
       ON c.user_id = candidate.user_id AND c.id = candidate.id
-    JOIN straylight.corpus_members cm
-      ON cm.user_id = c.user_id AND cm.record_id = c.id
+    CROSS JOIN LATERAL (
+      SELECT 1
+      FROM straylight.corpus_members member
+      WHERE member.user_id = c.user_id AND member.scope_id = c.scope_id
+        AND member.corpus_revision_id = $3
+        AND member.record_id = c.id
+        AND member.disposition = 'active'
+      LIMIT 1
+    ) active_member
     JOIN straylight.document_revisions dr
       ON dr.user_id = c.user_id AND dr.document_id = c.document_id
      AND dr.version = c.document_version
     JOIN straylight.source_episodes se
       ON se.user_id = dr.user_id AND se.id = dr.source_episode_id
-    WHERE cm.corpus_revision_id = $3 AND cm.disposition = 'active'
-      AND (cardinality($7::uuid[]) = 0 OR c.id = ANY($7::uuid[])
+    WHERE (cardinality($7::uuid[]) = 0 OR c.id = ANY($7::uuid[])
         OR c.document_id = ANY($7::uuid[]) OR dr.source_episode_id = ANY($7::uuid[]))
     ORDER BY score DESC, se.source_ref, c.ordinal
     LIMIT $6
@@ -2826,15 +2838,21 @@ async fn exact_lane_tx(
                     WHEN lower(coalesce(orev.label, '')) = lower($4) THEN 3.0
                     ELSE 1.0 END)::float8 AS score
         FROM straylight.objects o
-        JOIN straylight.corpus_members cm
-          ON cm.user_id = o.user_id AND cm.record_id = o.id
+        CROSS JOIN LATERAL (
+          SELECT member.record_version
+          FROM straylight.corpus_members member
+          WHERE member.user_id = o.user_id AND member.scope_id = o.scope_id
+            AND member.corpus_revision_id = $3
+            AND member.record_id = o.id
+            AND member.disposition = 'active'
+          LIMIT 1
+        ) active_member
         JOIN straylight.object_revisions orev
           ON orev.user_id = o.user_id AND orev.object_id = o.id
-         AND orev.version = cm.record_version
+         AND orev.version = active_member.record_version
         JOIN straylight.source_episodes se
           ON se.user_id = orev.user_id AND se.id = orev.source_episode_id
         WHERE o.user_id = $1 AND o.scope_id = $2
-          AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
           AND (o.id = $5 OR lower(coalesce(orev.label, '')) = lower($4)
             OR position(lower($4) in lower(orev.properties::text)) > 0
             OR EXISTS (SELECT 1 FROM straylight.object_handles h
@@ -2986,12 +3004,18 @@ const LEXICAL_CHUNK_LANE_SQL: &str = r#"
            ARRAY(
              SELECT 'evidence:' || replace(ei.id::text, '-', '')
              FROM straylight.evidence_items ei
-             JOIN straylight.corpus_members ecm
-               ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
+             CROSS JOIN LATERAL (
+               SELECT 1
+               FROM straylight.corpus_members member
+               WHERE member.user_id = ei.user_id AND member.scope_id = ei.scope_id
+                 AND member.corpus_revision_id = $3
+                 AND member.record_id = ei.id
+                 AND member.disposition = 'active'
+               LIMIT 1
+             ) active_evidence
              WHERE ei.user_id = c.user_id AND ei.scope_id = c.scope_id
                AND ei.source_episode_id = dr.source_episode_id
                AND ei.evidence_kind = 'source_native'
-               AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
              ORDER BY ei.created_at, ei.id LIMIT 32
            ) AS evidence_refs,
            finalists.term_coverage::float8
@@ -3175,15 +3199,21 @@ async fn semantic_lane_tx(
         r#"
         WITH ranked AS MATERIALIZED (
           SELECT e.user_id, e.scope_id, e.target_record_id,
-                 e.source_content_hash, rk.record_kind, cm.record_version,
+                 e.source_content_hash, rk.record_kind, active_member.record_version,
                  (1.0 - (e.embedding <=> $4))::float8 AS score
           FROM straylight.embeddings e
           JOIN straylight.record_keys rk
             ON rk.user_id = e.user_id AND rk.record_id = e.target_record_id
-          JOIN straylight.corpus_members cm
-            ON cm.user_id = e.user_id AND cm.record_id = e.target_record_id
+          CROSS JOIN LATERAL (
+            SELECT member.record_version
+            FROM straylight.corpus_members member
+            WHERE member.user_id = e.user_id AND member.scope_id = e.scope_id
+              AND member.corpus_revision_id = $3
+              AND member.record_id = e.target_record_id
+              AND member.disposition = 'active'
+            LIMIT 1
+          ) active_member
           WHERE e.user_id = $1 AND e.scope_id = $2
-            AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
             AND e.model = $5
             AND (cardinality($7::uuid[]) = 0
               OR e.target_record_id = ANY($7::uuid[])
@@ -3236,12 +3266,18 @@ async fn semantic_lane_tx(
                CASE WHEN e.record_kind = 'chunk' THEN ARRAY(
                  SELECT 'evidence:' || replace(ei.id::text, '-', '')
                  FROM straylight.evidence_items ei
-                 JOIN straylight.corpus_members ecm
-                   ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
+                 CROSS JOIN LATERAL (
+                   SELECT 1
+                   FROM straylight.corpus_members member
+                   WHERE member.user_id = ei.user_id AND member.scope_id = ei.scope_id
+                     AND member.corpus_revision_id = $3
+                     AND member.record_id = ei.id
+                     AND member.disposition = 'active'
+                   LIMIT 1
+                 ) active_evidence
                  WHERE ei.user_id = c.user_id AND ei.scope_id = c.scope_id
                    AND ei.source_episode_id = dr.source_episode_id
                    AND ei.evidence_kind = 'source_native'
-                   AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
                  ORDER BY ei.created_at, ei.id LIMIT 32
                ) ELSE ARRAY[]::text[] END AS evidence_refs,
                e.score
@@ -3310,8 +3346,15 @@ async fn structured_lane_tx(
                    se.source_ref, se.source_version,
                    array_agg(p.profile_ref::text ORDER BY p.profile_ref) AS profiles
             FROM straylight.objects o
-            JOIN straylight.corpus_members cm
-              ON cm.user_id = o.user_id AND cm.record_id = o.id
+            CROSS JOIN LATERAL (
+              SELECT member.record_version
+              FROM straylight.corpus_members member
+              WHERE member.user_id = o.user_id AND member.scope_id = o.scope_id
+                AND member.corpus_revision_id = $3
+                AND member.record_id = o.id
+                AND member.disposition = 'active'
+              LIMIT 1
+            ) cm
             JOIN straylight.object_revisions orev
               ON orev.user_id = o.user_id AND orev.object_id = o.id
              AND orev.version = cm.record_version
@@ -3321,7 +3364,6 @@ async fn structured_lane_tx(
             JOIN straylight.source_episodes se
               ON se.user_id = orev.user_id AND se.id = orev.source_episode_id
             WHERE o.user_id = $1 AND o.scope_id = $2
-              AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
               AND ($4::text IS NULL OR p.profile_ref::text = $4)
               AND (cardinality($6::uuid[]) = 0 OR o.id = ANY($6::uuid[]))
             GROUP BY o.id, orev.label, orev.properties, orev.recorded_at,
@@ -3374,14 +3416,20 @@ async fn structured_lane_tx(
                          WHERE link.user_id = c.user_id AND link.claim_id = c.id
                          ORDER BY link.evidence_id) AS evidence_refs
             FROM straylight.claims c
-            JOIN straylight.corpus_members cm
-              ON cm.user_id = c.user_id AND cm.record_id = c.id
+            CROSS JOIN LATERAL (
+              SELECT 1
+              FROM straylight.corpus_members member
+              WHERE member.user_id = c.user_id AND member.scope_id = c.scope_id
+                AND member.corpus_revision_id = $3
+                AND member.record_id = c.id
+                AND member.disposition = 'active'
+              LIMIT 1
+            ) active_member
             JOIN straylight.source_episodes se
               ON se.user_id = c.user_id AND se.id = c.source_episode_id
             LEFT JOIN straylight.temporal_specs ts
               ON ts.user_id = c.user_id AND ts.id = c.valid_temporal_id
             WHERE c.user_id = $1 AND c.scope_id = $2
-              AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
               AND ($4::text IS NULL OR c.predicate::text = $4)
               AND ($5::text IS NULL OR c.authority = $5)
               AND ($6::text IS NULL OR c.canonicality = $6)
@@ -3459,10 +3507,16 @@ const STATE_LANE_SQL: &str = r#"
       FROM straylight.state_assignments sa
       JOIN straylight.claims c
         ON c.user_id = sa.user_id AND c.id = sa.claim_id
-      JOIN straylight.corpus_members cm
-        ON cm.user_id = sa.user_id AND cm.record_id = sa.claim_id
+      CROSS JOIN LATERAL (
+        SELECT 1
+        FROM straylight.corpus_members member
+        WHERE member.user_id = sa.user_id AND member.scope_id = sa.scope_id
+          AND member.corpus_revision_id = $3
+          AND member.record_id = sa.claim_id
+          AND member.disposition = 'active'
+        LIMIT 1
+      ) active_member
       WHERE sa.user_id = $1 AND sa.scope_id = $2
-        AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
         AND sa.state_machine_ref::text = $4
       ORDER BY sa.target_record_id, sa.state_machine_ref, c.recorded_at DESC, c.id DESC
     ), filtered_states AS (
@@ -3484,9 +3538,15 @@ const STATE_LANE_SQL: &str = r#"
       ON rk.user_id = $1 AND rk.record_id = ps.target_record_id
     JOIN straylight.source_episodes se
       ON se.user_id = $1 AND se.id = ps.source_episode_id
-    LEFT JOIN straylight.corpus_members om
-      ON om.user_id = $1 AND om.record_id = ps.target_record_id
-     AND om.corpus_revision_id = $3 AND om.disposition = 'active'
+    LEFT JOIN LATERAL (
+      SELECT member.record_version
+      FROM straylight.corpus_members member
+      WHERE member.user_id = $1 AND member.scope_id = $2
+        AND member.corpus_revision_id = $3
+        AND member.record_id = ps.target_record_id
+        AND member.disposition = 'active'
+      LIMIT 1
+    ) om ON true
     LEFT JOIN straylight.object_revisions orev
       ON orev.user_id = $1 AND orev.object_id = ps.target_record_id
      AND orev.version = om.record_version
@@ -3573,14 +3633,20 @@ async fn temporal_lane_tx(
                      WHERE link.user_id = c.user_id AND link.claim_id = c.id) AS evidence_refs,
                (CASE WHEN position(lower($4) in lower(to_jsonb(ts)::text)) > 0 THEN 2.0 ELSE 1.0 END)::float8 AS score
         FROM straylight.claims c
-        JOIN straylight.corpus_members cm
-          ON cm.user_id = c.user_id AND cm.record_id = c.id
+        CROSS JOIN LATERAL (
+          SELECT 1
+          FROM straylight.corpus_members member
+          WHERE member.user_id = c.user_id AND member.scope_id = c.scope_id
+            AND member.corpus_revision_id = $3
+            AND member.record_id = c.id
+            AND member.disposition = 'active'
+          LIMIT 1
+        ) active_member
         JOIN straylight.temporal_specs ts
           ON ts.user_id = c.user_id AND ts.id = c.valid_temporal_id
         JOIN straylight.source_episodes se
           ON se.user_id = c.user_id AND se.id = c.source_episode_id
         WHERE c.user_id = $1 AND c.scope_id = $2
-          AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
           AND ($4 = '' OR position(lower($4) in lower(c.value::text || ' ' || c.predicate::text || ' ' || to_jsonb(ts)::text)) > 0)
           AND (cardinality($6::uuid[]) = 0 OR c.id = ANY($6::uuid[])
             OR EXISTS (
@@ -3705,8 +3771,15 @@ async fn timestamped_chunk_lane_tx(
           FROM candidate_chunks candidate
           JOIN straylight.chunks c
             ON c.user_id = $1 AND c.id = candidate.id
-          JOIN straylight.corpus_members cm
-            ON cm.user_id = c.user_id AND cm.record_id = c.id
+          CROSS JOIN LATERAL (
+            SELECT 1
+            FROM straylight.corpus_members member
+            WHERE member.user_id = c.user_id AND member.scope_id = c.scope_id
+              AND member.corpus_revision_id = $3
+              AND member.record_id = c.id
+              AND member.disposition = 'active'
+            LIMIT 1
+          ) active_member
           JOIN straylight.document_revisions dr
             ON dr.user_id = c.user_id AND dr.document_id = c.document_id
            AND dr.version = c.document_version
@@ -3727,7 +3800,6 @@ async fn timestamped_chunk_lane_tx(
             FROM unnest(requested.raw_terms) AS term(value)
           ) coverage
           WHERE c.user_id = $1 AND c.scope_id = $2
-            AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
             AND (
               setweight(to_tsvector('english', straylight.lexical_source_text(
                 se.source_ref
@@ -3749,13 +3821,19 @@ async fn timestamped_chunk_lane_tx(
                ARRAY(
                  SELECT 'evidence:' || replace(ei.id::text, '-', '')
                  FROM straylight.evidence_items ei
-                 JOIN straylight.corpus_members ecm
-                   ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
+                 CROSS JOIN LATERAL (
+                   SELECT 1
+                   FROM straylight.corpus_members member
+                   WHERE member.user_id = ei.user_id AND member.scope_id = ei.scope_id
+                     AND member.corpus_revision_id = $3
+                     AND member.record_id = ei.id
+                     AND member.disposition = 'active'
+                   LIMIT 1
+                 ) active_evidence
                  WHERE ei.user_id = scored.user_id
                    AND ei.scope_id = scored.scope_id
                    AND ei.source_episode_id = scored.source_episode_id
                    AND ei.evidence_kind = 'source_native'
-                   AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
                  ORDER BY ei.created_at, ei.id LIMIT 32
                ) AS evidence_refs
         FROM scored
@@ -3855,11 +3933,18 @@ async fn relation_lane_tx(
                     WHEN position(lower($4) in lower(rr.predicate::text || ' ' || rr.qualifiers::text)) > 0 THEN 1.5
                     ELSE 1.0 END)::float8 AS score
         FROM straylight.relations r
-        JOIN straylight.corpus_members cm
-          ON cm.user_id = r.user_id AND cm.record_id = r.id
+        CROSS JOIN LATERAL (
+          SELECT member.record_version
+          FROM straylight.corpus_members member
+          WHERE member.user_id = r.user_id AND member.scope_id = r.scope_id
+            AND member.corpus_revision_id = $3
+            AND member.record_id = r.id
+            AND member.disposition = 'active'
+          LIMIT 1
+        ) active_member
         JOIN straylight.relation_revisions rr
           ON rr.user_id = r.user_id AND rr.relation_id = r.id
-         AND rr.version = cm.record_version
+         AND rr.version = active_member.record_version
         JOIN straylight.relation_endpoints ep
           ON ep.user_id = rr.user_id AND ep.relation_id = rr.relation_id
          AND ep.relation_version = rr.version
@@ -3868,7 +3953,6 @@ async fn relation_lane_tx(
         JOIN straylight.source_episodes se
           ON se.user_id = rr.user_id AND se.id = rr.source_episode_id
         WHERE r.user_id = $1 AND r.scope_id = $2
-          AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
           AND ($4 = '' OR cardinality($5::text[]) > 0
             OR position(lower($4) in lower(rr.predicate::text || ' ' || rr.qualifiers::text)) > 0)
           AND (cardinality($7::uuid[]) = 0 OR r.id = ANY($7::uuid[])
@@ -3964,12 +4048,18 @@ async fn expand_selected_tx(
                    ARRAY(
                      SELECT 'evidence:' || replace(ei.id::text, '-', '')
                      FROM straylight.evidence_items ei
-                     JOIN straylight.corpus_members ecm
-                       ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
+                     CROSS JOIN LATERAL (
+                       SELECT 1
+                       FROM straylight.corpus_members member
+                       WHERE member.user_id = ei.user_id AND member.scope_id = ei.scope_id
+                         AND member.corpus_revision_id = $3
+                         AND member.record_id = ei.id
+                         AND member.disposition = 'active'
+                       LIMIT 1
+                     ) active_evidence
                      WHERE ei.user_id = neighbor.user_id AND ei.scope_id = neighbor.scope_id
                        AND ei.source_episode_id = dr.source_episode_id
                        AND ei.evidence_kind = 'source_native'
-                       AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
                      ORDER BY ei.created_at, ei.id LIMIT 32
                    ) AS evidence_refs,
                    0.25::float8 AS score
@@ -3978,8 +4068,15 @@ async fn expand_selected_tx(
               ON neighbor.user_id = seed.user_id AND neighbor.document_id = seed.document_id
              AND neighbor.document_version = seed.document_version
              AND abs(neighbor.ordinal - seed.ordinal) <= $5
-            JOIN straylight.corpus_members cm
-              ON cm.user_id = neighbor.user_id AND cm.record_id = neighbor.id
+            CROSS JOIN LATERAL (
+              SELECT 1
+              FROM straylight.corpus_members member
+              WHERE member.user_id = neighbor.user_id AND member.scope_id = neighbor.scope_id
+                AND member.corpus_revision_id = $3
+                AND member.record_id = neighbor.id
+                AND member.disposition = 'active'
+              LIMIT 1
+            ) active_member
             JOIN straylight.document_revisions dr
               ON dr.user_id = neighbor.user_id AND dr.document_id = neighbor.document_id
              AND dr.version = neighbor.document_version
@@ -3987,7 +4084,6 @@ async fn expand_selected_tx(
               ON se.user_id = dr.user_id AND se.id = dr.source_episode_id
             WHERE seed.user_id = $1 AND seed.scope_id = $2
               AND seed.id = ANY($4::uuid[])
-              AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
             ORDER BY neighbor.id LIMIT 100
             "#,
         )
@@ -9617,6 +9713,47 @@ mod tests {
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("CROSS JOIN LATERAL"));
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("cm.record_id = coverage.id"));
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("LIMIT 1"));
+    }
+
+    #[test]
+    fn structured_candidates_cannot_start_from_a_new_full_manifest() {
+        let source = include_str!("read_service.rs");
+        let structured = source
+            .split_once("async fn structured_lane_tx")
+            .unwrap()
+            .1
+            .split_once("const STATE_LANE_SQL")
+            .unwrap()
+            .0;
+        assert!(structured.matches("CROSS JOIN LATERAL").count() >= 2);
+        assert!(structured.contains("member.record_id = o.id"));
+        assert!(structured.contains("member.record_id = c.id"));
+        assert!(!structured.contains("JOIN straylight.corpus_members cm"));
+    }
+
+    #[test]
+    fn state_candidates_use_exact_lateral_membership_lookups() {
+        assert!(STATE_LANE_SQL.contains("member.record_id = sa.claim_id"));
+        assert!(STATE_LANE_SQL.contains("member.record_id = ps.target_record_id"));
+        assert!(STATE_LANE_SQL.contains("LEFT JOIN LATERAL"));
+        assert!(!STATE_LANE_SQL.contains("JOIN straylight.corpus_members cm"));
+    }
+
+    #[test]
+    fn default_retrieval_lanes_cannot_start_from_a_new_full_manifest() {
+        let source = include_str!("read_service.rs");
+        let lanes = source
+            .split_once("const EXACT_CHUNK_LANE_SQL")
+            .unwrap()
+            .1
+            .split_once("async fn expand_selected_tx")
+            .unwrap()
+            .0;
+        assert!(!lanes.contains("JOIN straylight.corpus_members"));
+        assert!(lanes.contains("member.record_id = o.id"));
+        assert!(lanes.contains("member.record_id = e.target_record_id"));
+        assert!(lanes.contains("member.record_id = c.id"));
+        assert!(lanes.contains("member.record_id = r.id"));
     }
 
     #[test]
