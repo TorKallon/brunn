@@ -129,6 +129,13 @@ impl IntoResponse for ApiError {
                 "the database operation exceeded the request deadline".to_owned(),
                 None,
             ),
+            Self::Database(error) if checkpoint_session_already_committed(&error) => (
+                StatusCode::CONFLICT,
+                "session_already_checkpointed",
+                "this session already committed a checkpoint; open a new continuation using it before writing again"
+                    .to_owned(),
+                None,
+            ),
             other => {
                 error!(error = ?other, request_id, "unhandled API error");
                 (
@@ -166,4 +173,11 @@ fn database_statement_timed_out(error: &sqlx::Error) -> bool {
         .as_database_error()
         .and_then(|error| error.code())
         .is_some_and(|code| code == "57014")
+}
+
+fn checkpoint_session_already_committed(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|error| error.constraint())
+        .is_some_and(|constraint| constraint == "checkpoints_session_once_idx")
 }

@@ -5176,7 +5176,7 @@ async fn process_checkpoint(
             ));
         }
     }
-    let expected_parent = sqlx::query_scalar::<_, Uuid>(
+    let existing_checkpoint = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT id
         FROM straylight.checkpoints
@@ -5188,18 +5188,9 @@ async fn process_checkpoint(
     .bind(context.auth.user_id.0)
     .bind(session_id)
     .fetch_optional(&mut **tx)
-    .await?
-    .or(session_row.try_get::<Option<Uuid>, _>("resumed_checkpoint_id")?);
-    if expected_parent != parent_id {
-        return Err(ApiError::conflict(
-            "checkpoint_parent_conflict",
-            "checkpoint must extend the latest durable state for this session",
-            json!({
-                "expected_parent": expected_parent.map(|id| format!("checkpoint:{id}")),
-                "provided_parent": parent_id.map(|id| format!("checkpoint:{id}"))
-            }),
-        ));
-    }
+    .await?;
+    let resumed_checkpoint = session_row.try_get::<Option<Uuid>, _>("resumed_checkpoint_id")?;
+    validate_checkpoint_lineage(existing_checkpoint, resumed_checkpoint, parent_id)?;
     let summary = item
         .payload
         .get("summary")
@@ -5521,6 +5512,33 @@ async fn process_checkpoint(
             "source_refs": source_refs
         }),
     });
+    Ok(())
+}
+
+fn validate_checkpoint_lineage(
+    existing_checkpoint: Option<Uuid>,
+    resumed_checkpoint: Option<Uuid>,
+    provided_parent: Option<Uuid>,
+) -> ApiResult<()> {
+    if let Some(existing_checkpoint) = existing_checkpoint {
+        return Err(ApiError::conflict(
+            "session_already_checkpointed",
+            "this session already committed a checkpoint; open a new continuation using it before writing again",
+            json!({
+                "checkpoint": format!("checkpoint:{existing_checkpoint}")
+            }),
+        ));
+    }
+    if resumed_checkpoint != provided_parent {
+        return Err(ApiError::conflict(
+            "checkpoint_parent_conflict",
+            "the checkpoint parent must match the checkpoint used to open this session",
+            json!({
+                "expected_parent": resumed_checkpoint.map(|id| format!("checkpoint:{id}")),
+                "provided_parent": provided_parent.map(|id| format!("checkpoint:{id}"))
+            }),
+        ));
+    }
     Ok(())
 }
 
@@ -6000,6 +6018,52 @@ mod tests {
         .expect("count copied members");
         assert_eq!(inserted, 50_000);
         tx.rollback().await.expect("rollback bulk member copy test");
+    }
+
+    #[test]
+    fn checkpoint_lineage_requires_a_fresh_continuation_session() {
+        let resumed = Uuid::now_v7();
+        assert!(validate_checkpoint_lineage(None, Some(resumed), Some(resumed)).is_ok());
+
+        let committed = Uuid::now_v7();
+        let error = validate_checkpoint_lineage(Some(committed), Some(resumed), Some(committed))
+            .expect_err("a session may commit only one checkpoint");
+        match error {
+            ApiError::Public { code, details, .. } => {
+                assert_eq!(code, "session_already_checkpointed");
+                assert_eq!(
+                    details
+                        .as_ref()
+                        .and_then(|value| value.get("checkpoint"))
+                        .and_then(Value::as_str),
+                    Some(format!("checkpoint:{committed}").as_str())
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn checkpoint_lineage_rejects_a_parent_not_bound_to_the_session() {
+        let resumed = Uuid::now_v7();
+        let provided = Uuid::now_v7();
+        let error = validate_checkpoint_lineage(None, Some(resumed), Some(provided))
+            .expect_err("the supplied parent must be the session resume link");
+        match error {
+            ApiError::Public { code, details, .. } => {
+                assert_eq!(code, "checkpoint_parent_conflict");
+                let details = details.expect("checkpoint conflict details");
+                assert_eq!(
+                    details["expected_parent"],
+                    json!(format!("checkpoint:{resumed}"))
+                );
+                assert_eq!(
+                    details["provided_parent"],
+                    json!(format!("checkpoint:{provided}"))
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

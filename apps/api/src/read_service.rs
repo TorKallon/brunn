@@ -2023,30 +2023,48 @@ async fn resolve_reference_candidates_tx(
 
     let rows = sqlx::query(
         r#"
-        SELECT DISTINCT candidate.record_id, candidate.record_kind
-        FROM (
-          SELECT h.object_id AS record_id, 'object'::text AS record_kind
+        WITH handle_candidates AS MATERIALIZED (
+          SELECT h.object_id AS record_id, 'object'::text AS record_kind,
+                 NULL::integer AS record_version
           FROM straylight.object_handles h
           WHERE h.user_id = $1 AND h.scope_id = $2 AND h.valid_to IS NULL
             AND lower(h.handle) = lower($4)
-          UNION ALL
-          SELECT se.id, 'source_episode'::text
+        ),
+        source_candidates AS MATERIALIZED (
+          SELECT se.id AS record_id, 'source_episode'::text AS record_kind,
+                 NULL::integer AS record_version
           FROM straylight.source_episodes se
           WHERE se.user_id = $1 AND se.scope_id = $2
             AND lower(se.source_ref) = lower($4)
-          UNION ALL
-          SELECT orev.object_id, 'object'::text
+        ),
+        label_candidates AS MATERIALIZED (
+          SELECT orev.object_id AS record_id, 'object'::text AS record_kind,
+                 orev.version AS record_version
           FROM straylight.object_revisions orev
-          JOIN straylight.corpus_members cm0
-            ON cm0.user_id = orev.user_id AND cm0.record_id = orev.object_id
-           AND cm0.record_version = orev.version
-          WHERE orev.user_id = $1 AND cm0.scope_id = $2
-            AND cm0.corpus_revision_id = $3 AND cm0.disposition = 'active'
-            AND lower(orev.label) = lower($4)
-        ) candidate
-        JOIN straylight.corpus_members cm
-          ON cm.user_id = $1 AND cm.record_id = candidate.record_id
-         AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
+          WHERE orev.user_id = $1 AND lower(orev.label) = lower($4)
+        ),
+        candidates AS MATERIALIZED (
+          SELECT * FROM handle_candidates
+          UNION ALL
+          SELECT * FROM source_candidates
+          UNION ALL
+          SELECT * FROM label_candidates
+        )
+        SELECT DISTINCT candidate.record_id, candidate.record_kind
+        FROM candidates candidate
+        CROSS JOIN LATERAL (
+          SELECT 1
+          FROM straylight.corpus_members cm
+          WHERE cm.user_id = $1 AND cm.scope_id = $2
+            AND cm.corpus_revision_id = $3
+            AND cm.record_id = candidate.record_id
+            AND cm.disposition = 'active'
+            AND (
+              candidate.record_version IS NULL
+              OR cm.record_version = candidate.record_version
+            )
+          LIMIT 1
+        ) active_member
         LIMIT 25
         "#,
     )
@@ -4560,6 +4578,9 @@ async fn resolve_record_tx(
             version: row.try_get("record_version")?,
         });
     }
+    if let Some(record) = resolve_document_path_tx(tx, session, reference).await? {
+        return Ok(record);
+    }
     let candidates = resolve_reference_candidates_tx(tx, session, reference).await?;
     if candidates.len() > 1 {
         return Err(ApiError::with_details(
@@ -4593,6 +4614,71 @@ async fn resolve_record_tx(
     .await?
     .flatten();
     Ok(ResolvedRecord { id, kind, version })
+}
+
+async fn resolve_document_path_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    session: &PinnedSession,
+    path: &str,
+) -> ApiResult<Option<ResolvedRecord>> {
+    let rows = sqlx::query(
+        r#"
+        WITH path_candidates AS MATERIALIZED (
+          SELECT revision.document_id, revision.version
+          FROM straylight.document_revisions revision
+          WHERE revision.user_id = $1
+            AND revision.native_locator ->> 'path' = $4
+        )
+        SELECT candidate.document_id, member.record_version
+        FROM path_candidates candidate
+        CROSS JOIN LATERAL (
+          SELECT corpus.record_version
+          FROM straylight.corpus_members corpus
+          WHERE corpus.user_id = $1 AND corpus.scope_id = $2
+            AND corpus.corpus_revision_id = $3
+            AND corpus.record_id = candidate.document_id
+            AND corpus.record_kind = 'document'
+            AND corpus.record_version = candidate.version
+            AND corpus.disposition = 'active'
+          LIMIT 1
+        ) member
+        ORDER BY candidate.version DESC, candidate.document_id
+        LIMIT 2
+        "#,
+    )
+    .bind(session.user_id)
+    .bind(session.scope_id)
+    .bind(session.corpus_revision_id)
+    .bind(path)
+    .fetch_all(&mut **tx)
+    .await?;
+    if rows.len() > 1 {
+        let candidates = rows
+            .iter()
+            .map(|row| {
+                Ok(json!({
+                    "ref": record_ref("document", row.try_get::<Uuid, _>("document_id")?),
+                    "kind": "document",
+                    "version": row.try_get::<Option<i32>, _>("record_version")?
+                }))
+            })
+            .collect::<Result<Vec<_>, sqlx::Error>>()?;
+        return Err(ApiError::with_details(
+            http::StatusCode::CONFLICT,
+            "ambiguous_reference",
+            "the source path resolves to multiple active documents",
+            json!({"path": path, "candidates": candidates}),
+        ));
+    }
+    rows.first()
+        .map(|row| {
+            Ok(ResolvedRecord {
+                id: row.try_get("document_id")?,
+                kind: "document".to_owned(),
+                version: row.try_get("record_version")?,
+            })
+        })
+        .transpose()
 }
 
 async fn load_text_tx(
@@ -9116,6 +9202,171 @@ async fn verify_staged_claim(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn document_path_resolves_to_the_active_revision() {
+        let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+        else {
+            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping path resolution test");
+            return;
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database_url)
+            .await
+            .expect("connect to disposable Postgres");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("apply Straylight migrations");
+
+        let mut tx = pool.begin().await.expect("begin path resolution test");
+        let user_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
+        )
+        .bind(user_id)
+        .bind(format!("path-resolution-test:{user_id}"))
+        .bind("Path resolution test")
+        .execute(&mut *tx)
+        .await
+        .expect("insert test user");
+        let scope_id = sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM straylight.scopes WHERE user_id=$1 AND scope_ref='scope:root'",
+        )
+        .bind(user_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("load seeded root scope");
+        let policy = sqlx::query(
+            "SELECT id,current_version FROM straylight.policies WHERE user_id=$1 AND is_default",
+        )
+        .bind(user_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("load seeded policy");
+        let policy_id: Uuid = policy.try_get("id").expect("policy id");
+        let policy_version: i32 = policy.try_get("current_version").expect("policy version");
+        let source_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.source_episodes (
+              id,user_id,scope_id,source_ref,source_kind,source_version,title,
+              captured_at,content_hash,native_locator,policy_id,policy_version
+            ) VALUES ($1,$2,$3,$4,'file',$5,$6,clock_timestamp(),$7,$8,$9,$10)
+            "#,
+        )
+        .bind(source_id)
+        .bind(user_id)
+        .bind(scope_id)
+        .bind(format!("staged-import:{source_id}"))
+        .bind("sha256:path-resolution")
+        .bind("Current plan")
+        .bind("1".repeat(64))
+        .bind(json!({"path": "Plans/current.md"}))
+        .bind(policy_id)
+        .bind(policy_version)
+        .execute(&mut *tx)
+        .await
+        .expect("insert source");
+        let document_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.documents (
+              id,user_id,scope_id,current_version,policy_id,policy_version
+            ) VALUES ($1,$2,$3,1,$4,$5)
+            "#,
+        )
+        .bind(document_id)
+        .bind(user_id)
+        .bind(scope_id)
+        .bind(policy_id)
+        .bind(policy_version)
+        .execute(&mut *tx)
+        .await
+        .expect("insert document");
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.document_revisions (
+              user_id,document_id,version,source_episode_id,title,media_type,
+              content_hash,native_locator,byte_size
+            ) VALUES ($1,$2,1,$3,$4,'text/markdown',$5,$6,14)
+            "#,
+        )
+        .bind(user_id)
+        .bind(document_id)
+        .bind(source_id)
+        .bind("Current plan")
+        .bind("2".repeat(64))
+        .bind(json!({"path": "Plans/current.md"}))
+        .execute(&mut *tx)
+        .await
+        .expect("insert document revision");
+        let revision_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.corpus_revisions (
+              id,user_id,scope_id,parent_revision_id,revision_number,manifest_hash
+            ) VALUES ($1,$2,$3,NULL,1,$4)
+            "#,
+        )
+        .bind(revision_id)
+        .bind(user_id)
+        .bind(scope_id)
+        .bind("3".repeat(64))
+        .execute(&mut *tx)
+        .await
+        .expect("insert corpus revision");
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.corpus_members (
+              user_id,scope_id,corpus_revision_id,record_id,record_kind,
+              record_version,disposition
+            ) VALUES ($1,$2,$3,$4,'document',1,'active')
+            "#,
+        )
+        .bind(user_id)
+        .bind(scope_id)
+        .bind(revision_id)
+        .bind(document_id)
+        .execute(&mut *tx)
+        .await
+        .expect("activate document");
+        let now = Utc::now();
+        let session = PinnedSession {
+            session_id: Uuid::now_v7(),
+            session_ref: "session:path-resolution".to_owned(),
+            user_id,
+            scope_id,
+            scope_ref: "scope:root".to_owned(),
+            credential_id: Uuid::now_v7(),
+            corpus_revision_id: revision_id,
+            corpus_revision_ref: format!("revision:{revision_id}"),
+            revision_number: 1,
+            manifest_hash: "3".repeat(64),
+            task_hash: "4".repeat(64),
+            task_size_bytes: 1,
+            capability_snapshot: vec!["read".to_owned()],
+            authorization_scope_refs: vec!["scope:root".to_owned()],
+            policy_projection_hash: "5".repeat(64),
+            mode: "read_write".to_owned(),
+            parent_session_id: None,
+            resumed_checkpoint_id: None,
+            created_at: now,
+            expires_at: now + chrono::Duration::hours(1),
+            freshness: Freshness::default(),
+        };
+
+        let resolved = resolve_record_tx(&mut tx, &session, "Plans/current.md")
+            .await
+            .expect("resolve exact document path");
+        assert_eq!(resolved.id, document_id);
+        assert_eq!(resolved.kind, "document");
+        assert_eq!(resolved.version, Some(1));
+        tx.rollback().await.expect("rollback path resolution test");
+    }
+
     fn read_spec() -> ReadSpec {
         ReadSpec {
             reference: "document:018f0f3d8c2d7a2bb5077d5f6e5e0001".to_owned(),
@@ -9322,6 +9573,37 @@ mod tests {
         assert!(EXACT_CHUNK_LANE_SQL.contains("lower(c.content) LIKE lower($8)"));
         assert_eq!(EXACT_CHUNK_LANE_SQL.matches("UNION").count(), 4);
         assert!(!EXACT_CHUNK_LANE_SQL.contains("OR lower(c.content) LIKE"));
+    }
+
+    #[test]
+    fn exact_document_paths_use_bounded_candidate_first_resolution() {
+        let source = include_str!("read_service.rs");
+        let resolver = source
+            .split("async fn resolve_document_path_tx")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn load_text_tx").next())
+            .expect("document path resolver source");
+        assert!(resolver.contains("path_candidates AS MATERIALIZED"));
+        assert!(resolver.contains("revision.native_locator ->> 'path' = $4"));
+        assert!(resolver.contains("CROSS JOIN LATERAL"));
+        assert!(resolver.contains("corpus.record_id = candidate.document_id"));
+        assert!(resolver.contains("LIMIT 2"));
+    }
+
+    #[test]
+    fn generic_reference_candidates_cannot_start_from_the_full_manifest() {
+        let source = include_str!("read_service.rs");
+        let resolver = source
+            .split("async fn resolve_reference_candidates_tx")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn checkpoint_tx").next())
+            .expect("reference candidate resolver source");
+        assert!(resolver.contains("handle_candidates AS MATERIALIZED"));
+        assert!(resolver.contains("source_candidates AS MATERIALIZED"));
+        assert!(resolver.contains("label_candidates AS MATERIALIZED"));
+        assert!(resolver.contains("candidates AS MATERIALIZED"));
+        assert!(resolver.contains("CROSS JOIN LATERAL"));
+        assert!(resolver.contains("cm.record_id = candidate.record_id"));
     }
 
     #[test]
