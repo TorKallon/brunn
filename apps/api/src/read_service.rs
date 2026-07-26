@@ -3584,6 +3584,29 @@ async fn timestamped_chunk_lane_tx(
         WITH requested AS (
           SELECT websearch_to_tsquery('english', $4) AS terms,
                  $7::text[] AS raw_terms
+        ), matching_sources AS MATERIALIZED (
+          SELECT se.id
+          FROM straylight.source_episodes se
+          CROSS JOIN requested
+          WHERE se.user_id = $1 AND se.scope_id = $2
+            AND to_tsvector(
+              'english',
+              straylight.lexical_source_text(se.source_ref)
+            ) @@ requested.terms
+        ), candidate_chunks AS MATERIALIZED (
+          SELECT c.id
+          FROM straylight.chunks c
+          CROSS JOIN requested
+          WHERE c.user_id = $1 AND c.scope_id = $2
+            AND c.search_vector @@ requested.terms
+          UNION
+          SELECT c.id
+          FROM matching_sources source
+          JOIN straylight.document_revisions dr
+            ON dr.user_id = $1 AND dr.source_episode_id = source.id
+          JOIN straylight.chunks c
+            ON c.user_id = dr.user_id AND c.document_id = dr.document_id
+           AND c.document_version = dr.version
         ), timestamped AS (
           SELECT c.id, c.user_id, c.scope_id, c.document_id, c.document_version,
                  c.ordinal, c.heading_path, c.content, c.content_hash, c.locator,
@@ -3621,7 +3644,9 @@ async fn timestamped_chunk_lane_tx(
                    1
                  )::float8 AS score,
                  coverage.term_coverage + 3 * coverage.path_coverage AS term_coverage
-          FROM straylight.chunks c
+          FROM candidate_chunks candidate
+          JOIN straylight.chunks c
+            ON c.user_id = $1 AND c.id = candidate.id
           JOIN straylight.corpus_members cm
             ON cm.user_id = c.user_id AND cm.record_id = c.id
           JOIN straylight.document_revisions dr
@@ -9297,6 +9322,20 @@ mod tests {
         assert!(EXACT_CHUNK_LANE_SQL.contains("lower(c.content) LIKE lower($8)"));
         assert_eq!(EXACT_CHUNK_LANE_SQL.matches("UNION").count(), 4);
         assert!(!EXACT_CHUNK_LANE_SQL.contains("OR lower(c.content) LIKE"));
+    }
+
+    #[test]
+    fn timestamped_chunk_candidates_use_fts_indexes_before_date_extraction() {
+        let source = include_str!("read_service.rs");
+        let timestamped_lane = source
+            .split("async fn timestamped_chunk_lane_tx")
+            .nth(1)
+            .and_then(|tail| tail.split("async fn relations_lane_tx").next())
+            .expect("timestamped chunk lane source");
+        assert!(timestamped_lane.contains("matching_sources AS MATERIALIZED"));
+        assert!(timestamped_lane.contains("candidate_chunks AS MATERIALIZED"));
+        assert!(timestamped_lane.contains("FROM candidate_chunks candidate"));
+        assert!(timestamped_lane.contains("c.search_vector @@ requested.terms"));
     }
 
     fn retrieval_candidate(path: &str, content: &str) -> RetrievalCandidate {
