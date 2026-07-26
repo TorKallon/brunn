@@ -2688,6 +2688,93 @@ fn mode_name(mode: RetrievalMode) -> &'static str {
     }
 }
 
+const EXACT_CHUNK_LANE_SQL: &str = r#"
+    -- Separate match families keep the content predicate eligible for its trigram index.
+    WITH candidate_chunks AS MATERIALIZED (
+      SELECT c.id, c.user_id
+      FROM straylight.chunks c
+      WHERE c.user_id = $1 AND c.scope_id = $2
+        AND c.id = $5
+      UNION
+      SELECT c.id, c.user_id
+      FROM straylight.chunks c
+      WHERE c.user_id = $1 AND c.scope_id = $2
+        AND lower(c.content_hash) = lower(regexp_replace($4, '^sha256:', ''))
+      UNION
+      SELECT c.id, c.user_id
+      FROM straylight.chunks c
+      WHERE c.user_id = $1 AND c.scope_id = $2
+        AND lower(c.content) LIKE lower($8) ESCAPE '\'
+      UNION
+      SELECT c.id, c.user_id
+      FROM straylight.chunks c
+      JOIN straylight.document_revisions dr
+        ON dr.user_id = c.user_id AND dr.document_id = c.document_id
+       AND dr.version = c.document_version
+      WHERE c.user_id = $1 AND c.scope_id = $2
+        AND lower(coalesce(dr.title, '')) = lower($4)
+      UNION
+      SELECT c.id, c.user_id
+      FROM straylight.chunks c
+      JOIN straylight.document_revisions dr
+        ON dr.user_id = c.user_id AND dr.document_id = c.document_id
+       AND dr.version = c.document_version
+      JOIN straylight.source_episodes se
+        ON se.user_id = dr.user_id AND se.id = dr.source_episode_id
+      WHERE c.user_id = $1 AND c.scope_id = $2
+        AND lower(se.source_ref) = lower($4)
+    )
+    SELECT c.id, se.source_ref, dr.native_locator ->> 'path' AS path,
+           array_to_string(c.heading_path, ' / ') AS heading, c.content,
+           c.content_hash, se.source_version, se.source_kind,
+           se.metadata AS source_metadata,
+           (
+             SELECT jsonb_build_object(
+               'asset_ref','asset:' || described.asset_id::text,
+               'version',described.asset_version,
+               'path',se.metadata->>'original_path'
+             )
+             FROM straylight.source_asset_links AS described
+             WHERE described.user_id=se.user_id
+               AND described.source_episode_id=se.id
+               AND described.role='describes'
+             ORDER BY described.asset_id,described.asset_version
+             LIMIT 1
+           ) AS described_asset,
+           dr.recorded_at, c.locator,
+           ARRAY(
+             SELECT 'evidence:' || replace(ei.id::text, '-', '')
+             FROM straylight.evidence_items ei
+             JOIN straylight.corpus_members ecm
+               ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
+             WHERE ei.user_id = c.user_id AND ei.scope_id = c.scope_id
+               AND ei.source_episode_id = dr.source_episode_id
+               AND ei.evidence_kind = 'source_native'
+               AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
+             ORDER BY ei.created_at, ei.id LIMIT 32
+           ) AS evidence_refs,
+           (CASE WHEN c.id = $5 THEN 4.0
+                WHEN lower(c.content_hash) = lower(regexp_replace($4, '^sha256:', '')) THEN 3.0
+                WHEN lower(coalesce(dr.title, '')) = lower($4) THEN 2.0
+                WHEN lower(se.source_ref) = lower($4) THEN 2.0
+                ELSE 1.0 END)::float8 AS score
+    FROM candidate_chunks candidate
+    JOIN straylight.chunks c
+      ON c.user_id = candidate.user_id AND c.id = candidate.id
+    JOIN straylight.corpus_members cm
+      ON cm.user_id = c.user_id AND cm.record_id = c.id
+    JOIN straylight.document_revisions dr
+      ON dr.user_id = c.user_id AND dr.document_id = c.document_id
+     AND dr.version = c.document_version
+    JOIN straylight.source_episodes se
+      ON se.user_id = dr.user_id AND se.id = dr.source_episode_id
+    WHERE cm.corpus_revision_id = $3 AND cm.disposition = 'active'
+      AND (cardinality($7::uuid[]) = 0 OR c.id = ANY($7::uuid[])
+        OR c.document_id = ANY($7::uuid[]) OR dr.source_episode_id = ANY($7::uuid[]))
+    ORDER BY score DESC, se.source_ref, c.ordinal
+    LIMIT $6
+"#;
+
 async fn exact_lane_tx(
     tx: &mut Transaction<'_, Postgres>,
     session: &PinnedSession,
@@ -2700,72 +2787,17 @@ async fn exact_lane_tx(
     }
     let parsed_id = parse_uuid_ref(query, &[]).ok();
     let limit = lane_limit(spec.limit);
-    let rows = sqlx::query(
-        r#"
-        SELECT c.id, se.source_ref, dr.native_locator ->> 'path' AS path,
-               array_to_string(c.heading_path, ' / ') AS heading, c.content,
-               c.content_hash, se.source_version, se.source_kind,
-               se.metadata AS source_metadata,
-               (
-                 SELECT jsonb_build_object(
-                   'asset_ref','asset:' || described.asset_id::text,
-                   'version',described.asset_version,
-                   'path',se.metadata->>'original_path'
-                 )
-                 FROM straylight.source_asset_links AS described
-                 WHERE described.user_id=se.user_id
-                   AND described.source_episode_id=se.id
-                   AND described.role='describes'
-                 ORDER BY described.asset_id,described.asset_version
-                 LIMIT 1
-               ) AS described_asset,
-               dr.recorded_at, c.locator,
-               ARRAY(
-                 SELECT 'evidence:' || replace(ei.id::text, '-', '')
-                 FROM straylight.evidence_items ei
-                 JOIN straylight.corpus_members ecm
-                   ON ecm.user_id = ei.user_id AND ecm.record_id = ei.id
-                 WHERE ei.user_id = c.user_id AND ei.scope_id = c.scope_id
-                   AND ei.source_episode_id = dr.source_episode_id
-                   AND ei.evidence_kind = 'source_native'
-                   AND ecm.corpus_revision_id = $3 AND ecm.disposition = 'active'
-                 ORDER BY ei.created_at, ei.id LIMIT 32
-               ) AS evidence_refs,
-               (CASE WHEN c.id = $5 THEN 4.0
-                    WHEN lower(c.content_hash) = lower(regexp_replace($4, '^sha256:', '')) THEN 3.0
-                    WHEN lower(coalesce(dr.title, '')) = lower($4) THEN 2.0
-                    WHEN lower(se.source_ref) = lower($4) THEN 2.0
-                    ELSE 1.0 END)::float8 AS score
-        FROM straylight.chunks c
-        JOIN straylight.corpus_members cm
-          ON cm.user_id = c.user_id AND cm.record_id = c.id
-        JOIN straylight.document_revisions dr
-          ON dr.user_id = c.user_id AND dr.document_id = c.document_id
-         AND dr.version = c.document_version
-        JOIN straylight.source_episodes se
-          ON se.user_id = dr.user_id AND se.id = dr.source_episode_id
-        WHERE c.user_id = $1 AND c.scope_id = $2
-          AND cm.corpus_revision_id = $3 AND cm.disposition = 'active'
-          AND (c.id = $5 OR lower(c.content_hash) = lower(regexp_replace($4, '^sha256:', ''))
-            OR lower(coalesce(dr.title, '')) = lower($4)
-            OR lower(se.source_ref) = lower($4)
-            OR lower(c.content) LIKE lower($8) ESCAPE '\')
-          AND (cardinality($7::uuid[]) = 0 OR c.id = ANY($7::uuid[])
-            OR c.document_id = ANY($7::uuid[]) OR dr.source_episode_id = ANY($7::uuid[]))
-        ORDER BY score DESC, se.source_ref, c.ordinal
-        LIMIT $6
-        "#,
-    )
-    .bind(session.user_id)
-    .bind(session.scope_id)
-    .bind(session.corpus_revision_id)
-    .bind(query)
-    .bind(parsed_id)
-    .bind(limit)
-    .bind(root_ids)
-    .bind(sql_like_literal_contains(query))
-    .fetch_all(&mut **tx)
-    .await?;
+    let rows = sqlx::query(EXACT_CHUNK_LANE_SQL)
+        .bind(session.user_id)
+        .bind(session.scope_id)
+        .bind(session.corpus_revision_id)
+        .bind(query)
+        .bind(parsed_id)
+        .bind(limit)
+        .bind(root_ids)
+        .bind(sql_like_literal_contains(query))
+        .fetch_all(&mut **tx)
+        .await?;
     let mut candidates = chunk_rows(rows, "exact")?;
 
     let object_rows = sqlx::query(
@@ -9257,6 +9289,14 @@ mod tests {
             sql_like_literal_contains(r"50%_complete\path"),
             r"%50\%\_complete\\path%"
         );
+    }
+
+    #[test]
+    fn exact_chunk_candidates_keep_indexable_predicates_separate() {
+        assert!(EXACT_CHUNK_LANE_SQL.contains("WITH candidate_chunks AS MATERIALIZED"));
+        assert!(EXACT_CHUNK_LANE_SQL.contains("lower(c.content) LIKE lower($8)"));
+        assert_eq!(EXACT_CHUNK_LANE_SQL.matches("UNION").count(), 4);
+        assert!(!EXACT_CHUNK_LANE_SQL.contains("OR lower(c.content) LIKE"));
     }
 
     fn retrieval_candidate(path: &str, content: &str) -> RetrievalCandidate {
