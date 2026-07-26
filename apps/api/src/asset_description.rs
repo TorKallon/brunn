@@ -1007,7 +1007,7 @@ fn model_input_kind(path: &str, media_type: &str) -> Option<&'static str> {
     None
 }
 
-fn description_path(original_path: &str) -> String {
+pub(crate) fn description_path(original_path: &str) -> String {
     let digest = hex::encode(Sha256::digest(original_path.as_bytes()));
     format!(".carrystate/generated/descriptions/{digest}.md")
 }

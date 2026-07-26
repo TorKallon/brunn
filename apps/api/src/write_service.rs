@@ -8,6 +8,7 @@ use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::{
+    asset_description,
     auth::AuthContext,
     db::AppState,
     error::{ApiError, ApiResult},
@@ -1840,6 +1841,40 @@ pub(crate) fn validate_stage_path(path: &str) -> ApiResult<()> {
     }
 }
 
+fn is_canonical_generated_description_path(path: &str) -> bool {
+    let Some(digest) = path
+        .strip_prefix(".carrystate/generated/descriptions/")
+        .and_then(|value| value.strip_suffix(".md"))
+    else {
+        return false;
+    };
+    digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn validate_snapshot_paths(paths: &[String]) -> ApiResult<()> {
+    for path in paths {
+        if !is_canonical_generated_description_path(path) {
+            validate_stage_path(path)?;
+        }
+    }
+    let expected_descriptions = paths
+        .iter()
+        .filter(|path| !is_canonical_generated_description_path(path))
+        .map(|path| asset_description::description_path(path))
+        .collect::<HashSet<_>>();
+    if paths.iter().any(|path| {
+        is_canonical_generated_description_path(path) && !expected_descriptions.contains(path)
+    }) {
+        return Err(ApiError::invalid(
+            "snapshot_paths may retain only generated descriptions for source paths in the same snapshot",
+        ));
+    }
+    Ok(())
+}
+
 fn insert_prepared_path(paths: &mut HashSet<String>, path: &str) -> ApiResult<()> {
     if path.len() > MAX_STAGE_PATH_BYTES {
         return Err(ApiError::invalid(format!(
@@ -2114,9 +2149,7 @@ async fn expand_single_stage_promotion(
                     "snapshot_paths exceeds the 4 MiB path budget",
                 ));
             }
-            for path in &paths {
-                validate_stage_path(path)?;
-            }
+            validate_snapshot_paths(&paths)?;
             paths.sort();
             let original_len = paths.len();
             paths.dedup();
@@ -5912,6 +5945,22 @@ mod tests {
         let (readability, text) = stage_text_index(b"not text\0with a payload");
         assert_eq!(readability, "unsupported");
         assert!(text.is_none());
+    }
+
+    #[test]
+    fn snapshot_paths_allow_only_canonical_companions_for_present_sources() {
+        let source = "Trips/receipt.jpg".to_owned();
+        let description = asset_description::description_path(&source);
+        assert!(validate_stage_path(&description).is_err());
+        assert!(validate_snapshot_paths(&[source.clone(), description.clone()]).is_ok());
+        assert!(validate_snapshot_paths(std::slice::from_ref(&description)).is_err());
+        assert!(
+            validate_snapshot_paths(&[
+                source,
+                ".carrystate/generated/descriptions/owned.md".to_owned()
+            ])
+            .is_err()
+        );
     }
 
     #[test]
