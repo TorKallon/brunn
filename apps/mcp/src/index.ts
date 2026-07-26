@@ -254,7 +254,7 @@ registerJsonTool(
     root_refs: z.array(reference).optional(),
     source_refs: z.array(z.object({
       ref: reference,
-      span: z.tuple([z.number().int().min(0), z.number().int().min(0)]).optional(),
+      span: z.array(z.number().int().min(0)).length(2).optional(),
       content_hash: z.string().optional(),
     })).optional(),
     base_corpus_revision: reference.optional(),

@@ -121,6 +121,23 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   } | undefined;
   assert.match(sourceRefs?.items?.description ?? "", /evidence:/);
   assert.match(sourceRefs?.items?.description ?? "", /source_episode:/);
+  const save = response.tools.find((tool) => tool.name === "memory.save");
+  assert.ok(save);
+  const saveSourceRefs = save.inputSchema.properties?.source_refs as {
+    items?: {
+      properties?: {
+        span?: {
+          items?: unknown;
+          minItems?: number;
+          maxItems?: number;
+        };
+      };
+    };
+  } | undefined;
+  const saveSpan = saveSourceRefs?.items?.properties?.span;
+  assert.equal(Array.isArray(saveSpan?.items), false);
+  assert.equal(saveSpan?.minItems, 2);
+  assert.equal(saveSpan?.maxItems, 2);
   const assetList = response.tools.find((tool) => tool.name === "asset.list");
   assert.ok(assetList);
   assert.deepEqual(
