@@ -2772,28 +2772,44 @@ async fn insert_members(
     revision_id: Uuid,
     members: &BTreeMap<Uuid, Member>,
 ) -> ApiResult<()> {
+    let mut record_ids = Vec::with_capacity(members.len());
+    let mut record_kinds = Vec::with_capacity(members.len());
+    let mut record_versions = Vec::with_capacity(members.len());
+    let mut dispositions = Vec::with_capacity(members.len());
     for member in members.values() {
         if member.record_kind == "checkpoint" {
             continue;
         }
-        sqlx::query(
-            r#"
-            INSERT INTO straylight.corpus_members (
-              user_id,scope_id,corpus_revision_id,record_id,record_kind,
-              record_version,disposition
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7)
-            "#,
-        )
-        .bind(user_id)
-        .bind(scope_id)
-        .bind(revision_id)
-        .bind(member.record_id)
-        .bind(&member.record_kind)
-        .bind(member.record_version)
-        .bind(&member.disposition)
-        .execute(&mut **tx)
-        .await?;
+        record_ids.push(member.record_id);
+        record_kinds.push(member.record_kind.as_str());
+        record_versions.push(member.record_version);
+        dispositions.push(member.disposition.as_str());
     }
+    if record_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.corpus_members (
+          user_id,scope_id,corpus_revision_id,record_id,record_kind,
+          record_version,disposition
+        )
+        SELECT $1,$2,$3,member.record_id,member.record_kind,
+               member.record_version,member.disposition
+        FROM unnest(
+          $4::uuid[], $5::text[], $6::integer[], $7::text[]
+        ) AS member(record_id,record_kind,record_version,disposition)
+        "#,
+    )
+    .bind(user_id)
+    .bind(scope_id)
+    .bind(revision_id)
+    .bind(&record_ids)
+    .bind(&record_kinds)
+    .bind(&record_versions)
+    .bind(&dispositions)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
@@ -5847,6 +5863,7 @@ mod tests {
     use std::io::{Cursor, Write};
 
     use crate::models::{CredentialId, UserId};
+    use sqlx::postgres::PgPoolOptions;
 
     use super::*;
 
@@ -5876,6 +5893,113 @@ mod tests {
             writer.finish().unwrap();
         }
         Bytes::from(bytes)
+    }
+
+    #[tokio::test]
+    async fn bulk_member_copy_handles_owner_sized_corpus() {
+        let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+        else {
+            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping bulk member copy test");
+            return;
+        };
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database_url)
+            .await
+            .expect("connect to disposable Postgres");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("apply Straylight migrations");
+
+        let mut tx = pool.begin().await.expect("begin bulk member copy test");
+        let user_id = Uuid::now_v7();
+        let scope_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
+        )
+        .bind(user_id)
+        .bind(format!("bulk-member-test:{user_id}"))
+        .bind("Bulk member copy test")
+        .execute(&mut *tx)
+        .await
+        .expect("insert test user");
+        sqlx::query(
+            "INSERT INTO straylight.scopes (id,user_id,scope_ref,name) VALUES ($1,$2,$3,$4)",
+        )
+        .bind(scope_id)
+        .bind(user_id)
+        .bind(format!("scope:bulk-member-test:{scope_id}"))
+        .bind("Bulk member copy test")
+        .execute(&mut *tx)
+        .await
+        .expect("insert test scope");
+        let revision_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.corpus_revisions (
+              id,user_id,scope_id,parent_revision_id,revision_number,manifest_hash
+            ) VALUES ($1,$2,$3,NULL,1,$4)
+            "#,
+        )
+        .bind(revision_id)
+        .bind(user_id)
+        .bind(scope_id)
+        .bind("0".repeat(64))
+        .execute(&mut *tx)
+        .await
+        .expect("insert test revision");
+
+        let members: BTreeMap<_, _> = (0..50_000)
+            .map(|_| {
+                let record_id = Uuid::now_v7();
+                (
+                    record_id,
+                    Member {
+                        record_id,
+                        record_kind: "chunk".to_owned(),
+                        record_version: None,
+                        disposition: "active".to_owned(),
+                    },
+                )
+            })
+            .collect();
+        let record_ids = members.keys().copied().collect::<Vec<_>>();
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.record_keys (
+              user_id,record_id,record_kind,scope_id
+            )
+            SELECT $1,records.record_id,'chunk',$2
+            FROM unnest($3::uuid[]) AS records(record_id)
+            "#,
+        )
+        .bind(user_id)
+        .bind(scope_id)
+        .bind(&record_ids)
+        .execute(&mut *tx)
+        .await
+        .expect("seed owner-sized record keys");
+
+        sqlx::query("SET LOCAL statement_timeout = '5s'")
+            .execute(&mut *tx)
+            .await
+            .expect("set strict member-copy timeout");
+        insert_members(&mut tx, user_id, scope_id, revision_id, &members)
+            .await
+            .expect("bulk copy owner-sized corpus within statement timeout");
+        let inserted = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM straylight.corpus_members WHERE user_id=$1 AND corpus_revision_id=$2",
+        )
+        .bind(user_id)
+        .bind(revision_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("count copied members");
+        assert_eq!(inserted, 50_000);
+        tx.rollback().await.expect("rollback bulk member copy test");
     }
 
     #[test]
