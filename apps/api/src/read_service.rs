@@ -2900,9 +2900,13 @@ const LEXICAL_CHUNK_LANE_SQL: &str = r#"
     WITH requested AS MATERIALIZED (
       SELECT websearch_to_tsquery('english', $4) AS terms
     ), requested_terms AS MATERIALIZED (
-      SELECT term.ordinality AS ordinal,
-             plainto_tsquery('english', term.value) AS terms
-      FROM unnest($7::text[]) WITH ORDINALITY AS term(value, ordinality)
+      SELECT parsed.ordinal, parsed.terms
+      FROM (
+        SELECT term.ordinality AS ordinal,
+               plainto_tsquery('english', term.value) AS terms
+        FROM unnest($7::text[]) WITH ORDINALITY AS term(value, ordinality)
+      ) parsed
+      WHERE numnode(parsed.terms) > 0
     ), chunk_term_hits AS MATERIALIZED (
       SELECT chunk.id, term.ordinal
       FROM requested_terms term
@@ -2912,26 +2916,29 @@ const LEXICAL_CHUNK_LANE_SQL: &str = r#"
         WHERE c.user_id = $1 AND c.scope_id = $2
           AND c.search_vector @@ term.terms
       ) chunk
-    ), source_term_hits AS MATERIALIZED (
-      SELECT source.id AS source_episode_id, term.ordinal
-      FROM requested_terms term
-      CROSS JOIN LATERAL (
-        SELECT se.id
-        FROM straylight.source_episodes se
-        WHERE se.user_id = $1 AND se.scope_id = $2
-          AND to_tsvector(
-            'english',
-            straylight.lexical_source_text(se.source_ref)
-          ) @@ term.terms
-      ) source
+    ), path_sources AS MATERIALIZED (
+      SELECT dr.user_id, dr.document_id, dr.version,
+             to_tsvector(
+               'english',
+               straylight.lexical_source_text(
+                 coalesce(dr.native_locator ->> 'path', dr.title, '')
+               )
+             ) AS search_vector
+      FROM straylight.documents document
+      JOIN straylight.document_revisions dr
+        ON dr.user_id = document.user_id AND dr.document_id = document.id
+      WHERE document.user_id = $1 AND document.scope_id = $2
+    ), document_path_term_hits AS MATERIALIZED (
+      SELECT path.user_id, path.document_id, path.version, term.ordinal
+      FROM path_sources path
+      CROSS JOIN requested_terms term
+      WHERE path.search_vector @@ term.terms
     ), path_term_hits AS MATERIALIZED (
       SELECT c.id, hit.ordinal
-      FROM source_term_hits hit
-      JOIN straylight.document_revisions dr
-        ON dr.user_id = $1 AND dr.source_episode_id = hit.source_episode_id
+      FROM document_path_term_hits hit
       JOIN straylight.chunks c
-        ON c.user_id = dr.user_id AND c.document_id = dr.document_id
-       AND c.document_version = dr.version
+        ON c.user_id = hit.user_id AND c.document_id = hit.document_id
+       AND c.document_version = hit.version
     ), candidate_coverage AS MATERIALIZED (
       SELECT hit.id,
              count(DISTINCT hit.ordinal) AS term_coverage,
@@ -3022,7 +3029,7 @@ const LEXICAL_CHUNK_LANE_SQL: &str = r#"
              + 3.0 * finalists.path_coverage::float8
              + ts_rank_cd(
              setweight(to_tsvector('english', straylight.lexical_source_text(
-               se.source_ref
+               coalesce(dr.native_locator ->> 'path', dr.title, '')
              )), 'A') || c.search_vector,
              requested.terms,
              1
@@ -3039,7 +3046,7 @@ const LEXICAL_CHUNK_LANE_SQL: &str = r#"
     CROSS JOIN requested
     WHERE (
       setweight(to_tsvector('english', straylight.lexical_source_text(
-        se.source_ref
+        coalesce(dr.native_locator ->> 'path', dr.title, '')
       )), 'A') || c.search_vector
     ) @@ requested.terms
     ORDER BY term_coverage DESC,
@@ -3706,16 +3713,26 @@ async fn timestamped_chunk_lane_tx(
     let rows = sqlx::query(
         r#"
         WITH requested AS (
-          SELECT websearch_to_tsquery('english', $4) AS terms,
-                 $7::text[] AS raw_terms
-        ), matching_sources AS MATERIALIZED (
-          SELECT se.id
-          FROM straylight.source_episodes se
+          SELECT websearch_to_tsquery('english', $4) AS terms
+        ), requested_terms AS MATERIALIZED (
+          SELECT parsed.terms
+          FROM (
+            SELECT plainto_tsquery('english', term.value) AS terms
+            FROM unnest($7::text[]) AS term(value)
+          ) parsed
+          WHERE numnode(parsed.terms) > 0
+        ), matching_paths AS MATERIALIZED (
+          SELECT dr.user_id, dr.document_id, dr.version
+          FROM straylight.documents document
+          JOIN straylight.document_revisions dr
+            ON dr.user_id = document.user_id AND dr.document_id = document.id
           CROSS JOIN requested
-          WHERE se.user_id = $1 AND se.scope_id = $2
+          WHERE document.user_id = $1 AND document.scope_id = $2
             AND to_tsvector(
               'english',
-              straylight.lexical_source_text(se.source_ref)
+              straylight.lexical_source_text(
+                coalesce(dr.native_locator ->> 'path', dr.title, '')
+              )
             ) @@ requested.terms
         ), candidate_chunks AS MATERIALIZED (
           SELECT c.id
@@ -3725,12 +3742,10 @@ async fn timestamped_chunk_lane_tx(
             AND c.search_vector @@ requested.terms
           UNION
           SELECT c.id
-          FROM matching_sources source
-          JOIN straylight.document_revisions dr
-            ON dr.user_id = $1 AND dr.source_episode_id = source.id
+          FROM matching_paths path
           JOIN straylight.chunks c
-            ON c.user_id = dr.user_id AND c.document_id = dr.document_id
-           AND c.document_version = dr.version
+            ON c.user_id = path.user_id AND c.document_id = path.document_id
+           AND c.document_version = path.version
         ), timestamped AS (
           SELECT c.id, c.user_id, c.scope_id, c.document_id, c.document_version,
                  c.ordinal, c.heading_path, c.content, c.content_hash, c.locator,
@@ -3762,7 +3777,7 @@ async fn timestamped_chunk_lane_tx(
                    + 3.0 * coverage.path_coverage::float8
                    + ts_rank_cd(
                    setweight(to_tsvector('english', straylight.lexical_source_text(
-                     se.source_ref
+                     coalesce(dr.native_locator ->> 'path', dr.title, '')
                    )), 'A') || c.search_vector,
                    requested.terms,
                    1
@@ -3790,19 +3805,20 @@ async fn timestamped_chunk_lane_tx(
             SELECT
               count(*) FILTER (WHERE (
                 setweight(to_tsvector('english', straylight.lexical_source_text(
-                  se.source_ref
+                  coalesce(dr.native_locator ->> 'path', dr.title, '')
                 )), 'A') || c.search_vector
-              ) @@ plainto_tsquery('english', term.value)) AS term_coverage,
+              ) @@ term.terms) AS term_coverage,
               count(*) FILTER (WHERE
-                to_tsvector('english', straylight.lexical_source_text(se.source_ref))
-                  @@ plainto_tsquery('english', term.value)
+                to_tsvector('english', straylight.lexical_source_text(
+                  coalesce(dr.native_locator ->> 'path', dr.title, '')
+                )) @@ term.terms
               ) AS path_coverage
-            FROM unnest(requested.raw_terms) AS term(value)
+            FROM requested_terms term
           ) coverage
           WHERE c.user_id = $1 AND c.scope_id = $2
             AND (
               setweight(to_tsvector('english', straylight.lexical_source_text(
-                se.source_ref
+                coalesce(dr.native_locator ->> 'path', dr.title, '')
               )), 'A') || c.search_vector
             ) @@ requested.terms
             AND (cardinality($6::uuid[]) = 0 OR c.id = ANY($6::uuid[])
@@ -9699,12 +9715,22 @@ mod tests {
     fn lexical_ranking_preserves_coverage_ties_before_full_text_scoring() {
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("requested_terms AS MATERIALIZED"));
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("chunk_term_hits AS MATERIALIZED"));
-        assert!(LEXICAL_CHUNK_LANE_SQL.contains("source_term_hits AS MATERIALIZED"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("path_sources AS MATERIALIZED"));
+        assert!(LEXICAL_CHUNK_LANE_SQL.contains("document_path_term_hits AS MATERIALIZED"));
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("count(DISTINCT hit.ordinal)"));
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("coverage_cutoff AS MATERIALIZED"));
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("OFFSET GREATEST($5::bigint - 1, 0)"));
         assert!(LEXICAL_CHUNK_LANE_SQL.contains("FROM finalists"));
         assert_eq!(LEXICAL_CHUNK_LANE_SQL.matches("ts_rank_cd").count(), 1);
+    }
+
+    #[test]
+    fn lexical_path_ranking_uses_human_paths_instead_of_opaque_source_refs() {
+        assert!(
+            LEXICAL_CHUNK_LANE_SQL.contains("coalesce(dr.native_locator ->> 'path', dr.title, '')")
+        );
+        assert!(!LEXICAL_CHUNK_LANE_SQL.contains("lexical_source_text(se.source_ref)"));
+        assert!(!LEXICAL_CHUNK_LANE_SQL.contains("source_term_hits AS MATERIALIZED"));
     }
 
     #[test]
@@ -9809,12 +9835,14 @@ mod tests {
         let timestamped_lane = source
             .split("async fn timestamped_chunk_lane_tx")
             .nth(1)
-            .and_then(|tail| tail.split("async fn relations_lane_tx").next())
+            .and_then(|tail| tail.split("async fn relation_lane_tx").next())
             .expect("timestamped chunk lane source");
-        assert!(timestamped_lane.contains("matching_sources AS MATERIALIZED"));
+        assert!(timestamped_lane.contains("matching_paths AS MATERIALIZED"));
         assert!(timestamped_lane.contains("candidate_chunks AS MATERIALIZED"));
         assert!(timestamped_lane.contains("FROM candidate_chunks candidate"));
         assert!(timestamped_lane.contains("c.search_vector @@ requested.terms"));
+        assert!(timestamped_lane.contains("coalesce(dr.native_locator ->> 'path', dr.title, '')"));
+        assert!(!timestamped_lane.contains("lexical_source_text(se.source_ref)"));
     }
 
     fn retrieval_candidate(path: &str, content: &str) -> RetrievalCandidate {
