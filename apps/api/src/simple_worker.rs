@@ -18,6 +18,7 @@ use crate::{
 const MAX_ATTEMPTS: i32 = 5;
 const LEASE_MINUTES: i32 = 5;
 const MAX_EMBED_BATCH_JOBS: i64 = 8;
+const MAX_EMBED_CHUNKS_PER_PUBLICATION: i64 = 128;
 
 #[derive(Debug)]
 struct Job {
@@ -532,105 +533,108 @@ async fn embed_entries(state: &AppState, jobs: &[Job]) -> ApiResult<()> {
         entry_ids.push(payload_uuid(&job.payload, "entry_id")?);
         versions.push(payload_i64(&job.payload, "version")?);
     }
-    let rows = sqlx::query(
-        r#"
-        WITH requested AS (
-          SELECT *
-          FROM unnest($1::uuid[],$2::uuid[],$3::uuid[],$4::bigint[])
-            AS item(job_id,user_id,entry_id,version)
-        )
-        SELECT requested.user_id,requested.entry_id,requested.version,
-               chunk.id AS chunk_id,chunk.content
-        FROM requested
-        JOIN straylight.entries AS entry
-          ON requested.user_id=entry.user_id
-         AND requested.entry_id=entry.id
-         AND requested.version=entry.current_version
-        JOIN straylight.entry_versions AS version
-          ON version.user_id=entry.user_id
-         AND version.entry_id=entry.id
-         AND version.version=entry.current_version
-        JOIN straylight.search_chunks AS chunk
-          ON chunk.user_id=entry.user_id
-         AND chunk.entry_id=entry.id
-         AND chunk.entry_version_id=version.id
-        WHERE entry.deleted_at IS NULL
-          AND chunk.embedding IS NULL
-        ORDER BY requested.job_id,chunk.chunk_index
-        "#,
-    )
-    .bind(&job_ids)
-    .bind(&user_ids)
-    .bind(&entry_ids)
-    .bind(&versions)
-    .fetch_all(pool)
-    .await?;
-    if rows.is_empty() {
-        return Ok(());
-    }
-    let chunk_ids = rows
-        .iter()
-        .map(|row| row.get::<Uuid, _>("chunk_id"))
-        .collect::<Vec<_>>();
-    let inputs = rows
-        .iter()
-        .map(|row| row.get::<String, _>("content"))
-        .collect::<Vec<_>>();
-    let vectors = embed_indexing_inputs(state.embedder.as_ref(), &inputs).await?;
-    if vectors.len() != chunk_ids.len() {
-        return Err(ApiError::Internal(
-            "embedding provider returned an unexpected result shape".to_owned(),
-        ));
-    }
-    let updates = rows
-        .iter()
-        .zip(chunk_ids)
-        .zip(vectors)
-        .map(|((row, chunk_id), vector)| {
-            (
-                row.get::<Uuid, _>("user_id"),
-                row.get::<Uuid, _>("entry_id"),
-                chunk_id,
-                row.get::<i64, _>("version"),
-                Vector::from(vector),
+    loop {
+        let rows = sqlx::query(
+            r#"
+            WITH requested AS (
+              SELECT *
+              FROM unnest($1::uuid[],$2::uuid[],$3::uuid[],$4::bigint[])
+                AS item(job_id,user_id,entry_id,version)
             )
-        })
-        .collect::<Vec<_>>();
-    // Semantic enrichment remains partial across small provider batches. One
-    // bounded statement avoids per-chunk commit and HNSW overhead without
-    // creating a document-, import-, or workspace-sized transaction.
-    let mut statement = QueryBuilder::<Postgres>::new(
-        "WITH updates(user_id,entry_id,chunk_id,version,embedding) AS (",
-    );
-    statement.push_values(
-        updates,
-        |mut row, (user_id, entry_id, chunk_id, version, embedding)| {
-            row.push_bind(user_id)
-                .push_bind(entry_id)
-                .push_bind(chunk_id)
-                .push_bind(version)
-                .push_bind(embedding);
-        },
-    );
-    statement.push(
-        r#"
+            SELECT requested.user_id,requested.entry_id,requested.version,
+                   chunk.id AS chunk_id,chunk.content
+            FROM requested
+            JOIN straylight.entries AS entry
+              ON requested.user_id=entry.user_id
+             AND requested.entry_id=entry.id
+             AND requested.version=entry.current_version
+            JOIN straylight.entry_versions AS version
+              ON version.user_id=entry.user_id
+             AND version.entry_id=entry.id
+             AND version.version=entry.current_version
+            JOIN straylight.search_chunks AS chunk
+              ON chunk.user_id=entry.user_id
+             AND chunk.entry_id=entry.id
+             AND chunk.entry_version_id=version.id
+            WHERE entry.deleted_at IS NULL
+              AND chunk.embedding IS NULL
+            ORDER BY requested.job_id,chunk.chunk_index
+            LIMIT $5
+            "#,
         )
-        UPDATE straylight.search_chunks AS chunk
-        SET embedding=updates.embedding
-        FROM updates
-        JOIN straylight.entries AS entry
-          ON entry.user_id=updates.user_id
-         AND entry.id=updates.entry_id
-         AND entry.current_version=updates.version
-         AND entry.deleted_at IS NULL
-        WHERE chunk.user_id=updates.user_id
-          AND chunk.entry_id=updates.entry_id
-          AND chunk.id=updates.chunk_id
-          AND chunk.embedding IS NULL
-        "#,
-    );
-    statement.build().execute(pool).await?;
-    tokio::task::yield_now().await;
+        .bind(&job_ids)
+        .bind(&user_ids)
+        .bind(&entry_ids)
+        .bind(&versions)
+        .bind(MAX_EMBED_CHUNKS_PER_PUBLICATION)
+        .fetch_all(pool)
+        .await?;
+        if rows.is_empty() {
+            break;
+        }
+        let chunk_ids = rows
+            .iter()
+            .map(|row| row.get::<Uuid, _>("chunk_id"))
+            .collect::<Vec<_>>();
+        let inputs = rows
+            .iter()
+            .map(|row| row.get::<String, _>("content"))
+            .collect::<Vec<_>>();
+        let vectors = embed_indexing_inputs(state.embedder.as_ref(), &inputs).await?;
+        if vectors.len() != chunk_ids.len() {
+            return Err(ApiError::Internal(
+                "embedding provider returned an unexpected result shape".to_owned(),
+            ));
+        }
+        let updates = rows
+            .iter()
+            .zip(chunk_ids)
+            .zip(vectors)
+            .map(|((row, chunk_id), vector)| {
+                (
+                    row.get::<Uuid, _>("user_id"),
+                    row.get::<Uuid, _>("entry_id"),
+                    chunk_id,
+                    row.get::<i64, _>("version"),
+                    Vector::from(vector),
+                )
+            })
+            .collect::<Vec<_>>();
+        // Each semantic batch is independently visible and independently
+        // retryable. A crash resumes from chunks that still lack vectors.
+        let mut statement = QueryBuilder::<Postgres>::new(
+            "WITH updates(user_id,entry_id,chunk_id,version,embedding) AS (",
+        );
+        statement.push_values(
+            updates,
+            |mut row, (user_id, entry_id, chunk_id, version, embedding)| {
+                row.push_bind(user_id)
+                    .push_bind(entry_id)
+                    .push_bind(chunk_id)
+                    .push_bind(version)
+                    .push_bind(embedding);
+            },
+        );
+        statement.push(
+            r#"
+            )
+            UPDATE straylight.search_chunks AS chunk
+            SET embedding=updates.embedding
+            FROM updates
+            JOIN straylight.entries AS entry
+              ON entry.user_id=updates.user_id
+             AND entry.id=updates.entry_id
+             AND entry.current_version=updates.version
+             AND entry.deleted_at IS NULL
+            WHERE chunk.user_id=updates.user_id
+              AND chunk.entry_id=updates.entry_id
+              AND chunk.id=updates.chunk_id
+              AND chunk.embedding IS NULL
+            "#,
+        );
+        statement.build().execute(pool).await?;
+        tokio::task::yield_now().await;
+    }
     Ok(())
 }
 
@@ -796,8 +800,8 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        MAX_EMBED_BATCH_JOBS, claim_embedding, claim_more_embeddings, claim_priority,
-        retry_delay_seconds, sanitize_error,
+        MAX_EMBED_BATCH_JOBS, MAX_EMBED_CHUNKS_PER_PUBLICATION, claim_embedding,
+        claim_more_embeddings, claim_priority, retry_delay_seconds, sanitize_error,
     };
     use crate::error::ApiError;
 
@@ -817,6 +821,7 @@ mod tests {
     #[test]
     fn embedding_batches_remain_bounded() {
         assert_eq!(MAX_EMBED_BATCH_JOBS, 8);
+        assert_eq!(MAX_EMBED_CHUNKS_PER_PUBLICATION, 128);
     }
 
     #[tokio::test]

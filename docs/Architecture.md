@@ -95,11 +95,11 @@ Normal Markdown write:
 4. Generate semantic embeddings later through bounded background jobs.
 
 Semantic publication is intentionally finer grained than a document or job
-batch. Each chunk vector becomes visible through its own short statement, and
-the worker yields between bounded groups. Partial semantic coverage is valid:
-lexical retrieval remains complete, and a retry skips chunks that already have
-vectors. Straylight never holds a document-sized transaction merely to make
-derived embeddings appear together.
+batch. At most 128 chunk vectors become visible through one short statement,
+and the worker yields between groups. Partial semantic coverage is valid:
+lexical retrieval remains complete, and a retry skips chunks that already
+have vectors. Straylight never holds a document-sized transaction merely to
+make derived embeddings appear together.
 
 Normal binary write:
 

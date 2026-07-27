@@ -509,9 +509,10 @@ recovery, and a short sanitized error. A job never holds a database transaction
 while calling OpenAI or transferring a large object.
 
 Embedding requests may be batched for provider efficiency, but database
-publication is one chunk at a time with no enclosing document or batch
-transaction. A partially published job is healthy degraded state, not
-corruption. Retrying the job embeds only chunks whose vector is still absent.
+publication is limited to 128 chunks per independent statement, with no
+enclosing document or job transaction. A partially published job is healthy
+degraded state, not corruption. Retrying the job embeds only chunks whose
+vector is still absent.
 
 Dreaming reads changes after a per-user watermark and produces ordinary
 Markdown patches. Low-risk maintenance includes indexes, summaries, stale-link
