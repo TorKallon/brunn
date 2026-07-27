@@ -22,6 +22,7 @@ from agent_work_eval import (  # noqa: E402
     expected_feature_flags,
     grade_answer,
     normalize,
+    parse_feature_states,
     parse_event_metrics,
     require_codex_subscription,
     render_fixed_context,
@@ -68,6 +69,29 @@ class AgentWorkEvalTests(unittest.TestCase):
                 resolve_codex_path([root / "missing-codex", fallback]),
                 fallback,
             )
+
+    def test_e05_targeted_manifest_is_the_exact_two_case_subset(self):
+        validated = validate(
+            ROOT / "eval" / "e05_targeted_cases.json",
+            ROOT / "eval" / "work_answer_schema.json",
+        )
+        self.assertEqual(validated["errors"], [])
+        self.assertEqual(
+            {case["id"] for case in validated["manifest"]["cases"]},
+            {"star-rupture-plan-revision", "warmind-parser-learning"},
+        )
+        self.assertEqual(
+            validated["manifest"]["experiment_tags"],
+            ["E05", "lexical-consolidation", "targeted"],
+        )
+
+    def test_agent_run_feature_states_are_normalized(self):
+        self.assertEqual(
+            parse_feature_states(["lexical_single_scan=off"]),
+            {"lexical_single_scan": False},
+        )
+        with self.assertRaisesRegex(ValueError, "unknown service feature"):
+            parse_feature_states(["unreported_experiment=on"])
 
     def test_reasoning_environment_never_forwards_paid_api_credentials(self):
         env = subscription_reasoning_environment({
@@ -145,10 +169,14 @@ class AgentWorkEvalTests(unittest.TestCase):
             expected_feature_flags([
                 "supersession_demotion=on",
                 "intention_ledger=off",
+                "read_path_roundtrip_v1=on",
+                "lexical_single_scan=off",
             ]),
             {
                 "supersession_demotion": True,
                 "intention_ledger": False,
+                "read_path_roundtrip_v1": True,
+                "lexical_single_scan": False,
             },
         )
         with self.assertRaisesRegex(ValueError, "expect-feature-flag"):

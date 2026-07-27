@@ -12,6 +12,7 @@ from performance_eval import (  # noqa: E402
     DEFAULT_THRESHOLDS,
     DEFINITIVE_SAMPLES,
     FUTURE_RECORDS,
+    LEXICAL_CONSOLIDATION_REQUIRED_GATES,
     PRODUCTION_RECORDS,
     DatabaseSnapshot,
     benchmark_flat_files,
@@ -21,6 +22,7 @@ from performance_eval import (  # noqa: E402
     evaluate_gates,
     load_reused_flat_controls,
     old_source_marker,
+    parse_feature_states,
     percentile,
     resolve_run_profile,
     response_character_metrics,
@@ -31,6 +33,7 @@ from performance_eval import (  # noqa: E402
     response_timings,
     summarize_timing_samples,
     timing_phase_sum_sane,
+    verify_service_feature_states,
     lexical_overflow_marker,
     simple_checkpoint_footprint,
     summarize_response_accounting,
@@ -43,6 +46,67 @@ from performance_eval import (  # noqa: E402
 
 
 class PerformanceEvalTests(unittest.TestCase):
+    def test_feature_states_are_normalized_and_conflicts_fail(self):
+        self.assertEqual(
+            parse_feature_states([
+                "lexical_single_scan=on",
+                "read_path_roundtrip_v1=false",
+            ]),
+            {
+                "lexical_single_scan": True,
+                "read_path_roundtrip_v1": False,
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "conflicting"):
+            parse_feature_states(["lexical_single_scan=on", "lexical_single_scan=off"])
+        with self.assertRaisesRegex(ValueError, "unknown service feature"):
+            parse_feature_states(["unreported_experiment=on"])
+
+    def test_feature_state_preflight_matches_the_service_snapshot(self):
+        class Response:
+            data = {
+                "feature_flags": {
+                    "lexical_single_scan": True,
+                    "read_path_roundtrip_v1": False,
+                },
+            }
+
+        class Client:
+            def get(self, path):
+                self.path = path
+                return Response()
+
+        client = Client()
+        self.assertEqual(
+            verify_service_feature_states(
+                client,
+                {
+                    "lexical_single_scan": True,
+                    "read_path_roundtrip_v1": False,
+                },
+            ),
+            {
+                "lexical_single_scan": True,
+                "read_path_roundtrip_v1": False,
+            },
+        )
+        self.assertEqual(client.path, "/v1/status")
+        with self.assertRaisesRegex(ValueError, "mismatch"):
+            verify_service_feature_states(
+                client,
+                {"lexical_single_scan": False},
+            )
+
+    def test_e05_gate_profile_uses_the_two_shipped_guard_names(self):
+        self.assertIn(
+            "bounded_lexical_overflow_returns_late_relevant_source",
+            LEXICAL_CONSOLIDATION_REQUIRED_GATES,
+        )
+        self.assertIn(
+            "old_relevant_source_survives_many_newer_writes",
+            LEXICAL_CONSOLIDATION_REQUIRED_GATES,
+        )
+
     def test_checkpoint_footprint_rejects_untrusted_ids_before_running_sql(self):
         with self.assertRaises(ValueError):
             simple_checkpoint_footprint("unused", "checkpoint:not-a-uuid'; drop table")

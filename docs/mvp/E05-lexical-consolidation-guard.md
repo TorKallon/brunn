@@ -1,6 +1,6 @@
 # E05 — Lexical Consolidation Guard
 
-Status: Specified — not run
+Status: Executable prerequisites implemented — not run
 Date: 2026-07-27
 Gates: D10 (D10-read-path-roundtrip-reductions.md) — the deferred lexical-scan consolidation ONLY; the rest of D10 does not wait on this
 Phase: 1 (requires flagged feature build)
@@ -12,9 +12,17 @@ Can the up-to-3 sequential lexical candidate scans in the search path be consoli
 ## Preconditions and build items
 
 1. **(M) Flagged implementation** — `lexical_single_scan` runtime flag in `apps/api/src/simple_core.rs`, consolidating the sequential lexical candidate scans into one statement while preserving the recent-first two-tier window (256 recent entries, bounded full-index fallback per migration 0055), scoring (3.0 + ts_rank_cd + term bonus, cap 8.0, − derived_penalty), and all caps. Flag off = current triple scan, byte-for-byte.
-2. **(S) n≥3 aggregator** — eval/aggregate_draws.py: per-case win/loss/tie, exact-binomial McNemar, case-level bootstrap CIs, stdlib only. Known build item; does not exist yet; shared, specified in E01-paired-draw-machinery-and-baseline.md.
-3. **(S) Targeted manifest** — `eval/e05_targeted_cases.json` containing only `star-rupture-plan-revision` and `warmind-parser-learning`, same schema as `eval/work_cases.json`, for the 5-draw repeats.
-4. **(exists) Deterministic guards** — shipped since v7 in performance_eval: 640K `old_source_search` (must be 30/30) and `bounded_lexical_overflow_returns_late_relevant_source`.
+2. **(exists) n≥3 aggregator** — `eval/aggregate_draws.py`: per-case win/loss/tie, exact-binomial McNemar, case-level bootstrap CIs, stdlib only.
+3. **(implemented) Targeted manifest** — `eval/e05_targeted_cases.json` containing only `star-rupture-plan-revision` and `warmind-parser-learning`, same schema as `eval/work_cases.json`, for the 5-draw repeats.
+4. **(exists) Deterministic guards** — shipped since v7 in performance_eval:
+   640K `old_relevant_source_survives_many_newer_writes` (the result samples
+   are stored under `old_source_found`; must be 30/30) and
+   `bounded_lexical_overflow_returns_late_relevant_source`.
+5. **(implemented) Reproducible arm state** — both evaluators accept
+   repeatable `--feature-state NAME=on|off` and `--run-tag TAG` arguments and
+   record them in the JSON artifact. Feature-state declarations are checked
+   against `/v1/status` before measurements begin; they describe rather than
+   mutate the already configured API.
 
 ## Arms
 
@@ -32,14 +40,24 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
 
 ## Procedure
 
-1. Preflight: clean git tree (implementation fingerprint requires it); `python agent_work_eval.py validate --manifest eval/work_cases.json` and `python agent_work_eval.py validate --manifest eval/e05_targeted_cases.json`.
-2. Deterministic guards on Arm B first (cheap kill): `python performance_eval.py run --label e05-armB-guards --future-soak --out results/2026-MM-DD-e05-armB-guards-soak.json` with flag on, 30 samples. Require `old_source_search` 30/30 and `bounded_lexical_overflow_returns_late_relevant_source` pass. Any failure → drop the consolidation, stop the experiment, skip all reasoning runs.
+1. Preflight: clean git tree (implementation fingerprint requires it);
+   `python3 agent_work_eval.py --manifest eval/work_cases.json validate` and
+   `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json validate`.
+2. Deterministic guards on Arm B first (cheap kill), against a disposable API
+   already started with `STRAYLIGHT_LEXICAL_SINGLE_SCAN=true`:
+   `python3 performance_eval.py run --label e05-armB-guards --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --feature-state lexical_single_scan=on --run-tag E05 --run-tag armB-guards --future-soak --api-container <container> --db-container <container> --out results/2026-MM-DD-e05-armB-guards-soak.json`.
+   Require `old_relevant_source_survives_many_newer_writes` 30/30 and
+   `bounded_lexical_overflow_returns_late_relevant_source` pass. Any failure →
+   drop the consolidation, stop the experiment, skip all reasoning runs.
 3. Paired draws, N = 1..3, alternating arms per draw to avoid drift:
-   `python agent_work_eval.py run --manifest eval/work_cases.json --condition service_api --concurrency 3 --timeout 360 --run-id e05-armA-draw<N> --out results/2026-MM-DD-e05-lexical-armA-draw<N>.json --report results/2026-MM-DD-e05-lexical-armA-draw<N>.md` (flag off), then the same with `armB` and flag on.
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --concurrency 3 --timeout 360 --feature-state lexical_single_scan=off --run-tag E05 --run-tag armA --run-id e05-armA-draw<N> --out results/2026-MM-DD-e05-lexical-armA-draw<N>.json --report results/2026-MM-DD-e05-lexical-armA-draw<N>.md` (flag off), then the same with `armB`, `lexical_single_scan=on`, and an API actually started with the treatment flag on.
 4. Targeted 5-draw repeats, N = 1..5, both arms:
-   `python agent_work_eval.py run --manifest eval/e05_targeted_cases.json --condition service_api --concurrency 3 --timeout 360 --run-id e05-targeted-arm<A|B>-draw<N> --out results/2026-MM-DD-e05-targeted-arm<A|B>-draw<N>.json --report results/2026-MM-DD-e05-targeted-arm<A|B>-draw<N>.md`.
+   `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json run --condition service_api --concurrency 2 --timeout 360 --feature-state lexical_single_scan=<off|on> --run-tag E05 --run-tag targeted --run-id e05-targeted-arm<A|B>-draw<N> --out results/2026-MM-DD-e05-targeted-arm<A|B>-draw<N>.json --report results/2026-MM-DD-e05-targeted-arm<A|B>-draw<N>.md`.
 5. Aggregate: `python eval/aggregate_draws.py results/2026-MM-DD-e05-*-draw*.json --out results/2026-MM-DD-e05-aggregate.json` — per-case win/loss/tie across the 3 paired draws, McNemar, bootstrap CI on case-level score difference.
 6. Record per-lane latency metrics and per-operation lexical query counts from both arms (the D09 assertion delta this would lock in if shipped).
+
+The query-count comparison remains a hard dependency on D09. The current
+execution harness does not infer counts from latency or logs.
 
 ## Metrics
 
@@ -51,7 +69,9 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
 
 Ship the consolidation only if ALL hold; otherwise drop it permanently and record a negative result (as with v6):
 
-1. Deterministic guards clean: `old_source_search` 30/30 and `bounded_lexical_overflow_returns_late_relevant_source` pass with flag on.
+1. Deterministic guards clean:
+   `old_relevant_source_survives_many_newer_writes` 30/30 and
+   `bounded_lexical_overflow_returns_late_relevant_source` pass with flag on.
 2. n≥3 paired agent-work: McNemar shows no significant regression for Arm B (α = 0.05) AND the point estimate of the case-level difference is ≥ 0 or its CI comfortably includes 0. Single-draw deltas are noise (±3–5 claims observed: 40→47→44→43→47) and carry no weight.
 3. Targeted 5-draw: Arm B ≥ Arm A on both `star-rupture-plan-revision` and `warmind-parser-learning`; any B < A on `star-rupture-plan-revision` is an automatic drop regardless of aggregate stats.
 

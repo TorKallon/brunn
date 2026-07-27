@@ -1,10 +1,27 @@
 # D10 — Read-Path Round-Trip Reductions
 
-Status: Proposed — not started
+Status: Implemented behind default-off flags — deterministic qualification pending
 Date: 2026-07-27
 Depends on: D09 (per-operation query-count budget assertions; D09-latency-contract-and-gates.md) — must land first so each win is locked by an assertion the day it ships
 Gated by: none for the safe subset below; the deferred lexical-scan consolidation is gated by E05 (E05-lexical-consolidation-guard.md)
 Runtime flag: `read_path_roundtrip_v1` (kill switch reverts every item to the current sequential query paths without a deploy)
+
+## Implementation note (2026-07-27)
+
+The default-off implementation now covers the safe subset: generation is
+piggybacked onto the common open/search/read/changes statements (with a
+correctness fallback for read/search requests that execute no eligible primary
+statement), hydration size and content are fetched together, checkpoint/change
+work overlaps retrieval dispatch, checkpoint sources resolve in one batched
+lookup, and the advisory lock gets one server-bounded 250ms wait. Flag off
+retains the prior response and sequential-query behavior. The separately
+default-off `lexical_single_scan` treatment also exists for E05.
+
+This is implementation readiness, not acceptance evidence. D09's
+`query_count` field is reserved in the current envelope, but the request-scoped
+counter and checked-in budgets are not implemented. Acceptance gate 1 and the
+query-count portions of gates 3/E05 therefore remain blocked on D09. No
+substitute query-count claim is recorded.
 
 ## Problem and evidence
 
@@ -37,7 +54,9 @@ Safe subset — no retrieval-semantics change, byte-identical responses, no expe
 - No change to scoring (exact 10.0 flat, lexical 3.0+ts_rank_cd capped 8.0, semantic 2.0+(1−distance)), lane structure, or the recent-first two-tier window.
 - No change to any cap or budget: 128 candidates, 96,000 excerpt chars, 2,400/excerpt, ≤3 sections/entry, first-query-first budget order, open's ≤32 candidates / ≤8 hydrated docs / 24,000-char complete source.
 - No schema change; no new tables or indexes; no caching layer (in-process caches remain allowed by the hard constraints but are not part of this design).
-- Response payloads are byte-identical for identical inputs — this is the definition of the safe subset, and it is testable.
+- Context-bearing response fields are byte-identical for identical inputs.
+  D09's diagnostic `timings_ms` metadata is expected to reflect the changed
+  execution schedule and is excluded from that comparison.
 - Semantic lane behavior unchanged: still skipped with `semantic_unavailable` until indexed; the synchronous uncached query-embedding call (simple_core.rs:3005) is out of scope here.
 
 ## Failure-mode analysis
@@ -53,7 +72,9 @@ Safe subset — no retrieval-semantics change, byte-identical responses, no expe
 Deterministic (all must pass before enabling the flag by default):
 
 1. D09 budget assertions updated to the new counts (e.g., open loses the generation transaction and 63 source lookups) and failing-on-regression in CI.
-2. Byte-identical response diff: fixed corpus, replay identical requests flag-on vs flag-off, zero payload diffs.
+2. Byte-identical context diff: fixed corpus, replay identical requests
+   flag-on vs flag-off, zero diffs after excluding D09 diagnostic timing
+   metadata.
 3. `python performance_eval.py run --label read-path-roundtrip-v1 --future-soak --out results/2026-MM-DD-read-path-roundtrip-v1-soak.json`, 30-sample definitive, scales 1k/10k/64k plus 640k: all p95s within the D09 regression-tier gates (D09-latency-contract-and-gates.md — open ≤500ms, search ≤500ms, exact read ≤100ms, checkpoint ≤200ms, resume ≤400ms, concurrent write ≤500ms / search ≤750ms) and showing no regression beyond run-to-run noise against the v8 baselines (open 59.7ms, search 53.1ms, broad 54.8ms, exact read 16.2ms, checkpoint 17.1ms, resume 35.2ms; concurrent write 29.0ms / search 100.9ms — reference points, not exact ceilings; the measured values are noise-level and an exact at-or-below gate would flake), correctness markers green, GIN idx_scan deltas via pg_stat_user_indexes unchanged, clean-git-tree fingerprint.
 4. Lock-wait test: contended writer observes ≤250ms added latency then 409; uncontended path adds zero.
 

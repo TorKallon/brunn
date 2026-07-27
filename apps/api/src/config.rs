@@ -10,6 +10,8 @@ pub struct Config {
     pub supersession_demotion: bool,
     pub supersession_demotion_weight: f64,
     pub intention_ledger: bool,
+    pub read_path_roundtrip_v1: bool,
+    pub lexical_single_scan: bool,
     pub bind: SocketAddr,
     pub database_url_admin: Option<String>,
     pub database_url_rw: String,
@@ -124,6 +126,8 @@ impl Config {
                 "1.5",
             )?,
             intention_ledger: env_parse("STRAYLIGHT_INTENTION_LEDGER", "false")?,
+            read_path_roundtrip_v1: env_parse("STRAYLIGHT_READ_PATH_ROUNDTRIP_V1", "false")?,
+            lexical_single_scan: env_parse("STRAYLIGHT_LEXICAL_SINGLE_SCAN", "false")?,
             bind,
             database_url_admin: first_env_or_file(&[
                 "DATABASE_URL_ADMIN",

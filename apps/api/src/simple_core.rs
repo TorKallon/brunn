@@ -390,12 +390,14 @@ struct EntryRow {
     size_bytes: i64,
     metadata: Value,
     updated_at: DateTime<Utc>,
+    workspace_generation: Option<i64>,
 }
 
 struct ChangePage {
     changes: Vec<Value>,
     truncated: bool,
     next_generation: Option<i64>,
+    workspace_generation: Option<i64>,
 }
 
 #[derive(Clone, Debug)]
@@ -458,49 +460,72 @@ pub async fn open(
         .clamp(1_000, MAX_TOKEN_BUDGET);
     let session_id = format!("session:{}", Uuid::now_v7());
     let generation_started = Instant::now();
-    let generation = current_generation(&state, &auth).await?;
+    let eager_generation = if !state.config.read_path_roundtrip_v1
+        || state.config.supersession_demotion
+        || state.config.intention_ledger
+    {
+        Some(current_generation(&state, &auth).await?)
+    } else {
+        None
+    };
     let generation_ms = elapsed_ms(generation_started);
     let features_started = Instant::now();
-    let features = feature_snapshot(&state, &auth, generation).await?;
-    let features_ms = elapsed_ms(features_started);
-    let checkpoint_started = Instant::now();
-    let mut checkpoint = match request.resume_checkpoint_ref.as_deref() {
-        Some(reference) => Some(read_checkpoint(&state, &auth, reference).await?),
+    let features = match eager_generation {
+        Some(generation) => feature_snapshot(&state, &auth, generation).await?,
         None => None,
     };
-    let checkpoint_read_ms = elapsed_ms(checkpoint_started);
-    let checkpoint_generation = checkpoint
-        .as_ref()
-        .and_then(|value| value.get("workspace_generation"))
-        .and_then(Value::as_i64);
-    let changes_started = Instant::now();
-    let change_page = match checkpoint_generation {
-        Some(since) => changes_since(&state, &auth, since, 200).await?,
-        None => ChangePage {
-            changes: vec![],
-            truncated: false,
-            next_generation: None,
-        },
+    let features_ms = elapsed_ms(features_started);
+    let checkpoint_and_changes = async {
+        let checkpoint_started = Instant::now();
+        let checkpoint = match request.resume_checkpoint_ref.as_deref() {
+            Some(reference) => Some(read_checkpoint(&state, &auth, reference).await?),
+            None => None,
+        };
+        let checkpoint_read_ms = elapsed_ms(checkpoint_started);
+        let checkpoint_generation = checkpoint
+            .as_ref()
+            .and_then(|value| value.get("workspace_generation"))
+            .and_then(Value::as_i64);
+        let changes_started = Instant::now();
+        let changes = match checkpoint_generation {
+            Some(since) => changes_since(&state, &auth, since, 200).await?,
+            None => ChangePage {
+                changes: vec![],
+                truncated: false,
+                next_generation: None,
+                workspace_generation: None,
+            },
+        };
+        let changes_ms = elapsed_ms(changes_started);
+        Ok::<_, ApiError>((checkpoint, changes, checkpoint_read_ms, changes_ms))
     };
-    let changes_ms = elapsed_ms(changes_started);
+    let retrieve = async {
+        let retrieval_started = Instant::now();
+        let (search, hinted) = tokio::join!(
+            search_one(
+                &state,
+                &auth,
+                &request.task,
+                OPEN_CANDIDATE_LIMIT,
+                &[],
+                features.as_deref(),
+            ),
+            open_hint_candidates(&state, &auth, &request.hints)
+        );
+        (search, hinted, elapsed_ms(retrieval_started))
+    };
+    let (checkpoint_and_changes, (search, hinted, retrieval_wall_ms)) =
+        if state.config.read_path_roundtrip_v1 {
+            tokio::join!(checkpoint_and_changes, retrieve)
+        } else {
+            (checkpoint_and_changes.await, retrieve.await)
+        };
+    let (mut checkpoint, change_page, checkpoint_read_ms, changes_ms) = checkpoint_and_changes?;
 
     let (checkpoint_text_truncated, evidence_budget) =
         apply_checkpoint_budget(&mut checkpoint, budget);
-    let retrieval_started = Instant::now();
-    let (search, hinted) = tokio::join!(
-        search_one(
-            &state,
-            &auth,
-            &request.task,
-            OPEN_CANDIDATE_LIMIT,
-            &[],
-            features.as_deref(),
-        ),
-        open_hint_candidates(&state, &auth, &request.hints)
-    );
-    let retrieval_wall_ms = elapsed_ms(retrieval_started);
     let (search_candidates, mut lane_failures, search_timings) = match search {
-        Ok(result) => result,
+        Ok((candidates, failures, timings, _)) => (candidates, failures, timings),
         Err(error) => {
             tracing::warn!(?error, "simple workspace initial search failed");
             (vec![], vec!["search"], RetrievalTimings::default())
@@ -569,8 +594,12 @@ pub async fn open(
         &continuation_evidence
     };
     let hydrate_started = Instant::now();
-    let evidence = hydrate_candidates(&state, &auth, evidence_candidates, evidence_budget).await?;
+    let (evidence, hydrated_generation) =
+        hydrate_candidates(&state, &auth, evidence_candidates, evidence_budget).await?;
     let hydrate_ms = elapsed_ms(hydrate_started);
+    let generation = eager_generation.or(hydrated_generation).ok_or_else(|| {
+        ApiError::Internal("read-path hydration did not return workspace generation".to_owned())
+    })?;
     let hydrated_refs = evidence
         .iter()
         .filter_map(|item| item.get("reference").and_then(Value::as_str))
@@ -647,12 +676,13 @@ pub async fn open(
     }
     let total_ms = elapsed_ms(total_started);
     if state.config.observability_timings_ms {
-        let attributed_ms = generation_ms
-            + features_ms
-            + checkpoint_read_ms
-            + changes_ms
-            + retrieval_wall_ms
-            + hydrate_ms;
+        let checkpoint_and_changes_ms = checkpoint_read_ms + changes_ms;
+        let read_path_wall_ms = if state.config.read_path_roundtrip_v1 {
+            checkpoint_and_changes_ms.max(retrieval_wall_ms)
+        } else {
+            checkpoint_and_changes_ms + retrieval_wall_ms
+        };
+        let attributed_ms = generation_ms + features_ms + read_path_wall_ms + hydrate_ms;
         envelope.timings_ms = Some(json!({
             "generation": round_ms(generation_ms),
             "features": round_ms(features_ms),
@@ -680,10 +710,20 @@ pub async fn search(
     let started = Instant::now();
     let budget_options = SearchBudgetOptions::from_request(&state.config, request.token_budget);
     let generation_started = Instant::now();
-    let generation = current_generation(&state, &auth).await?;
-    let generation_ms = elapsed_ms(generation_started);
+    let eager_generation = if !state.config.read_path_roundtrip_v1
+        || state.config.supersession_demotion
+        || state.config.intention_ledger
+    {
+        Some(current_generation(&state, &auth).await?)
+    } else {
+        None
+    };
+    let mut generation_ms = elapsed_ms(generation_started);
     let features_started = Instant::now();
-    let features = feature_snapshot(&state, &auth, generation).await?;
+    let features = match eager_generation {
+        Some(generation) => feature_snapshot(&state, &auth, generation).await?,
+        None => None,
+    };
     let features_ms = elapsed_ms(features_started);
     let queries = if request.queries.is_empty() {
         vec![SearchQuery {
@@ -733,7 +773,7 @@ pub async fn search(
     let (budgeted_views, budgeted_truncated) = if budget_options.active() {
         let candidate_sets = completed
             .iter()
-            .map(|(_, _, (candidates, _, _))| candidates.clone())
+            .map(|(_, _, (candidates, _, _, _))| candidates.clone())
             .collect::<Vec<_>>();
         let (selected, selection_truncated) = select_search_candidate_sets(
             &candidate_sets,
@@ -760,9 +800,11 @@ pub async fn search(
     let mut remaining_excerpt_chars = MAX_SEARCH_RESPONSE_CHARS;
     let mut remaining_verbatim_chars = MAX_VERBATIM_RESPONSE_CHARS;
     let mut response_truncated = budgeted_truncated;
-    for (position, (index, query, (mut candidates, failures, timings))) in
+    let mut piggyback_generation = None;
+    for (position, (index, query, (mut candidates, failures, timings, generation))) in
         completed.into_iter().enumerate()
     {
+        piggyback_generation = piggyback_generation.into_iter().chain(generation).max();
         query_timings.push(json!({
             "id": query.id.clone().unwrap_or_else(|| format!("q{index}")),
             "phases": timings.as_value(),
@@ -815,6 +857,14 @@ pub async fn search(
     }
     let budget_ms = elapsed_ms(budget_started);
     record_candidate_usage(&state, &auth, &all_candidates);
+    let generation = if let Some(generation) = eager_generation.or(piggyback_generation) {
+        generation
+    } else {
+        let fallback_started = Instant::now();
+        let generation = current_generation(&state, &auth).await?;
+        generation_ms += elapsed_ms(fallback_started);
+        generation
+    };
     let mut response_data = serde_json::Map::from_iter([
         ("workspace_generation".to_owned(), json!(generation)),
         ("results".to_owned(), Value::Array(result_sets)),
@@ -863,13 +913,24 @@ pub async fn read(
         ));
     }
     let requested_count = request.requests.len();
-    let generation = current_generation(&state, &auth).await?;
-    let features = feature_snapshot(&state, &auth, generation).await?;
+    let eager_generation = if !state.config.read_path_roundtrip_v1
+        || state.config.supersession_demotion
+        || state.config.intention_ledger
+    {
+        Some(current_generation(&state, &auth).await?)
+    } else {
+        None
+    };
+    let features = match eager_generation {
+        Some(generation) => feature_snapshot(&state, &auth, generation).await?,
+        None => None,
+    };
     let mut items = Vec::with_capacity(requested_count);
     let mut used_entries = Vec::new();
     let mut remaining_chars = MAX_READ_RESPONSE_CHARS;
     let mut skipped_requests = 0_usize;
     let mut missing_requests = 0_usize;
+    let mut piggyback_generation = None;
     let mut resolved = futures::stream::iter(request.requests.into_iter().enumerate().map(
         |(index, item)| {
             let state = state.clone();
@@ -944,6 +1005,10 @@ pub async fn read(
             }
             Err(error) => return Err(error),
         };
+        piggyback_generation = piggyback_generation
+            .into_iter()
+            .chain(entry.workspace_generation)
+            .max();
         used_entries.push(entry.id);
         let max_chars = item
             .max_chars
@@ -973,6 +1038,11 @@ pub async fn read(
     }
     record_entry_usage(&state, &auth, &used_entries, UsageOperation::Read);
     let returned_entries = used_entries.len();
+    let generation = if let Some(generation) = eager_generation.or(piggyback_generation) {
+        generation
+    } else {
+        current_generation(&state, &auth).await?
+    };
     let mut envelope = WorkspaceEnvelope::complete(json!({
         "workspace_generation": generation,
         "items": items,
@@ -1202,7 +1272,13 @@ pub async fn changes(
     auth.require(Capability::Read)?;
     let limit = query.limit.unwrap_or(200).clamp(1, 2_000);
     let page = changes_since(&state, &auth, query.since_generation, limit).await?;
-    let generation = current_generation(&state, &auth).await?;
+    let generation = match (
+        state.config.read_path_roundtrip_v1,
+        page.workspace_generation,
+    ) {
+        (true, Some(generation)) => generation,
+        _ => current_generation(&state, &auth).await?,
+    };
     let mut envelope = WorkspaceEnvelope::complete(json!({
         "since_generation": query.since_generation,
         "workspace_generation": generation,
@@ -2381,6 +2457,7 @@ async fn commit_binary_with_companion(
         require_local_publish_lock(
             &mut tx,
             format!("simple-entry:{}:{lock_path}", auth.user_id.0),
+            state.config.read_path_roundtrip_v1,
         )
         .await?;
     }
@@ -2758,7 +2835,12 @@ pub async fn import_evaluation(
     let prepared = prepare_bulk_documents(&state, &request.documents).await?;
     let deltas = prepare_bulk_documents(&state, &request.delta_documents).await?;
     let mut tx = state.rw_pool.begin().await?;
-    require_local_publish_lock(&mut tx, format!("simple-eval:{external_ref}")).await?;
+    require_local_publish_lock(
+        &mut tx,
+        format!("simple-eval:{external_ref}"),
+        state.config.read_path_roundtrip_v1,
+    )
+    .await?;
     set_context(&mut tx, &caller).await?;
     let provisioning_capabilities = vec![
         "open",
@@ -3077,7 +3159,12 @@ async fn search_one(
     limit: usize,
     requested_modes: &[String],
     features: Option<&WorkspaceFeatureSnapshot>,
-) -> ApiResult<(Vec<Candidate>, Vec<&'static str>, RetrievalTimings)> {
+) -> ApiResult<(
+    Vec<Candidate>,
+    Vec<&'static str>,
+    RetrievalTimings,
+    Option<i64>,
+)> {
     let total_started = Instant::now();
     let mut timings = RetrievalTimings::default();
     if query.trim().is_empty() {
@@ -3100,34 +3187,37 @@ async fn search_one(
                     "exact",
                     exact_candidates(state, auth, &exact_paths, Some(query)),
                 )
-                .await,
+                .await
+                .map(|candidates| (candidates, None)),
                 elapsed_ms(started),
             )
         } else {
-            (Ok(vec![]), elapsed_ms(started))
+            (Ok((vec![], None)), elapsed_ms(started))
         }
     };
     let lexical_future = async {
         let started = Instant::now();
         if lexical_enabled {
             (
-                bounded_retrieval_lane("lexical", lexical_candidates(state, auth, query, features))
+                bounded_lexical_retrieval_lane(lexical_candidates(state, auth, query, features))
                     .await,
                 elapsed_ms(started),
             )
         } else {
-            (Ok(vec![]), elapsed_ms(started))
+            (Ok((vec![], None)), elapsed_ms(started))
         }
     };
     let ((exact, exact_ms), (lexical, lexical_ms)) = tokio::join!(exact_future, lexical_future);
     timings.exact = exact_ms;
     timings.lexical = lexical_ms;
     let mut failures = Vec::new();
+    let mut workspace_generation = None;
     let mut merged: HashMap<Uuid, Candidate> = HashMap::new();
     let merge_started = Instant::now();
     for (lane, result) in [("exact", exact), ("lexical", lexical)] {
         match result {
-            Ok(candidates) => {
+            Ok((candidates, generation)) => {
+                workspace_generation = workspace_generation.into_iter().chain(generation).max();
                 for candidate in candidates {
                     merge_candidate(&mut merged, candidate);
                 }
@@ -3186,7 +3276,7 @@ async fn search_one(
     sort_candidates(&mut candidates);
     candidates.truncate(limit);
     timings.total = elapsed_ms(total_started);
-    Ok((candidates, failures, timings))
+    Ok((candidates, failures, timings, workspace_generation))
 }
 
 async fn semantic_search_allowed(state: &AppState, auth: &AuthContext) -> ApiResult<bool> {
@@ -3324,6 +3414,61 @@ where
     }
 }
 
+async fn bounded_lexical_retrieval_lane<F>(future: F) -> ApiResult<(Vec<Candidate>, Option<i64>)>
+where
+    F: std::future::Future<Output = ApiResult<(Vec<Candidate>, Option<i64>)>>,
+{
+    let started = Instant::now();
+    match tokio::time::timeout(RETRIEVAL_LANE_TIMEOUT, future).await {
+        Ok(Ok((candidates, generation))) => {
+            metrics::histogram!(
+                "simple.retrieval.lane_duration_ms",
+                "lane" => "lexical",
+                "result" => "success"
+            )
+            .record(started.elapsed().as_secs_f64() * 1_000.0);
+            metrics::histogram!(
+                "simple.retrieval.lane_candidates",
+                "lane" => "lexical"
+            )
+            .record(candidates.len() as f64);
+            Ok((candidates, generation))
+        }
+        Ok(Err(error)) => {
+            metrics::histogram!(
+                "simple.retrieval.lane_duration_ms",
+                "lane" => "lexical",
+                "result" => "failure"
+            )
+            .record(started.elapsed().as_secs_f64() * 1_000.0);
+            metrics::counter!(
+                "simple.retrieval.lane_failure",
+                "lane" => "lexical"
+            )
+            .increment(1);
+            Err(error)
+        }
+        Err(_) => {
+            metrics::histogram!(
+                "simple.retrieval.lane_duration_ms",
+                "lane" => "lexical",
+                "result" => "timeout"
+            )
+            .record(started.elapsed().as_secs_f64() * 1_000.0);
+            metrics::counter!(
+                "simple.retrieval.lane_timeout",
+                "lane" => "lexical"
+            )
+            .increment(1);
+            Err(ApiError::public(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "retrieval_lane_timeout",
+                "lexical retrieval exceeded its bounded time budget",
+            ))
+        }
+    }
+}
+
 async fn exact_candidates(
     state: &AppState,
     auth: &AuthContext,
@@ -3399,44 +3544,67 @@ async fn lexical_candidates(
     auth: &AuthContext,
     query: &str,
     features: Option<&WorkspaceFeatureSnapshot>,
-) -> ApiResult<Vec<Candidate>> {
+) -> ApiResult<(Vec<Candidate>, Option<i64>)> {
     let mut tx = state.begin_read(auth).await?;
-    let anchors = search_anchors(query);
     let mut candidates = Vec::new();
-    let mut anchor_hit = false;
-    for anchor in &anchors {
-        let anchor_candidates = fetch_lexical_candidates(
+    let mut workspace_generation = None;
+    if state.config.lexical_single_scan {
+        let consolidated = consolidated_lexical_query(query);
+        let (found, generation) = fetch_lexical_candidates(
             &mut tx,
-            anchor,
+            &consolidated,
             query,
             features,
             state.config.supersession_demotion,
             state.config.supersession_demotion_weight,
+            state.config.read_path_roundtrip_v1,
+            auth.user_id.0,
         )
         .await?;
-        anchor_hit |= !anchor_candidates.is_empty();
-        candidates.extend(anchor_candidates);
-    }
-    if !anchor_hit {
-        let focused = focused_lexical_query(query).unwrap_or_else(|| query.trim().to_owned());
-        candidates.extend(
-            fetch_lexical_candidates(
+        candidates.extend(found);
+        workspace_generation = generation;
+    } else {
+        let anchors = search_anchors(query);
+        let mut anchor_hit = false;
+        for anchor in &anchors {
+            let (anchor_candidates, generation) = fetch_lexical_candidates(
+                &mut tx,
+                anchor,
+                query,
+                features,
+                state.config.supersession_demotion,
+                state.config.supersession_demotion_weight,
+                state.config.read_path_roundtrip_v1,
+                auth.user_id.0,
+            )
+            .await?;
+            anchor_hit |= !anchor_candidates.is_empty();
+            candidates.extend(anchor_candidates);
+            workspace_generation = workspace_generation.into_iter().chain(generation).max();
+        }
+        if !anchor_hit {
+            let focused = focused_lexical_query(query).unwrap_or_else(|| query.trim().to_owned());
+            let (focused_candidates, generation) = fetch_lexical_candidates(
                 &mut tx,
                 &focused,
                 query,
                 features,
                 state.config.supersession_demotion,
                 state.config.supersession_demotion_weight,
+                state.config.read_path_roundtrip_v1,
+                auth.user_id.0,
             )
-            .await?,
-        );
+            .await?;
+            candidates.extend(focused_candidates);
+            workspace_generation = workspace_generation.into_iter().chain(generation).max();
+        }
     }
     tx.commit().await?;
     let mut merged = HashMap::new();
     for candidate in candidates {
         merge_candidate(&mut merged, candidate);
     }
-    Ok(merged.into_values().collect())
+    Ok((merged.into_values().collect(), workspace_generation))
 }
 
 async fn fetch_lexical_candidates(
@@ -3446,18 +3614,47 @@ async fn fetch_lexical_candidates(
     features: Option<&WorkspaceFeatureSnapshot>,
     supersession_enabled: bool,
     supersession_weight: f64,
-) -> ApiResult<Vec<Candidate>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT *
-        FROM straylight.workspace_lexical_candidates($1)
-        "#,
-    )
-    .bind(retrieval_query)
-    .fetch_all(&mut **tx)
-    .await?;
-    Ok(rows
+    include_generation: bool,
+    user_id: Uuid,
+) -> ApiResult<(Vec<Candidate>, Option<i64>)> {
+    let rows = if include_generation {
+        sqlx::query(
+            r#"
+            WITH generation AS (
+              SELECT coalesce(max(change.generation),0) AS workspace_generation
+              FROM straylight.workspace_changes AS change
+              WHERE change.user_id=$1
+            )
+            SELECT generation.workspace_generation,candidate.*
+            FROM generation
+            LEFT JOIN LATERAL straylight.workspace_lexical_candidates($2) AS candidate
+              ON true
+            "#,
+        )
+        .bind(user_id)
+        .bind(retrieval_query)
+        .fetch_all(&mut **tx)
+        .await?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT *
+            FROM straylight.workspace_lexical_candidates($1)
+            "#,
+        )
+        .bind(retrieval_query)
+        .fetch_all(&mut **tx)
+        .await?
+    };
+    let workspace_generation = include_generation
+        .then(|| {
+            rows.first()
+                .and_then(|row| row.get::<Option<i64>, _>("workspace_generation"))
+        })
+        .flatten();
+    let candidates = rows
         .into_iter()
+        .filter(|row| !include_generation || row.get::<Option<Uuid>, _>("entry_id").is_some())
         .map(|row| {
             let path: String = row.get("path");
             let title: String = row.get("title");
@@ -3487,7 +3684,8 @@ async fn fetch_lexical_candidates(
                 superseded_by: None,
             }
         })
-        .collect())
+        .collect();
+    Ok((candidates, workspace_generation))
 }
 
 async fn semantic_candidates(
@@ -4258,41 +4456,83 @@ async fn hydrate_candidates(
     auth: &AuthContext,
     candidates: &[Candidate],
     token_budget: usize,
-) -> ApiResult<Vec<Value>> {
+) -> ApiResult<(Vec<Value>, Option<i64>)> {
     let ids = candidates
         .iter()
         .take(HYDRATED_DOCUMENT_LIMIT)
         .map(|candidate| candidate.entry_id)
         .collect::<Vec<_>>();
-    if ids.is_empty() {
-        return Ok(vec![]);
+    if ids.is_empty() && !state.config.read_path_roundtrip_v1 {
+        return Ok((vec![], None));
     }
     let mut tx = state.begin_read(auth).await?;
-    let rows = sqlx::query(
-        r#"
-        SELECT entry.id,version.size_bytes
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
-          ON version.user_id=entry.user_id
-         AND version.entry_id=entry.id
-         AND version.version=entry.current_version
-        WHERE entry.user_id=$1
-          AND entry.id=ANY($2)
-          AND entry.deleted_at IS NULL
-        "#,
-    )
-    .bind(auth.user_id.0)
-    .bind(&ids)
-    .fetch_all(&mut *tx)
-    .await?;
-    let sizes = rows
-        .into_iter()
-        .filter_map(|row| {
-            usize::try_from(row.get::<i64, _>("size_bytes"))
-                .ok()
-                .map(|size| (row.get::<Uuid, _>("id"), size))
-        })
-        .collect::<HashMap<_, _>>();
+    let rows = if state.config.read_path_roundtrip_v1 {
+        sqlx::query(
+            r#"
+            WITH generation AS (
+              SELECT coalesce(max(change.generation),0) AS workspace_generation
+              FROM straylight.workspace_changes AS change
+              WHERE change.user_id=$1
+            ), documents AS MATERIALIZED (
+              SELECT entry.id,version.size_bytes,version.content
+              FROM straylight.entries AS entry
+              JOIN straylight.entry_versions AS version
+                ON version.user_id=entry.user_id
+               AND version.entry_id=entry.id
+               AND version.version=entry.current_version
+              WHERE entry.user_id=$1
+                AND entry.id=ANY($2)
+                AND entry.deleted_at IS NULL
+            )
+            SELECT generation.workspace_generation,
+                   documents.id,documents.size_bytes,documents.content
+            FROM generation
+            LEFT JOIN documents ON true
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .bind(&ids)
+        .fetch_all(&mut *tx)
+        .await?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT NULL::bigint AS workspace_generation,
+                   entry.id,version.size_bytes,NULL::text AS content
+            FROM straylight.entries AS entry
+            JOIN straylight.entry_versions AS version
+              ON version.user_id=entry.user_id
+             AND version.entry_id=entry.id
+             AND version.version=entry.current_version
+            WHERE entry.user_id=$1
+              AND entry.id=ANY($2)
+              AND entry.deleted_at IS NULL
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .bind(&ids)
+        .fetch_all(&mut *tx)
+        .await?
+    };
+    let generation = rows
+        .first()
+        .and_then(|row| row.get::<Option<i64>, _>("workspace_generation"));
+    let mut sizes = HashMap::new();
+    let mut complete_content = HashMap::new();
+    for row in rows {
+        let Some(id) = row.get::<Option<Uuid>, _>("id") else {
+            continue;
+        };
+        if let Ok(size) = usize::try_from(row.get::<Option<i64>, _>("size_bytes").unwrap_or(0)) {
+            sizes.insert(id, size);
+        }
+        if state.config.read_path_roundtrip_v1 {
+            complete_content.insert(
+                id,
+                row.get::<Option<String>, _>("content").unwrap_or_default(),
+            );
+        }
+    }
     let mut remaining_chars = token_budget.saturating_mul(4);
     let mut selections = Vec::new();
     let mut complete_ids = Vec::new();
@@ -4319,10 +4559,8 @@ async fn hydrate_candidates(
             selections.push((index, false, excerpt_chars));
         }
     }
-    let complete_rows = if complete_ids.is_empty() {
-        vec![]
-    } else {
-        sqlx::query(
+    if !state.config.read_path_roundtrip_v1 && !complete_ids.is_empty() {
+        let complete_rows = sqlx::query(
             r#"
             SELECT entry.id,version.content
             FROM straylight.entries AS entry
@@ -4338,18 +4576,15 @@ async fn hydrate_candidates(
         .bind(auth.user_id.0)
         .bind(&complete_ids)
         .fetch_all(&mut *tx)
-        .await?
-    };
-    tx.commit().await?;
-    let complete_content = complete_rows
-        .into_iter()
-        .map(|row| {
+        .await?;
+        complete_content.extend(complete_rows.into_iter().map(|row| {
             (
                 row.get::<Uuid, _>("id"),
                 row.get::<Option<String>, _>("content").unwrap_or_default(),
             )
-        })
-        .collect::<HashMap<_, _>>();
+        }));
+    }
+    tx.commit().await?;
     let mut evidence = Vec::new();
     for (index, complete, excerpt_chars) in selections {
         let candidate = &candidates[index];
@@ -4396,7 +4631,7 @@ async fn hydrate_candidates(
         }
         evidence.push(Value::Object(item));
     }
-    Ok(evidence)
+    Ok((evidence, generation))
 }
 
 fn truncate_candidate_evidence(candidate: &mut Candidate, remaining_chars: &mut usize) -> bool {
@@ -4465,6 +4700,7 @@ async fn fetch_entry_lookup(
     entry_id: Option<Uuid>,
     normalized_path: bool,
     include_content: bool,
+    include_generation: bool,
 ) -> Result<Option<PgRow>, sqlx::Error> {
     let mut statement = QueryBuilder::<Postgres>::new(
         r#"
@@ -4481,7 +4717,22 @@ async fn fetch_entry_lookup(
     statement.push(
         r#"
                version.object_key,version.object_version_id,version.size_bytes,
-               version.metadata
+               version.metadata,
+        "#,
+    );
+    if include_generation {
+        statement.push(
+            r#"
+               (SELECT coalesce(max(change.generation),0)
+                FROM straylight.workspace_changes AS change
+                WHERE change.user_id=entry.user_id) AS workspace_generation
+            "#,
+        );
+    } else {
+        statement.push("NULL::bigint AS workspace_generation");
+    }
+    statement.push(
+        r#"
         FROM straylight.entries AS entry
         JOIN straylight.entry_versions AS version
           ON version.user_id=entry.user_id
@@ -4546,6 +4797,7 @@ async fn resolve_entry_version(
         entry_id,
         false,
         true,
+        state.config.read_path_roundtrip_v1,
     )
     .await?;
     let row =
@@ -4558,6 +4810,7 @@ async fn resolve_entry_version(
                 entry_id,
                 true,
                 true,
+                state.config.read_path_roundtrip_v1,
             )
             .await?
         } else {
@@ -4582,6 +4835,7 @@ async fn resolve_entry_version(
         size_bytes: row.get("size_bytes"),
         metadata: row.get("metadata"),
         updated_at: row.get("updated_at"),
+        workspace_generation: row.get("workspace_generation"),
     })
 }
 
@@ -4613,6 +4867,7 @@ async fn resolve_entry_summary(
         entry_id,
         false,
         false,
+        false,
     )
     .await?;
     let row =
@@ -4624,6 +4879,7 @@ async fn resolve_entry_summary(
                 effective_path,
                 entry_id,
                 true,
+                false,
                 false,
             )
             .await?
@@ -4652,6 +4908,7 @@ async fn resolve_entry_summary(
         size_bytes: row.get("size_bytes"),
         metadata: row.get("metadata"),
         updated_at: row.get("updated_at"),
+        workspace_generation: None,
     })
 }
 
@@ -4795,6 +5052,7 @@ async fn commit_markdown(
             auth.user_id.0,
             portable_path_key(&prepared.path)
         ),
+        state.config.read_path_roundtrip_v1,
     )
     .await?;
     let result = upsert_markdown_in_tx(
@@ -4874,6 +5132,7 @@ pub(crate) async fn write_markdown_as_worker(
             "simple-entry:{user_id}:{}",
             portable_path_key(&prepared.path)
         ),
+        state.config.read_path_roundtrip_v1,
     )
     .await?;
     if let Some((entry_id, expected_entry_version)) = guard_entry {
@@ -5287,35 +5546,75 @@ async fn changes_since(
     limit: usize,
 ) -> ApiResult<ChangePage> {
     let mut tx = state.begin_read(auth).await?;
-    let rows = sqlx::query(
-        r#"
-        SELECT generation,operation,path,entry_version,content_sha256,recorded_at
-        FROM straylight.workspace_changes
-        WHERE user_id=$1 AND generation>$2
-        ORDER BY generation
-        LIMIT $3
-        "#,
-    )
-    .bind(auth.user_id.0)
-    .bind(since)
-    .bind(i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX))
-    .fetch_all(&mut *tx)
-    .await?;
+    let (rows, workspace_generation) = if state.config.read_path_roundtrip_v1 {
+        let rows = sqlx::query(
+            r#"
+            WITH generation AS (
+              SELECT coalesce(max(change.generation),0) AS workspace_generation
+              FROM straylight.workspace_changes AS change
+              WHERE change.user_id=$1
+            ), page AS MATERIALIZED (
+              SELECT change.generation,change.operation,change.path,
+                     change.entry_version,change.content_sha256,change.recorded_at
+              FROM straylight.workspace_changes AS change
+              WHERE change.user_id=$1 AND change.generation>$2
+              ORDER BY change.generation
+              LIMIT $3
+            )
+            SELECT generation.workspace_generation,
+                   page.generation,page.operation,page.path,page.entry_version,
+                   page.content_sha256,page.recorded_at
+            FROM generation
+            LEFT JOIN page ON true
+            ORDER BY page.generation NULLS LAST
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .bind(since)
+        .bind(i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX))
+        .fetch_all(&mut *tx)
+        .await?;
+        let generation = rows
+            .first()
+            .and_then(|row| row.get::<Option<i64>, _>("workspace_generation"));
+        (rows, generation)
+    } else {
+        let rows = sqlx::query(
+            r#"
+            SELECT generation,operation,path,entry_version,content_sha256,recorded_at
+            FROM straylight.workspace_changes
+            WHERE user_id=$1 AND generation>$2
+            ORDER BY generation
+            LIMIT $3
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .bind(since)
+        .bind(i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX))
+        .fetch_all(&mut *tx)
+        .await?;
+        (rows, None)
+    };
     tx.commit().await?;
-    let truncated = rows.len() > limit;
     let mut changes = rows
         .into_iter()
-        .map(|row| {
-            json!({
-                "generation": row.get::<i64, _>("generation"),
+        .filter_map(|row| {
+            let generation = if state.config.read_path_roundtrip_v1 {
+                row.get::<Option<i64>, _>("generation")?
+            } else {
+                row.get::<i64, _>("generation")
+            };
+            Some(json!({
+                "generation": generation,
                 "operation": row.get::<String, _>("operation"),
                 "path": row.get::<String, _>("path"),
                 "version": row.get::<i64, _>("entry_version"),
                 "content_hash": format!("sha256:{}", row.get::<String, _>("content_sha256")),
                 "recorded_at": row.get::<DateTime<Utc>, _>("recorded_at")
-            })
+            }))
         })
         .collect::<Vec<_>>();
+    let truncated = changes.len() > limit;
     if truncated {
         changes.truncate(limit);
     }
@@ -5327,6 +5626,7 @@ async fn changes_since(
         changes,
         truncated,
         next_generation,
+        workspace_generation,
     })
 }
 
@@ -5365,6 +5665,10 @@ async fn resolve_checkpoint_sources(
         return Err(ApiError::invalid(
             "checkpoint source_refs are limited to 64 exact references",
         ));
+    }
+    if state.config.read_path_roundtrip_v1 {
+        return resolve_checkpoint_sources_batched(state, auth, checkpoint_state, source_refs)
+            .await;
     }
     let mut resolved = Vec::new();
     let mut seen = HashSet::new();
@@ -5422,6 +5726,146 @@ async fn resolve_checkpoint_sources(
     inferred_results.sort_by_key(|(index, _)| *index);
     for (_, entry) in inferred_results {
         if let Ok(entry) = entry
+            && seen.insert(entry.id)
+        {
+            resolved.push(entry);
+        }
+    }
+    Ok(resolved)
+}
+
+async fn resolve_checkpoint_sources_batched(
+    state: &AppState,
+    auth: &AuthContext,
+    checkpoint_state: &Value,
+    source_refs: &[String],
+) -> ApiResult<Vec<EntryRow>> {
+    let explicit = source_refs
+        .iter()
+        .filter(|candidate| {
+            !candidate.starts_with("source_episode:") && !candidate.starts_with("evidence:")
+        })
+        .map(|candidate| {
+            let entry_id = if let Some(value) = candidate.strip_prefix("entry:") {
+                Some(Uuid::parse_str(value).map_err(|_| {
+                    ApiError::invalid("checkpoint sources require an exact path or entry ref")
+                })?)
+            } else {
+                None
+            };
+            Ok::<_, ApiError>((candidate.clone(), entry_id))
+        })
+        .collect::<ApiResult<Vec<_>>>()?;
+
+    let mut inferred = Vec::new();
+    collect_markdown_paths(checkpoint_state, &mut inferred);
+    inferred.sort();
+    inferred.dedup();
+    inferred.truncate(64);
+
+    let entry_ids = explicit
+        .iter()
+        .filter_map(|(_, entry_id)| *entry_id)
+        .collect::<Vec<_>>();
+    let mut paths = explicit
+        .iter()
+        .filter_map(|(candidate, entry_id)| entry_id.is_none().then_some(candidate.clone()))
+        .chain(inferred.iter().cloned())
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    let normalized_path_keys = paths
+        .iter()
+        .filter(|path| !path.starts_with(".straylight/"))
+        .map(|path| portable_path_key(path))
+        .collect::<Vec<_>>();
+
+    let mut tx = state.begin_read(auth).await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT entry.id,entry.path,entry.title,entry.kind,entry.media_type,
+               entry.current_version,entry.updated_at,
+               version.id AS version_id,version.content_sha256,
+               NULL::text AS content,version.object_key,version.object_version_id,
+               version.size_bytes,version.metadata
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND entry.deleted_at IS NULL
+          AND (
+            entry.id=ANY($2)
+            OR entry.path=ANY($3)
+            OR lower(normalize(entry.path, NFC))=ANY($4)
+          )
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(&entry_ids)
+    .bind(&paths)
+    .bind(&normalized_path_keys)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    let entries = rows
+        .into_iter()
+        .map(|row| EntryRow {
+            id: row.get("id"),
+            path: row.get("path"),
+            title: row.get("title"),
+            kind: row.get("kind"),
+            media_type: row.get("media_type"),
+            version: row.get("current_version"),
+            version_id: row.get("version_id"),
+            content_sha256: row.get("content_sha256"),
+            content: None,
+            object_key: row.get("object_key"),
+            object_version_id: row.get("object_version_id"),
+            size_bytes: row.get("size_bytes"),
+            metadata: row.get("metadata"),
+            updated_at: row.get("updated_at"),
+            workspace_generation: None,
+        })
+        .collect::<Vec<_>>();
+    let by_id = entries
+        .iter()
+        .map(|entry| (entry.id, entry.clone()))
+        .collect::<HashMap<_, _>>();
+    let by_exact_path = entries
+        .iter()
+        .map(|entry| (entry.path.clone(), entry.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut by_normalized_path = HashMap::new();
+    for entry in &entries {
+        by_normalized_path
+            .entry(portable_path_key(&entry.path))
+            .or_insert_with(|| entry.clone());
+    }
+
+    let lookup_path = |path: &str| {
+        by_exact_path.get(path).cloned().or_else(|| {
+            (!path.starts_with(".straylight/"))
+                .then(|| by_normalized_path.get(&portable_path_key(path)).cloned())
+                .flatten()
+        })
+    };
+    let mut resolved = Vec::new();
+    let mut seen = HashSet::new();
+    for (candidate, entry_id) in explicit {
+        let entry = entry_id
+            .and_then(|id| by_id.get(&id).cloned())
+            .or_else(|| lookup_path(&candidate))
+            .ok_or_else(|| ApiError::not_found("entry_not_found", &candidate))?;
+        if seen.insert(entry.id) {
+            resolved.push(entry);
+        }
+    }
+    let remaining = 64_usize.saturating_sub(resolved.len());
+    for candidate in inferred.into_iter().take(remaining) {
+        if let Some(entry) = lookup_path(&candidate)
             && seen.insert(entry.id)
         {
             resolved.push(entry);
@@ -5657,6 +6101,23 @@ fn lexical_fallback_queries(query: &str) -> Vec<String> {
         .take(8)
         .map(|terms| terms.join(" "))
         .collect()
+}
+
+fn consolidated_lexical_query(query: &str) -> String {
+    let anchors = search_anchors(query);
+    if anchors.is_empty() {
+        return focused_lexical_query(query).unwrap_or_else(|| query.trim().to_owned());
+    }
+    let mut alternatives = anchors
+        .into_iter()
+        .map(|anchor| format!("\"{}\"", anchor.replace('"', " ")))
+        .collect::<Vec<_>>();
+    if let Some(focused) = focused_lexical_query(query)
+        && !focused.trim().is_empty()
+    {
+        alternatives.push(focused);
+    }
+    alternatives.join(" OR ")
 }
 
 fn focused_lexical_query(query: &str) -> Option<String> {
@@ -6171,12 +6632,39 @@ fn evaluation_batch(request: &EvalImportRequest) -> ApiResult<Option<(usize, usi
 async fn require_local_publish_lock(
     tx: &mut Transaction<'_, Postgres>,
     key: String,
+    bounded_wait: bool,
 ) -> ApiResult<()> {
-    let acquired =
+    let acquired = if bounded_wait {
+        match sqlx::query(
+            r#"
+            WITH prior AS MATERIALIZED (
+              SELECT current_setting('lock_timeout') AS lock_timeout
+            ), configured AS MATERIALIZED (
+              SELECT set_config('lock_timeout','250ms',true)
+              FROM prior
+            ), acquired AS MATERIALIZED (
+              SELECT pg_advisory_xact_lock(hashtextextended($1,0))
+              FROM configured
+            )
+            SELECT set_config('lock_timeout',prior.lock_timeout,true)
+            FROM prior
+            CROSS JOIN acquired
+            "#,
+        )
+        .bind(&key)
+        .execute(&mut **tx)
+        .await
+        {
+            Ok(_) => true,
+            Err(sqlx::Error::Database(error)) if error.code().as_deref() == Some("55P03") => false,
+            Err(error) => return Err(error.into()),
+        }
+    } else {
         sqlx::query_scalar::<_, bool>("SELECT pg_try_advisory_xact_lock(hashtextextended($1,0))")
             .bind(key)
             .fetch_one(&mut **tx)
-            .await?;
+            .await?
+    };
     if !acquired {
         return Err(ApiError::conflict(
             "entry_busy",

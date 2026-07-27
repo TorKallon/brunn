@@ -53,6 +53,12 @@ REASONING_BILLING_POLICY = {
 }
 RUN_LEDGER_SCHEMA = "straylight-eval-run-ledger@v1"
 SIDECAR_CHECKPOINT_RELATIVE_PATH = Path("sidecar") / "checkpoint.json"
+SERVICE_BOOLEAN_FEATURE_FLAGS = frozenset({
+    "supersession_demotion",
+    "intention_ledger",
+    "read_path_roundtrip_v1",
+    "lexical_single_scan",
+})
 
 
 def subscription_reasoning_environment(
@@ -306,6 +312,35 @@ CONCEPT_IRREGULAR = {
 
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def parse_feature_states(values: Sequence[str] | None) -> dict[str, bool]:
+    states: dict[str, bool] = {}
+    for raw in values or ():
+        name, separator, value = raw.partition("=")
+        name = name.strip()
+        normalized = value.strip().lower()
+        if not separator or not name or normalized not in {
+            "on",
+            "off",
+            "true",
+            "false",
+            "1",
+            "0",
+        }:
+            raise ValueError(
+                "--feature-state must use NAME=on|off (true/false and 1/0 are accepted)"
+            )
+        enabled = normalized in {"on", "true", "1"}
+        if name not in SERVICE_BOOLEAN_FEATURE_FLAGS:
+            raise ValueError(
+                f"unknown service feature state {name}; expected one of "
+                + ", ".join(sorted(SERVICE_BOOLEAN_FEATURE_FLAGS))
+            )
+        if name in states and states[name] != enabled:
+            raise ValueError(f"conflicting feature states declared for {name}")
+        states[name] = enabled
+    return dict(sorted(states.items()))
 
 
 def sha256_tree(root: Path) -> str:
@@ -1585,13 +1620,16 @@ def select_conditions(manifest: dict, args: argparse.Namespace) -> list[str]:
 
 def expected_feature_flags(values: Sequence[str] | None) -> dict[str, bool]:
     parsed = {}
-    allowed = {"supersession_demotion", "intention_ledger"}
     for value in values or []:
         name, separator, state = value.partition("=")
-        if not separator or name not in allowed or state not in {"on", "off"}:
+        if (
+            not separator
+            or name not in SERVICE_BOOLEAN_FEATURE_FLAGS
+            or state not in {"on", "off"}
+        ):
             raise ValueError(
-                "--expect-feature-flag requires supersession_demotion=on|off "
-                "or intention_ledger=on|off"
+                "--expect-feature-flag requires a known service feature "
+                "formatted as NAME=on|off"
             )
         parsed[name] = state == "on"
     return parsed
@@ -1614,6 +1652,7 @@ def select_cases(
 
 
 async def run_all(args: argparse.Namespace) -> dict:
+    feature_states = parse_feature_states(args.feature_state)
     reasoning_billing = require_codex_subscription(args.codex)
     validated = validate(args.manifest, args.schema)
     if validated["errors"]:
@@ -1638,6 +1677,14 @@ async def run_all(args: argparse.Namespace) -> dict:
     )
     selected_conditions = select_conditions(manifest, args)
     expected_flags = expected_feature_flags(args.expect_feature_flag)
+    for name, expected in feature_states.items():
+        if name in expected_flags and expected_flags[name] is not expected:
+            raise ValueError(f"conflicting expected feature states declared for {name}")
+        expected_flags[name] = expected
+    if expected_flags and "service_api" not in selected_conditions:
+        raise ValueError(
+            "feature-state assertions require the service_api condition"
+        )
     native_metadata: dict[str, dict[str, Any]] = {}
     if "service_api" in selected_conditions:
         native_state_path = run_root / NATIVE_PROVISIONING_STATE
@@ -1782,6 +1829,8 @@ async def run_all(args: argparse.Namespace) -> dict:
             for case_id, metadata in native_metadata.items()
         },
         "service_protocol": args.service_protocol,
+        "declared_feature_states": feature_states,
+        "run_tags": sorted(set(args.run_tag)),
         "reasoning_billing": reasoning_billing,
         "expected_feature_flags": expected_flags,
         "records": records,
@@ -1890,6 +1939,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--concurrency", type=int, default=3)
     run_parser.add_argument("--timeout", type=int, default=360)
     run_parser.add_argument("--run-id")
+    run_parser.add_argument(
+        "--feature-state",
+        action="append",
+        default=[],
+        metavar="NAME=on|off",
+        help="record the runtime feature state used by the service under test",
+    )
+    run_parser.add_argument(
+        "--run-tag",
+        action="append",
+        default=[],
+        help="attach a stable experiment tag to the result artifact",
+    )
     run_parser.add_argument("--resume-run-id")
     run_parser.add_argument("--case", action="append")
     run_parser.add_argument(

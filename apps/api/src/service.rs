@@ -156,7 +156,9 @@ pub async fn status(
         "feature_flags": {
             "supersession_demotion": state.config.supersession_demotion,
             "supersession_demotion_weight": state.config.supersession_demotion_weight,
-            "intention_ledger": state.config.intention_ledger
+            "intention_ledger": state.config.intention_ledger,
+            "read_path_roundtrip_v1": state.config.read_path_roundtrip_v1,
+            "lexical_single_scan": state.config.lexical_single_scan
         },
         "embeddings": {
             "provider": state.embedder.provider(),

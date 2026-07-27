@@ -41,6 +41,24 @@ OLD_SOURCE_QUERY = (
     "Reconcile the meridian continuity doctrine with a new request and explain "
     "durable workspace source authority for a fresh agent."
 )
+LEXICAL_CONSOLIDATION_GATE_PROFILE = "e05-lexical-consolidation"
+LEXICAL_CONSOLIDATION_REQUIRED_GATES = frozenset({
+    "all_required_scales_completed",
+    "retrieval_sample_count_is_definitive",
+    "bounded_lexical_overflow_returns_late_relevant_source",
+    "old_relevant_source_survives_many_newer_writes",
+    "no_exact_or_lexical_lane_failures",
+    "unrelated_write_commits",
+    "retrieval_survives_unrelated_write",
+    "concurrent_exact_and_lexical_lanes_remain_healthy",
+    "foreground_write_sample_count_is_definitive",
+})
+SERVICE_BOOLEAN_FEATURE_FLAGS = frozenset({
+    "supersession_demotion",
+    "intention_ledger",
+    "read_path_roundtrip_v1",
+    "lexical_single_scan",
+})
 SOURCE_TEXT_KEYS = frozenset({"content", "text", "excerpt", "source_text"})
 SOURCE_IDENTITY_KEYS = frozenset(
     {
@@ -102,6 +120,55 @@ def percentile(values: Iterable[float], quantile: float) -> float:
     upper = min(lower + 1, len(ordered) - 1)
     fraction = position - lower
     return ordered[lower] * (1 - fraction) + ordered[upper] * fraction
+
+
+def parse_feature_states(values: Sequence[str] | None) -> dict[str, bool]:
+    states: dict[str, bool] = {}
+    for raw in values or ():
+        name, separator, value = raw.partition("=")
+        name = name.strip()
+        normalized = value.strip().lower()
+        if not separator or not name or normalized not in {
+            "on",
+            "off",
+            "true",
+            "false",
+            "1",
+            "0",
+        }:
+            raise ValueError(
+                "--feature-state must use NAME=on|off (true/false and 1/0 are accepted)"
+            )
+        enabled = normalized in {"on", "true", "1"}
+        if name not in SERVICE_BOOLEAN_FEATURE_FLAGS:
+            raise ValueError(
+                f"unknown service feature state {name}; expected one of "
+                + ", ".join(sorted(SERVICE_BOOLEAN_FEATURE_FLAGS))
+            )
+        if name in states and states[name] != enabled:
+            raise ValueError(f"conflicting feature states declared for {name}")
+        states[name] = enabled
+    return dict(sorted(states.items()))
+
+
+def verify_service_feature_states(
+    client: NativeApiClient,
+    expected: dict[str, bool],
+) -> dict[str, bool]:
+    if not expected:
+        return {}
+    status = client.get("/v1/status").data
+    actual = status.get("feature_flags")
+    if not isinstance(actual, dict):
+        raise ValueError("service status omitted the required feature_flags snapshot")
+    mismatches = {
+        name: {"expected": value, "actual": actual.get(name)}
+        for name, value in expected.items()
+        if actual.get(name) is not value
+    }
+    if mismatches:
+        raise ValueError(f"service feature state mismatch: {mismatches}")
+    return {name: bool(actual[name]) for name in sorted(expected)}
 
 
 def recursive_find(value: Any, key: str) -> Any:
@@ -485,7 +552,11 @@ def resolve_run_profile(args: argparse.Namespace) -> RunProfile:
         definitive=definitive,
         future_soak_requested=bool(args.future_soak),
         import_timeout_seconds=import_timeout,
-        semantic_failure_required=definitive,
+        semantic_failure_required=(
+            definitive
+            and getattr(args, "gate_profile", None)
+            != LEXICAL_CONSOLIDATION_GATE_PROFILE
+        ),
     )
 
 
@@ -1333,6 +1404,7 @@ def concurrent_write_search_probe(
     session_id: str,
     marker: str,
     run_id: str,
+    retrieval_modes: Sequence[str] = ("exact", "lexical", "semantic"),
     searches: int = 5,
     rounds: int = 1,
     response_samples: list[tuple[str, dict[str, Any]]] | None = None,
@@ -1413,7 +1485,7 @@ def concurrent_write_search_probe(
                         "goal": "find the existing exact marker",
                         "query": marker,
                         "scope": authorization_scope,
-                        "modes": ["exact", "lexical", "semantic"],
+                        "modes": list(retrieval_modes),
                         "limit": 8,
                     }],
                 },
@@ -1479,6 +1551,7 @@ def benchmark_scale(
     import_timeout_seconds: float,
     db_container: str | None,
     protocol: str,
+    retrieval_modes: Sequence[str],
     run_semantic_failure: bool,
     concurrent_rounds: int,
     semantic_failure_required: bool,
@@ -1622,7 +1695,7 @@ def benchmark_scale(
                     "goal": "locate the terminal corpus answer without a path",
                     "query": discovery_key + query_suffix,
                     "scope": authorization_scope,
-                    "modes": ["exact", "lexical", "semantic"],
+                    "modes": list(retrieval_modes),
                     "limit": 8,
                 }],
             },
@@ -1651,7 +1724,9 @@ def benchmark_scale(
                     "goal": "find representative performance fixture sources",
                     "query": BROAD_QUERY + query_suffix,
                     "scope": authorization_scope,
-                    "modes": ["lexical", "semantic"],
+                    "modes": [
+                        mode for mode in retrieval_modes if mode != "exact"
+                    ],
                     "limit": 8,
                 }],
             },
@@ -1681,7 +1756,7 @@ def benchmark_scale(
                     "goal": "find the relevant late source among broad matches",
                     "query": f"{BROAD_QUERY} OR {overflow_marker}",
                     "scope": authorization_scope,
-                    "modes": ["exact", "lexical", "semantic"],
+                    "modes": list(retrieval_modes),
                     "limit": 8,
                 }],
             },
@@ -1710,7 +1785,9 @@ def benchmark_scale(
                     "goal": "find an older relevant source after many newer writes",
                     "query": OLD_SOURCE_QUERY,
                     "scope": authorization_scope,
-                    "modes": ["lexical", "semantic"],
+                    "modes": [
+                        mode for mode in retrieval_modes if mode != "exact"
+                    ],
                     "limit": 8,
                 }],
             },
@@ -1880,6 +1957,7 @@ def benchmark_scale(
         session_id=latest_session_id,
         marker=marker,
         run_id=run_id,
+        retrieval_modes=retrieval_modes,
         rounds=concurrent_rounds,
         response_samples=response_samples,
     )
@@ -2638,6 +2716,37 @@ def evaluate_gates(
     ]
 
 
+def evaluate_lexical_consolidation_guards(
+    scales: list[dict[str, Any]],
+    *,
+    required_scales: Sequence[int],
+    minimum_samples: int,
+) -> list[dict[str, Any]]:
+    all_gates = evaluate_gates(
+        scales,
+        DEFAULT_THRESHOLDS,
+        required_scales=required_scales,
+        minimum_samples=minimum_samples,
+        semantic_failure_required=False,
+        require_gin_index=False,
+    )
+    selected = [
+        gate
+        for gate in all_gates
+        if gate["name"] in LEXICAL_CONSOLIDATION_REQUIRED_GATES
+    ]
+    largest = max(scales, key=lambda item: item["scale"])
+    concurrent = largest.get("concurrent_probe", {})
+    write_p95 = concurrent.get("write_p95_ms", concurrent.get("write_ms"))
+    selected.append({
+        "name": "lexical_consolidation_unrelated_write_p95",
+        "pass": isinstance(write_p95, (int, float)) and write_p95 <= 58.0,
+        "observed": write_p95,
+        "threshold": "<= 58.0ms (2x the v8 29.0ms baseline)",
+    })
+    return selected
+
+
 def compare_results(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     before_scales = {item["scale"]: item for item in before["scales"]}
     after_scales = {item["scale"]: item for item in after["scales"]}
@@ -2776,6 +2885,8 @@ def load_reused_flat_controls(
 
 def command_run(args: argparse.Namespace) -> int:
     try:
+        feature_states = parse_feature_states(args.feature_state)
+        retrieval_modes = tuple(dict.fromkeys(args.retrieval_modes))
         profile = resolve_run_profile(args)
         if bool(args.semantic_failure_start_command) != bool(
             args.semantic_failure_stop_command
@@ -2784,6 +2895,22 @@ def command_run(args: argparse.Namespace) -> int:
                 "semantic failure testing requires both the start and stop "
                 "hook commands"
             )
+        if args.gate_profile == LEXICAL_CONSOLIDATION_GATE_PROFILE:
+            if not args.future_soak or args.protocol != "simple":
+                raise ValueError(
+                    "the E05 lexical-consolidation guard profile requires "
+                    "--future-soak and --protocol simple"
+                )
+            if set(retrieval_modes) != {"exact", "lexical"}:
+                raise ValueError(
+                    "the E05 lexical-consolidation guard profile requires "
+                    "--retrieval-modes exact lexical"
+                )
+            if feature_states.get("lexical_single_scan") is not True:
+                raise ValueError(
+                    "the E05 Arm B guard run must declare "
+                    "--feature-state lexical_single_scan=on"
+                )
         reused_flat_controls = load_reused_flat_controls(
             args.reuse_flat_controls_from,
             profile,
@@ -2805,6 +2932,27 @@ def command_run(args: argparse.Namespace) -> int:
         return 2
 
     admin = NativeApiClient(timeout=profile.import_timeout_seconds)
+    try:
+        observed_feature_states = verify_service_feature_states(
+            admin,
+            feature_states,
+        )
+    except (NativeApiError, ValueError) as error:
+        result = {
+            "schema": "straylight-performance-eval@v2",
+            "created_at": datetime.now().astimezone().isoformat(),
+            "label": args.label,
+            "pass": False,
+            "declared_feature_states": feature_states,
+            "errors": [{
+                "type": type(error).__name__,
+                "message": str(error),
+            }],
+        }
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(result, indent=2))
+        return 2
     scales = []
     errors = []
     partial_flat_controls: dict[int, dict[str, Any]] = {}
@@ -2820,6 +2968,7 @@ def command_run(args: argparse.Namespace) -> int:
                 import_timeout_seconds=profile.import_timeout_seconds,
                 db_container=args.db_container,
                 protocol=args.protocol,
+                retrieval_modes=retrieval_modes,
                 run_semantic_failure=scale == largest_requested_scale,
                 concurrent_rounds=(
                     profile.samples
@@ -2867,8 +3016,14 @@ def command_run(args: argparse.Namespace) -> int:
         if profile.definitive
         else []
     )
-    gates = (
-        evaluate_gates(
+    if scales and args.gate_profile == LEXICAL_CONSOLIDATION_GATE_PROFILE:
+        gates = evaluate_lexical_consolidation_guards(
+            scales,
+            required_scales=required_scales,
+            minimum_samples=DEFINITIVE_SAMPLES,
+        )
+    elif scales:
+        gates = evaluate_gates(
             scales,
             DEFAULT_THRESHOLDS,
             required_scales=required_scales,
@@ -2878,9 +3033,8 @@ def command_run(args: argparse.Namespace) -> int:
             semantic_failure_required=profile.semantic_failure_required,
             require_gin_index=profile.definitive,
         )
-        if scales
-        else []
-    )
+    else:
+        gates = []
     fingerprint = implementation_fingerprint(args.api_container)
     if profile.definitive:
         gates.append({
@@ -2906,6 +3060,11 @@ def command_run(args: argparse.Namespace) -> int:
         "created_at": datetime.now().astimezone().isoformat(),
         "label": args.label,
         "protocol": args.protocol,
+        "gate_profile": args.gate_profile,
+        "retrieval_modes": list(retrieval_modes),
+        "declared_feature_states": feature_states,
+        "observed_feature_states": observed_feature_states,
+        "run_tags": sorted(set(args.run_tag)),
         "api_url": admin.base_url,
         "implementation_fingerprint": fingerprint,
         "run_profile": {
@@ -2970,6 +3129,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run")
     run.add_argument("--label", required=True)
+    run.add_argument(
+        "--gate-profile",
+        choices=(LEXICAL_CONSOLIDATION_GATE_PROFILE,),
+        help="run an experiment-specific deterministic gate subset",
+    )
+    run.add_argument(
+        "--feature-state",
+        action="append",
+        default=[],
+        metavar="NAME=on|off",
+        help="record the runtime feature state used by the API under test",
+    )
+    run.add_argument(
+        "--run-tag",
+        action="append",
+        default=[],
+        help="attach a stable experiment tag to the result artifact",
+    )
+    run.add_argument(
+        "--retrieval-modes",
+        nargs="+",
+        choices=("exact", "lexical", "semantic"),
+        default=["exact", "lexical", "semantic"],
+        help="retrieval lanes requested by benchmark search operations",
+    )
     run.add_argument("--scales", type=int, nargs="+")
     run.add_argument(
         "--samples",
