@@ -1,0 +1,98 @@
+# E11 — Wiki-Link Leads paired experiment (service_api ± link_leads vs filesystem)
+
+Status: Specified — not run
+Date: 2026-07-27
+Gates: D06
+Phase: 1 (requires flagged feature build)
+
+**CONDITIONAL EXPERIMENT. Hard precondition: the owner corpus is imported to the Nyx simplified core with a passed Tier A fidelity audit. The owner vault is link-rich; synthetic fixtures are not — running this on fixture corpora is invalid and its results must be discarded, not reported.**
+
+## Question
+
+Does pointer-only `linked_leads` (D06-wiki-link-leads.md) improve paired claim outcomes on agent-work and link-heavy owner cases without inflating context chars or regressing write latency — and do agents actually follow the leads into rubric-accepted sources?
+
+## Preconditions and build items
+
+1. D06 implemented behind `link_leads` flag — Medium (apps/api/src/simple_core.rs: search response assembly + worker reindex link parser; derived link table).
+2. Owner corpus imported to Nyx simplified core, Tier A fidelity audit passed (paths/bytes/sha256 identical; parent_checkpoint_id resolution) — Medium (imports/ tooling).
+3. n≥3 aggregator eval/aggregate_draws.py (per-case win/loss/tie, exact-binomial McNemar, case-level bootstrap CIs, stdlib only) — Small (known build item; does not exist yet; shared, specified in E01-paired-draw-machinery-and-baseline.md).
+4. Lead-follow instrumentation: parse eval transcripts to match subsequent open/read calls against `linked_leads` returned earlier in the same case — Small (agent_work_eval.py transcript post-processing; no harness behavior change).
+5. Link-heavy owner case manifest `eval/owner_link_cases.json` (8–10 cases; selection procedure below) — Small.
+6. Reindex-churn hook for the soak: run link-parse worker jobs continuously during performance_eval write probes — Small (performance_eval.py).
+7. Treatment-arm activation plumbing — Small. D06 attaches leads only on request `expand_links: true` or the relational heuristic (an open OWNER DECISION), and agent_work_eval.py has no per-request flag plumbing; without this item the treatment arm returns zero leads and the experiment is vacuous. Use D06's evaluation-only runtime config `link_leads.force_attach=true` (D06-wiki-link-leads.md, Activation) for the treatment arm; verify with a pre-draw smoke search that a `linked_leads` array is actually present.
+
+## Arms
+
+1. **service_api, link_leads OFF** (control).
+2. **service_api, link_leads ON** (`expand_links` activation per D06) — the paired treatment.
+3. **filesystem** (instruction-restricted read-only) — reference anchor only, single draw, not part of the paired statistic. Interface-run context: native API 186/228 vs files 194/228 on the simplified core.
+
+Paired analysis is arm 1 vs arm 2, per case, per draw, identical manifests and corpus.
+
+## Corpus and fixtures
+
+Owner vault on Nyx simplified core. Embeddings pending is the required profile — all existing latency evidence is exact+lexical, and lead parsing is purely lexical; do not introduce a semantic confound. Case sets:
+
+- agent-work manifest `eval/work_cases.json` (13 cases / 52 claims per the settled suite-size record; the manifest holds 14 cases / 56 claims on disk as of 2026-07-27 — the run uses it as-is, and the cost arithmetic below carries the on-disk count).
+- Owner link-heavy set, 8–10 cases, selected WITHOUT leaking rubric answers into the corpus:
+  1. From the derived link table, enumerate vault notes with ≥3 outgoing resolved links.
+  2. The owner writes questions whose answers require ≥2 linked notes, phrased in the owner's own words without quoting answer text from any note.
+  3. Rubric claims are authored in a second pass against the source notes and stored ONLY in `eval/owner_link_cases.json` — never written into the vault.
+  4. Leak gate: grep-verify no rubric claim string appears verbatim in the corpus; any hit → rewrite the claim.
+  5. OWNER DECISION: sign-off on the final case list before draw 1.
+
+## Procedure
+
+1. Preflight: clean git tree (implementation fingerprint gate); confirm `link_leads` default off; `python agent_work_eval.py validate --manifest eval/work_cases.json` and `python agent_work_eval.py validate --manifest eval/owner_link_cases.json`.
+2. For draw N in 1..3, arms interleaved within the day (control then treatment, same corpus state, no writes between):
+   - Control: `python agent_work_eval.py run --manifest eval/work_cases.json --condition service_api --concurrency 3 --timeout 360 --run-id e11-ctl-draw<N> --out results/2026-MM-DD-e11-linkleads-ctl-draw<N>.json --report results/2026-MM-DD-e11-linkleads-ctl-draw<N>.md` with `link_leads.surface=off`; repeat with `--manifest eval/owner_link_cases.json` (run-id e11-ctl-owner-draw<N>, artifacts `...-e11-linkleads-ctl-owner-draw<N>.json`).
+   - Treatment: identical commands with `link_leads.surface=on` AND `link_leads.force_attach=on` (build item 7 — the eval-only activation path; record both flag states in the run record), run-ids `e11-trt-draw<N>` / `e11-trt-owner-draw<N>`, artifacts `results/2026-MM-DD-e11-linkleads-trt-draw<N>.json` and `...-trt-owner-draw<N>.json`. Before draw 1, run the build-item-7 smoke search and confirm `linked_leads` is present.
+3. Filesystem anchor, once: both manifests with `--condition filesystem`, run-id `e11-fs-draw1`, artifacts `results/2026-MM-DD-e11-linkleads-fs-draw1.json`.
+4. Reindex soak: `python performance_eval.py run --label e11-reindex-soak --future-soak --out results/2026-MM-DD-e11-reindex-soak.json`, 30 samples, with link-parse churn enabled; capture write p95, unrelated-write p95, concurrent write/search probe, GIN idx_scan deltas.
+5. Lead-follow extraction over treatment transcripts (build item 4); emit per-case lead table.
+6. Aggregate: `python eval/aggregate_draws.py results/2026-MM-DD-e11-linkleads-*-draw*.json --out results/2026-MM-DD-e11-aggregate.json` over the three paired draws (combined and per-suite). Use `regrade` only for scoring fixes — it rescores saved answers without regeneration and costs nothing.
+
+## Metrics
+
+- Paired claims per case, exact-binomial McNemar across the 3 draws (the only load-bearing quality number; single-draw swings are ±3–5 claims noise).
+- Service chars/case: treatment must stay within ±2% of control.
+- Turns/case (diagnostic for lead-following behavior).
+- **Lead-follow yield**: fraction of followed leads landing in rubric-accepted sources; ≥20% required else kill. Also report follow rate (leads followed / leads returned) as a diagnostic.
+- Write p95 and unrelated-write p95 during reindex soak vs v8 baseline (29.0ms concurrent write, results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json); protocol-to-evidence ratio ≤1.0; GIN idx_scan deltas.
+
+## Acceptance criteria
+
+Pass (feeds D06 acceptance gates) requires ALL:
+
+1. No significant paired claims loss (McNemar, α=0.05); non-inferiority is the floor, a paired win is the target.
+2. Lead-follow yield ≥20%.
+3. Chars/case within ±2% of control on both suites.
+4. Soak: all hard latency gates met AND no unexplained drift vs v8 write baselines (any >2x movement on unrelated-write p95 is a defect per the v5 3,404ms / v7 3,170ms precedent, even inside gates).
+5. Protocol-to-evidence ratio ≤1.0 maintained.
+
+Any single failure → D06 kill criteria apply.
+
+## Cost preflight and ceiling
+
+Arithmetic (all-in equivalent at the audited $0.24/agent-run, 470-run audit, $113.18):
+
+- Cases per condition per draw: 14 (agent-work, on-disk count; 13 at the settled record) + 10 (owner) = 24.
+- Paired arms: 2 arms × 3 draws × 24 = 144 runs.
+- Filesystem anchor: 1 × 24 = 24 runs.
+- Total 168 runs × $0.24 ≈ **$40.32** (161 runs ≈ $38.64 at the settled count), leaving ≈$9.68 (~40 case-runs) for timeout retries.
+
+Subscription rule: all reasoning runs go through the ChatGPT-authenticated Codex subscription, fail-closed (require_codex_subscription rejects API keys); $0.24 is the audited all-in equivalent, not marginal API spend. Embeddings-exempt spend, listed separately: $0 required — E11 runs embeddings-pending and lead parsing is lexical; if the owner opts to index the corpus anyway, budget ≈$0.19 (usage-billed OpenAI, exempt) per 9.6M-token corpus. Soak runs are local and free.
+
+**Hard ceiling: $50 all-in equivalent.**
+
+## Abort criteria
+
+- Any checkpoint-lineage incident during runs → immediate abort (matches the Tier C shadow tripwire).
+- Reindex soak breaches any hard latency gate → abort treatment soak, file defect (v5/v7 shape), do not continue draws on a regressed build.
+- Treatment chars/case >+5% vs control in 2 consecutive draws → abort (overfetch shape).
+- Cost ledger crossing $50 equivalent, or ANY usage-billed reasoning spend detected (fail-closed violation) → abort immediately.
+- Harness timeouts >20% of cases in any draw → abort, debug harness, restart the draw; do not burn paired draws on harness noise.
+
+## Reporting
+
+The run record must contain: git commit fingerprint (clean tree) and flag states per run; manifest hashes; all per-draw artifact paths (`results/2026-MM-DD-e11-linkleads-{ctl,trt}[-owner]-draw<N>.json` + `.md`, `...-fs-draw1.json`); aggregator output (per-case win/loss/tie, McNemar p, bootstrap CIs, combined and per-suite); the lead table (returned/followed/accepted-source hits per case) and computed yield; chars/case and turns/case tables; the soak JSON with write p95s against results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json; the cost ledger; and an explicit ship/kill recommendation mapped line-by-line to the D06-wiki-link-leads.md acceptance gates.
