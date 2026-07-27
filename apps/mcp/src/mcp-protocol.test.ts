@@ -37,15 +37,14 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     "asset.list",
     "asset.metadata",
     "memory.capture",
+    "memory.changes",
     "memory.checkpoint",
-    "memory.compute",
     "memory.open",
     "memory.query",
     "memory.read",
-    "memory.save",
     "memory.stage",
     "memory.status",
-    "memory.verify",
+    "memory.write",
   ]);
   assert.equal(response.tools.every((tool) => tool.inputSchema.type === "object"), true);
   const open = response.tools.find((tool) => tool.name === "memory.open");
@@ -57,87 +56,58 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   assert.match(resumeCheckpointRef?.description ?? "", /never invent/);
   const query = response.tools.find((tool) => tool.name === "memory.query");
   assert.ok(query);
-  assert.match(query.description ?? "", /Exact mode accepts record references/);
+  assert.match(query.description ?? "", /current workspace files/);
   const queries = query.inputSchema.properties?.queries as {
+    maxItems?: number;
     items?: {
       properties?: {
         limit?: { default?: number };
         modes?: { description?: string };
-        where?: {
-          properties?: Record<string, unknown>;
-          additionalProperties?: boolean;
-        };
       };
     };
   } | undefined;
+  assert.equal(queries?.maxItems, 16);
   assert.equal(queries?.items?.properties?.limit?.default, 8);
-  assert.match(queries?.items?.properties?.modes?.description ?? "", /Read a known file path/);
-  const where = queries?.items?.properties?.where as {
-    properties?: Record<string, { description?: string }>;
-    additionalProperties?: boolean;
-  } | undefined;
-  assert.deepEqual(Object.keys(where?.properties ?? {}).sort(), [
-    "authority",
-    "canonicality",
-    "predicate",
-    "record_kind",
-    "scope_root",
-    "type_profile",
-  ]);
-  assert.equal(where?.additionalProperties, false);
-  assert.match(
-    where?.properties?.scope_root?.description ?? "",
-    /not the authorization scope/i,
-  );
+  assert.match(queries?.items?.properties?.modes?.description ?? "", /hybrid search/);
   const read = response.tools.find((tool) => tool.name === "memory.read");
   assert.ok(read);
-  assert.match(read.description ?? "", /verbatim/);
-  assert.match(read.description ?? "", /never infer/);
+  assert.match(read.description ?? "", /exact reads/);
   const requests = read.inputSchema.properties?.requests as {
     items?: {
       properties?: {
-        before?: unknown;
-        after?: unknown;
         ref?: { description?: string };
         path?: { description?: string };
       };
     };
   } | undefined;
-  assert.ok(requests?.items?.properties?.before);
-  assert.ok(requests?.items?.properties?.after);
+  assert.equal("before" in (requests?.items?.properties ?? {}), false);
+  assert.equal("after" in (requests?.items?.properties ?? {}), false);
   assert.match(requests?.items?.properties?.ref?.description ?? "", /verbatim/);
   assert.match(requests?.items?.properties?.path?.description ?? "", /Never synthesize/);
-  const compute = response.tools.find((tool) => tool.name === "memory.compute");
-  assert.ok(compute);
-  const steps = compute.inputSchema.properties?.steps as {
-    items?: { properties?: { op?: { enum?: string[] } } };
-  } | undefined;
-  assert.equal(steps?.items?.properties?.op?.enum?.includes("arithmetic.evaluate"), false);
-  assert.equal(steps?.items?.properties?.op?.enum?.includes("gateRollup"), true);
   const checkpoint = response.tools.find((tool) => tool.name === "memory.checkpoint");
   assert.ok(checkpoint);
   const sourceRefs = checkpoint.inputSchema.properties?.source_refs as {
     items?: { description?: string };
   } | undefined;
-  assert.match(sourceRefs?.items?.description ?? "", /evidence:/);
-  assert.match(sourceRefs?.items?.description ?? "", /source_episode:/);
-  const save = response.tools.find((tool) => tool.name === "memory.save");
-  assert.ok(save);
-  const saveSourceRefs = save.inputSchema.properties?.source_refs as {
-    items?: {
-      properties?: {
-        span?: {
-          items?: unknown;
-          minItems?: number;
-          maxItems?: number;
-        };
-      };
-    };
-  } | undefined;
-  const saveSpan = saveSourceRefs?.items?.properties?.span;
-  assert.equal(Array.isArray(saveSpan?.items), false);
-  assert.equal(saveSpan?.minItems, 2);
-  assert.equal(saveSpan?.maxItems, 2);
+  assert.match(sourceRefs?.items?.description ?? "", /Markdown path/);
+  const changes = response.tools.find((tool) => tool.name === "memory.changes");
+  assert.ok(changes);
+  assert.equal(
+    (changes.inputSchema.properties?.since_generation as { default?: number } | undefined)
+      ?.default,
+    0,
+  );
+  assert.equal(
+    (changes.inputSchema.properties?.limit as { default?: number } | undefined)
+      ?.default,
+    200,
+  );
+  const write = response.tools.find((tool) => tool.name === "memory.write");
+  assert.ok(write);
+  assert.deepEqual(
+    [...(write.inputSchema.required ?? [])].sort(),
+    ["content", "path"],
+  );
   const assetList = response.tools.find((tool) => tool.name === "asset.list");
   assert.ok(assetList);
   assert.deepEqual(
@@ -160,6 +130,7 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     [...(assetMetadata.inputSchema.required ?? [])].sort(),
     ["asset_ref", "session_id"],
   );
+  assert.ok(assetMetadata.inputSchema.properties?.version);
   const assetFetch = response.tools.find((tool) => tool.name === "asset.fetch");
   assert.ok(assetFetch);
   assert.match(assetFetch.description ?? "", /bytes and base64 are never returned/);
@@ -179,8 +150,8 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   }
 });
 
-test("asset MCP tools return metadata or a verified local path, never payload bytes", async () => {
-  const assetRef = "asset:019f8530-e5f6-77d3-a373-052ee8cd24bd";
+test("binary MCP tools return metadata or a verified local path, never payload bytes", async () => {
+  const assetRef = "entry:019f8530-e5f6-77d3-a373-052ee8cd24bd";
   const sessionId = "session:019f8531-06fa-7fe0-9050-0648d7e8553e";
   const bytes = Buffer.from("literal receipt payload that must stay outside model context");
   const base64 = bytes.toString("base64");
@@ -192,12 +163,11 @@ test("asset MCP tools return metadata or a verified local path, never payload by
     const requestPath = decodeURIComponent(requestUrl.pathname);
     requests.push(requestUrl.pathname + requestUrl.search);
     if (
-      requestPath === `/v1/assets/${assetRef}`
-      && requestUrl.searchParams.get("session_id") === sessionId
+      requestPath === `/v1/workspace/binaries/${assetRef}`
     ) {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({
-        asset_ref: assetRef,
+        entry_ref: assetRef,
         version: 2,
         content_hash: `sha256:${digest}`,
         size_bytes: bytes.byteLength,
@@ -207,8 +177,7 @@ test("asset MCP tools return metadata or a verified local path, never payload by
       return;
     }
     if (
-      requestPath === `/v1/assets/${assetRef}/versions/2/content`
-      && requestUrl.searchParams.get("session_id") === sessionId
+      requestPath === `/v1/workspace/binaries/${assetRef}/content`
     ) {
       response.writeHead(200, {
         "content-length": String(bytes.byteLength),
@@ -250,11 +219,11 @@ test("asset MCP tools return metadata or a verified local path, never payload by
     await client.connect(transport);
     const metadataCall = await client.callTool({
       name: "asset.metadata",
-      arguments: { asset_ref: assetRef, session_id: sessionId },
+      arguments: { asset_ref: assetRef, session_id: sessionId, version: 2 },
     });
     assert.equal(metadataCall.isError, undefined);
     const metadata = parseToolText(metadataCall.content);
-    assert.equal(metadata.asset_ref, assetRef);
+    assert.equal(metadata.entry_ref, assetRef);
     assert.equal(metadata.content_hash, `sha256:${digest}`);
 
     const fetchCall = await client.callTool({
@@ -278,10 +247,9 @@ test("asset MCP tools return metadata or a verified local path, never payload by
     assert.equal(rendered.includes(bytes.toString()), false);
     assert.equal(rendered.includes(base64), false);
     assert.deepEqual(requests, [
-      `/v1/assets/${encodeURIComponent(assetRef)}?session_id=${encodeURIComponent(sessionId)}`,
-      `/v1/assets/${encodeURIComponent(assetRef)}?session_id=${encodeURIComponent(sessionId)}`,
-      `/v1/assets/${encodeURIComponent(assetRef)}/versions/2/content`
-        + `?session_id=${encodeURIComponent(sessionId)}`,
+      `/v1/workspace/binaries/${encodeURIComponent(assetRef)}?version=2`,
+      `/v1/workspace/binaries/${encodeURIComponent(assetRef)}?version=2`,
+      `/v1/workspace/binaries/${encodeURIComponent(assetRef)}/content?version=2`,
     ]);
   } finally {
     await client.close().catch(() => undefined);

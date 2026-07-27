@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 const CHUNK_TARGET_CHARS: usize = 1_600;
 const CHUNK_OVERLAP_CHARS: usize = 220;
+const MAX_DERIVED_LABEL_CHARS: usize = 512;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct DocumentChunk {
@@ -37,7 +38,7 @@ pub fn normalize_document(path: &str, text: &str) -> NormalizedDocument {
             if index > section_start {
                 sections.push((heading.clone(), section_start, index));
             }
-            heading = next_heading.to_owned();
+            heading = bounded_label(next_heading);
             headings.push(heading.clone());
             section_start = index;
         }
@@ -61,11 +62,15 @@ pub fn normalize_document(path: &str, text: &str) -> NormalizedDocument {
         title: headings
             .first()
             .cloned()
-            .unwrap_or_else(|| path.rsplit('/').next().unwrap_or(path).to_owned()),
+            .unwrap_or_else(|| bounded_label(path.rsplit('/').next().unwrap_or(path))),
         headings,
         content_hash: sha256_prefixed(text.as_bytes()),
         chunks,
     }
+}
+
+fn bounded_label(value: &str) -> String {
+    value.chars().take(MAX_DERIVED_LABEL_CHARS).collect()
 }
 
 fn markdown_heading(line: &str) -> Option<&str> {
@@ -274,6 +279,23 @@ mod tests {
                 .last()
                 .is_some_and(|chunk| chunk.content.ends_with("Next line."))
         );
+    }
+
+    #[test]
+    fn oversized_heading_is_bounded_in_derived_metadata_without_changing_source_identity() {
+        let heading = "H".repeat(100_000);
+        let text = format!("# {heading}\ncurrent state\n");
+        let document = normalize_document("large-heading.md", &text);
+
+        assert_eq!(document.title.chars().count(), MAX_DERIVED_LABEL_CHARS);
+        assert!(
+            document
+                .chunks
+                .iter()
+                .all(|chunk| chunk.heading.chars().count() <= MAX_DERIVED_LABEL_CHARS)
+        );
+        assert_eq!(document.content_hash, sha256_prefixed(text.as_bytes()));
+        assert!(document.chunks.len() > 1);
     }
 
     #[test]

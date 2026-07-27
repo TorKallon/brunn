@@ -1,258 +1,417 @@
-import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
-import { ChevronsDown, Clock3, FolderOpen, Plus, RotateCcw } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
-import { DataTable } from "../components/DataTable";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Check,
+  FileText,
+  FolderOpen,
+  RotateCcw,
+  Save,
+} from "lucide-react";
+import { type FormEvent, useState } from "react";
+import { WorkspaceEntryView } from "../components/WorkspaceEntryView";
 import { Metric, Page, PageHeader, Section } from "../components/Page";
 import {
   EmptyState,
   ErrorState,
-  LoadingState,
   ProtocolNotice,
+  ReadOnlyNotice,
   StatusBadge,
 } from "../components/StateViews";
 import { useApi } from "../lib/auth";
-import { useCurrent, useReadOnly } from "../lib/current";
-import { formatDate, formatRelative, shortId } from "../lib/format";
-import { asItems, type SessionSummary } from "../lib/types";
+import { useReadOnly } from "../lib/current";
+import { shortId } from "../lib/format";
+import type { WorkspaceEvidence } from "../lib/types";
+import {
+  newOperationId,
+  parseNonEmptyLines,
+} from "../lib/workspace";
 
 export function WorkPage() {
   const api = useApi();
-  const navigate = useNavigate();
-  const current = useCurrent();
+  const queryClient = useQueryClient();
   const readOnly = useReadOnly();
-  const [newWorkspaceOpen, setNewWorkspaceOpen] = useState(false);
   const [task, setTask] = useState("");
   const [rootRefs, setRootRefs] = useState("");
-  const sessionsQuery = useInfiniteQuery({
-    queryKey: ["sessions"],
-    queryFn: ({ pageParam }) => api.sessions(pageParam || undefined),
-    initialPageParam: "",
-    getNextPageParam: (lastPage) =>
-      Array.isArray(lastPage.data)
-        ? undefined
-        : lastPage.data.continuation_token ?? undefined,
-  });
+  const [resumeCheckpoint, setResumeCheckpoint] = useState("");
+  const [tokenBudget, setTokenBudget] = useState(24_000);
+  const [objective, setObjective] = useState("");
+  const [currentState, setCurrentState] = useState("");
+  const [decisions, setDecisions] = useState("");
+  const [questions, setQuestions] = useState("");
+  const [nextActions, setNextActions] = useState("");
+  const [artifacts, setArtifacts] = useState("");
+  const [sourceRefs, setSourceRefs] = useState("");
+
   const openMutation = useMutation({
     mutationFn: () =>
-      api.open({
-        task,
-        mode: "continuation",
+      api.workspaceOpen({
+        task: task.trim(),
         hints: {
-          authorization_scope: current.data.active_scope?.id ?? "authorized",
-          root_refs: rootRefs
-            .split("\n")
-            .map((value) => value.trim())
-            .filter(Boolean),
+          authorization_scope: "scope:root",
+          root_refs: parseNonEmptyLines(rootRefs),
           open_object_refs: [],
         },
-        token_budget: 24_000,
+        ...(resumeCheckpoint.trim()
+          ? { resume_checkpoint_ref: resumeCheckpoint.trim() }
+          : {}),
+        token_budget: tokenBudget,
       }),
-    onSuccess: (result) => {
-      const sessionId = result.data.session_id ?? result.session_id ?? result.data.id;
-      void navigate({ to: "/sessions/$sessionId", params: { sessionId } });
+    onSuccess: (response) => {
+      const evidenceRefs = response.data.evidence.map((item) => item.reference);
+      setSourceRefs(evidenceRefs.join("\n"));
+      setObjective((value) => value || task.trim());
+      readMutation.reset();
     },
   });
 
-  const sessions = sessionsQuery.data?.pages.flatMap((page) => asItems(page.data)) ?? [];
-  const sessionTotal = (() => {
-    const first = sessionsQuery.data?.pages[0]?.data;
-    return first && !Array.isArray(first) ? first.total ?? sessions.length : sessions.length;
-  })();
-  const latestSessionEnvelope = sessionsQuery.data?.pages.at(-1);
-  const goals = sessions.flatMap((session) => session.goals ?? []);
-  const gates = sessions.flatMap((session) => session.gates ?? []);
-  const actions = sessions.flatMap((session) => session.next_actions ?? []);
-  const activeSessions = sessions.filter((session) => !["closed", "expired"].includes(session.status ?? "active"));
-  const blockedGates = gates.filter((gate) => ["blocked", "failed"].includes(gate.status ?? ""));
-  const dueActions = actions.filter((action) => action.status !== "complete" && action.due_at);
+  const readMutation = useMutation({
+    mutationFn: (evidence: WorkspaceEvidence) =>
+      api.workspaceRead({
+        ...(openMutation.data?.session_id
+          ? { session_id: openMutation.data.session_id }
+          : {}),
+        requests: [{ ref: evidence.reference, view: "full" }],
+      }),
+  });
 
-  const sessionColumns = useMemo<ColumnDef<SessionSummary, unknown>[]>(
-    () => [
-      {
-        accessorKey: "title",
-        header: "Session",
-        cell: ({ row }) => (
-          <div className="primary-cell">
-            <strong>{row.original.title ?? "Untitled workspace"}</strong>
-            <code>{shortId(row.original.id)}</code>
-          </div>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: "Status",
-        cell: ({ getValue }) => <StatusBadge status={getValue<string>()} />,
-      },
-      {
-        accessorKey: "corpus_revision",
-        header: "Revision",
-        cell: ({ getValue }) => <code>{shortId(getValue<string>())}</code>,
-      },
-      {
-        accessorKey: "updated_at",
-        header: "Updated",
-        cell: ({ getValue }) => formatRelative(getValue<string>()),
-      },
-    ],
-    [],
-  );
+  const checkpointMutation = useMutation({
+    mutationFn: () => {
+      const sessionId = openMutation.data?.session_id;
+      if (!sessionId) throw new Error("Open the workspace before checkpointing.");
+      return api.workspaceCheckpoint({
+        session_id: sessionId,
+        ...(resumeCheckpoint.trim()
+          ? { parent_checkpoint_id: resumeCheckpoint.trim() }
+          : {}),
+        state: {
+          objective: objective.trim(),
+          current_state: parseNonEmptyLines(currentState),
+          decisions: parseNonEmptyLines(decisions),
+          open_questions: parseNonEmptyLines(questions),
+          next_actions: parseNonEmptyLines(nextActions),
+          artifacts: parseNonEmptyLines(artifacts),
+        },
+        source_refs: parseNonEmptyLines(sourceRefs),
+        idempotency_key: newOperationId("ui_checkpoint"),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-manifest"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-changes"] });
+    },
+  });
 
-  function submitWorkspace(event: FormEvent<HTMLFormElement>) {
+  const opened = openMutation.data;
+  const openData = opened?.data;
+  const selectedEntry = readMutation.data?.data.items[0];
+
+  function submitOpen(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!readOnly && task.trim()) openMutation.mutate();
+    if (task.trim()) openMutation.mutate();
+  }
+
+  function submitCheckpoint(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!readOnly && objective.trim()) checkpointMutation.mutate();
   }
 
   return (
     <Page>
       <PageHeader
-        title="Work"
-        description="Active continuity, attention, and resumable sessions"
-        actions={
-          <button
-            className="button primary"
-            type="button"
-            onClick={() => setNewWorkspaceOpen((value) => !value)}
-            disabled={readOnly}
-            title={readOnly ? "Requires a read/write credential" : undefined}
-          >
-            {newWorkspaceOpen ? <RotateCcw size={17} /> : <Plus size={17} />}
-            {newWorkspaceOpen ? "Cancel" : "New workspace"}
-          </button>
-        }
+        title="Workspace"
+        description="Current context and resumable work"
       />
+      {readOnly ? <ReadOnlyNotice /> : null}
 
-      <ProtocolNotice
-        status={latestSessionEnvelope?.status}
-        gaps={latestSessionEnvelope?.gaps?.length}
-        conflicts={latestSessionEnvelope?.conflicts?.length}
-      />
-
-      {newWorkspaceOpen ? (
-        <Section title="Open workspace">
-          <form className="form-grid" onSubmit={submitWorkspace}>
-            <label className="field field-span-2">
-              <span>Task</span>
-              <textarea
-                value={task}
-                onChange={(event) => setTask(event.target.value)}
-                rows={3}
-                required
-                disabled={readOnly}
-              />
-            </label>
-            <label className="field field-span-2">
-              <span>Root references</span>
-              <textarea
-                value={rootRefs}
-                onChange={(event) => setRootRefs(event.target.value)}
-                rows={2}
-                placeholder="One object or source reference per line"
-                disabled={readOnly}
-              />
-            </label>
-            <div className="form-actions field-span-2">
-              <button
-                className="button primary"
-                type="submit"
-                disabled={readOnly || !task.trim() || openMutation.isPending}
-                title={readOnly ? "Requires a read/write credential" : undefined}
-              >
-                <FolderOpen size={17} aria-hidden="true" />
-                {openMutation.isPending ? "Opening" : "Open"}
-              </button>
-              {openMutation.isError ? <span className="field-error">{openMutation.error.message}</span> : null}
-            </div>
-          </form>
-        </Section>
-      ) : null}
-
-      <div className="metric-grid">
-        <Metric label="Active sessions" value={activeSessions.length} detail={`${sessionTotal} total`} />
-        <Metric label="Active goals" value={goals.filter((goal) => goal.status !== "complete").length} detail={`${goals.length} tracked`} />
-        <Metric label="Blocked gates" value={blockedGates.length} detail={blockedGates[0]?.title ?? "No blocked gates"} />
-        <Metric label="Due actions" value={dueActions.length} detail={dueActions[0]?.due_at ? formatDate(dueActions[0].due_at) : "Nothing scheduled"} />
-      </div>
-
-      {(blockedGates.length || dueActions.length) ? (
-        <Section title="Attention" meta={`${blockedGates.length + dueActions.length} items`}>
-          <div className="attention-list">
-            {blockedGates.map((gate, index) => (
-              <div key={gate.id ?? `${gate.title}-${index}`}>
-                <StatusBadge status={gate.status} />
-                <div>
-                  <strong>{gate.title}</strong>
-                  {gate.reason ? <span>{gate.reason}</span> : null}
-                </div>
-              </div>
-            ))}
-            {dueActions.map((action, index) => (
-              <div key={action.id ?? `${action.title}-${index}`}>
-                <Clock3 size={17} aria-hidden="true" />
-                <div>
-                  <strong>{action.title}</strong>
-                  <span>{formatDate(action.due_at)}{action.owner ? ` · ${action.owner}` : ""}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      ) : null}
-
-      <Section
-        title="Recent sessions"
-        meta={sessions.length ? `${sessions.length} of ${sessionTotal} available` : undefined}
-        actions={sessionsQuery.isError ? (
-          <button className="icon-button" type="button" onClick={() => void sessionsQuery.refetch()} aria-label="Retry sessions" title="Retry">
-            <RotateCcw size={16} />
-          </button>
-        ) : undefined}
-      >
-        {sessionsQuery.isPending ? <LoadingState label="Loading sessions" /> : null}
-        {sessionsQuery.isError ? <ErrorState error={sessionsQuery.error} retry={() => void sessionsQuery.refetch()} /> : null}
-        {sessionsQuery.isSuccess ? (
-          sessions.length ? (
-            <>
-              <DataTable
-                data={sessions}
-                columns={sessionColumns}
-                onRowClick={(session) => void navigate({ to: "/sessions/$sessionId", params: { sessionId: session.id } })}
-                getRowLabel={(session) => `Open ${session.title ?? session.id}`}
-              />
-              {sessionsQuery.hasNextPage ? (
-                <div className="section-footer">
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={() => void sessionsQuery.fetchNextPage()}
-                    disabled={sessionsQuery.isFetchingNextPage}
-                  >
-                    <ChevronsDown size={16} aria-hidden="true" />
-                    {sessionsQuery.isFetchingNextPage ? "Loading" : "Load more"}
-                  </button>
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <EmptyState
-              title="No sessions"
-              action={
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => setNewWorkspaceOpen(true)}
-                  disabled={readOnly}
-                  title={readOnly ? "Requires a read/write credential" : undefined}
-                >
-                  <Plus size={16} />
-                  Open workspace
-                </button>
-              }
+      <Section title="Open context" actions={<FolderOpen size={18} aria-hidden="true" />}>
+        <form className="form-grid" onSubmit={submitOpen}>
+          <label className="field field-span-2">
+            <span>Goal</span>
+            <textarea
+              rows={4}
+              value={task}
+              onChange={(event) => setTask(event.target.value)}
+              required
             />
-          )
+          </label>
+          <label className="field">
+            <span>Resume checkpoint</span>
+            <input
+              value={resumeCheckpoint}
+              onChange={(event) => setResumeCheckpoint(event.target.value)}
+              placeholder="checkpoint:..."
+              spellCheck={false}
+            />
+          </label>
+          <label className="field">
+            <span>Token budget</span>
+            <input
+              type="number"
+              min={1_000}
+              max={64_000}
+              step={1_000}
+              value={tokenBudget}
+              onChange={(event) => setTokenBudget(Number(event.target.value))}
+            />
+          </label>
+          <label className="field field-span-2">
+            <span>Root paths or entry references</span>
+            <textarea
+              rows={2}
+              value={rootRefs}
+              onChange={(event) => setRootRefs(event.target.value)}
+              spellCheck={false}
+            />
+          </label>
+          <div className="form-actions field-span-2">
+            <button
+              className="button primary"
+              type="submit"
+              disabled={!task.trim() || openMutation.isPending}
+            >
+              {openMutation.isPending ? (
+                <RotateCcw className="spin" size={17} aria-hidden="true" />
+              ) : (
+                <FolderOpen size={17} aria-hidden="true" />
+              )}
+              {openMutation.isPending ? "Opening" : "Open"}
+            </button>
+          </div>
+        </form>
+        {openMutation.isError ? (
+          <ErrorState
+            error={openMutation.error}
+            retry={() => openMutation.mutate()}
+            title="Open failed"
+          />
         ) : null}
       </Section>
+
+      {!opened && !openMutation.isPending ? (
+        <EmptyState title="No context packet open" />
+      ) : null}
+
+      {opened && openData ? (
+        <>
+          <ProtocolNotice
+            status={opened.status}
+            gaps={opened.gaps?.length}
+            conflicts={opened.conflicts?.length}
+          />
+          <div className="metric-grid">
+            <Metric
+              label="Generation"
+              value={openData.workspace_generation}
+              detail={opened.session_id ? shortId(opened.session_id, 18) : "Stateless"}
+            />
+            <Metric
+              label="Evidence"
+              value={openData.evidence.length}
+              detail={`${openData.retrieval_sufficiency?.complete_source_count ?? 0} complete`}
+            />
+            <Metric
+              label="Changes since checkpoint"
+              value={openData.changes_since_checkpoint.length}
+              detail={openData.checkpoint ? "Resume delta" : "No checkpoint"}
+            />
+            <Metric
+              label="Retrieval"
+              value={
+                <StatusBadge
+                  status={openData.retrieval_sufficiency?.status ?? opened.status}
+                />
+              }
+            />
+          </div>
+
+          {openData.checkpoint ? (
+            <Section
+              title="Resumed checkpoint"
+              meta={`Generation ${openData.checkpoint.workspace_generation ?? "unknown"}`}
+            >
+              <pre className="markdown-source compact-source">
+                {openData.checkpoint.text}
+              </pre>
+            </Section>
+          ) : null}
+
+          {openData.changes_since_checkpoint.length ? (
+            <Section
+              title="Changes since checkpoint"
+              meta={`${openData.changes_since_checkpoint.length} paths`}
+            >
+              <div className="change-list">
+                {openData.changes_since_checkpoint.map((change) => (
+                  <div key={change.generation}>
+                    <StatusBadge status={change.operation} />
+                    <code>{change.path}</code>
+                    <span>v{change.version}</span>
+                    <strong>g{change.generation}</strong>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          ) : null}
+
+          <div className="workspace-split">
+            <Section
+              title="Evidence"
+              meta={`${openData.evidence.length} selected`}
+            >
+              {openData.evidence.length ? (
+                <div className="result-list">
+                  {openData.evidence.map((evidence) => (
+                    <article className="result-card" key={evidence.reference}>
+                      <header>
+                        <div>
+                          <StatusBadge status={evidence.representation} />
+                          <h3>{evidence.title}</h3>
+                        </div>
+                        {evidence.score !== undefined ? (
+                          <strong className="score">
+                            {evidence.score.toFixed(3)}
+                          </strong>
+                        ) : null}
+                      </header>
+                      <code className="result-path">{evidence.path}</code>
+                      <p>{evidence.text}</p>
+                      <footer>
+                        <span>v{evidence.version}</span>
+                        {(evidence.why_selected ?? []).map((lane) => (
+                          <StatusBadge status={lane} key={lane} />
+                        ))}
+                        <button
+                          className="button secondary"
+                          type="button"
+                          onClick={() => readMutation.mutate(evidence)}
+                        >
+                          <FileText size={16} aria-hidden="true" />
+                          Read exact
+                        </button>
+                      </footer>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="No evidence returned" />
+              )}
+            </Section>
+
+            <Section title="Exact entry">
+              {readMutation.isPending ? (
+                <EmptyState title="Reading exact entry" />
+              ) : null}
+              {readMutation.isError ? (
+                <ErrorState error={readMutation.error} title="Read failed" />
+              ) : null}
+              {selectedEntry ? (
+                <WorkspaceEntryView entry={selectedEntry} />
+              ) : !readMutation.isPending ? (
+                <EmptyState title="No entry selected" />
+              ) : null}
+            </Section>
+          </div>
+
+          <Section title="Checkpoint">
+            <form className="form-grid" onSubmit={submitCheckpoint}>
+              <label className="field field-span-2">
+                <span>Objective</span>
+                <input
+                  value={objective}
+                  onChange={(event) => setObjective(event.target.value)}
+                  disabled={readOnly}
+                  required
+                />
+              </label>
+              <label className="field field-span-2">
+                <span>Current state</span>
+                <textarea
+                  rows={4}
+                  value={currentState}
+                  onChange={(event) => setCurrentState(event.target.value)}
+                  disabled={readOnly}
+                />
+              </label>
+              <label className="field">
+                <span>Decisions</span>
+                <textarea
+                  rows={4}
+                  value={decisions}
+                  onChange={(event) => setDecisions(event.target.value)}
+                  disabled={readOnly}
+                />
+              </label>
+              <label className="field">
+                <span>Open questions</span>
+                <textarea
+                  rows={4}
+                  value={questions}
+                  onChange={(event) => setQuestions(event.target.value)}
+                  disabled={readOnly}
+                />
+              </label>
+              <label className="field">
+                <span>Next actions</span>
+                <textarea
+                  rows={4}
+                  value={nextActions}
+                  onChange={(event) => setNextActions(event.target.value)}
+                  disabled={readOnly}
+                />
+              </label>
+              <label className="field">
+                <span>Artifacts</span>
+                <textarea
+                  rows={4}
+                  value={artifacts}
+                  onChange={(event) => setArtifacts(event.target.value)}
+                  disabled={readOnly}
+                />
+              </label>
+              <label className="field field-span-2">
+                <span>Source paths or entry references</span>
+                <textarea
+                  rows={3}
+                  value={sourceRefs}
+                  onChange={(event) => setSourceRefs(event.target.value)}
+                  disabled={readOnly}
+                  spellCheck={false}
+                />
+              </label>
+              <div className="form-actions field-span-2">
+                <button
+                  className="button primary"
+                  type="submit"
+                  disabled={
+                    readOnly ||
+                    !objective.trim() ||
+                    checkpointMutation.isPending
+                  }
+                  title={
+                    readOnly ? "Requires a read/write credential" : undefined
+                  }
+                >
+                  <Save size={17} aria-hidden="true" />
+                  {checkpointMutation.isPending ? "Saving" : "Save checkpoint"}
+                </button>
+                {checkpointMutation.isSuccess ? (
+                  <span className="success-message">
+                    <Check size={16} aria-hidden="true" />
+                    {checkpointMutation.data.data.checkpoint_ref}
+                  </span>
+                ) : null}
+              </div>
+              {checkpointMutation.isError ? (
+                <div className="field-span-2">
+                  <ErrorState
+                    error={checkpointMutation.error}
+                    title="Checkpoint failed"
+                  />
+                </div>
+              ) : null}
+            </form>
+          </Section>
+        </>
+      ) : null}
     </Page>
   );
 }

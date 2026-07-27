@@ -10,6 +10,7 @@ const REASONING_OPERATIONS = new Set([
 ]);
 const OPEN_TEXT_SOURCE_LIMIT = 12;
 const OPEN_TEXT_TOTAL_CHARS = 32_000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function compactReasoningResponse(operation: string, body: JsonObject): JsonObject {
   if (!REASONING_OPERATIONS.has(operation)) return body;
@@ -56,6 +57,47 @@ function compactOpenData(data: JsonObject): JsonObject {
     "revision_delta",
     "initial_case_file",
   ]);
+  if (Array.isArray(data.evidence)) {
+    compact.initial_evidence = data.evidence
+      .map(asObject)
+      .filter((item): item is JsonObject => item !== undefined)
+      .map((item) => ({
+        ...pick(item, [
+          "reference",
+          "path",
+          "title",
+          "version",
+          "content_hash",
+          "heading",
+          "why_selected",
+        ]),
+        content: typeof item.text === "string" ? item.text : "",
+        content_scope: item.representation === "complete_source"
+          ? "complete_source"
+          : "selected_source_sections",
+      }));
+    if (Array.isArray(data.evidence_leads) && data.evidence_leads.length > 0) {
+      compact.evidence_leads = data.evidence_leads
+        .map(asObject)
+        .filter((item): item is JsonObject => item !== undefined)
+        .map(compactSimpleCandidate);
+    }
+    for (const key of [
+      "checkpoint",
+      "changes_since_checkpoint",
+      "changes_truncated",
+      "next_changes_generation",
+      "checkpoint_text_truncated",
+    ] as const) {
+      if (isPresent(data[key])) compact[key] = data[key];
+    }
+    if (isPresent(data.workspace_generation)) {
+      compact.workspace_generation = data.workspace_generation;
+    }
+    const sufficiency = asObject(data.retrieval_sufficiency);
+    if (sufficiency) compact.retrieval_sufficiency = sufficiency;
+    return compact;
+  }
   const resolvedScope = compactResolvedScope(data.resolved_scope);
   if (hasKeys(resolvedScope)) compact.resolved_scope = resolvedScope;
   const learnedContext = compactLearnedContext(data.learned_context);
@@ -144,6 +186,29 @@ function partitionOpenSources(sources: JsonObject[]): [JsonObject[], JsonObject[
 
 function compactQueryData(data: JsonObject): JsonObject {
   const compact = compactGenericData(data, []);
+  if (
+    Array.isArray(data.results)
+    && data.results.some((item) => asObject(item)?.candidates !== undefined)
+  ) {
+    compact.items = data.results
+      .map(asObject)
+      .filter((item): item is JsonObject => item !== undefined)
+      .map((item) => ({
+        id: item.id,
+        status: item.query_status,
+        results: Array.isArray(item.candidates)
+          ? item.candidates
+            .map(asObject)
+            .filter((candidate): candidate is JsonObject => candidate !== undefined)
+            .map(compactSimpleCandidate)
+          : [],
+        ...(isPresent(item.lane_failures) ? { gaps: item.lane_failures } : {}),
+      }));
+    if (isPresent(data.workspace_generation)) {
+      compact.workspace_generation = data.workspace_generation;
+    }
+    return compact;
+  }
   if (Array.isArray(data.items)) {
     compact.items = data.items
       .map(asObject)
@@ -188,6 +253,21 @@ function compactReadData(data: JsonObject): JsonObject {
 }
 
 function compactReadItem(item: JsonObject): JsonObject {
+  if (typeof item.text === "string") {
+    return pick(item, [
+      "reference",
+      "path",
+      "title",
+      "version",
+      "version_ref",
+      "content_hash",
+      "media_type",
+      "view",
+      "status",
+      "text",
+      "metadata",
+    ]);
+  }
   const compact = pick(item, ["reference", "view", "status"]);
   const error = asObject(item.error);
   if (error && hasKeys(error)) compact.error = error;
@@ -245,6 +325,11 @@ function compactCheckpointData(data: JsonObject): JsonObject {
     "review_required",
     "search_status",
     "indexing",
+    "checkpoint_ref",
+    "path",
+    "workspace_generation",
+    "source_entries",
+    "write",
   ]);
   let parentCheckpoint: unknown;
   const sourceRefs: string[] = [];
@@ -283,6 +368,36 @@ function compactCandidate(candidate: JsonObject): JsonObject {
   }
   const evidenceRefs = uniqueStrings(candidate.evidence_refs);
   if (evidenceRefs.length > 0) compact.evidence_refs = evidenceRefs;
+  return compact;
+}
+
+function compactSimpleCandidate(candidate: JsonObject): JsonObject {
+  const compact = pick(candidate, [
+    "path",
+    "title",
+    "version",
+    "heading",
+    "excerpt",
+    "additional_sections",
+  ]);
+  const reference = typeof candidate.reference === "string"
+    ? candidate.reference
+    : typeof candidate.entry_ref === "string"
+      ? candidate.entry_ref
+      : typeof candidate.entry_id === "string" && UUID.test(candidate.entry_id)
+        ? `entry:${candidate.entry_id}`
+        : undefined;
+  if (reference !== undefined) compact.reference = reference;
+  const contentHash = candidate.content_hash ?? (
+    typeof candidate.content_sha256 === "string"
+      ? candidate.content_sha256.startsWith("sha256:")
+        ? candidate.content_sha256
+        : `sha256:${candidate.content_sha256}`
+      : undefined
+  );
+  if (isPresent(contentHash)) compact.content_hash = contentHash;
+  const lanes = uniqueStrings(candidate.lanes);
+  if (lanes.length > 0) compact.lanes = lanes;
   return compact;
 }
 

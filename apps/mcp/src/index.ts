@@ -13,74 +13,23 @@ const includeStructuredContent =
 
 const reference = z.string().min(1);
 const assetReference = z.string()
-  .regex(/^asset:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-  .describe("Exact asset:... reference copied from a CarryState response.");
+  .regex(/^entry:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+  .describe("Exact entry:... binary reference copied from a Straylight response.");
 const jsonObject = z.record(z.string(), z.unknown());
-const structuredQueryFilter = z.object({
-  scope_root: z.string().min(1).optional().describe(
-    "Optional graph root record reference, such as object:..., claim:..., or source_episode:.... " +
-    "This is not the authorization scope returned by memory.open; omit it unless narrowing results " +
-    "to a known record and its graph neighborhood.",
-  ),
-  type_profile: z.string().min(1).optional(),
-  predicate: z.string().min(1).optional(),
-  record_kind: z.string().min(1).optional(),
-  authority: z.string().min(1).optional(),
-  canonicality: z.string().min(1).optional(),
-}).strict();
-const stateFilter = z.object({
-  machine_ref: reference,
-  states: z.array(z.string().min(1)).optional(),
-  valid_at: z.literal("latest").optional(),
-}).strict();
-const queryExpansion = z.object({
-  parents: z.boolean().optional(),
-  neighbors: z.number().int().min(0).optional(),
-  relations: z.array(z.string().min(1)).optional(),
-}).strict();
-const computeOperator = z.enum([
-  "catalog",
-  "query",
-  "search",
-  "read",
-  "batchRead",
-  "neighbors",
-  "timeline",
-  "history",
-  "diff",
-  "group",
-  "aggregate",
-  "traverse",
-  "resolveIdentity",
-  "expandRecurrence",
-  "stateHistory",
-  "impact",
-  "compareApplicability",
-  "proximity",
-  "gateRollup",
-]);
 const checkpointSourceReference = reference.describe(
-  "A source-bearing record ID: use evidence:... from evidence_refs or " +
-  "source_episode:... from memory.read source.reference. Do not pass a file path here.",
+  "An exact entry:... reference or relative Markdown path returned by search/read.",
 );
 
 const queryItem = z.object({
   id: z.string().optional(),
   goal: z.string().optional(),
   query: z.string().min(1),
-  scope: z.string().optional().describe(
-    "Optional canonical scope ID returned by memory.open. Omit this field rather than using a human display label.",
-  ),
   modes: z.array(
-    z.enum(["exact", "structured", "lexical", "semantic", "temporal", "relations"]),
+    z.enum(["exact", "lexical", "semantic"]),
   ).optional().describe(
-    "Use exact only when query is an exact record reference. Read a known file path with " +
-    "memory.read; use lexical or semantic modes for title or topic text.",
+    "Omit for hybrid search. Use exact for a literal path or title, lexical for words, or semantic for meaning.",
   ),
-  where: structuredQueryFilter.optional(),
-  state_filter: stateFilter.optional(),
-  expand: queryExpansion.optional(),
-  limit: z.number().int().min(1).max(100).default(8),
+  limit: z.number().int().min(1).max(50).default(8),
 });
 
 const readItem = z.object({
@@ -92,21 +41,12 @@ const readItem = z.object({
   ),
   view: z.enum([
     "current_state",
-    "structured",
     "outline",
     "full",
     "range",
-    "neighbors",
-    "relationships",
-    "history",
-    "diff",
-    "last_known_good",
-    "materialize_scope",
   ]).optional(),
   start: z.number().int().min(1).optional(),
   end: z.number().int().min(1).optional(),
-  before: z.number().int().min(0).max(20).optional(),
-  after: z.number().int().min(0).max(20).optional(),
   max_chars: z.number().int().min(1).max(500_000).optional(),
 }).refine((value) => value.ref !== undefined || value.path !== undefined, {
   message: "read request requires ref or path",
@@ -126,7 +66,7 @@ const server = new McpServer({
 
 registerJsonTool(
   "memory.open",
-  "Open or resume a corpus-revision-pinned reasoning session and receive a bounded context map.",
+  "Open or resume the workspace and receive bounded, coherent source documents relevant to the task.",
   {
     task: z.string().min(1),
     hints: z.object({
@@ -134,92 +74,48 @@ registerJsonTool(
       root_refs: z.array(reference).optional(),
       open_object_refs: z.array(reference).optional(),
     }).optional(),
-    as_of: z.string().optional(),
-    mode: z.enum(["continuation", "exploration"]).optional(),
     resume_checkpoint_ref: reference.optional().describe(
       "Exact checkpoint:... reference supplied by the caller. Omit this field when no exact " +
       "checkpoint reference was supplied; never invent one or use placeholders such as latest.",
     ),
     token_budget: z.number().int().min(1).optional(),
   },
-  (input) => client.request("/v1/memory/open", input),
+  (input) => client.request("/v1/workspace/open", input),
 );
 
 registerJsonTool(
   "memory.query",
-  "Run one or more exact, structured, lexical, or semantic queries against a pinned session. " +
-  "Exact mode accepts record references, not file paths or titles. The query `scope` field accepts " +
-  "the canonical authorization scope from memory.open. `where.scope_root` instead accepts a known " +
-  "graph record reference; never copy the authorization scope into it.",
+  "Search current workspace files by exact path or title, full text, and semantic similarity.",
   {
     session_id: reference,
-    queries: z.array(queryItem).min(1).max(32),
+    queries: z.array(queryItem).min(1).max(16),
   },
-  (input) => client.request("/v1/memory/query", input),
+  (input) => client.request("/v1/workspace/search", input),
 );
 
 registerJsonTool(
   "memory.read",
-  "Batch exact source, evidence, object, relation, claim, checkpoint, or revision reads. " +
-  "Copy each ref or path verbatim from a prior CarryState response; never infer a filename from a title or topic. " +
-  "Use range or neighbors when a candidate excerpt is incomplete.",
+  "Batch exact reads of current Markdown files or checkpoints by returned entry reference or path.",
   {
     session_id: reference,
     requests: z.array(readItem).min(1).max(32),
   },
-  (input) => client.request("/v1/memory/read", input),
+  (input) => client.request("/v1/workspace/read", input),
 );
 
 registerJsonTool(
-  "memory.compute",
-  "Run supported bounded graph, temporal, spatial, aggregation, or acceptance-gate operations. " +
-  "This is not a general arithmetic calculator; do ordinary arithmetic directly.",
+  "memory.changes",
+  "Page through workspace changes after an exact generation cursor.",
   {
-    session_id: reference,
-    steps: z.array(z.object({
-      id: z.string().min(1),
-      op: computeOperator,
-      input: jsonObject,
-    })).min(1).max(32),
-    max_rows: z.number().int().min(1).max(10_000).optional(),
-    token_budget: z.number().int().min(1).optional(),
+    since_generation: z.number().int().nonnegative().default(0),
+    limit: z.number().int().min(1).max(2_000).default(200),
   },
-  (input) => client.request("/v1/memory/compute", input),
-);
-
-registerJsonTool(
-  "memory.verify",
-  "Classify support, contradiction, supersession, and temporal applicability when those " +
-  "questions remain unresolved. Do not re-verify an already complete authoritative source.",
-  {
-    session_id: reference,
-    claims: z.array(z.object({
-      id: z.string().min(1),
-      claim: z.string().min(1),
-      evidence_refs: z.array(reference).optional(),
-      about_ref: reference.optional(),
-      predicate: z.string().optional(),
-      value: z.unknown().optional(),
-      coverage_ref: reference.optional(),
-    })).min(1).max(32),
-    check_for: z.array(z.enum([
-      "newer_evidence",
-      "contradictions",
-      "superseded_sources",
-      "unsupported_claims",
-      "identity_ambiguity",
-      "named_state_mismatch",
-      "recurrence_or_occurrence_loss",
-      "incomplete_collection_coverage",
-      "temporal_ambiguity",
-    ])).optional(),
-  },
-  (input) => client.request("/v1/memory/verify", input),
+  (input) => client.workspaceChanges(input.since_generation, input.limit),
 );
 
 registerJsonTool(
   "memory.capture",
-  "Turn ordinary source content into source-linked durable records, committing low-risk captures and returning a draft when consequential details are ambiguous.",
+  "Persist ordinary source-backed context as a durable Markdown capture.",
   {
     content: z.string().min(1).max(256_000),
     source: z.object({
@@ -235,42 +131,29 @@ registerJsonTool(
     }).refine((value) => value.ref !== undefined || value.title !== undefined, {
       message: "capture source requires ref or title",
     }),
-    scope: z.string().min(1),
-    root_refs: z.array(reference).max(64).optional(),
     intent: z.string().min(1).optional(),
     idempotency_key: z.string().min(1).max(240).optional(),
-    base_corpus_revision: reference.optional(),
-    mode: z.enum(["auto", "draft"]).optional(),
   },
-  (input) => client.request("/v1/memory/capture", input),
+  (input) => client.request("/v1/workspace/capture", input),
 );
 
 registerJsonTool(
-  "memory.save",
-  "Atomically save source-bearing objects, claims, relations, states, corrections, policies, or checkpoints.",
+  "memory.write",
+  "Create or update one Markdown workspace file. Supply expected_version only when preventing a known stale overwrite matters.",
   {
-    intent: z.string().min(1),
-    scope: z.string().min(1),
-    root_refs: z.array(reference).optional(),
-    source_refs: z.array(z.object({
-      ref: reference,
-      span: z.array(z.number().int().min(0)).length(2).optional(),
-      content_hash: z.string().optional(),
-    })).optional(),
-    base_corpus_revision: reference.optional(),
-    idempotency_key: z.string().min(1),
-    operation_id: z.string().optional(),
-    confirmation_token: z.string().optional(),
-    items: z.array(jsonObject).min(1).max(128),
+    path: z.string().min(1).max(1_024),
+    content: z.string().max(4 * 1024 * 1024),
+    media_type: z.enum(["text/markdown", "text/plain"]).default("text/markdown"),
+    expected_version: z.number().int().nonnegative().optional(),
+    idempotency_key: z.string().min(1).max(240).optional(),
+    metadata: jsonObject.optional(),
   },
-  (input) => client.request("/v1/memory/save", input),
+  (input) => client.request("/v1/workspace/write", input),
 );
 
 registerJsonTool(
   "memory.checkpoint",
-  "Commit one immutable child checkpoint linked to its session, corpus revision, parent, " +
-  "state, gates, and evidence. Use evidence_refs returned by open/query or the " +
-  "source_episode reference returned by read as source_refs.",
+  "Write a deterministic checkpoint Markdown file with exact file/version/hash references and a workspace generation.",
   {
     session_id: reference,
     parent_checkpoint_id: reference.optional(),
@@ -283,22 +166,20 @@ registerJsonTool(
       next_actions: z.array(z.string()).optional(),
       artifacts: z.array(z.string()).optional(),
       ordered_goals: z.array(z.union([z.string(), jsonObject])).optional(),
-      state_refs: z.array(reference.describe(
-        "A durable state or object record ID. Do not put file paths, chunk IDs, or evidence IDs here.",
-      )).optional(),
+      state_refs: z.array(reference).optional(),
       acceptance_gates: z.array(z.union([z.string(), jsonObject])).optional(),
     }),
     source_refs: z.array(checkpointSourceReference).optional(),
   },
-  (input) => client.request("/v1/memory/checkpoint", input),
+  (input) => client.request("/v1/workspace/checkpoint", input),
 );
 
 registerJsonTool(
   "memory.stage",
-  "Stage files from the adapter's sandboxed import root without placing binary content in model context.",
+  "Upload binary files from the adapter's sandboxed import root without placing bytes in model context.",
   {
     scope: z.string().min(1),
-    stable_import_id: z.string().min(1).optional(),
+    stable_import_id: z.string().min(1).max(240).optional(),
     describe_binaries: z.boolean().default(true).describe(
       "Generate searchable, explicitly non-authoritative descriptions for native files.",
     ),
@@ -322,14 +203,14 @@ registerJsonTool(
 
 registerJsonTool(
   "memory.status",
-  "Inspect the credential's current corpus and embedding service status.",
+  "Inspect current service and dependency status.",
   {},
   () => client.request("/v1/status"),
 );
 
 registerJsonTool(
   "asset.list",
-  "List native assets visible in one session-pinned corpus revision. Returns paths, exact asset references, versions, hashes, sizes, media types, description status, and usage metadata without returning binary bytes.",
+  "List current binary workspace entries and their exact hashes, versions, sizes, and description metadata.",
   {
     session_id: reference.describe(
       "Exact session:... reference returned by memory.open.",
@@ -342,28 +223,31 @@ registerJsonTool(
 
 registerJsonTool(
   "asset.metadata",
-  "Read session-pinned metadata for one exact CarryState asset reference without downloading its bytes.",
+  "Read metadata for one exact binary workspace entry and optional historical version without downloading bytes.",
   {
     session_id: reference.describe(
-      "Exact session:... reference returned by memory.open. Asset access is pinned to this session.",
+      "Exact session:... reference returned by memory.open and retained for workspace continuity.",
     ),
     asset_ref: assetReference,
+    version: z.number().int().positive().optional().describe(
+      "Optional exact historical version. Omit it to read the current version.",
+    ),
   },
-  (input) => client.assetMetadata(input.asset_ref, input.session_id),
+  (input) => client.assetMetadata(input.asset_ref, input.session_id, input.version),
 );
 
 registerJsonTool(
   "asset.fetch",
-  "Download one session-pinned CarryState asset into the MCP adapter's private asset root. " +
+  "Download one exact binary workspace entry into the MCP adapter's private asset root. " +
   "The tool verifies the streamed size and SHA-256 and returns only a local path plus integrity metadata; " +
   "asset bytes and base64 are never returned to model context.",
   {
     session_id: reference.describe(
-      "Exact session:... reference returned by memory.open. Asset access is pinned to this session.",
+      "Exact session:... reference returned by memory.open and retained for workspace continuity.",
     ),
     asset_ref: assetReference,
     version: z.number().int().positive().optional().describe(
-      "Optional version copied from asset.metadata. When supplied, it must match the session-pinned version.",
+      "Optional exact historical version. Metadata and bytes are both fetched at this version.",
     ),
   },
   (input) => client.fetchAsset(input.asset_ref, input.session_id, input.version),

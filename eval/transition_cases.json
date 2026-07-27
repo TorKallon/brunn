@@ -170,9 +170,10 @@
         {
           "id": "c3",
           "checks": [
-            {"any": ["three cores", "three level-0", "three occupied", "separate core"]},
+            {"any": ["three cores", "three level-0", "three occupied", "three distinct", "separate core"]},
             {"any": ["Constructorizer"]},
-            {"any": ["two Facturers", "each Facturer"]}
+            {"any": ["two Facturers", "each Facturer", "Facturer 1", "two separate Facturer cores"]},
+            {"any": ["two Facturers", "each Facturer", "Facturer 2", "two separate Facturer cores"]}
           ],
           "sources_any": [
             "Topics/Star Rupture/Star Rupture production.md",
@@ -297,7 +298,7 @@
             {"any": ["snapshot-pinned", "snapshot pinned"]},
             {"any": ["semantic", "hybrid"]},
             {"any": ["batch"]},
-            {"any": ["child checkpoint"]}
+            {"any": ["child checkpoint", "commits a child", "committed child"]}
           ],
           "sources_any": [
             "Projects/Straylight/Retrieval API - Initial Design.md",

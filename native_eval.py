@@ -627,12 +627,13 @@ def post_import_with_retry(
     *,
     timeout_seconds: float,
     initial_delay_seconds: float,
+    import_path: str = "/v1/admin/eval/import",
 ) -> NativeResponse:
     deadline = time.monotonic() + timeout_seconds
     delay = max(0.01, initial_delay_seconds)
     while True:
         try:
-            return client.post("/v1/admin/eval/import", payload)
+            return client.post(import_path, payload)
         except NativeApiError as error:
             retryable = error.status in {429, 503} and native_error_code(error) == "dependency_unavailable"
             remaining = deadline - time.monotonic()
@@ -660,7 +661,7 @@ def wait_for_indexes(
     imported: NativeResponse,
     *,
     timeout_seconds: float = 300.0,
-    poll_seconds: float = 0.25,
+    poll_seconds: float = 0.5,
 ) -> NativeResponse:
     if indexes_ready(imported):
         return imported
@@ -671,10 +672,20 @@ def wait_for_indexes(
         status_url = f"/v1/admin/eval/imports/{urllib.parse.quote(str(import_id), safe=':_-')}"
     if not status_url:
         raise RuntimeError("eval import response did not include ready indexes, status_url, or import_id")
+    issued_token = response_field(imported, "credential_token", "token")
+    if not isinstance(issued_token, str) or not issued_token:
+        raise RuntimeError("eval import did not issue a credential for index readiness")
+    status_client = NativeApiClient(
+        base_url=client.base_url,
+        token=issued_token,
+        run_id=client.run_id,
+        case_id=client.case_id,
+        timeout=client.timeout,
+    )
     deadline = time.monotonic() + timeout_seconds
     latest = imported
     while time.monotonic() < deadline:
-        latest = client.get(str(status_url))
+        latest = status_client.get(str(status_url))
         if indexes_ready(latest):
             return latest
         time.sleep(poll_seconds)
@@ -696,30 +707,52 @@ def provision_evaluation(
     seed_checkpoint: dict[str, Any] | None = None,
     timeout_seconds: float = 300.0,
     dependency_retry_seconds: float = 1.0,
+    import_path: str = "/v1/admin/eval/import",
+    wait_for_semantic: bool = True,
+    batch_size: int | None = None,
 ) -> dict[str, Any]:
     deltas = delta_documents or []
     authorization_scope = stable_scope(run_id, case_id)
-    payload = {
-        "schema": "straylight-eval-import@v1",
-        "run_id": run_id,
-        "case_id": case_id,
-        "authorization_scope": authorization_scope,
-        "display_scope": display_scope,
-        "access_mode": access_mode,
-        "documents": documents,
-        "delta_documents": deltas,
-        "seed_checkpoint": seed_checkpoint,
-        "idempotency_key": stable_import_key(run_id, case_id, documents, deltas),
-    }
-    imported = post_import_with_retry(
-        client,
-        payload,
-        timeout_seconds=timeout_seconds,
-        initial_delay_seconds=dependency_retry_seconds,
+    if batch_size is not None and batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    document_batches = (
+        [
+            documents[offset:offset + batch_size]
+            for offset in range(0, len(documents), batch_size)
+        ]
+        if batch_size is not None and len(documents) > batch_size
+        else [documents]
     )
-    ready = wait_for_indexes(client, imported, timeout_seconds=timeout_seconds)
+    import_key = stable_import_key(run_id, case_id, documents, deltas)
+    imported_batches: list[NativeResponse] = []
+    for batch_index, batch_documents in enumerate(document_batches):
+        final_batch = batch_index + 1 == len(document_batches)
+        payload = {
+            "schema": "straylight-eval-import@v1",
+            "run_id": run_id,
+            "case_id": case_id,
+            "authorization_scope": authorization_scope,
+            "display_scope": display_scope,
+            "access_mode": access_mode,
+            "documents": batch_documents,
+            "delta_documents": deltas if final_batch else [],
+            "seed_checkpoint": seed_checkpoint if final_batch else None,
+            "idempotency_key": import_key,
+        }
+        if len(document_batches) > 1:
+            payload["batch_index"] = batch_index
+            payload["batch_count"] = len(document_batches)
+        imported_batches.append(post_import_with_retry(
+            client,
+            payload,
+            timeout_seconds=timeout_seconds,
+            initial_delay_seconds=dependency_retry_seconds,
+            import_path=import_path,
+        ))
+    imported = imported_batches[-1]
     issued_token = response_field(imported, "credential_token", "token")
     issued_scope = response_field(imported, "authorization_scope")
+    requested_scope = response_field(imported, "requested_authorization_scope")
     if not isinstance(issued_token, str) or not issued_token:
         raise RuntimeError(
             "eval import did not issue a case-scoped credential"
@@ -728,24 +761,54 @@ def provision_evaluation(
         raise RuntimeError(
             "eval import returned the parent/admin credential instead of a scoped credential"
         )
-    if not isinstance(issued_scope, str) or issued_scope != authorization_scope:
+    for batch in imported_batches[:-1]:
+        batch_token = response_field(batch, "credential_token", "token")
+        if not isinstance(batch_token, str) or not hmac.compare_digest(
+            batch_token,
+            issued_token,
+        ):
+            raise RuntimeError(
+                "batched eval import did not preserve one isolated credential"
+            )
+    if not isinstance(issued_scope, str) or not issued_scope:
         raise RuntimeError(
-            "eval import did not bind the credential to the exact requested scope"
+            "eval import did not return the credential's effective scope"
         )
+    if not isinstance(requested_scope, str) or requested_scope != authorization_scope:
+        raise RuntimeError(
+            "eval import did not preserve the exact requested isolation scope"
+        )
+    imported_indexes = imported.data.get("index_status")
+    if not wait_for_semantic:
+        if not isinstance(imported_indexes, dict) or any(
+            str(imported_indexes.get(lane, "")).casefold() not in READY_VALUES
+            for lane in ("exact", "lexical")
+        ):
+            raise RuntimeError(
+                "eval import did not make exact and lexical retrieval ready immediately"
+            )
+        ready = imported
+    else:
+        ready = wait_for_indexes(client, imported, timeout_seconds=timeout_seconds)
     checkpoint_id = response_field(imported, "checkpoint_id", "seed_checkpoint_id")
     corpus_revision = response_field(ready, "corpus_revision", "revision_id") or response_field(
         imported, "corpus_revision", "revision_id"
     )
-    base_revision = response_field(imported, "base_corpus_revision", "base_revision")
+    base_revision = response_field(
+        imported_batches[0],
+        "base_corpus_revision",
+        "base_revision",
+    )
     return {
         "authorization_scope": issued_scope,
-        "requested_authorization_scope": authorization_scope,
+        "requested_authorization_scope": requested_scope,
         "display_scope": display_scope,
         "access_mode": access_mode,
         "import_id": response_field(imported, "import_id"),
         "checkpoint_id": checkpoint_id,
         "base_corpus_revision": base_revision,
         "corpus_revision": corpus_revision,
+        "status_url": response_field(imported, "status_url"),
         "token": issued_token,
         "credential_provenance": "service_issued_case_scope",
         "provisioning": {
@@ -753,8 +816,22 @@ def provision_evaluation(
             "delta_documents": len(deltas),
             "characters": sum(len(item["content"]) for item in [*documents, *deltas]),
             "import_http_status": imported.http_status,
-            "import_elapsed_ms": round(imported.elapsed_ms, 3),
+            "import_elapsed_ms": round(
+                sum(batch.elapsed_ms for batch in imported_batches),
+                3,
+            ),
+            "import_batch_count": len(imported_batches),
+            "max_batch_documents": max(len(batch) for batch in document_batches),
             "ready_elapsed_ms": round(ready.elapsed_ms, 3),
+            "semantic_waited": wait_for_semantic,
+            "semantic_ready_at_start": (
+                isinstance(imported_indexes, dict)
+                and str(imported_indexes.get("semantic", "")).casefold()
+                in READY_VALUES
+            ),
+            "index_status_at_start": recursively_redact_secrets(
+                imported_indexes if isinstance(imported_indexes, dict) else {}
+            ),
             "import_response": recursively_redact_secrets(imported.body),
             "ready_response": recursively_redact_secrets(ready.body),
         },
@@ -776,7 +853,8 @@ def provisioning_matches_run_case(
     expected_scope = stable_scope(run_id, case_id)
     return bool(
         requested_scope == expected_scope
-        and metadata.get("authorization_scope") == expected_scope
+        and isinstance(metadata.get("authorization_scope"), str)
+        and metadata.get("authorization_scope")
         and metadata.get("token")
         and metadata.get("credential_provenance") == "service_issued_case_scope"
         and (not require_checkpoint or metadata.get("checkpoint_id"))
@@ -793,7 +871,10 @@ def write_native_memory_wrapper(
     case_id: str,
     checkpoint_id: str | None = None,
     script_path: Path | None = None,
+    protocol: str = "legacy",
 ) -> None:
+    if protocol not in {"legacy", "simple"}:
+        raise ValueError("native memory protocol must be legacy or simple")
     task_file = run_dir / "task.txt"
     task_file.write_text(task.rstrip() + "\n", encoding="utf-8")
     arguments = [
@@ -807,6 +888,8 @@ def write_native_memory_wrapper(
         display_scope,
         "--authorization-scope",
         authorization_scope,
+        "--protocol",
+        protocol,
         "--run-id",
         run_id,
         "--case-id",

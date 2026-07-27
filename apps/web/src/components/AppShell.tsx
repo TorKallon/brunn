@@ -2,31 +2,30 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
-  Archive,
-  BrainCircuit,
+  Binary,
   ChevronDown,
   CircleUserRound,
-  Gauge,
+  FilePenLine,
+  FolderOpen,
   LogOut,
   Menu,
   Search,
-  ScanLine,
-  ShieldCheck,
+  Sparkles,
   X,
 } from "lucide-react";
 import { type PropsWithChildren, useState } from "react";
 import { useApi, useAuth } from "../lib/auth";
 import { useCurrent, useReadOnly } from "../lib/current";
-import { formatRelative, shortId } from "../lib/format";
+import { formatRelative } from "../lib/format";
 import { ReadOnlyNotice, StatusBadge } from "./StateViews";
 
 const navItems = [
-  { to: "/work", label: "Work", icon: Gauge },
-  { to: "/explore", label: "Explore", icon: Search },
-  { to: "/assets", label: "Assets", icon: Archive },
-  { to: "/capture", label: "Capture", icon: ScanLine },
-  { to: "/dreams", label: "Dreams", icon: BrainCircuit },
-  { to: "/control", label: "Control", icon: ShieldCheck },
+  { to: "/work", label: "Workspace", icon: FolderOpen },
+  { to: "/explore", label: "Search", icon: Search },
+  { to: "/capture", label: "Write", icon: FilePenLine },
+  { to: "/assets", label: "Binaries", icon: Binary },
+  { to: "/dreams", label: "Background", icon: Sparkles },
+  { to: "/control", label: "Activity", icon: Activity },
 ] as const;
 
 export function AppShell({ children }: PropsWithChildren) {
@@ -64,7 +63,7 @@ export function AppShell({ children }: PropsWithChildren) {
           <span className="brand-mark">S</span>
           <div>
             <strong>Straylight</strong>
-            <span>Control plane</span>
+            <span>Workspace &amp; memory</span>
           </div>
         </Link>
         <nav className="primary-nav" aria-label="Primary navigation">
@@ -91,11 +90,9 @@ export function AppShell({ children }: PropsWithChildren) {
             <StatusBadge status={serviceStatus} />
           </div>
           <div>
-            <Archive size={15} aria-hidden="true" />
-            <span>Revision</span>
-            <code title={me.corpus_revision ?? current.corpus_revision}>
-              {shortId(me.corpus_revision ?? current.corpus_revision)}
-            </code>
+            <CircleUserRound size={15} aria-hidden="true" />
+            <span>Access</span>
+            <strong>{readOnly ? "Read only" : "Read/write"}</strong>
           </div>
         </div>
       </aside>
@@ -104,15 +101,15 @@ export function AppShell({ children }: PropsWithChildren) {
         <header className="topbar">
           <div className="context-strip">
             <div>
-              <span>Scope</span>
+              <span>Workspace</span>
               <strong>{me.active_scope?.name ?? "All authorized"}</strong>
             </div>
             <div>
-              <span>Sources</span>
+              <span>Source sync</span>
               <strong>{formatRelative(freshness?.source_updated_at)}</strong>
             </div>
             <div>
-              <span>Semantic</span>
+              <span>Search index</span>
               <strong>{formatRelative(freshness?.semantic_index_updated_at)}</strong>
             </div>
             {current.status !== "complete" ? <StatusBadge status={current.status} /> : null}

@@ -49,7 +49,7 @@ test("asset metadata parsing requires exact identity and integrity fields", () =
       size_bytes: 12,
       media_type: "application/octet-stream",
     }, ASSET_REF),
-    /unexpected asset_ref/,
+    /unexpected entry_ref/,
   );
   assert.throws(
     () => parseAssetMetadata({
@@ -125,6 +125,56 @@ test("verified streaming creates private files and reuses only an exact verified
   }
 });
 
+test("download filenames cannot collide across same-version assets", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "carrystate-asset-collision-"));
+  const root = join(parent, "assets");
+  const firstBytes = Buffer.from("first receipt");
+  const secondBytes = Buffer.from("second receipt");
+  const first = assetMetadata(
+    firstBytes,
+    "application/pdf",
+    "receipts/first.pdf",
+    "entry:019f84f2-98ce-7f1b-b680-6f7920bb4723",
+    1,
+  );
+  const second = assetMetadata(
+    secondBytes,
+    "application/pdf",
+    "receipts/second.pdf",
+    "entry:019f84f2-98ce-7f1b-b680-6f7920bb4724",
+    1,
+  );
+
+  try {
+    const firstResult = await storeVerifiedAsset(
+      assetResponse(firstBytes, first),
+      first,
+      root,
+    );
+    const secondResult = await storeVerifiedAsset(
+      assetResponse(secondBytes, second),
+      second,
+      root,
+    );
+
+    assert.notEqual(firstResult.local_path, secondResult.local_path);
+    assert.equal(
+      basename(firstResult.local_path),
+      `019f84f2-98ce-7f1b-b680-6f7920bb4723.v1.${first.contentHash.slice(7, 19)}.pdf`,
+    );
+    assert.equal(
+      basename(secondResult.local_path),
+      `019f84f2-98ce-7f1b-b680-6f7920bb4724.v1.${second.contentHash.slice(7, 19)}.pdf`,
+    );
+    assert.deepEqual((await readdir(root)).sort(), [
+      basename(firstResult.local_path),
+      basename(secondResult.local_path),
+    ].sort());
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});
+
 test("corrupt or truncated streams never publish an asset", async () => {
   const parent = await mkdtemp(join(tmpdir(), "carrystate-asset-corrupt-"));
   const corruptRoot = join(parent, "corrupt");
@@ -186,10 +236,12 @@ function assetMetadata(
   bytes: Uint8Array,
   mediaType = "application/octet-stream",
   path?: string,
+  assetRef = ASSET_REF,
+  version = 7,
 ): AssetMetadata {
   return {
-    assetRef: ASSET_REF,
-    version: 7,
+    assetRef,
+    version,
     contentHash: sha256(bytes),
     sizeBytes: bytes.byteLength,
     mediaType,

@@ -11,7 +11,9 @@ use tower_http::{
     timeout::TimeoutLayer, trace::TraceLayer,
 };
 
-use crate::{auth, db::AppState, dreams, eval_service, request_context, service, telemetry};
+use crate::{
+    auth, db::AppState, dreams, eval_service, request_context, service, simple_core, telemetry,
+};
 
 pub fn router(state: AppState) -> Router {
     let request_id = HeaderName::from_static("x-request-id");
@@ -21,29 +23,60 @@ pub fn router(state: AppState) -> Router {
         .iter()
         .filter_map(|origin| HeaderValue::from_str(origin).ok())
         .collect();
-    let ordinary = Router::new()
+    let workspace_ordinary = Router::new()
         .route("/me", get(service::me))
         .route("/status", get(service::status))
+        .route("/workspace/open", post(simple_core::open))
+        .route("/workspace/search", post(simple_core::search))
+        .route("/workspace/read", post(simple_core::read))
+        .route(
+            "/workspace/write",
+            post(simple_core::write).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
+        .route(
+            "/workspace/capture",
+            post(simple_core::capture).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
+        .route("/workspace/changes", get(simple_core::changes))
+        .route("/workspace/checkpoint", post(simple_core::checkpoint))
+        .route("/workspace/binaries", get(simple_core::list_binaries))
+        .route("/workspace/manifest", get(simple_core::manifest))
+        .route("/workspace/usage", get(simple_core::usage))
+        .route("/workspace/jobs", get(simple_core::list_jobs))
+        .route("/workspace/dreams", post(simple_core::queue_dream))
+        .route(
+            "/workspace/entries/{entry_ref}",
+            delete(simple_core::delete_entry),
+        )
+        .route(
+            "/workspace/binaries/{entry_ref}",
+            get(simple_core::binary_metadata),
+        )
+        .route("/admin/users", post(service::admin_provision_user))
+        .route(
+            "/admin/users/{user_ref}/recover",
+            post(service::admin_recover_credential),
+        )
+        .route(
+            "/credentials",
+            get(service::list_credentials).post(service::create_credential),
+        )
+        .route(
+            "/credentials/{credential_ref}",
+            delete(service::revoke_credential),
+        );
+    let legacy_ordinary = Router::new()
         .route("/memory/open", post(service::open))
         .route("/memory/query", post(service::query))
         .route("/memory/read", post(service::read))
         .route("/memory/compute", post(service::compute))
         .route("/memory/verify", post(service::verify))
         .route("/memory/capture", post(service::capture))
+        .route("/memory/checkpoint", post(service::checkpoint))
         .route("/asset-uploads", post(service::create_asset_upload))
         .route(
             "/asset-uploads/{upload_ref}",
             get(service::get_asset_upload).delete(service::abort_asset_upload),
-        )
-        .route("/memory/checkpoint", post(service::checkpoint))
-        .route(
-            "/admin/eval/imports/{import_id}",
-            get(eval_service::get_evaluation_import),
-        )
-        .route("/admin/users", post(service::admin_provision_user))
-        .route(
-            "/admin/users/{user_ref}/recover",
-            post(service::admin_recover_credential),
         )
         .route("/sessions", get(service::list_sessions))
         .route("/sessions/{session_id}", get(service::get_session))
@@ -73,14 +106,6 @@ pub fn router(state: AppState) -> Router {
         .route("/scopes", get(service::list_scopes))
         .route("/policies", get(service::list_policies))
         .route(
-            "/credentials",
-            get(service::list_credentials).post(service::create_credential),
-        )
-        .route(
-            "/credentials/{credential_ref}",
-            delete(service::revoke_credential),
-        )
-        .route(
             "/account/exports",
             get(service::list_account_exports).post(service::request_account_export),
         )
@@ -96,12 +121,41 @@ pub fn router(state: AppState) -> Router {
             "/account/deletions/{request_ref}",
             get(service::get_account_deletion),
         )
-        .merge(dreams::routes())
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            state.config.request_timeout,
-        ));
-    let transfers = Router::new()
+        .merge(dreams::routes());
+    let evaluation_ordinary = Router::new()
+        .route(
+            "/workspace/admin/eval/imports/{import_id}",
+            get(simple_core::evaluation_status),
+        )
+        .route(
+            "/admin/eval/imports/{import_id}",
+            get(eval_service::get_evaluation_import),
+        );
+    let mut ordinary = workspace_ordinary;
+    if state.config.legacy_api_enabled {
+        ordinary = ordinary.merge(legacy_ordinary);
+    }
+    if state.config.evaluation_api_enabled {
+        ordinary = ordinary.merge(evaluation_ordinary);
+    }
+    let ordinary = ordinary.layer(TimeoutLayer::with_status_code(
+        StatusCode::REQUEST_TIMEOUT,
+        state.config.request_timeout,
+    ));
+    let workspace_transfers = Router::new()
+        .route(
+            "/workspace/binaries",
+            post(simple_core::upload_binary).layer(DefaultBodyLimit::max(72 * 1024 * 1024)),
+        )
+        .route(
+            "/workspace/binaries/content",
+            put(simple_core::upload_binary_stream).layer(DefaultBodyLimit::disable()),
+        )
+        .route(
+            "/workspace/binaries/{entry_ref}/content",
+            get(simple_core::fetch_binary),
+        );
+    let legacy_transfers = Router::new()
         .route("/memory/save", post(service::save))
         .route(
             "/memory/stage",
@@ -116,10 +170,6 @@ pub fn router(state: AppState) -> Router {
             post(service::complete_asset_upload),
         )
         .route(
-            "/admin/eval/import",
-            post(eval_service::import_evaluation).layer(DefaultBodyLimit::max(192 * 1024 * 1024)),
-        )
-        .route(
             "/assets/{asset_ref}/versions/{version}/content",
             get(service::get_asset_content),
         )
@@ -130,7 +180,24 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/account/exports/{export_ref}/content",
             get(service::download_account_export),
+        );
+    let evaluation_transfers = Router::new()
+        .route(
+            "/admin/eval/import",
+            post(eval_service::import_evaluation).layer(DefaultBodyLimit::max(192 * 1024 * 1024)),
         )
+        .route(
+            "/workspace/admin/eval/import",
+            post(simple_core::import_evaluation).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
+        );
+    let mut transfers = workspace_transfers;
+    if state.config.legacy_api_enabled {
+        transfers = transfers.merge(legacy_transfers);
+    }
+    if state.config.evaluation_api_enabled {
+        transfers = transfers.merge(evaluation_transfers);
+    }
+    let transfers = transfers
         .layer(ConcurrencyLimitLayer::new(
             state.config.max_concurrent_transfers,
         ))

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, relative, resolve } from "node:path";
 
@@ -15,6 +16,14 @@ export interface ApiResponse {
 
 const MAX_STAGE_FILES = 2_000;
 const MAX_STAGE_BYTES = 64 * 1024 * 1024;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_TRANSFER_TIMEOUT_MS = 15 * 60_000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+export interface ApiClientTimeouts {
+  requestMs?: number;
+  transferMs?: number;
+}
 
 export class StraylightApiError extends Error {
   constructor(
@@ -33,6 +42,8 @@ export class StraylightApiError extends Error {
 
 export class StraylightApiClient {
   private readonly baseUrl: string;
+  private readonly requestTimeoutMs: number;
+  private readonly transferTimeoutMs: number;
 
   constructor(
     baseUrl: string,
@@ -40,8 +51,19 @@ export class StraylightApiClient {
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly requestHeaders: Record<string, string> = {},
     private readonly assetRoot?: string,
+    timeouts: ApiClientTimeouts = {},
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.requestTimeoutMs = configuredTimeout(
+      timeouts.requestMs,
+      "STRAYLIGHT_MCP_REQUEST_TIMEOUT_MS",
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    );
+    this.transferTimeoutMs = configuredTimeout(
+      timeouts.transferMs,
+      "STRAYLIGHT_MCP_TRANSFER_TIMEOUT_MS",
+      DEFAULT_TRANSFER_TIMEOUT_MS,
+    );
   }
 
   async request(path: string, body?: unknown): Promise<ApiResponse> {
@@ -55,6 +77,7 @@ export class StraylightApiClient {
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(this.requestTimeoutMs),
     });
     const parsed = await parseJson(response);
     if (!response.ok) {
@@ -67,9 +90,15 @@ export class StraylightApiClient {
     };
   }
 
-  async assetMetadata(assetRef: string, sessionId: string): Promise<ApiResponse> {
+  async assetMetadata(
+    assetRef: string,
+    sessionId: string,
+    requestedVersion?: number,
+  ): Promise<ApiResponse> {
+    void sessionId;
     return this.request(
-      `/v1/assets/${encodeURIComponent(assetRef)}?${sessionQuery(sessionId)}`,
+      `/v1/workspace/binaries/${encodeURIComponent(assetRef)}`
+      + binaryVersionQuery(requestedVersion),
     );
   }
 
@@ -78,12 +107,23 @@ export class StraylightApiClient {
     offset = 0,
     limit = 100,
   ): Promise<ApiResponse> {
+    void sessionId;
     const query = new URLSearchParams({
-      session_id: sessionId,
       offset: String(offset),
       limit: String(limit),
     });
-    return this.request(`/v1/assets?${query.toString()}`);
+    return this.request(`/v1/workspace/binaries?${query.toString()}`);
+  }
+
+  async workspaceChanges(
+    sinceGeneration = 0,
+    limit = 200,
+  ): Promise<ApiResponse> {
+    const query = new URLSearchParams({
+      since_generation: String(sinceGeneration),
+      limit: String(limit),
+    });
+    return this.request(`/v1/workspace/changes?${query.toString()}`);
   }
 
   async fetchAsset(
@@ -94,7 +134,7 @@ export class StraylightApiClient {
     const started = performance.now();
     let metadataResponse: ApiResponse;
     try {
-      metadataResponse = await this.assetMetadata(assetRef, sessionId);
+      metadataResponse = await this.assetMetadata(assetRef, sessionId, requestedVersion);
     } catch (error) {
       if (error instanceof StraylightApiError) {
         throw new StraylightApiError(
@@ -110,12 +150,12 @@ export class StraylightApiClient {
       && requestedVersion !== metadata.version
     ) {
       throw new Error(
-        `asset version ${requestedVersion} is not active in the supplied session`,
+        `asset metadata returned version ${metadata.version} for requested version ${requestedVersion}`,
       );
     }
     const response = await this.fetchImpl(
-      `${this.baseUrl}/v1/assets/${encodeURIComponent(assetRef)}/versions/`
-      + `${metadata.version}/content?${sessionQuery(sessionId)}`,
+      `${this.baseUrl}/v1/workspace/binaries/${encodeURIComponent(assetRef)}/content`
+      + binaryVersionQuery(requestedVersion),
       {
         method: "GET",
         headers: {
@@ -125,6 +165,7 @@ export class StraylightApiClient {
           ...this.requestHeaders,
         },
         redirect: "error",
+        signal: AbortSignal.timeout(this.transferTimeoutMs),
       },
     );
     if (!response.ok) {
@@ -153,12 +194,6 @@ export class StraylightApiClient {
     describeBinaries = true,
   ): Promise<ApiResponse> {
     const started = performance.now();
-    const form = new FormData();
-    form.set("scope", scope);
-    if (stableImportId) {
-      form.set("stable_import_id", stableImportId);
-    }
-    form.set("describe_binaries", describeBinaries ? "true" : "false");
     const importRoot = await realpath(
       process.env.STRAYLIGHT_MCP_IMPORT_ROOT ?? "/imports",
     );
@@ -186,31 +221,51 @@ export class StraylightApiClient {
       }
       resolvedFiles.push({ file, filePath });
     }
+    const uploads: Record<string, unknown>[] = [];
+    let status = 200;
     for (const { file, filePath } of resolvedFiles) {
+      const form = new FormData();
       const bytes = await readFile(filePath);
-      form.append("path", file.name ?? file.path.replaceAll("\\", "/"));
-      form.append(
+      const contentHash = createHash("sha256").update(bytes).digest("hex");
+      const logicalPath = file.name ?? file.path.replaceAll("\\", "/");
+      form.set("path", logicalPath);
+      form.set("media_type", file.media_type ?? "application/octet-stream");
+      form.set("expected_content_hash", `sha256:${contentHash}`);
+      if (describeBinaries) {
+        form.set(
+          "limitations",
+          "The immutable binary bytes are authoritative; content-specific description may still be pending.",
+        );
+      }
+      form.set(
         "file",
         new Blob([bytes], { type: file.media_type ?? "application/octet-stream" }),
         basename(filePath),
       );
-    }
-    const response = await this.fetchImpl(`${this.baseUrl}/v1/memory/stage`, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${this.token}`,
-        ...this.requestHeaders,
-      },
-      body: form,
-    });
-    const parsed = await parseJson(response);
-    if (!response.ok) {
-      throw new StraylightApiError(response.status, parsed);
+      const idempotencyKey = stableImportId === undefined
+        ? undefined
+        : stageIdempotencyKey(stableImportId, scope, logicalPath);
+      const response = await this.fetchImpl(`${this.baseUrl}/v1/workspace/binaries`, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${this.token}`,
+          ...this.requestHeaders,
+          ...(idempotencyKey === undefined ? {} : { "idempotency-key": idempotencyKey }),
+        },
+        body: form,
+        signal: AbortSignal.timeout(this.transferTimeoutMs),
+      });
+      const parsed = await parseJson(response);
+      if (!response.ok) {
+        throw new StraylightApiError(response.status, parsed);
+      }
+      status = response.status;
+      uploads.push(parsed);
     }
     return {
-      status: response.status,
-      body: parsed,
+      status,
+      body: { status: "complete", data: { uploads } },
       elapsedMs: performance.now() - started,
     };
   }
@@ -243,6 +298,39 @@ function assetFailure(
   };
 }
 
-function sessionQuery(sessionId: string): string {
-  return new URLSearchParams({ session_id: sessionId }).toString();
+function binaryVersionQuery(version: number | undefined): string {
+  return version === undefined
+    ? ""
+    : `?${new URLSearchParams({ version: String(version) }).toString()}`;
+}
+
+function stageIdempotencyKey(
+  stableImportId: string,
+  scope: string,
+  logicalPath: string,
+): string {
+  const digest = createHash("sha256")
+    .update(stableImportId)
+    .update("\0")
+    .update(scope)
+    .update("\0")
+    .update(logicalPath)
+    .digest("hex");
+  return `stage:${digest}`;
+}
+
+function configuredTimeout(
+  explicit: number | undefined,
+  environmentName: string,
+  fallback: number,
+): number {
+  const environmentValue = process.env[environmentName];
+  const value = explicit
+    ?? (environmentValue === undefined ? fallback : Number(environmentValue));
+  if (!Number.isSafeInteger(value) || value <= 0 || value > MAX_TIMEOUT_MS) {
+    throw new Error(
+      `${environmentName} must be a positive integer no greater than ${MAX_TIMEOUT_MS}`,
+    );
+  }
+  return value;
 }

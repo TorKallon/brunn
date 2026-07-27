@@ -33,7 +33,7 @@ describe("accessibility contracts", () => {
   it("has no automated violations on the authenticated work surface", async () => {
     installApiMock();
     const { container } = renderApp("/work", "read-write-token");
-    expect(await screen.findByRole("heading", { name: "Work" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Workspace" })).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });
 });

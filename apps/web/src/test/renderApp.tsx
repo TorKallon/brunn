@@ -36,7 +36,17 @@ export const defaultMe = {
     active_scope: { id: "scope_1", name: "Primary", access: "read_write" },
     scopes: [{ id: "scope_1", name: "Primary", access: "read_write" }],
     corpus_revision: "rev_001",
-    capabilities: ["open", "query", "read", "compute", "verify", "status", "save", "credential:manage"],
+    capabilities: [
+      "open",
+      "query",
+      "read",
+      "status",
+      "save",
+      "checkpoint",
+      "stage",
+      "dream",
+      "credential:manage",
+    ],
     read_only: false,
     freshness: {
       source_updated_at: now,
@@ -65,11 +75,63 @@ export function installApiMock(routes: Record<string, MockRoute> = {}) {
     "GET /api/v1/me": defaultMe,
     "GET /api/v1/status": defaultStatus,
     "GET /api/v1/sessions": { status: "complete", data: { items: [] } },
-    "POST /api/v1/memory/open": {
+    "GET /api/v1/workspace/manifest": {
+      status: "complete",
+      corpus_revision: "generation:12",
+      data: {
+        workspace_generation: 12,
+        entries: [],
+        offset: 0,
+        limit: 1000,
+        truncated: false,
+      },
+    },
+    "GET /api/v1/workspace/changes": {
+      status: "complete",
+      corpus_revision: "generation:12",
+      data: {
+        since_generation: 0,
+        workspace_generation: 12,
+        changes: [],
+        truncated: false,
+      },
+    },
+    "GET /api/v1/workspace/binaries": {
+      status: "complete",
+      data: { binaries: [] },
+    },
+    "GET /api/v1/workspace/usage": {
+      status: "complete",
+      data: {
+        sort: "most_used",
+        entries: [],
+        offset: 0,
+        limit: 100,
+      },
+    },
+    "GET /api/v1/workspace/jobs": {
+      status: "complete",
+      data: {
+        jobs: [],
+        offset: 0,
+        limit: 100,
+        truncated: false,
+      },
+    },
+    "POST /api/v1/workspace/open": {
       status: "complete",
       session_id: "session_test",
-      corpus_revision: "rev_001",
-      data: { session_id: "session_test", corpus_revision: "rev_001" },
+      corpus_revision: "generation:12",
+      data: {
+        workspace_generation: 12,
+        evidence: [],
+        changes_since_checkpoint: [],
+        retrieval_sufficiency: {
+          status: "no_evidence",
+          complete_source_count: 0,
+          selected_source_count: 0,
+        },
+      },
     },
     ...routes,
   };

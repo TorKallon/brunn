@@ -1,10 +1,10 @@
 # Straylight
 
-Straylight is an agent-first context and durable-work layer. It gives agents a
+Straylight is an agent-first workspace and memory layer. It gives agents a
 source-preserving place to learn, resume complex work, inspect artifacts,
-reason across changing state, verify claims, and leave useful durable
-checkpoints. It is more than retrieval or memory: the core product is a
-multi-user, snapshot-pinned workspace that later agents can safely advance.
+reason across changing state, and leave useful durable checkpoints. The core
+product is a multi-user online workspace with exact entry versions and a cheap
+change cursor, not a globally snapshot-isolated database.
 
 The product stack is Rust, PostgreSQL with pgvector, versioned S3-compatible
 object storage, OpenAI text embeddings, a TypeScript SPA, and a typed
@@ -35,9 +35,9 @@ tailnet-accessible human surface.
 
 ## Repository map
 
-- `apps/api`: Rust API, worker, domain contracts, migrations, retrieval,
-  post-policy usage telemetry, automatic capture, canonical writes, staging,
-  checkpoints, deletion, and Phase 0 dreaming
+- `apps/api`: Rust workspace API and worker, binary transfer, import/export,
+  usage telemetry, checkpoints, background indexing and dreaming, plus retained
+  owner-alpha compatibility code
 - `apps/web`: TypeScript/React audit and control SPA
 - `apps/mcp`: typed stdio MCP adapter
 - `infra`: Postgres role initialization and pinned MinIO build/policy
@@ -71,6 +71,25 @@ The harnesses test whether a fresh agent can capture ordinary source material,
 receive safe fresh learned context, recover canonical knowledge, resume complex
 work, inspect artifacts, reason across superseded state, revise plans, verify
 claims, and leave a useful durable checkpoint.
+
+### 2026-07-26 simplified workspace
+
+The simplified workspace recovered 193/228 claims across 57 paired cases
+versus 183/228 through direct Markdown. It completed 30/57 strict cards versus
+22/57 and persisted all 56 eligible checkpoints. Weighted mean uncached input
+was 25.4K tokens per case versus 26.5K for files, 4.2% lower.
+
+The changed-evidence transition lane remains one claim behind files, 13/20
+versus 14/20, while preserving complete parent, generation, prior-source,
+delta-source, and call-budget lineage in all five cases. That deficit remains
+visible rather than being tuned away.
+
+The definitive clean performance run passed at 1K, 10K, and 64K entries. At
+64K, p95 was 154 ms for open, 98 ms for search, 667 ms for broad search, and
+64 ms for exact API read. Retrieval remained available while semantic indexing
+was pending and during a forced embedding-provider outage.
+
+See `results/2026-07-26-simplified-final-comparison.md`.
 
 ### 2026-07-23 alpha hardening candidate
 
@@ -189,7 +208,9 @@ The primary v0.2 suite compares three access surfaces:
 
 1. **Fixed handoff pack:** one task-specific context file with no follow-up access.
 2. **Filesystem agent:** the frozen corpus with ordinary search, file reads, and scripts.
-3. **Straylight workspace agent:** `open`, `query`, `read`, `compute`, `verify`, and persistent `checkpoint` operations.
+3. **Straylight workspace agent:** `open`, `query`, exact `read`, ordinary
+   `write`/`capture`, and persistent `checkpoint` operations. Computation and
+   verification use the agent's native tools after source retrieval.
 
 The frozen corpus contains 73 notes and text artifacts from Warmind, Charlemagne, Star Rupture, Switzerland trip planning, Straylight, Metis, N24 RaceWatch, and Home Network Improvements. The 14 tasks score 56 claims across continuation, learning, supersession, incident work, quantitative planning, source authority, constraint changes, artifact safety, and trust-aware handoffs.
 

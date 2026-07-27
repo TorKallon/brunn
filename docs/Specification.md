@@ -4,522 +4,617 @@ Status: implementation and acceptance contract
 
 ## Objective
 
-A fresh authorized agent must be able to reopen durable context rooted at any
-relevant object, inspect complete source evidence, understand current and
-historical state, incorporate changed facts or constraints, advance work, and
-leave a source-bearing child checkpoint. The same reasoning surface must work
-with a strictly read-only credential.
+A fresh authorized agent must be able to:
 
-The alpha succeeds only when it matches or exceeds direct local Markdown access
-on answer quality and evidence recall while adding durable continuity,
-provenance, authority, user isolation, and auditable mutation.
+1. Find the relevant current Markdown and binary material without reading the
+   whole workspace.
+2. Read exact sources and reason at least as well as it can with local files.
+3. Change ordinary workspace files without rebuilding unrelated state.
+4. Leave a compact checkpoint that a fresh agent can resume.
+5. Observe changes since that checkpoint.
+6. Use a strictly read-only credential when mutation is inappropriate.
+
+The alpha is not successful merely because endpoints respond or tests pass.
+It must meet reasoning, evidence, latency, token, fidelity, isolation, backup,
+and operational gates in this document.
 
 ## Identity And Access
 
-- A user is the top-level owner of all records.
-- A scope is an authorization boundary and retrieval constraint, not an object
-  identity or mandatory project container.
+- One internal `user_id` owns every entry, version, change, job, and usage row.
+- There is no separate tenant ID.
+- One deployment may serve multiple users.
 - Credentials are bearer secrets stored only as hashes.
-- Tokens are returned once when created and are never recoverable from status
-  or list APIs.
-- Read-only tokens expose exactly `open`, `query`, `read`, `compute`, `verify`,
-  and `status`.
-- Read/write tokens add `checkpoint`, `save`, `stage`, `correct`, `delete`, and
-  `dream`.
-- `memory.capture` requires the existing `save` capability; it cannot be used
-  by a read-only token as a side door to persistence.
-- Only owner credentials with `credential:manage` may issue or revoke tokens.
-- Every API and database operation is same-user and scope constrained.
-
-## References
-
-External API references are typed strings such as `object:<uuid>`,
-`claim:<uuid>`, `evidence:<uuid>`, `source:<uuid>`, `document:<uuid>`,
-`chunk:<uuid>`, `checkpoint:<uuid>`, `session:<uuid>`, and
-`revision:<uuid>`. Compact and hyphenated UUID spellings resolve to the same
-identity. Names, labels, aliases, paths, and embeddings are discovery aids and
-never identity proof.
-
-## Objects And Profiles
-
-An object has a stable ID, one current immutable revision per corpus snapshot,
-optional handles, labels, structured properties, and one or more namespaced
-profiles. Initial core profiles cover person, organization, group, place,
-event series, event occurrence, arrangement, resource, work item, artifact,
-and project-like domain objects without requiring a project parent.
-
-Object revisions preserve prior version, source episode, recorded time, policy,
-profiles, and property values. Revision heads advance sequentially with
-optimistic preconditions.
-
-## Claims And Evidence
-
-A claim must explicitly provide:
-
-- at least one `about_ref`
-- namespaced predicate and value
-- `producer_ref`
-- formation method
-- claim mode
-- support state
-- authority
-- canonicality
-- evidence references or claim lineage unless explicitly asserted
-
-Confidence, when present, is between zero and one. State assignments and
-transitions are claims whose predicate is a registered state machine and whose
-claim mode matches their operation. The service never supplies missing
-authority dimensions from permissive defaults.
-
-Evidence retains source episode, locator, exact text or asset, content hash,
-observation time, and policy. Claims, evidence, objects, and relations remain
-separately addressable.
-
-## Relations And Identity
-
-Relations are immutable revisions with namespaced predicate, ordered role
-endpoints, qualifiers, valid time, evidence, and source lineage.
-
-`core.possibly_same_as` records a reversible candidate. `core.same_as` requires
-an approved identity review that explicitly names the relation, reviewer,
-decision, reason, and direct evidence. Approval requires owner-level authority.
-Both object IDs and inbound references survive approval and reversal.
-
-## Time, Recurrence, And State
-
-Temporal schema version 1 supports:
-
-- date
-- date interval
-- local datetime with IANA time zone
-- floating datetime without zone
-- instant
-- instant interval
-- local interval with IANA time zone
-- due datetime
-
-Recurrence uses RFC 5545 rules, a stable series object, stable occurrence
-identity, immutable original time, current and actual time, sparse exclusions
-and additions, and split-series linkage for "this and future" changes.
-Expansion is bounded by an explicit result limit and optional time window.
-Stored moved, cancelled, excluded, and added occurrences override generated
-series output without erasing their original recurrence identity.
-
-The initial state registry keeps these dimensions independent:
-
-- event schedule and execution
-- participation response and attendance
-- notification delivery
-- arrangement booking, payment, allocation, and use
-- resource availability
-- work execution
-- gate validation
-
-The latest state head is selected before applying requested state values. An
-older matching assignment cannot masquerade as the current state.
-
-## Corpus Revisions And Sessions
-
-A corpus revision is an immutable ordered manifest of record IDs, versions, and
-dispositions. One atomic write creates at most one successor revision.
-
-`memory.open` validates task size and hash, chooses an authorized scope, pins
-the latest or requested corpus revision, snapshots capabilities and policy, and
-returns:
-
-- session and corpus revision references
-- scope and root resolution
-- corpus map by record kind and profile
-- checkpoint and exact revision delta when resuming
-- complete bounded materialization when it fits
-- initial hybrid evidence
-- ranked hydrated sources: complete source text when it fits the shared open
-  budget, otherwise selected exact sections and references
-- retrieval sufficiency with covered and unresolved task anchors
-- the latest fresh, hard-gated, non-authoritative learned context for the exact
-  pinned revision, or explicit pending/stale/unavailable status
-- freshness, coverage, conflicts, gaps, and ambiguities
-
-The initial evidence selector prioritizes exact stable references and titles,
-then current temporal evidence, groups relevant sections from the strongest
-source, and may return fewer than the maximum when fused relevance has a sharp
-drop. This source-coherent policy applies only to `memory.open`; explicit
-queries remain source-diverse discovery operations. Source hydration follows
-that ranked order and may load at most four complete sources under a shared
-32,000-character source-text budget. The primary source is not subject to a
-smaller per-file cap. Sources that do not fit retain selected sections, exact
-ranges, and read references.
-
-`retrieval_sufficiency.status` is `likely_sufficient` only when the primary
-hydrated source is complete and at least 75% of deterministic task anchors are
-present in the packet. Otherwise the caller receives
-`inspect_then_query_gaps` or `no_evidence`. This signal guides inspection; it
-does not certify that every task facet has evidence.
-
-Sessions are credential-bound, expiring, and immutable. Refresh creates a new
-session over an explicit newer revision and exposes the delta; it never mutates
-the old session.
-
-## Query
-
-`memory.query` accepts up to 32 queries. Each query requires text, a structured
-filter, or a state filter and has a result limit from 1 to 100.
-
-Supported lanes are exact, structured, lexical, semantic, temporal, and
-relations. Supported structured filters are `scope_root`, `type_profile`,
-`predicate`, `record_kind`, `authority`, and `canonicality`. Unknown filters
-are rejected. State filtering supports current heads with
-`valid_at: "latest"`; unsupported historical-time semantics are rejected.
-
-Structured `scope.root_refs` and `where.scope_root` constrain the candidate
-region to the roots and explicit graph neighborhood. They may narrow but never
-widen the session authorization scope.
-
-Each candidate returns typed reference, source reference and version, content
-hash, optional path and heading, authority, canonicality, recorded and valid
-time, evidence references, lane scores, and `why_selected`.
-
-The detailed HTTP representation above is the audit view. MCP and evaluation
-adapters use a compact reasoning representation by default. It must preserve
-candidate content, path, a stable reference for excerpts and pointers,
-authority, canonicality, recorded and valid time, nonempty diagnostics,
-checkpoint and revision delta, learned context, and a compact policy receipt.
-It may omit corpus inventory samples, duplicate envelope fields, duplicate
-single-query aliases, complete per-item coverage, content hashes used only for
-ranking integrity, redundant source versions, selection reasons, lane scores,
-and fused scores when exact source content/path or an excerpt reference is
-already present. Exact source reads and the HTTP audit representation retain
-those fields and remain available when they are the subject of the task. The
-default open reasoning view may expose up to twelve
-hydrated entries and 32,000 source-text characters. Complete sources omit
-redundant chunk handles; overflow sources remain pointer entries. Minified JSON
-is the default agent transport, while human-readable pretty printing is
-optional.
-
-## Read
-
-`memory.read` batches 1 to 64 exact requests. Views include current state,
-structured, outline, full, range, neighbors, relationships, history, diff,
-last known good, and materialized scope. A request returns complete, partial,
-unsupported, or failed independently, with bounded truncation and a signed
-continuation token when resumable.
-
-Source content is read from the configured versioned S3 store by an authorized
-user-scoped key. Production uses a managed cloud object store; MinIO supplies
-the same contract in development and destructive tests. A caller cannot
-substitute an arbitrary object key.
-
-## Compute
-
-`memory.compute` is snapshot-pinned and declarative. It accepts bounded steps
-and row/token budgets. Initial operators include filtering, sorting, joining,
-grouping, aggregation, comparison, diff, timeline, state history, identity
-resolution, recurrence expansion, graph traversal, applicability comparison,
-unit-aware arithmetic, frame-aware proximity, and gate rollup.
-
-Cross-unit or cross-frame operations require an explicit compatible unit or a
-versioned evidenced transform. Unsupported operation shapes return
-`unsupported`; they never guess.
-
-## Verify
-
-`memory.verify` accepts 1 to 32 claims. A claim may provide explicit evidence
-references and structured `about_ref`, predicate, value, or coverage reference.
-The service resolves exact evidence or performs bounded discovery and returns:
-
-- supported
-- contradicted
-- insufficient evidence
-- superseded
-- temporally ambiguous
-
-Evidence passages include source, source version, content hash, locator, exact
-text when authorized, support kind, and recorded time. Structural checks cover
-contradictions, superseded sources, unsupported claims, temporal ambiguity,
-recurrence/occurrence loss, and requested coverage. Lexical overlap alone is
-not enough to support an unrelated assertion.
-
-## Capture
-
-`memory.capture` accepts source content plus source metadata or an existing
-typed source reference, scope, optional roots and intent, optional base corpus
-revision, optional idempotency key, and `auto` or `draft` mode. New source
-content is compiled atomically into source, exact-span evidence, and typed
-domain items. Existing-source content must be present in that source or match
-its full content hash.
-
-Structured extraction may propose objects, claims, qualified relations,
-state assignments or transitions, temporal and recurrence specs, and
-checkpoints. The server owns provenance and authority normalization. It rejects
-unsupported identity equivalence, ambiguous targets or actions, unsupported
-quotes, confidence below the automatic threshold, cross-state implication,
-and attempts presented as completed work. Mechanical profile aliases and
-formation-versus-claim-mode mistakes may be normalized without changing the
-underlying assertion.
-
-An `auto` request commits only when the model selects commit and every
-deterministic check plus canonical `memory.save` validation passes. Otherwise
-it returns `needs_review` with the full canonical draft and issues, without
-advancing the corpus. `draft` always suppresses commit. Durable no-op input
-returns `no_op`. Exact idempotent replay returns the original commit; reusing a
-caller key for different content conflicts.
-
-## Canonical Save
-
-`memory.save` requires intent, scope, source references, one or more typed
-items, and an idempotency key. Optional base revision and expected object
-versions enforce optimistic concurrency.
-
-Valid actions are create, revise, supersede, retract, relate, and tombstone.
-Valid kinds are object, claim, evidence, relation, state assignment, state
-transition, temporal spec, recurrence spec, checkpoint, source, policy, asset,
-identity review, and system-generated import receipt.
-
-All validation happens before commit. The write transaction records the
-operation, evidence, immutable domain rows, corpus successor, item receipts,
-index state, and audit event. Replaying an idempotency key with the same request
-returns the first receipt; a different request conflicts.
-
-## Stage And Promotion
-
-`memory.stage` accepts bounded multipart files and archives. It rejects unsafe
-paths, symlinks, duplicate archive paths, decompression bombs, oversized
-members, and unreadable entries. Each readable archive member receives its own
-inventory entry and blob.
-
-A ready stage acts as a temporary corpus for query, read, compute, and verify.
-Promotion names selected entries and a stable import identity. It creates
-source/document/chunk records, deduplicates exact content without merging
-identity, advances one corpus revision, records every entry disposition, and
-returns a durable import receipt. Replays converge.
-
-### Native Assets
-
-The source-native file is authoritative. Its asset version records exact
-SHA-256, byte length, media type, immutable object key, previous version, and
-storage metadata. Updating bytes at the same imported path advances the same
-logical asset; two paths containing equal bytes remain two logical assets and
-may reuse one physical content-addressed object.
-
-Read credentials may list, inspect, and stream only asset versions reachable
-from their unexpired, credential-bound, revision-pinned session. Downloads
-support one bounded byte range, return the full-object hash and exact version
-headers, force attachment disposition, disable caching, and set
-`X-Content-Type-Options: nosniff`. Write capability is never required for
-download, and read-only credentials cannot create or complete uploads.
-
-Opaque native versions receive generated Markdown when descriptions are
-enabled. The description records original path, exact asset reference and
-version, hash, size, method, confidence, and limitations. Deterministic native
-profiling is the bounded fallback when model description is unavailable.
-Linked note excerpts are bounded, deduplicated, and labeled untrusted
-user-authored context. Generated description evidence is
-`derived_non_authoritative`; it is searchable but excluded from authoritative
-claim formation and dreaming source material.
-
-Multipart upload sessions are scoped to one user, scope, and creating
-credential. Each part is 5 to 64 MiB, has an exact SHA-256, and may be replayed
-only with identical bytes. The completed object is streamed through whole-file
-size and SHA-256 verification before canonical promotion. Ambiguous completion
-and promotion are retryable; a byte mismatch is terminal. Sessions expire
-after a bounded interval and are aborted on expiry or account deletion.
-All canonical-object writes, committed references, and purges coordinate under
-one per-user storage lock. Cleanup runs only after rollback and preserves a key
-referenced by an asset version or another completed upload. Opaque promotion
-verification is streaming and bounded independently of the declared asset
-size.
-
-### Vault Import And Export
-
-Import walks without following symbolic links or accepting special files,
-rejects traversal and case/Unicode-normalized path collisions, and sorts one
-manifest containing path, SHA-256, byte length, MIME type, modification time,
-portable mode, ignored entries, and bounded attachment context. Files are
-rechecked against their inventoried device, inode, size, and modification time
-before upload. Large files use the resumable path. Every promoted source and
-expected companion is verified by current path, hash, size, and description
-availability.
-
-Any path containing `.carrystate/generated/descriptions/` is a reserved
-system derivative and is ignored during inventory; the current companion is
-regenerated from the authoritative native version. An exact repeat returns
-`status: unchanged` and performs no authoritative write. Portable export
-metadata can override rounded local MIME, modification time, or mode values
-only when the file's exact hash and size match its manifest entry and
-`CHECKSUMS.sha256` authenticates that manifest. A metadata-only change advances
-the logical asset version while reusing the same physical content-addressed
-object. Portable mode is restricted to ordinary `0o777` permission bits;
-setuid, setgid, and sticky bits are never accepted or restored.
-
-Absence is not deletion. Mirror mode compares the complete current
-stable-import path set with the local manifest, returns a no-write preview and
-confirmation hash, and removes paths only when that exact hash is supplied.
-An explicitly confirmed empty snapshot may remove every current imported path.
-
-Export is separate from account disaster-recovery export. It pins one session
-revision and writes exact current source bytes under `sources/`, generated
-companions under `workspace/assets/`, and deterministic first-class record
-Markdown under `workspace/memory/`. Optional history is versioned under
-`history/`. Export verifies every byte count and SHA-256, restores source
-modification time and mode, rejects unsafe/colliding paths, writes a machine
-manifest plus `CHECKSUMS.sha256`, fsyncs the tree, and atomically publishes the
-destination. It fails rather than mixing revisions or silently omitting a
-requested file.
-
-### Account Portability And Erasure
-
-Account disaster-recovery export is a complete, snapshot-consistent archive of
-the user's database rows and every referenced exact object version. Building
-the archive uses a bounded temporary allowance separate from durable storage
-quota so a user near quota can still leave the service. Download requires an
-immutable provider version ID and verifies the recorded size and SHA-256 while
-streaming. Deleting an export commits a recoverable `deleting` state before
-object purge and removes the stored locator only after purge succeeds.
-
-Account deletion immediately blocks writes, preserves a status-only credential,
-purges canonical rows and every object version under a per-user storage fence,
-and then waits for retained backup erasure. Elapsed retention time is necessary
-but not sufficient for completion. A checksummed operator prune receipt must
-prove that the oldest retained verified backup was created after canonical
-purge. The completion transition and database constraint both require that
-proof, and the receipt digest, source, verification time, and watermark remain
-auditable.
-
-## Checkpoints
-
-A checkpoint records session, parent checkpoint, corpus revision, ordered
-goals, state references, decisions, gaps, acceptance gates, next actions, and
-source references. Every referenced record must exist in the pinned corpus and
-must not be tombstoned. A child checkpoint preserves exact parent and source
-lineage while incorporating revision deltas.
-
-## Dreaming
-
-Dream jobs require scope, trigger, job type, budget, and idempotency key. Jobs
-are region-locked, bounded, retryable, and snapshot-pinned. Phase 0 outputs are
-source-bearing shadow candidates only. Model input is bounded, uses
-`store: false`, and sends a stable privacy-preserving safety identifier.
-
-The verifier must check source integrity, policy boundaries, identity safety,
-state separation, contradiction preservation, manifest immutability, and
-active-versus-candidate retrieval behavior. Hard-gate failure prevents a
-reviewable result. Human accept, reject, or quarantine decisions are audited;
-none can mutate the active revision in Phase 0.
-
-The scheduler observes active-manifest changes and automatically enqueues a
-bounded, debounced refresh after a dirty threshold or inactivity window. A
-candidate whose hard gates and paired retrieval evaluation pass remains a
-shadow revision. `memory.open` automatically returns its safe,
-non-review-required derived items only when its base revision exactly matches
-the session revision. Every returned item includes candidate and dream lineage,
-direct source references, model/evaluation receipts, a token estimate, and an
-explicit `derived_non_authoritative` boundary. Stale, quarantined, rejected,
-failed, and review-required material is never injected.
-
-## Deletion
-
-Tombstone immediately removes a target from the active manifest and creates a
-deletion job. Cancellation of an event is a schedule-state change, never
-deletion. The worker propagates removal through content-bearing rows, chunks,
-lexical search, embeddings, caches, derived views, exports/replicas when
-configured, and unreferenced assets. Per-surface receipts are required. A job
-cannot report completion while required cleanup is pending or failed.
-
-## Data Usage Telemetry
-
-Usage tracking is transparent to the five reasoning APIs. Their request and
-response contracts remain unchanged.
-
-A tracked access is a durable, content-free event for one distinct record
-visible in the post-policy reasoning payload of one `open`, `query`, `read`,
-`compute`, or `verify` response. The event records user, scope, credential,
-session, pinned corpus revision, projection receipt, operation, target record,
-reference-occurrence count, and time. It must not store task text, query text,
-source text, excerpts, claim values, or model output.
-
-The collector must:
-
-- run after policy projection
-- exclude withheld data, corpus inventory samples, projection metadata, failed
-  read targets, writes, stage inspection, and control-plane browsing
-- include array-carried evidence and selected references
-- deduplicate the same record within one response while retaining its visible
-  occurrence count
-- fail open after the projection receipt commits, without changing the
-  successful reasoning response
-- have no effect on ranking, dreaming, authority, canonicality, corpus
-  membership, or retention decisions
-
-Source usage rolls supported record access up through immutable provenance. One
-source use is one source in one projection receipt, regardless of how many of
-its chunks, evidence items, or structured records were visible. The usage
-summary enumerates current active source episodes and reports all-time most
-used, least used, and least recently used sources. Never-used sources have zero
-events and a null last-use time; they sort first in least-recently-used output.
-Telemetry begins at migration activation and is not retroactively inferred
-from historical audit or retrieval rows.
-
-`GET /v1/usage` requires read capability, respects credential scope grants and
-forced RLS, supports the standard scope, text-query, and bounded-limit filters,
-and is itself untracked. Read-only credentials may inspect usage and may cause
-system telemetry through ordinary reasoning calls, but cannot directly insert,
-update, or delete access rows.
-
-## Response Contract
-
-Reasoning responses use a common envelope with request ID, session, corpus
-revision, status, freshness, coverage, data, conflicts, gaps, ambiguities, and
-truncation. Status values distinguish complete, partial, ambiguous, stale,
-inconsistent, degraded, committed, no-op, accepted processing, needs review,
-conflict, and policy rejection.
-
-Fields carried by the common envelope are not repeated at the top level of
-`data`. Policy projection occurs before this transport de-duplication, so the
-audit receipt still describes the complete projected response.
-
-Coverage names searched and unsearched partitions. Missing results are not
-absence proof unless `absence_safe` is true for a maintained-complete set.
+- A credential belongs to exactly one user.
+- A read-only credential cannot create a version, change, job, upload, or
+  checkpoint.
+- Credential issuance and revocation require `credential:manage`.
+- API responses never return another user's references or aggregate counts.
+
+Read-only capabilities:
+
+- `open`
+- `query`
+- `read`
+- `status`
+
+Read/write capabilities add:
+
+- `save`
+- `checkpoint`
+- `stage`
+- `delete`
+- `dream`
+
+## Entry Model
+
+An entry has:
+
+- stable UUID
+- owning user
+- case-insensitively unique relative path
+- title
+- kind: `markdown` or `binary`
+- media type
+- current version number
+- created and updated time
+- optional deletion time
+
+An entry version has:
+
+- stable UUID
+- entry UUID and positive sequential version
+- SHA-256
+- exact text or exact object-store locator, never both
+- byte length
+- metadata
+- creating credential
+- creation time
+
+Text versions contain the exact UTF-8 string supplied by the caller. Binary
+versions identify immutable object-store bytes by key and provider version ID.
+An entry's current pointer and its referenced version become visible in one
+short PostgreSQL commit. Portable modification time, mode, and other
+transfer-only annotations on the current version may be corrected in place
+when bytes are unchanged; this emits a normal workspace change but does not
+create a duplicate content version.
+
+## Workspace Generation
+
+Every changed entry appends one `workspace_changes` row with:
+
+- monotonic generation
+- user
+- entry and version
+- `create`, `update`, or `delete`
+- path
+- SHA-256
+- recorded time
+
+Generation is a change cursor, not a whole-workspace snapshot. It does not
+promise that two reads at one generation reconstruct a globally isolated
+view. A consumer that needs to detect intervening edits compares exact entry
+versions or reads changes after its cursor.
+
+## Consistency Posture
+
+In this specification, an atomic publish is only one short local entry change:
+readers see either the previous version or the new version of that entry. It
+does not mean ACID coordination across a workspace, a batch, PostgreSQL and S3,
+or background providers.
+
+Batch reads retain valid items when another exact path is stale. Import,
+export, embedding, description, dreaming, usage, and maintenance work may make
+partial progress, record what completed, and retry the remainder. They must not
+hold a corpus-sized transaction, roll back unrelated successful work, or make
+ordinary reads wait for repair.
+
+## Search Index
+
+Only current Markdown versions have current `search_chunks`.
+
+Each chunk contains:
+
+- entry and entry-version IDs
+- ordinal
+- path
+- heading
+- source text
+- token estimate
+- PostgreSQL FTS vector
+- optional 1,536-dimension embedding
+
+Chunks and embeddings are rebuildable. Missing embeddings produce lexical-only
+availability and a queued embedding job. Search never waits for whole-workspace
+reindexing.
+
+## Markdown Conventions
+
+Domain concepts remain ordinary Markdown. Recommended frontmatter:
+
+```yaml
+---
+kind: person | event | project | task | place | resource | note
+status: current domain status
+people: []
+start: optional ISO date or datetime
+end: optional ISO date or datetime
+timezone: optional IANA timezone
+source: optional source locator
+authority: owner | source | inferred | unknown
+---
+```
+
+Fields are optional and extensible. A file remains useful without frontmatter.
+The service must not infer that one domain status changes another. For example,
+an event may be scheduled while attendance remains unknown, and a booking may
+be confirmed while payment remains pending.
+
+The SPA may build people, event, task, project, logistics, briefing, and recent
+change views from these conventions. Those views are projections, not new
+canonical records.
+
+## HTTP API
+
+All `/v1/workspace` endpoints require a bearer credential except health
+endpoints. JSON responses use a compact envelope containing optional session
+and generation references, status, data, and non-empty gaps. Request
+correlation is carried by the HTTP response header rather than duplicated in
+the reasoning payload. Default empty coverage, conflict, ambiguity, and
+truncation structures are not repeated. Byte streams use exact integrity
+headers instead.
+
+### Open
+
+`POST /v1/workspace/open`
+
+Request:
+
+```json
+{
+  "task": "actual agent goal",
+  "hints": {
+    "authorization_scope": "scope:root",
+    "root_refs": [],
+    "open_object_refs": []
+  },
+  "resume_checkpoint_ref": "checkpoint:uuid",
+  "token_budget": 24000
+}
+```
+
+Behavior:
+
+- Reject an empty task.
+- Clamp token budget to 1,000 through 64,000.
+- Return a new opaque session reference for client correlation only.
+- Return current workspace generation.
+- Run bounded exact, lexical, and semantic candidate lanes.
+- Preserve results from successful lanes when another fails.
+- Group chunks by entry.
+- Hydrate at most 12 coherent entries under the requested budget.
+- When resuming, return the exact checkpoint and up to 200 changed paths after
+  its generation.
+- Do not calculate total record counts, corpus maps, or full manifests.
+
+Evidence fields:
+
+- entry reference
+- path and title
+- current version
+- `complete_source` or `source_excerpt`
+- source text
+- heading when relevant
+
+SHA-256 remains available through exact read and manifest. Ranking scores and
+successful lane names are operational diagnostics, not default model input.
+
+### Search
+
+`POST /v1/workspace/search`
+
+Accept one query or up to 16 batched queries. At most four queries execute at
+once, bounding database and embedding-provider pressure while avoiding
+sequential 16-lane latency. Each query has optional ID, goal,
+limit from 1 through 50, and modes selected from:
+
+- `exact`
+- `lexical`
+- `semantic`
+
+Default mode uses all available lanes. Candidate work is bounded before entry
+hydration. Results are merged by entry and include enough exact identity to
+read the source. Lane failure produces a partial or degraded response, not loss
+of successful candidates.
+
+Exact mode resolves explicit quoted or backticked relative paths plus exact
+path or title text. Lexical mode uses the FTS GIN index and may add at most two
+explicit quoted or compound-identifier anchors from a natural-language task.
+Semantic mode uses the HNSW index through the validated transaction user
+context.
+
+### Read
+
+`POST /v1/workspace/read`
+
+Accept 1 through 32 requests. Every request supplies an exact `path` or
+`entry:<uuid>`.
+
+Views:
+
+- `full`
+- `current_state`, an alias for current full text
+- `outline`
+- `range`, with 1-based inclusive line bounds
+
+The response includes exact path, entry reference, version, SHA-256, media
+type, text, non-empty metadata, and updated time. A missing exact target is not
+replaced with search output. One response returns at most 4 MiB characters of
+source text; when a batch reaches that budget, it reports the number of exact
+requests to issue in a follow-up call.
+
+A mixed-validity batch returns the valid entries and reports each missing path
+or reference inline. The envelope is `partial` when at least one requested
+entry succeeds and `degraded` only when none succeeds.
+
+### Write
+
+`POST /v1/workspace/write`
+
+Request:
+
+```json
+{
+  "path": "Projects/Example/Status.md",
+  "content": "# Status\n",
+  "media_type": "text/markdown",
+  "expected_version": 3,
+  "idempotency_key": "optional caller key",
+  "metadata": {}
+}
+```
+
+Rules:
+
+- Path must be safe, relative, and at most the configured path length.
+- Content is limited to 4 MiB.
+- Media type is Markdown or plain text.
+- `expected_version` must equal the current version; zero means create.
+- Equal content is a no-op.
+- A changed write appends one version and one change.
+- Only that entry's current chunks are replaced.
+- Exact and lexical search are ready when the write returns.
+- Semantic embedding is always queued as bounded background work.
+- A path cannot change between Markdown and binary kind implicitly.
+
+### Capture
+
+`POST /v1/workspace/capture`
+
+Capture accepts durable text, source metadata, intent, and optional idempotency
+key. It writes one Markdown file under a date-partitioned `Inbox/Captures/`
+path and returns the normal write receipt. It does not create hidden claims,
+objects, relations, or state machines. With an idempotency key, the capture
+uses a stable create-only path: an exact replay is a no-op and different
+content receives a conflict.
+
+### Changes
+
+`GET /v1/workspace/changes?since_generation=<n>&limit=<n>`
+
+Returns ordered changed paths after the cursor, current generation, and a
+truncation flag. Limit is 1 through 2,000. Consumers continue from the last
+returned generation.
+
+### Checkpoint
+
+`POST /v1/workspace/checkpoint`
+
+A request supplies session ID, optional parent checkpoint, state, exact source
+references, and optional idempotency key.
+
+The service:
+
+- derives a deterministic checkpoint ID from the request
+- resolves at most 64 explicit source paths or entry references
+- rejects a missing explicit workspace reference rather than silently omitting
+  it
+- records their exact path, version, and hash
+- writes one immutable Markdown entry under `.straylight/checkpoints/`
+- appends only that entry's normal version, chunks, and change
+- returns the original checkpoint on exact replay
+
+Checkpoint state supports objective, current state, decisions, open questions,
+next actions, and artifacts. Unknown fields may be retained in a JSON appendix
+but do not create database schema.
+
+### Binary Upload
+
+`POST /v1/workspace/binaries`
+
+Multipart fields:
+
+- `file`, exactly one
+- `path`
+- `expected_content_hash`, required lowercase SHA-256 of the exact upload bytes
+- optional `media_type`
+- optional `description`
+- optional `provenance`
+- optional `limitations`
+- optional portable metadata
+- optional `expected_version`
+
+The service hashes the uploaded object and refuses publication when it differs
+from `expected_content_hash`. It then publishes the binary entry and Markdown
+companion in one short database commit. No distributed transaction is
+attempted. A failed database commit may leave an unreferenced object. The
+alpha retains such objects because an automatic reference-check/delete loop
+can race a valid publish; object cleanup is not part of request correctness.
+
+The owner-alpha workspace upload and import path accepts a maximum individual
+binary size of 4 GiB. Larger files fail before workspace publication. Supporting
+them later requires a separate resumable multipart transport; it does not
+change entry publication or retrieval semantics.
+
+If no description is supplied, the companion says description is pending and
+a `describe_binary` job is queued. This must not block upload completion.
+
+### Binary Read
+
+- `GET /v1/workspace/binaries`
+- `GET /v1/workspace/binaries/<entry-ref>`
+- `GET /v1/workspace/binaries/<entry-ref>/content`
+
+List and metadata return exact entry, version, hash, size, media type,
+description state, and portable metadata. Content fetch streams the exact
+object version and returns expected hash, entry, version, and byte-length
+headers. CLI and MCP clients verify SHA-256 while writing the stream; the API
+does not buffer a large object merely to hash it before delivery.
+
+Historical content fetch accepts an exact version. It never silently serves
+current bytes for a historical request.
+
+### Manifest
+
+`GET /v1/workspace/manifest?limit=<n>&history=<bool>`
+
+Returns a path-ordered page of current entries and workspace generation.
+Current pages are limited to 5,000 entries. With `history=true`, each result is
+an exact version row suitable for lossless export; pagination remains bounded.
+When another page exists, `next` contains `after_path`, `after_entry_ref`, and,
+for history, `after_version`. Clients should pass those values on the next
+request. Offset remains a compatibility input for shallow interactive pages;
+bulk transfer uses the keyset cursor.
+Manifest is an explicit transfer and audit operation and is never calculated
+by `open`, `search`, or `checkpoint`.
+
+### Usage
+
+`GET /v1/workspace/usage`
+
+Sort options:
+
+- `most_used`
+- `least_used`
+- `most_recently_used`
+- `least_recently_used`
+
+Each row includes path, kind, read count, search count, total uses, and first
+and last timestamps. Usage recording is content-free, batched, and fail-open.
+
+## CLI And MCP
+
+The Rust `carrystate` CLI and TypeScript MCP server are thin clients over the
+same workspace HTTP API. They do not implement alternative retrieval or write
+semantics.
+
+Primary MCP tools:
+
+- `memory.open`
+- `memory.query`
+- `memory.read`
+- `memory.capture`
+- `memory.write`
+- `memory.checkpoint`
+- `memory.stage`
+- `memory.status`
+- `asset.list`
+- `asset.metadata`
+- `asset.fetch`
+
+`memory.compute` and `memory.verify` are not service tools. Agents use their
+native reasoning, shell, browser, SQL, and code tools after retrieving exact
+source material.
+
+The MCP default response is compact JSON. It must not duplicate the same
+payload as both text and structured content, and it must omit transport
+metadata that is not useful for reasoning.
+
+### Compatibility And Evaluation APIs
+
+The workspace API above is the production product surface. Retained legacy
+memory, account-export, and evaluation bulk-import routes are development and
+test compatibility surfaces:
+
+- development may enable them explicitly;
+- production disables them by default;
+- evaluation routes are always disabled in the production Compose profile;
+- an operator must make a deliberate configuration change to expose legacy
+  routes in production.
+
+CLI, MCP, and evaluation harness defaults use the workspace protocol. A caller
+cannot accidentally select the old corpus-revision and replay-ledger behavior
+merely by omitting a protocol flag.
+
+## Import
+
+Import must:
+
+- walk without following symlinks
+- reject traversal, special files, and normalized path collisions
+- sort paths deterministically
+- hash exact bytes
+- record size, media type, modification time, and portable mode
+- classify valid UTF-8 Markdown/plain text as text and everything else as
+  binary
+- derive bounded attachment context from Markdown links
+- treat each completed server write as durable resume progress without a
+  duplicate per-file receipt ledger
+- skip a path only when current server hash, byte length, and portable metadata
+  equal the inventory
+- correct changed portable metadata without creating another identical content
+  version
+- resume safely after interruption
+- verify server path, hash, size, and companion state after upload
+
+No import transaction may contain the full vault. Failure of one file leaves
+prior completed files usable. Default import never deletes absent server
+paths.
+
+Mirror deletion requires:
+
+1. A complete server-backed difference preview.
+2. A confirmation hash over that exact preview.
+3. Explicit caller confirmation.
+4. Independent bounded deletes after uploads succeed.
+
+## Export
+
+Export must:
+
+- refuse to overwrite an existing destination
+- page through the explicit manifest
+- download each exact text or object version
+- verify SHA-256 and byte length
+- preserve original relative path
+- restore portable modification time and mode
+- optionally include history under deterministic version paths
+- write a machine-readable manifest and `CHECKSUMS.sha256`
+- verify the completed staging directory before renaming it into place
+
+Current export must round-trip every current path and byte exactly. History
+export must round-trip every selected version and exact object-store version.
+Each manifest row is an independent exact export promise. Export does not
+require the whole workspace generation to remain unchanged while it runs.
+
+## Jobs And Dreaming
+
+Job kinds:
+
+- `embed_entry`
+- `describe_binary`
+- `dream_workspace`
+
+Jobs are claimed with `SKIP LOCKED`, have bounded attempts, backoff, lease
+recovery, and a short sanitized error. A job never holds a database transaction
+while calling OpenAI or transferring a large object.
+
+Embedding requests may be batched for provider efficiency, but database
+publication is one chunk at a time with no enclosing document or batch
+transaction. A partially published job is healthy degraded state, not
+corruption. Retrying the job embeds only chunks whose vector is still absent.
+
+Dreaming reads changes after a per-user watermark and produces ordinary
+Markdown patches. Low-risk maintenance includes indexes, summaries, stale-link
+repair, people dossiers, event rollups, and task/briefing views. Consequential
+or ambiguous changes are written as proposals.
+
+Every applied patch uses normal entry versions. The SPA shows path, diff,
+sources, model, reason, result, and revert action. There are no shadow corpus
+revisions or automatic promotion gates.
+
+## Data And Failure Semantics
+
+- Current Markdown wins over historical checkpoints.
+- Owner corrections win over older derived summaries.
+- Source authority remains visible in Markdown and is not replaced by retrieval
+  score.
+- Empty retrieval is not proof of absence.
+- A healthy dependency check is not proof of working retrieval.
+- Embedding failure degrades to exact and lexical retrieval.
+- One failed search lane does not discard other lanes.
+- Metrics, usage, cleanup, and derivative maintenance fail open.
+- Ordinary reads and writes do not wait for background repair.
+- Unreferenced S3 objects are retained during the alpha. Any later lifecycle or
+  lease-based cleanup remains asynchronous and outside workspace operations.
 
 ## Acceptance Gates
 
-The alpha is releasable for inspection when all of the following hold:
+### Reasoning
 
-1. Fresh and repeat migrations succeed and RLS/direct credential-control probes
-   deny cross-user and non-manager access.
-2. Rust, SPA, MCP, Python harness, migration, live API, and browser tests pass.
-3. Read-only denial is exercised against every mutation family at the service
-   boundary.
-4. Automatic capture, staging, archive-member promotion, checkpoint resume,
-   automatic learned-context inclusion, deep shadow dreaming, and deletion
-   propagation pass live tests.
-5. Post-policy usage telemetry proves read-only open/query tracking, does not
-   count corpus inventory or failed reads, does not recursively count usage
-   inspection, and preserves every reasoning response contract.
-6. Production metrics pass a DogStatsD wire test, use only bounded content-free
-   tags, preserve API behavior when the exporter is disabled or unavailable,
-   and the checked-in Datadog dashboard validates against the emitted names.
-7. The native service matches or beats the unchanged local Markdown baseline
-   on every active card in the main, Rupture Ops, personal coordination, and
-   checkpoint-transition suites. Retired cards remain reproducible historical
-   fixtures but do not count toward the current product gate.
-8. Failures are reported honestly; no path claims complete coverage, policy
-   application, validation, or cleanup that did not occur.
+- Aggregate paired claim recall across the full frozen harness is at least
+  direct Markdown.
+- Before claiming superiority or approving launch, an untouched frozen holdout
+  is run once against the exact fingerprinted release candidate.
+- No supported workload loses material source authority, correction, temporal,
+  action-boundary, or current-over-history behavior.
+- Recent Europe planning and Aether operating cases meet the same bar.
+- Fresh-agent checkpoint resume advances work without reconstructing the whole
+  workspace.
+- Every suite remains visible separately; aggregate parity cannot hide a
+  material lane-specific regression.
 
-## Public-Service Decisions
+### Tokens
 
-The alpha implements token administration and operator recovery, per-user
-quotas, request limiting, complete export and deletion, coordinated
-backup/restore, production metrics, and immutable candidate deployment.
+- Uncached model input is no worse than direct Markdown by more than the
+  explicitly accepted quality premium.
+- Protocol wrapper overhead is less than source text plus exact provenance
+  identity for ordinary reasoning packets.
+- No response includes corpus inventory or ranking diagnostics by default.
 
-Production uses a managed, versioned cloud S3 store; MinIO is development-only.
-Datadog metrics and structured logs are approved. Source control is a private
-GitHub repository under `TorKallon`, and the alpha is owner-first and
-invite-only with individual users and credentials.
+### Performance
 
-Owner approval is still required for the final name, hostname, descriptor and
-logo; deployment provider and network exposure; exact managed-S3
-qualification; off-host backup destination, key custody, RPO, and RTO; alert
-delivery and retention; hard spend limits; final retention, support, and
-privacy wording; and launch go/no-go. Future identity-provider,
-collaborative-ownership, billing, and commercial packaging work must preserve
-the contracts above.
+At 1K, 10K, and 64K deterministic files:
+
+- all searches and exact reads return the target
+- open p95 is at most 5 seconds
+- search p95 is at most 3 seconds
+- exact read p95 is at most 1 second
+- checkpoint is at most 2 seconds
+- resume is at most 5 seconds
+- checkpoint adds at most 100 database rows and 4 MiB
+- open and search growth above 6x fails when the 64K p95 is also above 1 second;
+  faster absolute results remain green and still report the observed ratio
+
+A production-shaped test must also prove:
+
+- lexical candidates use the GIN index
+- the semantic lane degrades cleanly and becomes healthy after provider restore
+- no normal open computes a whole-workspace count or map
+- one failed lane still returns another lane's evidence
+- concurrent unrelated writes do not serialize globally
+
+### Fidelity
+
+- Mixed Markdown and binary fixtures round-trip with identical paths, hashes,
+  sizes, bytes, and portable metadata.
+- Interrupted import resumes without reuploading completed equal hashes.
+- Historical binary fetch returns the requested provider version.
+- Every binary has a searchable companion.
+
+### Security
+
+- Cross-user read, search, binary fetch, manifest, usage, and write attempts
+  fail.
+- Read-only tokens cannot create any workspace row.
+- Candidate functions derive user only from validated transaction context.
+- Logs and metrics contain no bearer token, query text, source text, or direct
+  personal identifier.
+
+### Operations
+
+- Authenticated behavioral readiness opens, searches, exact-reads, writes a
+  disposable canary, and verifies cleanup.
+- Backup and restore drills preserve PostgreSQL and exact object versions.
+- Deployment identifies an immutable source revision and image digest.
+- Datadog exposes latency, lane failure, job age, import progress, and per-user
+  storage/entry growth before alpha migration.
+
+## Explicit Non-Goals
+
+- Distributed transactions across PostgreSQL and S3
+- Whole-workspace snapshot isolation for ordinary agents
+- Typed claim, relation, recurrence, or state-machine database hierarchies
+- Service-side general computation or claim verification
+- Transcript replay as the primary memory model
+- Hidden model-written knowledge that users cannot inspect or revert
+- Per-user databases or containers

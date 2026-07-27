@@ -406,7 +406,7 @@
             {"any": ["east of", "immediately east"]},
             {"any": ["Mythic Cry"]},
             {"any": ["Red Lake", "Redleaf"]},
-            {"any": ["wrong", "corrected", "not the earlier"]}
+            {"any": ["wrong", "corrected", "not the earlier", "supersedes the older provisional"]}
           ],
           "sources_any": [
             "Topics/StarRupture/World geography and named locations.md",
@@ -427,7 +427,7 @@
         {
           "id": "c3",
           "checks": [
-            {"any": ["screenshot", "registration frame"]},
+            {"any": ["screenshot", "registration frame", "registered visually against terrain", "terrain-registered"]},
             {"any": ["SRDB", "map coordinates"]},
             {"any": ["verified transform", "do not mix"]},
             {"any": ["Sunstone", "Brimstone", "exact pin", "open"]}

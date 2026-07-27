@@ -33,7 +33,7 @@ interface RootIdentity {
   inode: bigint;
 }
 
-const ASSET_REFERENCE = /^asset:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+const ASSET_REFERENCE = /^(asset|entry):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const SHA256 = /^[0-9a-f]{64}$/i;
 
 export function parseAssetMetadata(
@@ -41,9 +41,12 @@ export function parseAssetMetadata(
   requestedAssetRef: string,
 ): AssetMetadata {
   const candidate = record(body.data) ?? body;
-  const assetRef = requiredString(candidate.asset_ref, "asset_ref");
+  const assetRef = requiredString(
+    candidate.entry_ref ?? candidate.asset_ref,
+    "entry_ref",
+  );
   if (!ASSET_REFERENCE.test(assetRef) || assetRef !== requestedAssetRef) {
-    throw new Error("asset metadata returned an unexpected asset_ref");
+    throw new Error("asset metadata returned an unexpected entry_ref");
   }
   const version = requiredSafeInteger(candidate.version, "version");
   if (version <= 0) {
@@ -406,10 +409,13 @@ async function syncDirectory(path: string): Promise<void> {
 
 function assetFilename(metadata: AssetMetadata): string {
   const match = ASSET_REFERENCE.exec(metadata.assetRef);
-  if (!match?.[1]) {
-    throw new Error("asset_ref must contain a UUID");
+  const uuid = match?.[2];
+  if (!uuid) {
+    throw new Error("entry_ref must contain a UUID");
   }
-  return `${match[1].toLowerCase()}.v${metadata.version}${safeExtension(metadata)}`;
+  const shortHash = metadata.contentHash
+    .slice("sha256:".length, "sha256:".length + 12);
+  return `${uuid.toLowerCase()}.v${metadata.version}.${shortHash}${safeExtension(metadata)}`;
 }
 
 function safeExtension(metadata: AssetMetadata): string {

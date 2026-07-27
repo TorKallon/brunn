@@ -90,6 +90,54 @@ test("query keeps one candidate list instead of the flattened duplicate", () => 
   assert.equal(compactCandidate?.why_selected, undefined);
 });
 
+test("simple query keeps exact entry identity and retrieval lanes without score metadata", () => {
+  const compact = compactReasoningResponse("memory.query", {
+    status: "complete",
+    data: {
+      workspace_generation: 42,
+      results: [{
+        id: "q0",
+        query_status: "complete",
+        candidates: [{
+          entry_id: "019f8530-e5f6-77d3-a373-052ee8cd24bd",
+          path: "Trips/Switzerland/Rail Plan.md",
+          title: "Rail Plan",
+          version: 3,
+          content_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          heading: "Reservation decisions",
+          excerpt: "Book the constrained segment first.",
+          additional_sections: [{
+            heading: "Fallback",
+            excerpt: "Keep the flexible train as a backup.",
+          }],
+          score: 9.81,
+          lanes: ["exact", "lexical", "lexical"],
+        }],
+      }],
+    },
+  });
+
+  const data = compact.data as Record<string, unknown>;
+  const item = (data.items as Array<Record<string, unknown>>)[0];
+  const candidate = (item?.results as Array<Record<string, unknown>>)[0];
+  assert.deepEqual(candidate, {
+    reference: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bd",
+    path: "Trips/Switzerland/Rail Plan.md",
+    title: "Rail Plan",
+    version: 3,
+    content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    heading: "Reservation decisions",
+    excerpt: "Book the constrained segment first.",
+    additional_sections: [{
+      heading: "Fallback",
+      excerpt: "Keep the flexible train as a backup.",
+    }],
+    lanes: ["exact", "lexical"],
+  });
+  assert.equal(JSON.stringify(candidate).includes("score"), false);
+  assert.equal(JSON.stringify(candidate).includes("entry_id"), false);
+});
+
 test("open returns complete source text with pointer-only tail leads", () => {
   const compact = compactReasoningResponse("memory.open", {
     status: "complete",
@@ -129,6 +177,43 @@ test("open returns complete source text with pointer-only tail leads", () => {
   assert.equal(leads[0]?.content_scope, "source_lead");
   assert.deepEqual(leads[0]?.evidence_refs, ["evidence:12"]);
   assert.equal(leads[0]?.content, undefined);
+});
+
+test("simple open preserves pointer leads and continuation pagination", () => {
+  const compact = compactReasoningResponse("memory.open", {
+    status: "partial",
+    data: {
+      evidence: [{
+        reference: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bd",
+        path: "Work/Current.md",
+        title: "Current",
+        version: 4,
+        representation: "complete_source",
+        text: "Current source.",
+      }],
+      evidence_leads: [{
+        reference: "entry:019f8530-e5f6-77d3-a373-052ee8cd24be",
+        path: "Work/Related.md",
+        title: "Related",
+        version: 2,
+      }],
+      changes_since_checkpoint: [{ generation: 201, path: "Work/Current.md" }],
+      changes_truncated: true,
+      next_changes_generation: 201,
+      checkpoint_text_truncated: false,
+    },
+  });
+
+  const data = compact.data as Record<string, unknown>;
+  assert.deepEqual(data.evidence_leads, [{
+    reference: "entry:019f8530-e5f6-77d3-a373-052ee8cd24be",
+    path: "Work/Related.md",
+    title: "Related",
+    version: 2,
+  }]);
+  assert.equal(data.changes_truncated, true);
+  assert.equal(data.next_changes_generation, 201);
+  assert.equal(data.checkpoint_text_truncated, false);
 });
 
 test("open caps returned evidence text before adding pointer leads", () => {

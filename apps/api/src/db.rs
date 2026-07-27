@@ -19,6 +19,7 @@ use crate::{
     error::{ApiError, ApiResult},
     object_store::ObjectStore,
     quota::{PreauthRateLimiter, RequestRateLimiter},
+    usage::UsageTracker,
 };
 
 #[derive(Clone)]
@@ -33,6 +34,7 @@ pub struct AppState {
     pub transfer_limiter: Arc<Semaphore>,
     pub preauth_rate_limiter: PreauthRateLimiter,
     pub request_rate_limiter: RequestRateLimiter,
+    pub usage_tracker: UsageTracker,
 }
 
 impl AppState {
@@ -66,6 +68,7 @@ impl AppState {
             PreauthRateLimiter::new(config.requests_per_minute.saturating_mul(10));
         let request_rate_limiter = RequestRateLimiter::new(config.requests_per_minute);
         let transfer_limiter = Arc::new(Semaphore::new(config.max_concurrent_transfers));
+        let usage_tracker = UsageTracker::start(admin_pool.clone());
         Ok(Self {
             config,
             auth_pool,
@@ -77,6 +80,7 @@ impl AppState {
             transfer_limiter,
             preauth_rate_limiter,
             request_rate_limiter,
+            usage_tracker,
         })
     }
 

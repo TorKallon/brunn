@@ -51,6 +51,8 @@ services:
     image: ${STRAYLIGHT_API_IMAGE:-straylight-api:release-blocked}
     environment: &production-app-environment
       STRAYLIGHT_ENV: production
+      STRAYLIGHT_LEGACY_API_ENABLED: ${STRAYLIGHT_LEGACY_API_ENABLED:-false}
+      STRAYLIGHT_EVALUATION_API_ENABLED: "false"
       DD_ENV: production
       DD_VERSION: ${STRAYLIGHT_RELEASE_REVISION:-unreleased}
       DATABASE_URL_RW: ""

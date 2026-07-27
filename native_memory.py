@@ -219,8 +219,15 @@ def parse_read_range(value: str | None) -> tuple[int | None, int | None]:
 
 
 def display_scope_query(args: argparse.Namespace, query: str) -> str:
-    scope = args.query_scope or args.scope
+    scope = getattr(args, "query_scope", None) or args.scope
     if not scope or scope == args.authorization_scope or scope.startswith("scope:"):
+        return query
+    if scope.casefold().strip() in {
+        "general",
+        "personal coordination",
+        "recent work",
+        "workspace",
+    }:
         return query
     normalized_scope = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", scope)
     normalized_scope = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", normalized_scope)
@@ -338,6 +345,55 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
     if learned_context:
         compact["learned_context"] = learned_context
 
+    simple_evidence = data.get("evidence")
+    if isinstance(simple_evidence, list):
+        compact["initial_evidence"] = [
+            {
+                **{
+                    key: item[key]
+                    for key in (
+                        "reference",
+                        "path",
+                        "title",
+                        "version",
+                        "content_hash",
+                        "heading",
+                        "why_selected",
+                    )
+                    if item.get(key) not in (None, "", [], {})
+                },
+                "content": item.get("text", ""),
+                "content_scope": (
+                    "complete_source"
+                    if item.get("representation") == "complete_source"
+                    else "selected_source_sections"
+                ),
+            }
+            for item in simple_evidence
+            if isinstance(item, dict)
+        ]
+        simple_leads = data.get("evidence_leads")
+        if isinstance(simple_leads, list) and simple_leads:
+            compact["evidence_leads"] = [
+                compact_simple_candidate(item)
+                for item in simple_leads
+                if isinstance(item, dict)
+            ]
+        for key in (
+            "checkpoint",
+            "changes_since_checkpoint",
+            "changes_truncated",
+            "next_changes_generation",
+            "checkpoint_text_truncated",
+        ):
+            if data.get(key) not in (None, [], {}):
+                compact[key] = data[key]
+        if isinstance(data.get("retrieval_sufficiency"), dict):
+            compact["retrieval_sufficiency"] = data["retrieval_sufficiency"]
+        if data.get("workspace_generation") is not None:
+            compact["workspace_generation"] = data["workspace_generation"]
+        return compact
+
     evidence = data.get("initial_evidence")
     evidence_refs_by_source = collect_evidence_refs_by_source(evidence)
     hydrated = data.get("hydrated_sources")
@@ -423,6 +479,40 @@ def partition_open_sources(
 
 def compact_query_data(data: dict[str, Any]) -> dict[str, Any]:
     compact = compact_generic_data(data, ())
+    result_sets = data.get("results")
+    if (
+        isinstance(result_sets, list)
+        and any(isinstance(item, dict) and "candidates" in item for item in result_sets)
+    ):
+        compact["items"] = [
+            {
+                **(
+                    {"id": item["id"]}
+                    if item.get("id") is not None
+                    else {}
+                ),
+                **(
+                    {"status": item["query_status"]}
+                    if item.get("query_status") is not None
+                    else {}
+                ),
+                "results": [
+                    compact_simple_candidate(candidate)
+                    for candidate in item.get("candidates", [])
+                    if isinstance(candidate, dict)
+                ],
+                **(
+                    {"gaps": item["lane_failures"]}
+                    if item.get("lane_failures")
+                    else {}
+                ),
+            }
+            for item in result_sets
+            if isinstance(item, dict)
+        ]
+        if data.get("workspace_generation") is not None:
+            compact["workspace_generation"] = data["workspace_generation"]
+        return compact
     items = data.get("items")
     if isinstance(items, list):
         compact["items"] = [
@@ -460,7 +550,10 @@ def compact_query_item(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def compact_read_data(data: dict[str, Any]) -> dict[str, Any]:
-    compact = compact_generic_data(data, ())
+    compact = compact_generic_data(
+        data,
+        ("requested_count", "missing_requests", "response_truncated"),
+    )
     items = data.get("items")
     if isinstance(items, list):
         compact["items"] = [
@@ -470,9 +563,27 @@ def compact_read_data(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def compact_read_item(item: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(item.get("text"), str):
+        return {
+            key: item[key]
+            for key in (
+                "reference",
+                "path",
+                "title",
+                "version",
+                "version_ref",
+                "content_hash",
+                "media_type",
+                "view",
+                "status",
+                "text",
+                "metadata",
+            )
+            if item.get(key) not in (None, "", [], {})
+        }
     compact = {
         key: item[key]
-        for key in ("reference", "view", "status")
+        for key in ("reference", "path", "view", "status")
         if item.get(key) is not None
     }
     error = item.get("error")
@@ -556,6 +667,11 @@ def compact_checkpoint_data(data: dict[str, Any]) -> dict[str, Any]:
             "review_required",
             "search_status",
             "indexing",
+            "checkpoint_ref",
+            "path",
+            "workspace_generation",
+            "source_entries",
+            "write",
         )
         if key in data and data[key] not in (None, [], {})
     }
@@ -612,6 +728,39 @@ def compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     if isinstance(evidence_refs, list):
         compact["evidence_refs"] = list(dict.fromkeys(
             value for value in evidence_refs if isinstance(value, str) and value
+        ))
+    return compact
+
+
+def compact_simple_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        key: candidate[key]
+        for key in (
+            "reference",
+            "path",
+            "title",
+            "version",
+            "heading",
+            "excerpt",
+            "additional_sections",
+            "content_hash",
+        )
+        if key in candidate and candidate[key] not in (None, [], {})
+    }
+    entry_ref = candidate.get("entry_ref")
+    if "reference" not in compact and isinstance(entry_ref, str):
+        compact["reference"] = entry_ref
+    content_sha256 = candidate.get("content_sha256")
+    if "content_hash" not in compact and isinstance(content_sha256, str):
+        compact["content_hash"] = (
+            content_sha256
+            if content_sha256.startswith("sha256:")
+            else f"sha256:{content_sha256}"
+        )
+    lanes = candidate.get("lanes")
+    if isinstance(lanes, list):
+        compact["lanes"] = list(dict.fromkeys(
+            value for value in lanes if isinstance(value, str) and value
         ))
     return compact
 
@@ -792,37 +941,63 @@ def compact_coverage(value: Any) -> dict[str, Any]:
 
 
 def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[str, str, dict[str, Any] | None]:
+    operation_root = (
+        "/v1/workspace"
+        if args.protocol == "simple"
+        else "/v1/memory"
+    )
     if args.command in {"open", "resume"}:
         checkpoint_id = state.get("checkpoint_id") or args.checkpoint_id
+        task = args.task_file.read_text(encoding="utf-8")
         payload: dict[str, Any] = {
-            "task": args.task_file.read_text(encoding="utf-8"),
+            "task": display_scope_query(args, task),
             "hints": {
                 "authorization_scope": args.authorization_scope,
-                "root_refs": [],
-                "open_object_refs": [],
+                "root_refs": args.root_ref,
+                "open_object_refs": args.open_object_ref,
             },
             "as_of": "latest",
             "mode": "continuation",
         }
         if checkpoint_id:
             payload["resume_checkpoint_ref"] = checkpoint_id
-        return "POST", "/v1/memory/open", payload
+        return "POST", f"{operation_root}/open", payload
+
+    if args.command == "changes":
+        if args.protocol != "simple":
+            raise ValueError("changes is available only with the simple workspace protocol")
+        if args.since_generation < 0:
+            raise ValueError("--since-generation must be nonnegative")
+        if not 1 <= args.limit <= 2_000:
+            raise ValueError("--limit must be between 1 and 2000")
+        query = urllib.parse.urlencode({
+            "since_generation": args.since_generation,
+            "limit": args.limit,
+        })
+        return "GET", f"/v1/workspace/changes?{query}", None
 
     session_id = require_session(state)
     if args.command == "status":
+        if args.protocol == "simple":
+            return "GET", "/v1/status", None
         return "GET", f"/v1/sessions/{session_id}", None
 
     if args.command == "assets":
-        query = urllib.parse.urlencode({
-            "session_id": session_id,
-            "offset": args.offset,
-            "limit": args.limit,
-        })
-        return "GET", f"/v1/assets?{query}", None
+        query_fields = {"offset": args.offset, "limit": args.limit}
+        if args.protocol != "simple":
+            query_fields["session_id"] = session_id
+        query = urllib.parse.urlencode(query_fields)
+        return "GET", (
+            f"/v1/workspace/binaries?{query}"
+            if args.protocol == "simple"
+            else f"/v1/assets?{query}"
+        ), None
 
     if args.command == "asset-metadata":
-        query = urllib.parse.urlencode({"session_id": session_id})
         asset_ref = urllib.parse.quote(args.asset_ref, safe="")
+        if args.protocol == "simple":
+            return "GET", f"/v1/workspace/binaries/{asset_ref}", None
+        query = urllib.parse.urlencode({"session_id": session_id})
         return "GET", f"/v1/assets/{asset_ref}?{query}", None
 
     if args.command == "query":
@@ -858,7 +1033,11 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
                 spec["modes"] = args.mode
             payload = {"queries": [spec]}
         payload["session_id"] = session_id
-        return "POST", "/v1/memory/query", payload
+        return "POST", (
+            f"{operation_root}/search"
+            if args.protocol == "simple"
+            else f"{operation_root}/query"
+        ), payload
 
     if args.command == "read":
         payload = optional_json(args.payload)
@@ -882,8 +1061,15 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
                         view = "neighbors"
                     else:
                         view = "full"
+                if args.protocol == "simple" and view == "neighbors":
+                    view = "full"
+                locator_key = (
+                    "path"
+                    if args.protocol == "simple" and is_path
+                    else "ref"
+                )
                 request: dict[str, Any] = {
-                    "ref": reference,
+                    locator_key: reference,
                     "view": view,
                     "max_chars": args.max_chars,
                 }
@@ -901,9 +1087,13 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
                 requests.append(request)
             payload = {"requests": requests}
         payload["session_id"] = session_id
-        return "POST", "/v1/memory/read", payload
+        return "POST", f"{operation_root}/read", payload
 
     if args.command == "compute":
+        if args.protocol == "simple":
+            raise ValueError(
+                "compute is intentionally not a workspace API operation; use the agent's own tools"
+            )
         payload = optional_json(args.payload)
         if payload is None:
             if not args.payload:
@@ -919,6 +1109,10 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
         return "POST", "/v1/memory/compute", payload
 
     if args.command == "verify":
+        if args.protocol == "simple":
+            raise ValueError(
+                "verify is intentionally not a workspace API operation; compare the retrieved sources directly"
+            )
         payload = optional_json(args.payload)
         if payload is None:
             if not args.payload:
@@ -967,9 +1161,16 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
         payload["session_id"] = session_id
         payload.setdefault("parent_checkpoint_id", args.checkpoint_id or state.get("checkpoint_id"))
         payload.setdefault("idempotency_key", checkpoint_key(session_id, payload))
-        return "POST", "/v1/memory/checkpoint", payload
+        return "POST", f"{operation_root}/checkpoint", payload
 
     if args.command == "save":
+        if args.protocol == "simple":
+            payload = load_json_argument(args.payload) if args.payload else {}
+            if not isinstance(payload.get("path"), str) or not isinstance(payload.get("content"), str):
+                raise ValueError(
+                    "simple save requires JSON with path and content; use checkpoint for resumable state"
+                )
+            return "POST", f"{operation_root}/write", payload
         if not args.payload:
             raise ValueError("save requires one JSON payload")
         return "POST", "/v1/memory/save", load_json_argument(args.payload)
@@ -988,6 +1189,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--task-file", type=Path, required=True)
     parser.add_argument("--scope", required=True)
     parser.add_argument("--authorization-scope", required=True)
+    parser.add_argument(
+        "--protocol",
+        choices=("legacy", "simple"),
+        default="simple",
+    )
     parser.add_argument("--checkpoint-id")
     parser.add_argument("--run-id")
     parser.add_argument("--case-id")
@@ -998,8 +1204,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("open")
-    subparsers.add_parser("resume")
+    for command in ("open", "resume"):
+        opening = subparsers.add_parser(command)
+        opening.add_argument("--root-ref", action="append", default=[])
+        opening.add_argument("--open-object-ref", action="append", default=[])
 
     query = subparsers.add_parser("query")
     query.add_argument("payload", nargs="?")
@@ -1054,6 +1262,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     save = subparsers.add_parser("save")
     save.add_argument("payload")
+    changes = subparsers.add_parser("changes")
+    changes.add_argument("--since-generation", type=int, default=0)
+    changes.add_argument("--limit", type=int, default=200)
     subparsers.add_parser("status")
     assets = subparsers.add_parser("assets")
     assets.add_argument("--offset", type=int, default=0)
@@ -1091,9 +1302,14 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
             client = NativeApiClient(run_id=args.run_id, case_id=args.case_id)
             encoded_ref = urllib.parse.quote(args.asset_ref, safe="")
             query = urllib.parse.urlencode({"session_id": session_id})
-            metadata = client.get(f"/v1/assets/{encoded_ref}?{query}")
+            metadata = client.get(
+                f"/v1/workspace/binaries/{encoded_ref}"
+                if args.protocol == "simple"
+                else f"/v1/assets/{encoded_ref}?{query}"
+            )
             data = metadata.data
-            if data.get("asset_ref") != args.asset_ref:
+            returned_ref = data.get("entry_ref") or data.get("asset_ref")
+            if returned_ref != args.asset_ref:
                 raise RuntimeError("asset metadata returned an unexpected reference")
             version = int(data["version"])
             expected_hash = str(data["content_hash"])
@@ -1102,14 +1318,18 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
             suffix = Path(original_path).suffix
             if not re.fullmatch(r"\.[A-Za-z0-9]{1,12}", suffix):
                 suffix = ""
-            asset_id = args.asset_ref.removeprefix("asset:")
+            asset_id = args.asset_ref.removeprefix("asset:").removeprefix("entry:")
             destination = (
                 args.state.parent
                 / "assets"
                 / f"{asset_id}.v{version}{suffix.casefold()}"
             )
             downloaded = client.download_verified(
-                f"/v1/assets/{encoded_ref}/versions/{version}/content?{query}",
+                (
+                    f"/v1/workspace/binaries/{encoded_ref}/content"
+                    if args.protocol == "simple"
+                    else f"/v1/assets/{encoded_ref}/versions/{version}/content?{query}"
+                ),
                 destination,
                 expected_hash=expected_hash,
                 expected_size=expected_size,

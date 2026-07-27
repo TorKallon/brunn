@@ -1,193 +1,452 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Ban,
-  Check,
-  GitCompare,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
+import {
+  ChevronsDown,
+  FileDiff,
   History,
-  RotateCcw,
-  ShieldAlert,
-  ThumbsDown,
-  ThumbsUp,
+  Play,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
-import { JsonView } from "../components/JsonView";
-import { DefinitionList, Metric, Page, PageHeader, Section } from "../components/Page";
-import { EmptyState, ErrorState, LoadingState, ReadOnlyNotice, StatusBadge } from "../components/StateViews";
-import { TabPanel, Tabs } from "../components/Tabs";
+import { DataTable } from "../components/DataTable";
+import { WorkspaceEntryView } from "../components/WorkspaceEntryView";
+import {
+  DefinitionList,
+  Metric,
+  Page,
+  PageHeader,
+  Section,
+} from "../components/Page";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  ReadOnlyNotice,
+  StatusBadge,
+} from "../components/StateViews";
 import { useApi } from "../lib/auth";
-import { useReadOnly } from "../lib/current";
-import { formatDate, humanize, shortId } from "../lib/format";
-import { asItems, type DreamSummary, type JsonObject } from "../lib/types";
+import { useCurrent, useReadOnly } from "../lib/current";
+import { formatDate, formatRelative, humanize, shortId } from "../lib/format";
+import type {
+  WorkspaceJob,
+  WorkspaceManifestEntry,
+} from "../lib/types";
+import {
+  isProposalEntry,
+  workspaceEntryKind,
+  workspaceManifestTimestamp,
+} from "../lib/workspace";
 
-export function DreamsPage({ dreamId }: { dreamId?: string }) {
+const MANIFEST_PAGE_SIZE = 1_000;
+
+export function DreamsPage() {
   const api = useApi();
-  const queryClient = useQueryClient();
+  const current = useCurrent();
   const readOnly = useReadOnly();
-  const [selectedId, setSelectedId] = useState<string | undefined>(dreamId);
-  const [activeTab, setActiveTab] = useState("diff");
-  const [reviewNote, setReviewNote] = useState("");
-  const [rollbackReason, setRollbackReason] = useState("");
-  const [rollbackOpen, setRollbackOpen] = useState(false);
-  const dreamsQuery = useQuery({ queryKey: ["dreams"], queryFn: () => api.dreams() });
-  const dreams = asItems(dreamsQuery.data?.data);
-  const activeId = dreamId ?? selectedId ?? dreams[0]?.id;
-  const dreamQuery = useQuery({
-    queryKey: ["dream", activeId],
-    queryFn: () => api.dream(activeId as string),
-    enabled: Boolean(activeId),
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<WorkspaceManifestEntry | null>(null);
+  const [focus, setFocus] = useState("");
+  const canDream =
+    !readOnly && (current.data.capabilities?.includes("dream") ?? false);
+  const manifestQuery = useInfiniteQuery({
+    queryKey: ["workspace-manifest", "background"],
+    queryFn: ({ pageParam }) =>
+      api.workspaceManifest(pageParam, MANIFEST_PAGE_SIZE),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) =>
+      lastPage.data.truncated
+        ? pages.reduce((total, page) => total + page.data.entries.length, 0)
+        : undefined,
   });
-  const reviewMutation = useMutation({
-    mutationFn: (decision: "approve" | "reject") =>
-      api.reviewDream(activeId as string, {
-        decision,
-        note: reviewNote,
-        expected_base_revision: dreamQuery.data?.data.base_revision ?? "",
-        expected_candidate_revision: dreamQuery.data?.data.candidate_revision ?? "",
-        expected_status: dreamQuery.data?.data.status ?? "",
+  const generation =
+    manifestQuery.data?.pages[0]?.data.workspace_generation ?? 0;
+  const changesQuery = useQuery({
+    queryKey: ["workspace-changes", "background", generation],
+    queryFn: () => api.workspaceChanges(Math.max(0, generation - 500), 500),
+    enabled: manifestQuery.isSuccess,
+  });
+  const jobsQuery = useQuery({
+    queryKey: ["workspace-jobs"],
+    queryFn: () => api.workspaceJobs(undefined, 0, 100),
+    refetchInterval: (query) =>
+      query.state.data?.data.jobs.some(
+        (job) => job.status === "queued" || job.status === "running",
+      )
+        ? 5_000
+        : 30_000,
+  });
+  const proposalQuery = useQuery({
+    queryKey: ["workspace-proposal", selected?.entry_ref],
+    queryFn: () =>
+      api.workspaceRead({
+        requests: [{ ref: selected!.entry_ref, view: "full" }],
       }),
-    onSuccess: (result) => {
-      queryClient.setQueryData(["dream", activeId], result);
-      void queryClient.invalidateQueries({ queryKey: ["dreams"] });
-    },
+    enabled: Boolean(selected),
   });
-  const rollbackMutation = useMutation({
-    mutationFn: () => api.rollbackDream(activeId as string, {
-      reason: rollbackReason,
-      expected_candidate_revision: dreamQuery.data?.data.candidate_revision ?? "",
-      expected_status: dreamQuery.data?.data.status ?? "",
-    }),
-    onSuccess: (result) => {
-      queryClient.setQueryData(["dream", activeId], result);
-      void queryClient.invalidateQueries({ queryKey: ["dreams"] });
-      setRollbackOpen(false);
+  const dreamMutation = useMutation({
+    mutationFn: () =>
+      api.workspaceDream({
+        ...(focus.trim() ? { focus: focus.trim() } : {}),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workspace-jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-manifest"] });
+      void queryClient.invalidateQueries({ queryKey: ["workspace-changes"] });
     },
   });
 
-  const sortedDreams = useMemo(
-    () => [...dreams].sort((left, right) => (right.updated_at ?? right.created_at ?? "").localeCompare(left.updated_at ?? left.created_at ?? "")),
-    [dreams],
+  const entries =
+    manifestQuery.data?.pages.flatMap((page) => page.data.entries) ?? [];
+  const proposals = useMemo(
+    () =>
+      entries
+        .filter(isProposalEntry)
+        .sort((left, right) =>
+          (workspaceManifestTimestamp(right) ?? "").localeCompare(
+            workspaceManifestTimestamp(left) ?? "",
+          ),
+        ),
+    [entries],
+  );
+  const backgroundChanges = useMemo(
+    () =>
+      (changesQuery.data?.data.changes ?? []).filter(
+        (change) =>
+          change.path.startsWith(".straylight/") ||
+          change.path.startsWith("Inbox/Proposals/"),
+      ),
+    [changesQuery.data],
+  );
+  const selectedEntry = proposalQuery.data?.data.items[0];
+  const jobs = jobsQuery.data?.data.jobs ?? [];
+  const activeJobs = jobs.filter(
+    (job) => job.status === "queued" || job.status === "running",
+  ).length;
+  const columns = useMemo<ColumnDef<WorkspaceManifestEntry, unknown>[]>(
+    () => [
+      {
+        id: "proposal",
+        header: "Proposal",
+        cell: ({ row }) => (
+          <div className="primary-cell">
+            <strong>{row.original.title}</strong>
+            <code>{row.original.path}</code>
+          </div>
+        ),
+      },
+      {
+        id: "kind",
+        header: "Kind",
+        cell: ({ row }) => (
+          <StatusBadge status={workspaceEntryKind(row.original)} />
+        ),
+      },
+      {
+        accessorKey: "version",
+        header: "Version",
+        cell: ({ getValue }) => `v${getValue<number>()}`,
+      },
+      {
+        id: "updated_at",
+        header: "Updated",
+        cell: ({ row }) =>
+          formatRelative(workspaceManifestTimestamp(row.original)),
+      },
+    ],
+    [],
+  );
+  const jobColumns = useMemo<ColumnDef<WorkspaceJob, unknown>[]>(
+    () => [
+      {
+        id: "job",
+        header: "Job",
+        cell: ({ row }) => (
+          <div className="primary-cell">
+            <strong>{humanize(row.original.kind)}</strong>
+            <code title={row.original.job_ref}>
+              {shortId(row.original.job_ref, 18)}
+            </code>
+            {row.original.last_error ? (
+              <span className="field-error">{row.original.last_error}</span>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ getValue }) => (
+          <StatusBadge status={getValue<string>()} />
+        ),
+      },
+      {
+        accessorKey: "watermark",
+        header: "Watermark",
+        cell: ({ getValue }) => {
+          const watermark = getValue<number | null>();
+          return watermark === null || watermark === undefined
+            ? "None"
+            : `g${watermark}`;
+        },
+      },
+      {
+        accessorKey: "attempts",
+        header: "Attempts",
+      },
+      {
+        accessorKey: "created_at",
+        header: "Created",
+        cell: ({ getValue }) => formatRelative(getValue<string>()),
+      },
+    ],
+    [],
   );
 
-  function chooseDream(dream: DreamSummary) {
-    setSelectedId(dream.id);
-    setActiveTab("diff");
-    setReviewNote("");
-    setRollbackOpen(false);
+  function queueDream(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (canDream) dreamMutation.mutate();
   }
 
-  function submitRollback(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (rollbackReason.trim() && !readOnly) rollbackMutation.mutate();
+  function refreshBackground() {
+    void queryClient.invalidateQueries({ queryKey: ["workspace-jobs"] });
+    void queryClient.invalidateQueries({ queryKey: ["workspace-manifest"] });
+    void queryClient.invalidateQueries({ queryKey: ["workspace-changes"] });
   }
 
   return (
     <Page>
-      <PageHeader title="Dreams" description="Candidate revisions, gates, review, promotion, and rollback" />
+      <PageHeader
+        title="Background"
+        description="Maintenance proposals and visible workspace changes"
+        actions={
+          <button
+            className="icon-button"
+            type="button"
+            onClick={refreshBackground}
+            aria-label="Refresh background state"
+            title="Refresh"
+          >
+            <RefreshCw size={17} aria-hidden="true" />
+          </button>
+        }
+      />
       {readOnly ? <ReadOnlyNotice /> : null}
-      <div className="dream-layout">
-        <Section title="Queue" meta={dreams.length ? `${dreams.length} jobs` : undefined} className="dream-queue">
-          {dreamsQuery.isPending ? <LoadingState label="Loading dream jobs" /> : null}
-          {dreamsQuery.isError ? <ErrorState error={dreamsQuery.error} retry={() => void dreamsQuery.refetch()} /> : null}
-          {dreamsQuery.isSuccess && !dreams.length ? <EmptyState title="No dream jobs" /> : null}
-          <div className="dream-list">
-            {sortedDreams.map((dream) => (
-              <button key={dream.id} type="button" className={dream.id === activeId ? "active" : undefined} onClick={() => chooseDream(dream)}>
-                <div><strong>{dream.region ?? shortId(dream.id)}</strong><StatusBadge status={dream.status} /></div>
-                <span>{dream.trigger ? humanize(dream.trigger) : "Unspecified trigger"}</span>
-                <time>{formatDate(dream.updated_at ?? dream.created_at)}</time>
+
+      <div className="metric-grid">
+        <Metric label="Workspace generation" value={generation} />
+        <Metric label="Proposal files" value={proposals.length} />
+        <Metric label="Background changes" value={backgroundChanges.length} />
+        <Metric
+          label="Background jobs"
+          value={jobs.length}
+          detail={
+            jobsQuery.isError
+              ? "Unavailable"
+              : activeJobs
+                ? `${activeJobs} active`
+                : "No active jobs"
+          }
+        />
+      </div>
+
+      <Section title="Background state" actions={<Sparkles size={18} aria-hidden="true" />}>
+        <DefinitionList
+          items={[
+            {
+              label: "Proposal source",
+              value: "Current Markdown entries",
+            },
+            {
+              label: "Worker jobs",
+              value: jobsQuery.isError
+                ? "Job feed unavailable"
+                : `${jobs.length} recent jobs loaded`,
+            },
+            {
+              label: "Patch diff",
+              value: "Stored proposal Markdown only",
+            },
+            {
+              label: "Review and revert",
+              value: "No workspace endpoint available",
+            },
+          ]}
+        />
+      </Section>
+
+      <div className="workspace-split">
+        <Section title="Dream pass" actions={<Sparkles size={18} aria-hidden="true" />}>
+          <form className="form-grid" onSubmit={queueDream}>
+            <label className="field field-span-2">
+              <span>Focus</span>
+              <textarea
+                rows={4}
+                value={focus}
+                onChange={(event) => setFocus(event.target.value)}
+                disabled={!canDream}
+              />
+            </label>
+            <div className="form-actions field-span-2">
+              <button
+                className="button primary"
+                type="submit"
+                disabled={!canDream || dreamMutation.isPending}
+                title={
+                  canDream
+                    ? undefined
+                    : "Requires a credential with dream access"
+                }
+              >
+                <Play size={17} aria-hidden="true" />
+                {dreamMutation.isPending ? "Queueing" : "Run now"}
               </button>
-            ))}
-          </div>
+            </div>
+          </form>
+          {dreamMutation.isError ? (
+            <ErrorState
+              error={dreamMutation.error}
+              title="Unable to queue dream pass"
+            />
+          ) : null}
+          {dreamMutation.data ? (
+            <div className="receipt-heading" role="status">
+              <StatusBadge
+                status={
+                  dreamMutation.data.data.status ?? dreamMutation.data.status
+                }
+              />
+              <code>
+                {dreamMutation.data.data.job_ref ??
+                  dreamMutation.data.data.reason ??
+                  `generation:${dreamMutation.data.data.workspace_generation}`}
+              </code>
+            </div>
+          ) : null}
         </Section>
 
-        <div className="dream-detail">
-          {!activeId && !dreamsQuery.isPending ? <EmptyState title="Select a dream job" /> : null}
-          {dreamQuery.isPending ? <LoadingState label="Loading candidate" /> : null}
-          {dreamQuery.isError ? <ErrorState error={dreamQuery.error} retry={() => void dreamQuery.refetch()} /> : null}
-          {dreamQuery.data ? (() => {
-            const dream = dreamQuery.data.data;
-            const hardFailure = dream.gates?.some((gate) => gate.status === "failed");
-            const canReview = ["awaiting_review", "review", "gated"].includes(dream.status);
-            const canRollback = ["promoted", "monitoring"].includes(dream.status);
-            const tabs = [
-              { id: "diff", label: "Candidate diff", count: dream.diff?.length ?? 0 },
-              { id: "gates", label: "Gates", count: dream.gates?.length ?? 0 },
-              { id: "lineage", label: "Lineage", count: dream.lineage?.length ?? 0 },
-              { id: "evaluation", label: "Evaluation" },
-              { id: "audit", label: "Audit", count: dream.audit?.length ?? 0 },
-              { id: "receipts", label: "Receipts" },
-            ];
-            return (
-              <>
-                <Section title={dream.region ?? "Candidate region"} actions={<StatusBadge status={dream.status} />}>
-                  <DefinitionList items={[
-                    { label: "Job", value: <code>{dream.id}</code> },
-                    { label: "Base revision", value: <code>{dream.base_revision ?? "Unknown"}</code> },
-                    { label: "Candidate", value: <code>{dream.candidate_revision ?? "Not built"}</code> },
-                    { label: "Risk", value: <StatusBadge status={dream.risk_level} /> },
-                    { label: "Trigger", value: humanize(dream.trigger) },
-                    { label: "Updated", value: formatDate(dream.updated_at) },
-                  ]} />
-                </Section>
-                <div className="metric-grid compact-metrics">
-                  <Metric label="Changes" value={dream.diff?.length ?? 0} />
-                  <Metric label="Passed gates" value={dream.gates?.filter((gate) => gate.status === "passed").length ?? 0} />
-                  <Metric label="Failed gates" value={dream.gates?.filter((gate) => gate.status === "failed").length ?? 0} />
-                  <Metric label="Evidence links" value={dream.lineage?.length ?? 0} />
-                </div>
-                <Tabs tabs={tabs} active={activeTab} onChange={setActiveTab} />
-
-                <TabPanel id="diff" active={activeTab}>
-                  <Section title="Candidate dispositions" actions={<GitCompare size={18} aria-hidden="true" />}>
-                    {dream.diff?.length ? <div className="diff-list">{dream.diff.map((change, index) => <article key={change.id ?? `${change.kind}-${index}`}><header><strong>{change.target ?? change.kind}</strong><StatusBadge status={change.disposition ?? change.kind} /></header><div className="diff-values"><div><span>Before</span>{change.before !== undefined ? <JsonView value={change.before} label="Before" /> : <em>None</em>}</div><div><span>After</span>{change.after !== undefined ? <JsonView value={change.after} label="After" /> : <em>None</em>}</div></div></article>)}</div> : <EmptyState title="No candidate changes" />}
-                  </Section>
-                </TabPanel>
-
-                <TabPanel id="gates" active={activeTab}>
-                  <Section title="Deterministic gates" actions={hardFailure ? <ShieldAlert size={18} className="danger-icon" /> : <Check size={18} className="success-icon" />}>
-                    {dream.gates?.length ? <div className="gate-list">{dream.gates.map((gate) => <article key={gate.id}><div><StatusBadge status={gate.status} /><strong>{gate.name}</strong></div>{gate.summary ? <p>{gate.summary}</p> : null}{gate.details !== undefined ? <JsonView value={gate.details} label={`${gate.name} details`} /> : null}</article>)}</div> : <EmptyState title="No gate results" />}
-                  </Section>
-                </TabPanel>
-
-                <TabPanel id="lineage" active={activeTab}>
-                  <Section title="Evidence lineage">{dream.lineage?.length ? <div className="evidence-list">{dream.lineage.map((ref, index) => <div key={`${ref.source_id}-${ref.locator}-${index}`}><div><strong>{ref.source_title ?? ref.source_id ?? "Evidence"}</strong><span>{ref.locator ?? "No locator"}</span></div><code>{shortId(ref.hash, 16)}</code></div>)}</div> : <EmptyState title="No lineage records" />}</Section>
-                </TabPanel>
-
-                <TabPanel id="evaluation" active={activeTab}>
-                  <Section title="Active versus candidate">
-                    {dream.evaluation ? <><div className="metric-grid compact-metrics"><Metric label="Active score" value={dream.evaluation.baseline_score?.toFixed(3) ?? "Not run"} /><Metric label="Candidate score" value={dream.evaluation.candidate_score?.toFixed(3) ?? "Not run"} /><Metric label="Delta" value={dream.evaluation.baseline_score !== undefined && dream.evaluation.candidate_score !== undefined ? (dream.evaluation.candidate_score - dream.evaluation.baseline_score).toFixed(3) : "Unknown"} /><Metric label="Regressions" value={dream.evaluation.regressions?.length ?? 0} /></div>{dream.evaluation.regressions?.length ? <ul className="plain-list">{dream.evaluation.regressions.map((regression) => <li key={regression}>{regression}</li>)}</ul> : null}</> : <EmptyState title="No evaluation result" />}
-                  </Section>
-                </TabPanel>
-
-                <TabPanel id="audit" active={activeTab}>
-                  <Section title="Dream audit trail" actions={<History size={18} aria-hidden="true" />}>
-                    {dream.audit?.length ? <div className="audit-list dream-audit">{dream.audit.map((event) => <div key={event.id}><time>{formatDate(event.created_at)}</time><strong>{event.action}</strong><span>{event.actor ?? "System"}</span><StatusBadge status={event.status} />{event.details !== undefined ? <JsonView value={event.details} label={`${event.action} details`} /> : null}</div>)}</div> : <EmptyState title="No audit events" />}
-                  </Section>
-                </TabPanel>
-
-                <TabPanel id="receipts" active={activeTab}>
-                  <Section title="Promotion receipt">{dream.promotion_receipt !== undefined ? <JsonView value={dream.promotion_receipt} label="Promotion receipt" /> : <EmptyState title="Not promoted" />}</Section>
-                  <Section title="Rollback receipt">{dream.rollback_receipt !== undefined ? <JsonView value={dream.rollback_receipt} label="Rollback receipt" /> : <EmptyState title="No rollback" />}</Section>
-                </TabPanel>
-
-                {(canReview || dream.review) ? (
-                  <Section title="Review decision">
-                    {dream.review?.decision ? <DefinitionList items={[{ label: "Decision", value: <StatusBadge status={dream.review.decision} /> }, { label: "Reviewer", value: dream.review.reviewer ?? "Unknown" }, { label: "Decided", value: formatDate(dream.review.decided_at) }, { label: "Note", value: dream.review.note ?? "No note" }]} /> : null}
-                    {canReview ? <div className="review-form"><label className="field"><span>Review note</span><textarea rows={3} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} disabled={readOnly} /></label><div className="form-actions"><button className="button primary" type="button" onClick={() => reviewMutation.mutate("approve")} disabled={readOnly || hardFailure || reviewMutation.isPending} title={readOnly ? "Requires a read/write credential" : hardFailure ? "A hard gate failed" : undefined}><ThumbsUp size={17} />Approve</button><button className="button secondary" type="button" onClick={() => reviewMutation.mutate("reject")} disabled={readOnly || reviewMutation.isPending} title={readOnly ? "Requires a read/write credential" : undefined}><ThumbsDown size={17} />Reject</button></div>{reviewMutation.isError ? <ErrorState error={reviewMutation.error} title="Review failed" /> : null}</div> : null}
-                  </Section>
-                ) : null}
-
-                {canRollback ? (
-                  <Section title="Rollback">
-                    {!rollbackOpen ? <button className="button danger" type="button" onClick={() => setRollbackOpen(true)} disabled={readOnly} title={readOnly ? "Requires a read/write credential" : undefined}><RotateCcw size={17} />Prepare rollback</button> : <form className="stacked-form" onSubmit={submitRollback}><label className="field"><span>Reason</span><textarea rows={3} value={rollbackReason} onChange={(event) => setRollbackReason(event.target.value)} required /></label><div className="form-actions"><button className="button danger" type="submit" disabled={!rollbackReason.trim() || rollbackMutation.isPending}><RotateCcw size={17} />{rollbackMutation.isPending ? "Rolling back" : "Confirm rollback"}</button><button className="button secondary" type="button" onClick={() => setRollbackOpen(false)}><Ban size={17} />Cancel</button></div></form>}
-                    {rollbackMutation.isError ? <ErrorState error={rollbackMutation.error} title="Rollback failed" /> : null}
-                  </Section>
-                ) : null}
-              </>
-            );
-          })() : null}
-        </div>
+        <Section
+          title="Recent jobs"
+          meta={jobs.length ? `${jobs.length} loaded` : undefined}
+        >
+          {jobsQuery.isPending ? (
+            <LoadingState label="Loading background jobs" />
+          ) : null}
+          {jobsQuery.isError ? (
+            <ErrorState
+              error={jobsQuery.error}
+              retry={() => void jobsQuery.refetch()}
+              title="Unable to load background jobs"
+            />
+          ) : null}
+          {jobsQuery.isSuccess ? (
+            <DataTable
+              data={jobs}
+              columns={jobColumns}
+              emptyTitle="No background jobs"
+            />
+          ) : null}
+        </Section>
       </div>
+
+      <div className="workspace-split">
+        <Section
+          title="Proposal Markdown"
+          meta={proposals.length ? `${proposals.length} loaded` : undefined}
+          actions={<FileDiff size={18} aria-hidden="true" />}
+        >
+          {manifestQuery.isPending ? (
+            <LoadingState label="Loading workspace manifest" />
+          ) : null}
+          {manifestQuery.isError ? (
+            <ErrorState
+              error={manifestQuery.error}
+              retry={() => void manifestQuery.refetch()}
+              title="Unable to load proposals"
+            />
+          ) : null}
+          {manifestQuery.isSuccess && !proposals.length ? (
+            <EmptyState title="No proposal Markdown" />
+          ) : null}
+          {proposals.length ? (
+            <>
+              <DataTable
+                data={proposals}
+                columns={columns}
+                onRowClick={setSelected}
+                getRowLabel={(entry) => `Read proposal ${entry.title}`}
+              />
+              {manifestQuery.hasNextPage ? (
+                <div className="section-footer">
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={() => void manifestQuery.fetchNextPage()}
+                    disabled={manifestQuery.isFetchingNextPage}
+                  >
+                    <ChevronsDown size={16} aria-hidden="true" />
+                    {manifestQuery.isFetchingNextPage ? "Loading" : "Load more"}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </Section>
+
+        <Section title="Selected proposal">
+          {selected && proposalQuery.isPending ? (
+            <LoadingState label="Reading proposal" />
+          ) : null}
+          {proposalQuery.isError ? (
+            <ErrorState
+              error={proposalQuery.error}
+              retry={() => void proposalQuery.refetch()}
+              title="Unable to read proposal"
+            />
+          ) : null}
+          {selectedEntry ? (
+            <WorkspaceEntryView entry={selectedEntry} />
+          ) : !selected ? (
+            <EmptyState title="No proposal selected" />
+          ) : null}
+        </Section>
+      </div>
+
+      <Section
+        title="Recent background changes"
+        actions={<History size={18} aria-hidden="true" />}
+      >
+        {changesQuery.isPending ? (
+          <LoadingState label="Loading background changes" />
+        ) : null}
+        {changesQuery.isError ? (
+          <ErrorState
+            error={changesQuery.error}
+            retry={() => void changesQuery.refetch()}
+            title="Unable to load changes"
+          />
+        ) : null}
+        {changesQuery.isSuccess && !backgroundChanges.length ? (
+          <EmptyState title="No recent background changes" />
+        ) : null}
+        {backgroundChanges.length ? (
+          <div className="change-list">
+            {backgroundChanges.map((change) => (
+              <div key={change.generation}>
+                <StatusBadge status={change.operation} />
+                <code>{change.path}</code>
+                <span>{formatDate(change.recorded_at)}</span>
+                <strong>g{change.generation}</strong>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </Section>
     </Page>
   );
 }

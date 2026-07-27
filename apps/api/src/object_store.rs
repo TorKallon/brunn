@@ -392,6 +392,103 @@ impl ObjectStore {
         })
     }
 
+    pub async fn put_user_file_blob(
+        &self,
+        user_id: UserId,
+        content_type: &str,
+        path: &Path,
+    ) -> ApiResult<StoredFile> {
+        let started = Instant::now();
+        let (digest, size_bytes) = sha256_file(path).await?;
+        let key = format!("{}/blobs/{digest}", user_id.0);
+        let body = ByteStream::from_path(path).await.map_err(|error| {
+            ApiError::Internal(format!("could not open object upload file: {error}"))
+        })?;
+        let result = self
+            .client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .content_type(content_type)
+            .content_length(i64::try_from(size_bytes).unwrap_or(i64::MAX))
+            .metadata("sha256", &digest)
+            .if_none_match("*")
+            .body(body)
+            .send()
+            .await;
+        let (outcome, object_version_id) = match result {
+            Ok(output) => (
+                "created",
+                exact_object_version_id(output.version_id(), "streamed object upload")?,
+            ),
+            Err(error)
+                if error
+                    .raw_response()
+                    .is_some_and(|response| response.status().as_u16() == 412) =>
+            {
+                let existing = self
+                    .client
+                    .head_object()
+                    .bucket(&self.bucket)
+                    .key(&key)
+                    .send()
+                    .await
+                    .map_err(|head_error| {
+                        ApiError::Internal(format!(
+                            "could not verify conditionally retained object: {head_error}"
+                        ))
+                    })?;
+                let stored_digest = existing
+                    .metadata()
+                    .and_then(|metadata| metadata.get("sha256"))
+                    .map(String::as_str);
+                if existing.content_length() != Some(i64::try_from(size_bytes).unwrap_or(i64::MAX))
+                    || stored_digest != Some(digest.as_str())
+                {
+                    return Err(ApiError::Internal(
+                        "content-addressed object metadata does not match its key".to_owned(),
+                    ));
+                }
+                (
+                    "deduplicated",
+                    exact_object_version_id(
+                        existing.version_id(),
+                        "streamed object deduplication",
+                    )?,
+                )
+            }
+            Err(error) => {
+                metrics::counter!(
+                    "object_store.operations",
+                    "operation" => "put_file_blob",
+                    "result" => "error"
+                )
+                .increment(1);
+                return Err(ApiError::Internal(format!("object upload failed: {error}")));
+            }
+        };
+        metrics::counter!(
+            "object_store.operations",
+            "operation" => "put_file_blob",
+            "result" => outcome
+        )
+        .increment(1);
+        metrics::histogram!(
+            "object_store.duration_ms",
+            "operation" => "put_file_blob",
+            "result" => outcome
+        )
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
+        metrics::histogram!("object_store.bytes", "operation" => "put_file_blob")
+            .record(size_bytes as f64);
+        Ok(StoredFile {
+            sha256: format!("sha256:{digest}"),
+            size_bytes,
+            object_key: key,
+            object_version_id: Some(object_version_id),
+        })
+    }
+
     pub async fn create_multipart_upload(
         &self,
         user_id: UserId,

@@ -573,7 +573,7 @@
             {"any": ["Malpensa", "MXP"]},
             {"any": ["August 21", "Aug 21"]},
             {"any": ["Stresa", "Baveno", "Lake Maggiore"]},
-            {"any": ["3-4", "3 to 4"]}
+            {"any": ["3-4", "3 to 4", "four calendar days"]}
           ],
           "sources_any": [
             "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
@@ -650,7 +650,7 @@
         {
           "id": "c4",
           "checks": [
-            {"any": ["arrival", "departure", "flight"]},
+            {"any": ["arrival", "departure", "flight", "airfare"]},
             {"any": ["lodging", "room", "availability"]},
             {"any": ["pickup", "handoff", "Malpensa"]},
             {"any": ["verify", "before booking"]}
@@ -680,7 +680,7 @@
           "checks": [
             {"any": ["agent context", "durable-work", "durable work"]},
             {"any": ["agent-first", "agent first"]},
-            {"any": ["learn", "continue", "advance"]}
+            {"any": ["learn", "continue", "advance", "continuity"]}
           ],
           "sources_any": [
             "Projects/Straylight/Straylight.md",

@@ -3,153 +3,170 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { installApiMock, renderApp } from "./renderApp";
 
-const now = "2026-07-11T18:00:00Z";
+const now = "2026-07-26T18:00:00Z";
 
-describe("workspace continuity", () => {
-  it("chains checkpoints without flattening unchanged structured state", async () => {
+describe("simplified workspace continuity", () => {
+  it("opens bounded evidence, exact-reads it, and writes a compact checkpoint", async () => {
     const user = userEvent.setup();
-    let submitted: unknown;
+    let openPayload: Record<string, unknown> | undefined;
+    let checkpointPayload: Record<string, unknown> | undefined;
     installApiMock({
-      "GET /api/v1/sessions/session_1": {
-        status: "complete",
-        corpus_revision: "revision:one",
-        data: {
-          id: "session_1",
-          title: "Continuity test",
-          status: "active",
-          corpus_revision: "revision:one",
-          checkpoint: {
-            id: "checkpoint:old",
-            title: "Old title",
-            objective: "Keep all typed state",
-            created_at: now,
-            corpus_revision: "revision:one",
-            source_refs: ["source:existing"],
-            state: {
-              title: "Old title",
-              objective: "Keep all typed state",
-              current_state: [{
-                title: "Structured state",
-                status: "active",
-                provenance: { source_ref: "source:existing" },
-              }],
-              decisions: [{
-                text: "Retain the decision metadata",
-                authority: "confirmed",
-              }],
-              open_questions: ["What changed?"],
-              next_actions: [{
-                title: "Continue",
-                owner: "agent",
-                due_at: "2026-07-12T18:00:00Z",
-              }],
-              artifacts: ["artifact:one"],
-              custom_context: {
-                reasoning_mode: "evidence_first",
-                token_budget: 24000,
-              },
+      "POST /api/v1/workspace/open": async (request: Request) => {
+        openPayload = (await request.json()) as Record<string, unknown>;
+        return {
+          status: "complete",
+          session_id: "session:open-1",
+          corpus_revision: "generation:42",
+          data: {
+            workspace_generation: 42,
+            checkpoint: {
+              checkpoint_id: "checkpoint:parent",
+              path: ".straylight/checkpoints/parent.md",
+              workspace_generation: 39,
+              text: "# Checkpoint\n\nContinue the trip plan.",
+              source_entries: ["entry:trip"],
             },
+            changes_since_checkpoint: [
+              {
+                generation: 41,
+                operation: "update",
+                path: "Trips/Europe 2026.md",
+                version: 4,
+                content_hash: "sha256:change",
+                recorded_at: now,
+              },
+            ],
+            retrieval_sufficiency: {
+              status: "bounded_evidence",
+              complete_source_count: 1,
+              selected_source_count: 1,
+            },
+            evidence: [
+              {
+                reference: "entry:trip",
+                path: "Trips/Europe 2026.md",
+                title: "Europe 2026",
+                version: 4,
+                content_hash: "sha256:trip",
+                representation: "complete_source",
+                text: "# Europe 2026\n\nRail reservations remain open.",
+                why_selected: ["exact", "lexical"],
+                score: 10,
+              },
+            ],
           },
-          initial_evidence: [{
-            id: "result:one",
-            source_id: "source:new",
-            title: "New evidence",
-          }],
-          operations: [],
+        };
+      },
+      "POST /api/v1/workspace/read": {
+        status: "complete",
+        data: {
+          workspace_generation: 42,
+          items: [
+            {
+              reference: "entry:trip",
+              path: "Trips/Europe 2026.md",
+              title: "Europe 2026",
+              version: 4,
+              version_ref: "entry-version:trip-v4",
+              content_hash: "sha256:trip",
+              media_type: "text/markdown",
+              view: "full",
+              status: "complete",
+              text: "# Europe 2026\n\nRail reservations remain open.",
+              metadata: { authority: "owner" },
+              updated_at: now,
+            },
+          ],
         },
       },
-      "POST /api/v1/memory/checkpoint": async (request: Request) => {
-        submitted = await request.json();
+      "POST /api/v1/workspace/checkpoint": async (request: Request) => {
+        checkpointPayload = (await request.json()) as Record<string, unknown>;
         return {
           status: "committed",
+          session_id: "session:open-1",
           data: {
-            id: "checkpoint:new",
-            title: "Updated title",
-            created_at: now,
+            checkpoint_id: "checkpoint:next",
+            checkpoint_ref: "checkpoint:next",
+            path: ".straylight/checkpoints/next.md",
+            workspace_generation: 43,
+            source_entries: ["entry:trip"],
+            write: {
+              entry_ref: "entry:checkpoint",
+              version_ref: "entry-version:checkpoint-v1",
+              path: ".straylight/checkpoints/next.md",
+              version: 1,
+              content_hash: "sha256:checkpoint",
+              workspace_generation: 43,
+              no_op: false,
+            },
           },
         };
       },
     });
-    renderApp("/sessions/session_1", "write-token");
+    renderApp("/work", "write-token");
 
-    const title = await screen.findByRole("textbox", { name: "Title" });
-    expect(title).toHaveValue("Old title");
-    await user.clear(title);
-    await user.type(title, "Updated title");
-    await user.click(screen.getByRole("button", { name: "Commit" }));
+    await user.type(
+      await screen.findByRole("textbox", { name: "Goal" }),
+      "Continue Europe planning",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Resume checkpoint" }),
+      "checkpoint:parent",
+    );
+    await user.click(screen.getByRole("button", { name: "Open" }));
 
-    await waitFor(() => expect(submitted).toBeDefined());
-    const payload = submitted as {
-      parent_checkpoint_id: string;
-      source_refs: string[];
-      state: Record<string, unknown>;
-    };
-    expect(payload.parent_checkpoint_id).toBe("checkpoint:old");
-    expect(payload.source_refs).toEqual(["source:existing", "source:new"]);
-    expect(payload.state.current_state).toEqual([{
-      title: "Structured state",
-      status: "active",
-      provenance: { source_ref: "source:existing" },
-    }]);
-    expect(payload.state.decisions).toEqual([{
-      text: "Retain the decision metadata",
-      authority: "confirmed",
-    }]);
-    expect(payload.state.next_actions).toEqual([{
-      title: "Continue",
-      owner: "agent",
-      due_at: "2026-07-12T18:00:00Z",
-    }]);
-    expect(payload.state.custom_context).toEqual({
-      reasoning_mode: "evidence_first",
+    expect(await screen.findByText("Europe 2026")).toBeInTheDocument();
+    expect(screen.getAllByText("Trips/Europe 2026.md")).toHaveLength(2);
+    expect(
+      screen.getByRole("heading", { name: "Changes since checkpoint" }),
+    ).toBeInTheDocument();
+    expect(openPayload).toMatchObject({
+      task: "Continue Europe planning",
+      resume_checkpoint_ref: "checkpoint:parent",
       token_budget: 24000,
     });
-  });
 
-  it("loads every session page using the returned continuation token", async () => {
-    const user = userEvent.setup();
-    const requestedCursors: Array<string | null> = [];
-    installApiMock({
-      "GET /api/v1/sessions": (request: Request) => {
-        const cursor = new URL(request.url).searchParams.get("cursor");
-        requestedCursors.push(cursor);
-        return cursor === "signed-next-page"
-          ? {
-              status: "complete",
-              data: {
-                items: [{
-                  id: "session_second",
-                  title: "Second page session",
-                  status: "active",
-                  corpus_revision: "revision:two",
-                  updated_at: now,
-                }],
-                total: 2,
-                continuation_token: null,
-              },
-            }
-          : {
-              status: "complete",
-              data: {
-                items: [{
-                  id: "session_first",
-                  title: "First page session",
-                  status: "active",
-                  corpus_revision: "revision:one",
-                  updated_at: now,
-                }],
-                total: 2,
-                continuation_token: "signed-next-page",
-              },
-            };
+    await user.click(screen.getByRole("button", { name: "Read exact" }));
+    expect(
+      await screen.findByLabelText("Europe 2026 content"),
+    ).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Current state" }),
+      "Rail reservations remain open",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Decisions" }),
+      "Use the confirmed flight itinerary",
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Next actions" }),
+      "Book seat reservations",
+    );
+    await user.click(screen.getByRole("button", { name: "Save checkpoint" }));
+
+    await waitFor(() => expect(checkpointPayload).toBeDefined());
+    expect(checkpointPayload).toMatchObject({
+      session_id: "session:open-1",
+      parent_checkpoint_id: "checkpoint:parent",
+      source_refs: ["entry:trip"],
+      state: {
+        objective: "Continue Europe planning",
+        current_state: ["Rail reservations remain open"],
+        decisions: ["Use the confirmed flight itinerary"],
+        next_actions: ["Book seat reservations"],
       },
     });
-    renderApp("/work", "read-token");
+    expect(await screen.findByText("checkpoint:next")).toBeInTheDocument();
+  });
 
-    expect(await screen.findByText("First page session")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Load more" }));
+  it("redirects retired durable-session URLs to the stateless workspace", async () => {
+    installApiMock();
+    renderApp("/sessions/legacy-session", "read-token");
 
-    expect(await screen.findByText("Second page session")).toBeInTheDocument();
-    expect(requestedCursors).toEqual([null, "signed-next-page"]);
+    expect(
+      await screen.findByRole("heading", { name: "Workspace" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No context packet open")).toBeInTheDocument();
   });
 });

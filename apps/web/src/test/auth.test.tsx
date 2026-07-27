@@ -14,7 +14,7 @@ describe("token authentication", () => {
     await user.type(screen.getByLabelText("Access token"), "session-secret");
     await user.click(screen.getByRole("button", { name: "Connect" }));
 
-    expect(await screen.findByRole("heading", { name: "Work" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Workspace" })).toBeInTheDocument();
     expect(window.sessionStorage.getItem(AUTH_SESSION_KEY)).toBe("session-secret");
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const meCall = fetchMock.mock.calls.find(([input]) => new URL(String(input), window.location.origin).pathname === "/api/v1/me");

@@ -12,14 +12,6 @@
     "version",
     "component"
   ],
-  "straylight.compute.step.duration_ms": [
-    "env",
-    "service",
-    "version",
-    "component",
-    "operator",
-    "status"
-  ],
   "straylight.db.transaction.begin.duration_ms": [
     "env",
     "service",
@@ -79,35 +71,90 @@
     "component",
     "operation"
   ],
-  "straylight.read.item.duration_ms": [
-    "env",
-    "service",
-    "version",
-    "component",
-    "view",
-    "status"
-  ],
-  "straylight.retrieval.lane.duration_ms": [
-    "env",
-    "service",
-    "version",
-    "component",
-    "lane",
-    "result"
-  ],
-  "straylight.retrieval.lane.raw_candidates": [
-    "env",
-    "service",
-    "version",
-    "component",
-    "lane",
-    "result"
-  ],
   "straylight.stage.upload_bytes": [
     "env",
     "service",
     "version",
     "component"
+  ],
+  "straylight.simple.open.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.simple.open.evidence_sources": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.simple.search.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.simple.search.candidates": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.simple.read.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.simple.read.entries": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.simple.retrieval.lane_duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "lane",
+    "result"
+  ],
+  "straylight.simple.retrieval.lane_candidates": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "lane"
+  ],
+  "straylight.simple.write.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.simple.write.changed_entries": [
+    "env",
+    "service",
+    "version",
+    "component"
+  ],
+  "straylight.simple.jobs.duration_ms": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "kind",
+    "result"
+  ],
+  "straylight.simple.jobs.batch_size": [
+    "env",
+    "service",
+    "version",
+    "component",
+    "kind",
+    "result"
   ],
   "straylight.worker.job.duration_ms": [
     "env",

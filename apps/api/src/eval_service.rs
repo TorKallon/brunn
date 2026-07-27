@@ -84,6 +84,10 @@ pub struct EvalImportRequest {
     pub delta_documents: Vec<EvalDocument>,
     pub seed_checkpoint: Option<EvalSeedCheckpoint>,
     pub idempotency_key: String,
+    #[serde(default)]
+    pub batch_index: Option<usize>,
+    #[serde(default)]
+    pub batch_count: Option<usize>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -1986,6 +1990,8 @@ mod tests {
             delta_documents: vec![],
             seed_checkpoint: None,
             idempotency_key: "eval-import:abc".to_owned(),
+            batch_index: None,
+            batch_count: None,
         }
     }
 

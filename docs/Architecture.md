@@ -2,376 +2,310 @@
 
 Status: alpha reference architecture
 
-Straylight is an agent-first context and durable-work service. It preserves
-source evidence, learned knowledge, live work state, artifacts, and resumable
-checkpoints so that a later agent can inspect, continue, verify, and advance
-work without replaying an entire transcript or reconstructing a filesystem.
+Straylight is an agent-first workspace and memory service. It provides the
+useful behavior of a shared Markdown vault through an online API, then adds
+portable retrieval, exact binary access, lightweight history, background
+maintenance, usage visibility, and resumable checkpoints.
 
-This document records the implementation architecture. The four initial design
-documents in the shared vault remain the governing product inputs; changing
-their read, write, or dreaming semantics requires an explicit design decision.
+This architecture is the approved simplification of the owner-alpha design.
+The original design documents remain historical product inputs. Where they
+conflict with this document, this document governs the implementation.
+
+## Design Priorities
+
+In order:
+
+1. Match or exceed direct Markdown files for reasoning quality.
+2. Return useful evidence quickly as the workspace grows.
+3. Preserve exact user-authored Markdown and binary bytes.
+4. Make ordinary agent work easy to continue and audit.
+5. Learn and maintain useful context without hiding changes.
+6. Keep failure local, repairable, and inexpensive.
+
+Straylight is not a transcript replay system, a knowledge graph database, a
+distributed transaction coordinator, or a replacement reasoning engine. Codex,
+OpenClaw, and other agents reason with their own tools after Straylight returns
+source material.
 
 ## System Shape
 
 ```mermaid
 flowchart LR
-    A[Agent or SPA] -->|Bearer token| M[MCP or HTTP API]
-    M --> R[Rust service]
-    R --> P[(Postgres and pgvector)]
-    R --> O[(Versioned S3 object storage)]
-    R --> E[OpenAI embeddings]
-    R --> D[OpenAI Responses API]
-    W[Background worker] --> P
+    A["Codex, OpenClaw, or another agent"] --> B["Thin CLI, MCP, or HTTP"]
+    B --> R["Rust API"]
+    S["TypeScript SPA"] --> R
+    R --> P[("PostgreSQL and pgvector")]
+    R --> O[("S3-compatible object storage")]
+    R --> E["OpenAI embeddings"]
+    W["Background worker"] --> P
     W --> O
-    W --> D
-    S[TypeScript SPA] -->|same-origin /api| R
+    W --> E
 ```
 
-All components run in Docker. Postgres, the object store, and the API are bound
-to localhost by default. Only the SPA is deliberately reachable from the
-local network.
+All development components run in Docker. PostgreSQL and object storage stay
+private. Production uses S3 or another compatible cloud object store; MinIO is
+the development implementation.
 
-## Product Boundaries
+## Canonical Data
 
-- Straylight is not a transcript archive, notes application, synchronized
-  folder, generic RAG wrapper, or universal knowledge graph.
-- Markdown and source-native files are evidence and import formats, not the
-  canonical interaction model.
-- Retrieval is an aid to reasoning, not a truth boundary. Complete bounded
-  materialization and exact source reads remain available.
-- Arbitrary code does not execute inside Straylight. `memory.compute` is a
-  bounded declarative surface; capable agents can run additional analysis in
-  their own sandboxes after read-only retrieval.
-- Online capture and offline dreaming are separate authority paths.
+The durable model is deliberately small:
 
-## Ownership And Isolation
+- `users` own data.
+- `api_credentials` grant read-only or read/write capabilities.
+- `entries` provide stable identity for a path.
+- `entry_versions` preserve immutable Markdown content or an exact object-store
+  locator for each version. Portable file annotations on the current version
+  may be corrected without duplicating identical content.
+- `workspace_changes` provide a cheap monotonic generation and changed-path
+  feed.
+- `search_chunks` hold rebuildable FTS and vector search material for current
+  Markdown versions.
+- `jobs` represent retryable background work.
+- `entry_usage` contains fail-open aggregate access counters.
 
-The alpha is multi-user without a separate tenant abstraction. Every durable
-row belongs directly to one internal `user_id`; scope IDs further constrain
-credentials and sessions. There is one shared service deployment, one database,
-and one object store.
+Current Markdown is current workspace truth. Prior entry versions are history.
+Object-store bytes are truth for binary entries. Search chunks, embeddings,
+indexes, link maps, people views, event views, task views, and briefings are
+derived and rebuildable.
 
-Isolation is enforced at several layers:
+People, events, projects, tasks, logistics, sources, authority, relationships,
+and status are Markdown and frontmatter conventions rather than separate
+database object hierarchies. The SPA and agents may derive first-class views
+from those conventions without creating another source of truth.
 
-1. Bearer credentials resolve to one user, a capability set, and explicit
-   scope grants.
-2. Each database transaction installs signed user, credential, capability, and
-   scope context.
-3. Postgres row-level security independently checks the context on every
-   protected table.
-4. Queries also constrain user, scope, and immutable corpus revision directly.
-5. Object keys begin with the owning user ID.
-6. Embeddings, caches, jobs, audit events, continuation tokens, and import
-   receipts never deduplicate across users.
+## Consistency Posture
 
-Read-only credentials retain `open`, `query`, `read`, `compute`, `verify`, and
-`status`. Ordinary read/write credentials add corpus mutation, staging,
-correction, deletion, checkpoint, and dream capabilities. Credential issuance
-and revocation require the separate `credential:manage` owner capability, so a
-normal writer cannot mint a more powerful token.
+Straylight uses short PostgreSQL transactions where partial visibility would
+be confusing. It does not provide distributed ACID behavior across PostgreSQL,
+S3, model providers, workers, or clients.
 
-## Durable Model
+In this document, **atomic** or **publish** means only one small local entry
+change: readers see either the previous version or the new version of that one
+entry. It never means a globally isolated workspace, an all-or-nothing batch,
+or replayable coordination across services. Batch reads, imports, exports,
+semantic indexing, dreaming, and maintenance may make partial progress and
+report exactly what succeeded.
 
-The logical kernel stays small:
+Normal Markdown write:
 
-- **Objects** provide stable identity and immutable revisions. Profiles such as
-  person, organization, event, arrangement, resource, work item, and artifact
-  are composable labels over the same object contract.
-- **Claims** carry value, producer, formation method, claim mode, support state,
-  authority, canonicality, confidence, valid time, lineage, and direct evidence.
-- **Qualified relations** preserve endpoint roles, qualifiers, evidence, and
-  revision history. Similarity and aliases never establish identity.
-- **Temporal and recurrence specifications** preserve civil time, IANA zones,
-  intervals, series rules, stable occurrence identity, and sparse exceptions.
-- **Named state machines** keep schedule, participation, attendance,
-  notification, booking, payment, allocation, availability, use, execution,
-  and validation independent.
-- **Sources, evidence, documents, chunks, and assets** retain source-native
-  content, hashes, locators, and object-storage lineage.
-- **Corpus revisions** are immutable manifests over record versions and
-  dispositions.
-- **Sessions** pin one credential, authorization scope, policy projection, task
-  hash, and corpus revision.
-- **Checkpoints** are immutable work-state objects with parent linkage, goals,
-  decisions, gaps, gates, next actions, and validated source references.
+1. Prepare lexical chunks in memory.
+2. In one brief local database commit, append one entry version, move the
+   current pointer, replace that entry's current chunks, and append one change.
+3. Return immediately with exact and lexical search ready.
+4. Generate semantic embeddings later through bounded background jobs.
 
-There is no global lifecycle field. A scheduled event may coexist with
-tentative participation, unknown attendance, an unpaid arrangement, and an
-unverified work result.
+Semantic publication is intentionally finer grained than a document or job
+batch. Each chunk vector becomes visible through its own short statement, and
+the worker yields between bounded groups. Partial semantic coverage is valid:
+lexical retrieval remains complete, and a retry skips chunks that already have
+vectors. Straylight never holds a document-sized transaction merely to make
+derived embeddings appear together.
+
+Normal binary write:
+
+1. Upload immutable bytes to S3 first.
+2. In one brief local database commit, make the binary entry and its searchable
+   Markdown companion visible together.
+3. If the database commit fails, leave the unreferenced content-addressed
+   object in storage.
+
+The owner-alpha workspace endpoint accepts individual binaries up to 4 GiB.
+It rejects larger files before publication rather than pretending a single S3
+put can support them or adding multipart coordination to the core write path.
+
+Same-path writers use a fail-fast local publish guard and may receive a
+retryable conflict. They do not wait behind a long lock. There is no two-phase
+commit, global corpus lock, full-corpus manifest copy,
+write-ahead replay ledger, or synchronous orphan cleanup. The alpha does not
+automatically delete unreferenced objects: retaining a little unused storage is
+safer than racing a valid publish. A later cleanup design must use an explicit
+lease or provider lifecycle rule and must remain outside the request path.
+Retrieval and unrelated writes never wait for cleanup or derivative work. A
+failed lexical, semantic, description, telemetry, or maintenance lane must not
+discard successful work from another lane.
+
+## Ownership And Access
+
+The service is multi-user in one deployment. Every durable row has one
+`user_id`; object keys are user-prefixed. There is no additional tenant entity
+and no database or container per user.
+
+Bearer credentials are stored as hashes. Read-only credentials expose open,
+search, read, changes, binary fetch, status, manifest, and usage. Read/write
+credentials additionally expose write, capture, checkpoint, binary upload,
+delete, and maintenance controls.
+
+The API validates a credential once per request. Database calls that need
+row-level security install a transaction-local user and capability context;
+this scopes those calls but does not create a request-wide workspace snapshot.
+Row-level security remains the default table boundary. The two bounded
+candidate-ranking functions derive their user only from that validated context
+and run with row security disabled so PostgreSQL can use GIN and HNSW indexes;
+callers cannot supply a user ID.
 
 ## Read Path
 
-`memory.open` creates a snapshot-pinned session and returns a corpus map,
-resolved roots, optional checkpoint and revision delta, bounded complete
-materialization when it fits, an initial hybrid evidence set, and the latest
-fresh hard-gated learned view for the same immutable revision. Learned items
-are labeled `derived_non_authoritative`, retain direct source links, and are
-omitted rather than served stale when no candidate exactly matches the pinned
-revision. They never replace source evidence or alter absence guarantees.
+`open` is a stateless reasoning packet, not a durable session snapshot:
 
-Open is optimized as the first reasoning packet, not merely as a session
-handshake. Its selector gives exact references and titles priority, detects a
-sharp relevance drop instead of filling every result slot, and groups multiple
-relevant sections from the strongest source before broadening. Ordinary query
-keeps the source-diverse ranking used for discovery.
+1. Read the user's current workspace generation.
+2. Run bounded exact, lexical, and semantic candidate searches independently.
+3. Retain successful lanes if another lane fails.
+4. Merge candidates by entry rather than returning duplicate chunks.
+5. Hydrate the strongest coherent Markdown entries under one token budget.
+6. Optionally read one checkpoint and changed paths since its generation.
 
-After selection, open groups candidates by source and hydrates sources in rank
-order. Up to four sources may be loaded completely under one 32,000-character
-source budget; the strongest source may consume the shared budget instead of
-being rejected by an arbitrary per-file cap. A source that does not fit keeps
-its selected exact sections, ranges, and references. `likely_sufficient`
-requires both task-anchor coverage and a complete primary source; it is a
-retrieval hint, not proof that every requested output facet is supported.
+The exact lane uses paths and exact titles. The lexical lane uses PostgreSQL
+FTS and a GIN index. The semantic lane embeds the query and uses pgvector HNSW.
+Each lane has a 2.5-second budget so a slow optional dependency cannot delay
+successful evidence from another lane. Candidate ranking is bounded before
+content hydration. No read computes a
+corpus map, exact corpus count, global manifest, or full materialization.
 
-`memory.query` combines independent exact, structured, PostgreSQL FTS,
-pgvector semantic, temporal, and relation lanes. Reciprocal-rank fusion merges
-candidates while preserving lane scores and `why_selected`. Authority,
-canonicality, freshness, contradiction, and valid time remain visible and are
-not collapsed into one truth score.
+`search` runs at most four bounded queries concurrently and returns compact
+candidates with path, entry reference, current version, heading, and excerpt.
+Hashes remain available on exact read and manifest responses; ranking scores
+and lane diagnostics are emitted through telemetry rather than repeated in
+ordinary reasoning packets.
 
-`memory.read` resolves exact typed references and source-native views,
-including current state, full content, ranges, outline, neighbors, relations,
-history, diffs, and materialized scope.
-
-`memory.compute` performs bounded filters, joins, groups, aggregations,
-timelines, diffs, state history, identity resolution, recurrence expansion,
-graph traversal, unit-aware arithmetic, proximity checks, and gate rollups.
-Every result carries evidence references or an explicit unsupported status.
-
-`memory.verify` accepts claims plus optional evidence or structured coordinates
-and classifies them as supported, contradicted, insufficient, superseded, or
-temporally ambiguous. It may discover relevant evidence, but it never treats
-arbitrary retrieved text as support without a claim match.
-
-The HTTP API retains detailed candidates, coverage, rank receipts, and policy
-audit data. Agent adapters expose a compact reasoning view by default: they
-remove corpus inventory samples, duplicated envelope fields and candidate
-aliases, and ranking mechanics while preserving evidence text, exact paths and
-references needed to reopen excerpts, authority, currentness, checkpoints,
-deltas, learned context, gaps, conflicts, and policy receipts. Agents start
-with open, query only unresolved gaps, and batch exact path, reference, or
-range reads when several sources are needed. The transport carries up to twelve hydrated
-source entries under a 32,000-character source-text budget, marks overflow
-sources as pointers, and never asks an agent to reread a complete source. It
-records source-text, metadata, complete-source, pointer, and sufficiency metrics
-for evaluation. MCP emits one textual JSON representation by default so the
-same payload is not duplicated as `structuredContent`.
-
-## Usage Telemetry
-
-Agent read operations append content-free access telemetry after policy
-projection. This does not change any `memory.open`, `memory.query`,
-`memory.read`, `memory.compute`, or `memory.verify` request or response field,
-and telemetry does not affect retrieval rank, authority, dreaming, retention,
-or corpus state.
-
-The post-policy collector inspects only reasoning-bearing fields:
-
-- open evidence, hydrated sources, bounded materialization, checkpoint and
-  revision deltas, and learned context
-- query results
-- successful or partial exact reads
-- compute outputs and their evidence
-- verification claims and evidence
-
-Corpus-map inventory samples, projection metadata, failed exact-read targets,
-write receipts, stages, audit browsing, and control-plane reads do not count as
-reasoning use. Every projected response writes at most one immutable event per
-distinct visible record, with a reference-occurrence count for diagnostics.
-
-## Production Observability
-
-The API and worker emit bounded, content-free DogStatsD metrics through a
-fail-open in-process exporter. Counters are aggregated before transmission and
-latency, size, token, candidate, and queue-age histograms are sent as Datadog
-distributions so percentiles remain meaningful across replicas.
-
-The metric surface covers HTTP traffic and structured failures, authentication
-and capability denial, database transactions and pool pressure, object
-storage, embedding and model dependencies, retrieval lanes and coverage,
-exact reads, deterministic compute, verification, writes, capture, policy
-projection, usage tracking, dreaming, queue health, deletion propagation, and
-worker liveness. All series carry unified `env`, `service`, and `version` tags
-plus a bounded `component` tag.
-
-Identifiers and content never become metric tags. User, credential, session,
-scope, record, source, path, query, title, request ID, model output, and error
-message detail remains in audited records or structured logs. The Datadog
-Agent is an optional deployment dependency: telemetry failure is visible in
-logs and exporter self-telemetry but cannot fail a memory operation.
-Events retain user, scope, credential, session, pinned revision, projection
-receipt, operation, record ID, and timestamp, but no source text, task text, or
-query text.
-
-`GET /v1/usage` rolls chunk, evidence, document, claim, object, relation, and
-asset access up to the source episode that supported it. A source use is one
-source in one projected response, even when several records from the source
-were present. The response includes active, used, and never-used source counts,
-operation totals, and bounded most-used, least-used, and least-recently-used
-lists. Never-used sources are derived by left joining telemetry against the
-active corpus, so absence of an event remains visible.
-
-Telemetry is append-only, user- and scope-isolated with forced RLS, and
-queryable by authorized read credentials. Read-only credentials still cannot
-mutate corpus or workspace state; the trusted service writes telemetry in the
-same way it already writes projection and audit receipts. Telemetry failure is
-logged after the projection transaction and cannot fail or alter the read that
-produced it.
+`read` batches exact paths or entry references and returns full text, an
+outline, or an exact line range. A response-wide four-million-character budget
+still permits lossless export of one maximum-size Markdown entry while
+preventing one batch from materializing dozens of such files; the caller can
+request the remaining exact entries immediately. A mixed-validity batch keeps
+valid entries and reports missing paths per item; one stale path does not
+discard successful reads. Read never substitutes a similarly named file for an
+exact request.
 
 ## Write Path
 
-`memory.capture` is the ordinary source-bearing write surface. It accepts one
-source body or an existing source reference, scope, optional roots and intent,
-an idempotency key, and automatic or draft-only mode. A bounded OpenAI
-structured extraction compiles that input into a complete `memory.save`
-request. The compiler adds the source episode, exact-span evidence, authority
-dimensions, and optimistic base revision, repairs only mechanical schema
-mistakes, and runs deterministic state, identity, completion, confidence, and
-source-integrity checks. Low-risk validated captures commit once through
-`memory.save`; consequential ambiguity returns an inspectable draft without a
-corpus mutation. Existing-source capture must prove that the supplied text is
-present in, or exactly hashes to, that source.
+`write` changes one Markdown or plain-text entry. Equal bytes are a no-op.
+Optional `expected_version` provides ordinary optimistic conflict detection.
+Only that entry's chunks are replaced. Semantic indexing may be deferred
+without delaying lexical availability.
 
-`memory.save` is the canonical atomic write operation. A save requires an
-authenticated user, scope, source episode, policy revision, idempotency key,
-and immutable base corpus revision. It validates all items before a transaction,
-locks mutable heads deterministically, writes evidence and revisions, advances
-the corpus manifest once, appends audit receipts, and queues derivative work.
+`capture` is a convenience write that places durable, source-bearing material
+under `Inbox/Captures/`. It does not compile prose into a hidden typed schema.
+An agent can later edit or move the resulting Markdown like any other entry.
 
-The operation distinguishes create, revise, supersede, retract, relate, and
-tombstone. It does not expose a generic upsert. Proposals, attempted actions,
-file presence, and invitations cannot silently become completion or validation.
+Deleting an entry marks its current head deleted, removes current search
+chunks, and appends one change. Historical versions remain available until an
+explicit retention or account-erasure operation removes them.
 
-`memory.stage` places files or archives in an expiring inspection workspace.
-Archive members are inventoried individually with traversal, symlink, expansion,
-ratio, and size limits. A stage exposes a read-your-writes mini-corpus through
-the normal read/query/compute/verify API. Promotion selects explicit entries and
-commits a replay-safe import receipt; archives are never indexed as opaque
-containers.
+## Checkpoints
 
-Native files remain authoritative, immutable bytes in the versioned object
-store. A logical path keeps one stable asset identity while changed bytes
-create a new version; equal bytes at different paths remain distinct logical
-assets but share content-addressed physical storage. Every opaque native
-version can receive a searchable Markdown companion. That companion is
-explicitly derivative and non-authoritative, and its extracted text or linked
-Markdown context cannot override the native bytes or act as instructions.
+A checkpoint is deterministic Markdown at:
 
-Files larger than the inline staging limit use authenticated, credential-bound
-multipart uploads. Parts are fixed-size, individually hashed, replay-safe, and
-resumable. Completion streams the whole object through SHA-256 verification
-before promotion to a user-scoped content-addressed key. Temporary uploads are
-expired by the worker and aborted before account deletion.
+`.straylight/checkpoints/<checkpoint-id>.md`
 
-Canonical object creation, asset-reference commit, generated-description bind,
-expiry cleanup, and deletion cleanup share one per-user database advisory lock.
-Rollback cleanup releases its failed transaction first, reacquires that lock,
-and rechecks committed asset and completed-upload references before purging a
-content-addressed key. Promotion verifies opaque objects with a bounded stream;
-the advertised multi-gigabyte limit never requires a whole-object memory read.
+It records the goal, decisions, current state, open questions, next actions,
+workspace generation, parent checkpoint, and exact source path/version/hash
+references. The checkpoint is immutable after creation.
 
-The vault importer inventories paths deterministically, opens files without
-following symlinks, checks file identity again at upload time, and preserves
-hash, size, MIME type, modification time, and portable mode. Missing local
-paths never imply deletion. `--mirror` computes a server-backed removal
-preview and requires its exact confirmation hash before advancing a revision.
-The `.carrystate/generated/descriptions/` path component is reserved at every
-depth: imported copies are ignored and regenerated from the authoritative
-native version so a derivative can never return as source evidence. Repeating
-an identical import is an explicit no-write `unchanged` result. Portable export
-metadata is reused only when the source bytes match its hash and size and the
-manifest itself matches `CHECKSUMS.sha256`; this preserves exact timestamp and
-mode values even when an intermediate mounted filesystem rounded them.
+Resume reads that small file plus changed paths after its generation. It does
+not join two complete corpus manifests or recreate prior retrieval state.
 
-Portable export opens a read-only session and pins one corpus revision. It
-writes exact current source bytes, optional historical versions, generated
-companions, and deterministic Markdown projections of first-class native
-records. Paths are traversal-checked and collision-checked under case-folded
-Unicode normalization; every file is hashed, a manifest and checksum ledger
-are written, and the completed directory is published atomically.
+## Binary Files
 
-Checkpoint convenience calls map to the canonical checkpoint save contract and
-do not define a second persistence model.
+A binary entry version points to exact, versioned object-store bytes and
+records hash, size, media type, object key, provider version, provenance, and
+portable file metadata.
 
-## Dreaming
+Every binary has searchable Markdown under:
 
-Phase 0 dreaming is shadow-only. A job pins an active revision, region, policy,
-model, prompt, schema, budget, and expected query families. Deterministic
-maintenance and optional deep consolidation can create only source-bearing
-candidate views, aliases, soft links, clusters, flags, and review-required
-hypotheses.
+`.straylight/binaries/<path-hash>.md`
 
-The worker observes committed corpus revisions and automatically schedules a
-debounced refresh after relevant change or inactivity. A successful candidate
-must pass every hard gate and its paired retrieval evaluation before
-`memory.open` can include its safe, non-review-required derived items. Inclusion
-is automatic only while the candidate is fresh for the exact pinned revision;
-quarantined, rejected, failed, stale, or review-required material is excluded.
+The companion contains original path, exact hash, media type, size,
+description, provenance, and limitations. It is derivative and cannot
+override the bytes. A supplied description is immediately searchable. Without
+one, a background description job is queued and the pending companion remains
+visible.
 
-The worker evaluates active and candidate retrieval behavior, policy and
-lineage invariants, transition safety, and source preservation. The SPA exposes
-the candidate manifest, findings, gates, evaluation, model usage, review
-history, and audit trail. Accepting a Phase 0 review records learning but never
-mutates the active corpus. Promotion and rollback become meaningful only in a
-later phase with a separately approved contract.
+Agents list binaries, inspect metadata, and stream exact versions into a local
+or cloud work environment. The API supplies the expected hash and exact object
+version; CLI and MCP clients verify the streamed bytes before publishing the
+local file.
 
-## Deletion
+## Import And Export
 
-Tombstoning is an explicit destructive workflow, not a memory that says
-"forget this." The active corpus immediately marks the target tombstoned and
-queues propagation. The worker removes affected embeddings, lexical content,
-caches, derived surfaces, and unreferenced object blobs; records each surface
-individually; and completes only when required targets are removed or retained
-for a concrete policy reason. Minimal content-free tombstone and audit records
-remain for stale-reference invalidation and proof of propagation.
+Vault import inventories paths deterministically without following symlinks.
+It records path, hash, byte count, media type, modification time, portable
+mode, and bounded Markdown attachment context.
 
-Controlled content redaction is available only to the administrative worker
-while processing a real deletion job. Application database roles cannot enable
-the bypass themselves.
+Import is resumable per file or small batch. The server's current exact
+path/version/hash is the resume receipt; the client does not maintain a second
+per-file replay ledger. An interrupted import reinventories locally, skips
+completed equal hashes, and continues. It does not roll back successful files
+or hold one transaction for the entire vault. Missing local files do not imply
+deletion unless mirror deletion is explicitly previewed and confirmed.
 
-## Storage And Services
+Markdown is stored byte-for-byte when valid UTF-8. Other content is a binary.
+Binary bytes go to S3 and searchable descriptions remain Markdown entries.
 
-| Component | Responsibility |
-| --- | --- |
-| Rust API | contracts, authorization, transactions, retrieval, control plane |
-| Rust worker | embeddings, dream jobs, deletion propagation, background repair |
-| PostgreSQL 17 | canonical records, immutable revisions, RLS, FTS, jobs, audit; built-in `C.UTF-8` collation and page checksums |
-| pgvector | user-filtered 1536-dimensional semantic embeddings |
-| Versioned S3 store | user-scoped source and artifact blobs; qualified for conditional create, metadata, versions, delete markers, and exact purge |
-| OpenAI | `text-embedding-3-small`, structured online capture, and bounded Phase 0 consolidation |
-| TypeScript SPA | capture, exploration, work, dreaming, audit, settings |
-| TypeScript MCP | typed open-first agent operations and compact reasoning views over HTTP |
+Export reads a keyset-paginated manifest and downloads each listed exact
+version independently. It does not freeze or recheck a whole-workspace
+generation: an unrelated write cannot invalidate hours of completed export
+work. Export verifies hash and size, restores portable metadata, writes a
+checksummed manifest, and publishes only after the destination tree is
+complete. Export failure leaves the existing destination untouched.
+
+## Background Learning
+
+Dreaming is a background editing agent over changed Markdown since a per-user
+watermark:
+
+1. Read bounded changed paths.
+2. Read only the source entries needed for the maintenance task.
+3. Propose ordinary Markdown patches.
+4. Auto-apply low-risk organizational updates with normal versioned writes.
+5. Write high-risk or consequential suggestions as proposal Markdown for user
+   review.
+
+Every applied change is visible in entry history and revertible. There are no
+shadow corpora, candidate manifests, model-authored claim tables, or exact
+whole-workspace revision gates. Dream failures leave the watermark unchanged
+and retry later without blocking normal work.
+
+## Usage And Observability
+
+Search, read, and binary fetch update one fail-open aggregate row per entry.
+The SPA can show most used, least used, most recently used, and least recently
+used material. Usage does not affect source authority or ranking in the alpha.
+
+Metrics and structured logs cover:
+
+- request count, status, and latency
+- exact, lexical, semantic, hydration, and checkpoint latency
+- candidate and evidence counts
+- lane failures and fallbacks
+- entry versions and changed paths per write
+- import/export progress and failure
+- jobs queued, age, attempts, and outcome
+- binary bytes, description state, and cleanup outcome
+- database pool pressure and statement timeouts
+
+User IDs, paths, queries, text, secrets, and binary names never become metric
+tags. Datadog failure cannot fail a workspace operation.
 
 ## Failure Semantics
 
-- Capability and scope failures are explicit and do not widen access.
-- A session never silently advances to a newer corpus revision.
-- Unsupported filters or compute semantics fail explicitly rather than running
-  a broader query.
-- Partial and degraded responses identify unsearched partitions and index lag.
-- `no_result` is never evidence of absence unless a maintained-complete
-  collection proves the searched boundary.
-- Idempotent replays return the original receipt; conflicting payloads return a
-  stable conflict.
-- Capture model or validation failure returns a source-preserving draft and
-  never falls through to an unvalidated write.
-- Background work retries with bounded attempts and records terminal failures.
+- Exact and lexical retrieval remain available when embeddings fail.
+- Successful retrieval lanes survive another lane's timeout.
+- A deferred embedding or description is visible as pending.
+- Usage and metrics fail open.
+- Unreferenced object bytes are retained during the alpha; cleanup never races
+  a publish or blocks a workspace request.
+- Background jobs use bounded attempts and backoff.
+- Import/export progress is resumable.
+- Readiness must include a small authenticated behavioral canary, not only
+  configuration and dependency checks.
 
-## Deployment Boundary
+## Legacy Boundary
 
-The alpha deployment uses one multi-user service, one managed
-PostgreSQL/pgvector database, and one managed versioned cloud S3 object store.
-MinIO is local development and destructive-test infrastructure only.
-Production consumes prebuilt candidate images, exposes only the intended TLS
-edge, uses provider secret stores, forbids development bootstrap credentials,
-and provisions owners through a one-shot database-operator command. Quotas,
-request limiting, complete export, account deletion, coordinated
-backup/restore, release fingerprinting, and bounded production metrics are
-implemented.
-
-The private GitHub source home, invite-only cohort, managed-S3 boundary, and
-Datadog metrics-and-logs direction are approved. Final hostname and brand,
-deployment provider, exact S3 qualification, recovery policy, alert delivery
-and retention, hard spend limits, policy wording, and go/no-go remain owner
-decisions. They may not weaken the user, scope, revision, evidence, capability,
-telemetry-privacy, reasoning-quality, or token-efficiency contracts above.
+The owner-alpha object/claim/evidence/relation/corpus-manifest tables and API
+remain temporarily available for migration and rollback. New integrations use
+the workspace API. Legacy data is migrated by rendering current source-bearing
+state as Markdown and preserving exact binary objects; legacy projections and
+manifests are not copied into the new canonical model. The new worker does not
+poll legacy indexing, dreaming, or multi-surface record-deletion queues.
+Rollback uses the retained owner-alpha image rather than carrying those loops
+in the workspace runtime.

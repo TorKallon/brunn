@@ -52,6 +52,34 @@ test("API client binds credentials and optional evaluation headers", async () =>
   assert.equal(response.elapsedMs >= 0, true);
 });
 
+test("API client exposes the paginated workspace change feed", async () => {
+  const calls: string[] = [];
+  const client = new StraylightApiClient(
+    "http://straylight.test/",
+    "read-token",
+    async (input) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({
+        status: "complete",
+        data: {
+          since_generation: 240,
+          workspace_generation: 500,
+          changes: [],
+          truncated: true,
+          next_generation: 440,
+        },
+      }), { status: 200 });
+    },
+  );
+
+  const response = await client.workspaceChanges(240, 200);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [
+    "http://straylight.test/v1/workspace/changes?since_generation=240&limit=200",
+  ]);
+});
+
 test("API client preserves structured service failures", async () => {
   const fakeFetch: typeof fetch = async () => new Response(JSON.stringify({
     error: { code: "capability_denied", message: "checkpoint requires write access" },
@@ -66,21 +94,26 @@ test("API client preserves structured service failures", async () => {
   );
 });
 
-test("API client fetches the session-pinned version without returning bytes", async () => {
+test("API client fetches one exact historical version without returning bytes", async () => {
   const assetRoot = await mkdtemp(join(tmpdir(), "carrystate-client-assets-"));
-  const assetRef = "asset:019f8505-da09-7d14-afd0-a9e27e47fdb7";
+  const assetRef = "entry:019f8505-da09-7d14-afd0-a9e27e47fdb7";
   const sessionId = "session:019f8505-fad9-7150-8f07-722426dab1db";
   const bytes = Buffer.from([0, 255, 100, 0, 33, 17, 42, 99]);
   const digest = createHash("sha256").update(bytes).digest("hex");
-  const calls: Array<{ url: string; authorization: string | null }> = [];
+  const calls: Array<{
+    url: string;
+    authorization: string | null;
+    hasDeadline: boolean;
+  }> = [];
   const fakeFetch: typeof fetch = async (input, init) => {
     calls.push({
       url: String(input),
       authorization: new Headers(init?.headers).get("authorization"),
+      hasDeadline: init?.signal instanceof AbortSignal,
     });
     if (calls.length === 1) {
       return new Response(JSON.stringify({
-        asset_ref: assetRef,
+        entry_ref: assetRef,
         version: 3,
         content_hash: `sha256:${digest}`,
         size_bytes: bytes.byteLength,
@@ -125,14 +158,16 @@ test("API client fetches the session-pinned version without returning bytes", as
     assert.equal(rendered.includes(bytes.toString("base64")), false);
     assert.deepEqual(calls, [
       {
-        url: `http://straylight.test/v1/assets/${encodeURIComponent(assetRef)}`
-          + `?session_id=${encodeURIComponent(sessionId)}`,
+        url: `http://straylight.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}`
+          + "?version=3",
         authorization: "Bearer read-token",
+        hasDeadline: true,
       },
       {
-        url: `http://straylight.test/v1/assets/${encodeURIComponent(assetRef)}`
-          + `/versions/3/content?session_id=${encodeURIComponent(sessionId)}`,
+        url: `http://straylight.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}`
+          + "/content?version=3",
         authorization: "Bearer read-token",
+        hasDeadline: true,
       },
     ]);
   } finally {
@@ -140,13 +175,15 @@ test("API client fetches the session-pinned version without returning bytes", as
   }
 });
 
-test("API client rejects a requested version that is not pinned to the session", async () => {
-  const assetRef = "asset:019f8505-da09-7d14-afd0-a9e27e47fdb7";
+test("API client rejects metadata that does not match the requested version", async () => {
+  const assetRef = "entry:019f8505-da09-7d14-afd0-a9e27e47fdb7";
   let fetchCalls = 0;
-  const fakeFetch: typeof fetch = async () => {
+  let requestedUrl = "";
+  const fakeFetch: typeof fetch = async (input) => {
     fetchCalls += 1;
+    requestedUrl = String(input);
     return new Response(JSON.stringify({
-      asset_ref: assetRef,
+      entry_ref: assetRef,
       version: 3,
       content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       size_bytes: 1,
@@ -157,13 +194,53 @@ test("API client rejects a requested version that is not pinned to the session",
 
   await assert.rejects(
     client.fetchAsset(assetRef, "session:1", 2),
-    /version 2 is not active/,
+    /returned version 3 for requested version 2/,
   );
   assert.equal(fetchCalls, 1);
+  assert.equal(
+    requestedUrl,
+    `http://straylight.test/v1/workspace/binaries/${encodeURIComponent(assetRef)}?version=2`,
+  );
+});
+
+test("ordinary API requests have a bounded deadline", async () => {
+  const fakeFetch: typeof fetch = async (_input, init) => new Promise<Response>(
+    (_resolve, reject) => {
+      const signal = init?.signal;
+      assert.ok(signal);
+      const watchdog = setTimeout(
+        () => reject(new Error("request deadline did not fire")),
+        250,
+      );
+      const rejectWithReason = () => {
+        clearTimeout(watchdog);
+        reject(signal.reason);
+      };
+      if (signal.aborted) {
+        rejectWithReason();
+      } else {
+        signal.addEventListener("abort", rejectWithReason, { once: true });
+      }
+    },
+  );
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    fakeFetch,
+    {},
+    undefined,
+    { requestMs: 10 },
+  );
+
+  await assert.rejects(
+    client.request("/v1/status"),
+    (error: unknown) => error instanceof DOMException
+      && (error.name === "TimeoutError" || error.name === "AbortError"),
+  );
 });
 
 test("asset fetch failures never echo upstream payloads", async () => {
-  const assetRef = "asset:019f8505-da09-7d14-afd0-a9e27e47fdb7";
+  const assetRef = "entry:019f8505-da09-7d14-afd0-a9e27e47fdb7";
   const secret = Buffer.from("upstream binary payload").toString("base64");
   const metadataFailureClient = new StraylightApiClient(
     "http://straylight.test",
@@ -198,7 +275,7 @@ test("asset fetch failures never echo upstream payloads", async () => {
       calls += 1;
       if (calls === 1) {
         return new Response(JSON.stringify({
-          asset_ref: assetRef,
+          entry_ref: assetRef,
           version: 1,
           content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
           size_bytes: 1,
@@ -263,6 +340,8 @@ test("staging preserves nested logical paths and requests binary descriptions", 
   const nested = join(importRoot, "Trips", "Receipts");
   const filePath = join(nested, "scan.png");
   let form: FormData | undefined;
+  let idempotencyKey: string | null = null;
+  let hadDeadline = false;
   try {
     await mkdir(nested, { recursive: true });
     await writeFile(filePath, Buffer.from("fixture"));
@@ -272,7 +351,9 @@ test("staging preserves nested logical paths and requests binary descriptions", 
       "write-token",
       async (_input, init) => {
         form = init?.body as FormData;
-        return new Response(JSON.stringify({ stage_ref: "stage:1" }), {
+        idempotencyKey = new Headers(init?.headers).get("idempotency-key");
+        hadDeadline = init?.signal instanceof AbortSignal;
+        return new Response(JSON.stringify({ status: "complete", data: { entry_ref: "entry:1" } }), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
@@ -286,9 +367,23 @@ test("staging preserves nested logical paths and requests binary descriptions", 
     );
 
     assert.ok(form);
-    assert.equal(form.get("describe_binaries"), "true");
+    assert.match(String(form.get("limitations")), /immutable binary bytes/);
     assert.deepEqual(form.getAll("path"), ["Trips/Receipts/scan.png"]);
+    assert.equal(form.get("media_type"), "image/png");
+    assert.equal(
+      form.get("expected_content_hash"),
+      "sha256:f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d",
+    );
     assert.equal((form.get("file") as File).name, "scan.png");
+    const expectedIdempotencyKey = createHash("sha256")
+      .update("vault:fixture")
+      .update("\0")
+      .update("scope:primary")
+      .update("\0")
+      .update("Trips/Receipts/scan.png")
+      .digest("hex");
+    assert.equal(idempotencyKey, `stage:${expectedIdempotencyKey}`);
+    assert.equal(hadDeadline, true);
   } finally {
     if (previousImportRoot === undefined) {
       delete process.env.STRAYLIGHT_MCP_IMPORT_ROOT;

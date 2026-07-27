@@ -121,6 +121,7 @@ pub struct ObjectRestoreSummary {
 pub struct DatabaseRemapSummary {
     pub mapping_entries: usize,
     pub asset_versions_updated: u64,
+    pub workspace_entry_versions_updated: u64,
     pub upload_temporary_versions_updated: u64,
     pub upload_canonical_versions_updated: u64,
     pub account_exports_updated: u64,
@@ -1183,6 +1184,11 @@ pub async fn verify_database_references(
                   content_hash::text,size_bytes
            FROM straylight.account_exports
            WHERE status='ready' AND object_key IS NOT NULL
+           UNION ALL
+           SELECT 'entry_versions',$1::text,object_key,object_version_id,
+                  content_sha256::text,size_bytes
+           FROM straylight.entry_versions
+           WHERE object_key IS NOT NULL
          ) AS authoritative
          ORDER BY relation,object_key,object_version_id NULLS FIRST",
     )
@@ -1446,8 +1452,14 @@ pub async fn remap_database(
            SELECT 'account_exports',object_key,object_version_id,false
            FROM straylight.account_exports
            WHERE object_key IS NOT NULL AND object_version_id IS NOT NULL
+           UNION ALL
+           SELECT 'entry_versions',object_key,object_version_id,false
+           FROM straylight.entry_versions
+           WHERE object_key IS NOT NULL AND object_version_id IS NOT NULL
          )
-         SELECT relation,object_key,object_version_id
+         SELECT referenced.relation,
+                referenced.object_key,
+                referenced.object_version_id
          FROM referenced
          LEFT JOIN object_version_restore_map mapping
            ON mapping.object_key=referenced.object_key
@@ -1455,8 +1467,9 @@ pub async fn remap_database(
             mapping.source_version_id,
             mapping.restored_version_id
           )
-         WHERE mapping.restored_version_id IS NULL AND NOT may_be_absent
-         ORDER BY relation,object_key
+         WHERE mapping.restored_version_id IS NULL
+           AND NOT referenced.may_be_absent
+         ORDER BY referenced.relation,referenced.object_key
          LIMIT 20",
     )
     .fetch_all(&mut *transaction)
@@ -1518,6 +1531,16 @@ pub async fn remap_database(
             .context("could not remap immutable asset-version object locators")?;
     let asset_versions_updated =
         u64::try_from(asset_versions_updated).context("asset remap returned a negative count")?;
+    let workspace_entry_versions_updated = sqlx::query(
+        "UPDATE straylight.entry_versions version
+         SET object_version_id=mapping.restored_version_id
+         FROM object_version_restore_map mapping
+         WHERE mapping.object_key=version.object_key
+           AND mapping.source_version_id=version.object_version_id",
+    )
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
     let upload_temporary_versions_updated = sqlx::query(
         "UPDATE straylight.asset_uploads upload
          SET temporary_object_version_id=mapping.restored_version_id
@@ -1597,6 +1620,16 @@ pub async fn remap_database(
            FROM straylight.account_exports
            WHERE object_key IS NOT NULL
              AND object_version_id IS NOT NULL
+           UNION ALL
+           SELECT 'entry_versions',
+                  NULL::text,
+                  object_key,
+                  object_version_id,
+                  content_sha256::text,
+                  size_bytes
+           FROM straylight.entry_versions
+           WHERE object_key IS NOT NULL
+             AND object_version_id IS NOT NULL
          )
          SELECT referenced.relation,
                 referenced.object_key,
@@ -1653,6 +1686,8 @@ pub async fn remap_database(
            + (SELECT count(*) FROM straylight.asset_uploads
               WHERE temporary_object_version_id IS NOT NULL)
            + (SELECT count(*) FROM straylight.account_exports
+              WHERE object_version_id IS NOT NULL)
+           + (SELECT count(*) FROM straylight.entry_versions
               WHERE object_version_id IS NOT NULL)",
     )
     .fetch_one(&mut *transaction)
@@ -1669,6 +1704,7 @@ pub async fn remap_database(
     Ok(DatabaseRemapSummary {
         mapping_entries: object_entries.len(),
         asset_versions_updated,
+        workspace_entry_versions_updated,
         upload_temporary_versions_updated,
         upload_canonical_versions_updated,
         account_exports_updated,

@@ -13,6 +13,8 @@ x-common-labels: &common-labels
 
 x-common-environment: &common-environment
   STRAYLIGHT_ENV: ${STRAYLIGHT_ENV:-development}
+  STRAYLIGHT_LEGACY_API_ENABLED: ${STRAYLIGHT_LEGACY_API_ENABLED:-true}
+  STRAYLIGHT_EVALUATION_API_ENABLED: ${STRAYLIGHT_EVALUATION_API_ENABLED:-true}
   RUST_LOG: ${RUST_LOG:-info,straylight=debug}
   STRAYLIGHT_BIND: 0.0.0.0:8080
   STRAYLIGHT_BIND_ADDR: 0.0.0.0:8080

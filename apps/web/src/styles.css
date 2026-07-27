@@ -227,6 +227,11 @@ pre,
   font-size: 0.68rem;
 }
 
+.sidebar-status strong {
+  color: #d4e0dc;
+  font-size: 0.68rem;
+}
+
 .sidebar-status .status-badge {
   padding: 2px 5px;
   border-color: #45635a;
@@ -718,6 +723,69 @@ pre,
   gap: 16px;
 }
 
+.workspace-split {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(420px, 1.1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.workspace-entry-view {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.workspace-entry-view > header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-entry-view > header > div {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.workspace-entry-view > header > div > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.workspace-entry-view > header strong {
+  font-size: 0.9rem;
+}
+
+.workspace-entry-view > header code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.markdown-source {
+  max-width: 100%;
+  max-height: 640px;
+  margin: 0;
+  overflow: auto;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #f6f8f7;
+  color: #263330;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown-source.compact-source {
+  max-height: 280px;
+}
+
 .definition-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1156,6 +1224,19 @@ pre,
   line-height: 1.5;
 }
 
+.result-card p {
+  max-height: 9em;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.result-path {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .result-card footer,
 .record-list footer,
 .scope-list footer {
@@ -1165,6 +1246,10 @@ pre,
   margin-top: 9px;
   color: var(--muted);
   font-size: 0.7rem;
+}
+
+.result-card footer .button {
+  margin-left: auto;
 }
 
 .score {
@@ -1204,6 +1289,39 @@ pre,
 .search-form {
   display: grid;
   gap: 12px;
+}
+
+.search-options-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compact-field {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
+.compact-field input {
+  width: 72px;
+  min-height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.line-range {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .search-input-row {
@@ -1252,6 +1370,42 @@ pre,
   border-color: #73a495;
   background: var(--brand-soft);
   color: var(--brand);
+}
+
+.section-body > .mode-control {
+  margin-bottom: 12px;
+}
+
+.change-list {
+  display: grid;
+}
+
+.change-list > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.72rem;
+}
+
+.change-list > div:last-child {
+  border-bottom: 0;
+}
+
+.change-list code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.change-list span {
+  color: var(--muted);
+}
+
+.change-list strong {
+  white-space: nowrap;
 }
 
 .filter-grid {
@@ -1697,6 +1851,7 @@ pre,
   .topbar { min-height: 58px; padding-left: 57px; }
   .page { padding-inline: 18px; }
   .two-column-layout,
+  .workspace-split,
   .dream-layout { grid-template-columns: 1fr; }
   .dream-queue { position: static; max-height: none; }
   .dream-queue .section-body { max-height: 280px; }
@@ -1730,6 +1885,11 @@ pre,
   .inline-form { grid-template-columns: 1fr; }
   .search-input-row { grid-template-columns: auto minmax(0, 1fr); }
   .search-input-row .button { grid-column: 1 / -1; margin-left: -10px; border-radius: 0 0 var(--radius) var(--radius); }
+  .search-options-row { align-items: stretch; flex-direction: column; }
+  .compact-field { justify-content: space-between; }
+  .change-list > div { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .change-list > div > span:not(.status-badge) { display: none; }
+  .result-card footer .button { width: 100%; margin-left: 0; }
   .readonly-notice { padding: 5px 7px; font-size: 0.68rem; }
   .secret-once { grid-template-columns: minmax(0, 1fr) auto; }
   .secret-once > div { grid-column: 1 / -1; }

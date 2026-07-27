@@ -24,7 +24,7 @@ export function LoginScreen({ error }: { error?: string }) {
           <span className="brand-mark">S</span>
           <div>
             <h1>Straylight</h1>
-            <span>Control plane</span>
+            <span>Workspace &amp; memory</span>
           </div>
         </div>
         <label htmlFor="access-token">Access token</label>

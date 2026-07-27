@@ -237,8 +237,30 @@ def render_fixed_context(case: dict, index: BM25Index, manifest: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_prompt(case: dict, condition: str) -> str:
+def render_prompt(
+    case: dict,
+    condition: str,
+    service_protocol: str = "legacy",
+) -> str:
     scope = case.get("scope", case["workload"])
+    if service_protocol == "simple":
+        service_read_guidance = (
+            "Follow a candidate into its complete entry with an exact "
+            "`./memory read --path \"path/from/search\"` or "
+            "`./memory read --ref \"entry:...\"`. "
+        )
+        service_compute_guidance = (
+            "Do any arithmetic or verification with your own reasoning tools; "
+            "the workspace API intentionally has no compute or verify operation. "
+        )
+    else:
+        service_read_guidance = (
+            "Follow a candidate into its source with "
+            "`./memory read --ref \"chunk:...\" --neighbors 4` or an exact line range. "
+        )
+        service_compute_guidance = (
+            "Use one typed compute or combined verify call only when useful. "
+        )
     if condition == "fixed_pack":
         access = (
             "Read ./context.md. It is your only evidence source. Do not browse, search elsewhere on the machine, "
@@ -258,8 +280,8 @@ def render_prompt(case: dict, condition: str) -> str:
             "`retrieval_sufficiency.status=likely_sufficient` as evidence that the primary source is complete and task anchors "
             "are covered, not as proof that every requested output facet is established. Build a facet checklist from the task "
             "and claim slots; do not query again for facts that packet directly establishes. For unresolved checklist gaps, use one focused "
-            f"`./memory query --scope {json.dumps(scope)} \"question\"`, or `--batch` only for independent gaps. Follow a "
-            "candidate into its source with `./memory read --ref \"chunk:...\" --neighbors 4` or an exact line range. A candidate "
+            f"`./memory query --scope {json.dumps(scope)} \"question\"`, or `--batch` only for independent gaps. "
+            f"{service_read_guidance}A candidate "
             "excerpt is a source lead, not proof that the displayed section is complete: if its path clearly owns an unresolved "
             "claim, read that exact path before searching globally again. A single read call can repeat `--path` or `--ref` to "
             "fetch several exact sources or ranges together. "
@@ -275,12 +297,12 @@ def render_prompt(case: dict, condition: str) -> str:
             "`retrieval_sufficiency.status=likely_sufficient` as evidence that the primary source is complete and task anchors "
             "are covered, not as proof that every requested output facet is established. Build a facet checklist from the task "
             "and claim slots; do not query again for facts that packet directly establishes. For unresolved checklist gaps, use one focused "
-            f"`./memory query --scope {json.dumps(scope)} \"question\"`, or `--batch` only for independent gaps. Follow a "
-            "candidate into its source with `./memory read --ref \"chunk:...\" --neighbors 4` or an exact line range. A candidate "
+            f"`./memory query --scope {json.dumps(scope)} \"question\"`, or `--batch` only for independent gaps. "
+            f"{service_read_guidance}A candidate "
             "excerpt is a source lead, not proof that the displayed section is complete: if its path clearly owns an unresolved "
             "claim, read that exact path before searching globally again. A single read call can repeat `--path` or `--ref` to "
             "fetch several exact sources or ranges together. "
-            "Use one typed compute or combined verify call only when useful. Before answering, persist one checkpoint through "
+            f"{service_compute_guidance}Before answering, persist one checkpoint through "
             "./memory checkpoint. Keep the whole run to four service calls when the evidence permits. Do not browse or use "
             "filesystem search outside this service surface."
         )
@@ -347,6 +369,7 @@ def prepare_case_dir(
     manifest: dict,
     run_id: str | None = None,
     native_metadata: dict[str, Any] | None = None,
+    service_protocol: str = "legacy",
 ) -> tuple[Path, int]:
     run_dir = root / condition / case["id"]
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -374,10 +397,14 @@ def prepare_case_dir(
             run_id=run_id,
             case_id=case["id"],
             checkpoint_id=native_metadata.get("checkpoint_id"),
+            protocol=service_protocol,
         )
     else:
         raise ValueError(f"Unknown condition adapter: {condition}")
-    (run_dir / "prompt.txt").write_text(render_prompt(case, condition), encoding="utf-8")
+    (run_dir / "prompt.txt").write_text(
+        render_prompt(case, condition, service_protocol),
+        encoding="utf-8",
+    )
     return run_dir, context_chars
 
 
@@ -1277,6 +1304,12 @@ async def run_all(args: argparse.Namespace) -> dict:
                 access_mode=case.get("workspace_access", "read_write"),
                 documents=documents_payload,
                 timeout_seconds=args.native_index_timeout,
+                import_path=(
+                    "/v1/workspace/admin/eval/import"
+                    if args.service_protocol == "simple"
+                    else "/v1/admin/eval/import"
+                ),
+                wait_for_semantic=args.service_protocol != "simple",
             )
             write_native_provisioning_state(native_state_path, run_id, native_metadata)
     semaphore = asyncio.Semaphore(args.concurrency)
@@ -1306,6 +1339,7 @@ async def run_all(args: argparse.Namespace) -> dict:
                     manifest=manifest,
                     run_id=run_id,
                     native_metadata=native_metadata.get(case["id"]),
+                    service_protocol=args.service_protocol,
                 )
             environment = None
             if condition == "service_api":
@@ -1368,6 +1402,7 @@ async def run_all(args: argparse.Namespace) -> dict:
             case_id: public_provisioning(metadata)
             for case_id, metadata in native_metadata.items()
         },
+        "service_protocol": args.service_protocol,
         "records": records,
     }
     run["summary"] = summarize(selected_manifest, records)
@@ -1402,6 +1437,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="run only the unchanged filesystem baseline and native service_api condition",
     )
     run_parser.add_argument("--native-index-timeout", type=float, default=300.0)
+    run_parser.add_argument(
+        "--service-protocol",
+        choices=("legacy", "simple"),
+        default="simple",
+    )
     run_parser.add_argument("--out", type=Path, required=True)
     run_parser.add_argument("--report", type=Path)
 
@@ -1435,6 +1475,20 @@ def main() -> None:
         if validated["errors"]:
             raise ValueError("\n".join(validated["errors"]))
         run = load_json(args.input)
+        run.setdefault(
+            "execution_fingerprints",
+            {
+                key: run.get(key)
+                for key in (
+                    "manifest_sha256",
+                    "harness_sha256",
+                    "schema_sha256",
+                    "workspace_cli_sha256",
+                    "native_memory_sha256",
+                )
+                if run.get(key)
+            },
+        )
         case_by_id = {case["id"]: case for case in validated["manifest"]["cases"]}
         corpus_paths = {document.path for document in validated["documents"]}
         selected_cases = [case_by_id[case["id"]] for case in run["manifest"]["cases"]]
@@ -1451,6 +1505,13 @@ def main() -> None:
         run["harness_sha256"] = sha256_file(Path(__file__))
         run["workspace_cli_sha256"] = sha256_file(PROJECT_ROOT / "workspace_cli.py")
         run["native_memory_sha256"] = sha256_file(PROJECT_ROOT / "native_memory.py")
+        run["regrade_fingerprints"] = {
+            "manifest_sha256": run["manifest_sha256"],
+            "harness_sha256": run["harness_sha256"],
+            "schema_sha256": sha256_file(args.schema),
+            "workspace_cli_sha256": run["workspace_cli_sha256"],
+            "native_memory_sha256": run["native_memory_sha256"],
+        }
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
         if args.report:

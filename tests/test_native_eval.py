@@ -25,7 +25,12 @@ from native_eval import (
     text_documents,
     write_native_memory_wrapper,
 )
-from native_memory import build_parser, render_native_response, response_payload_metrics
+from native_memory import (
+    build_parser,
+    operation_request,
+    render_native_response,
+    response_payload_metrics,
+)
 from transition_eval import (
     attach_native_lineage,
     build_codex_command as build_transition_codex_command,
@@ -41,6 +46,7 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
     deny_checkpoint = False
     open_delay = 0.0
     import_failures = 0
+    import_lexical_status = "building"
     issued_credential_token: str | None = "case-token"
     issued_authorization_scope: str | None = None
     session_revision = "revision:delta"
@@ -136,7 +142,12 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                 "checkpoint_id": "checkpoint:seed" if body.get("seed_checkpoint") else None,
                 "base_corpus_revision": "revision:base",
                 "corpus_revision": "revision:delta",
-                "index_status": {"exact": "ready", "lexical": "building", "semantic": "building"},
+                "requested_authorization_scope": body["authorization_scope"],
+                "index_status": {
+                    "exact": "ready",
+                    "lexical": self.import_lexical_status,
+                    "semantic": "building",
+                },
             }
             if self.issued_authorization_scope != "__missing__":
                 data["authorization_scope"] = (
@@ -200,6 +211,40 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                     } for request in body["requests"]],
                 },
             })
+        elif self.path == "/v1/workspace/read":
+            source_refs = self.child.get("source_refs", [])
+            self.send_json(200, {
+                "request_id": "req-workspace-read",
+                "session_id": body.get("session_id", "session:s1"),
+                "corpus_revision": "generation:43",
+                "status": "complete",
+                "data": {
+                    "items": [{
+                        "reference": "entry:child",
+                        "path": ".straylight/checkpoints/child.md",
+                        "text": "# Child checkpoint",
+                        "metadata": {
+                            "kind": "checkpoint",
+                            "checkpoint_ref": self.child["checkpoint_id"],
+                            "parent_checkpoint_ref": self.child[
+                                "parent_checkpoint_id"
+                            ],
+                            "workspace_generation": 42,
+                            "source_refs": source_refs,
+                            "source_entries": [
+                                {
+                                    "path": source_ref,
+                                    "entry_ref": f"entry:{index}",
+                                    "version": 1,
+                                    "content_hash": f"sha256:{index:064x}",
+                                }
+                                for index, source_ref in enumerate(source_refs, 1)
+                            ],
+                        },
+                    }],
+                    "requested_count": 1,
+                },
+            })
         elif self.path.startswith("/v1/memory/"):
             operation = self.path.rsplit("/", 1)[-1]
             self.send_json(200, {
@@ -219,6 +264,7 @@ def fake_server(
     deny_checkpoint: bool = False,
     open_delay: float = 0.0,
     import_failures: int = 0,
+    import_lexical_status: str = "building",
     issued_credential_token: str | None = "case-token",
     issued_authorization_scope: str | None = None,
 ) -> Iterator[tuple[str, type[FakeNativeHandler]]]:
@@ -227,6 +273,7 @@ def fake_server(
     handler.deny_checkpoint = deny_checkpoint
     handler.open_delay = open_delay
     handler.import_failures = import_failures
+    handler.import_lexical_status = import_lexical_status
     handler.issued_credential_token = issued_credential_token
     handler.issued_authorization_scope = issued_authorization_scope
     handler.session_revision = FakeNativeHandler.session_revision
@@ -245,6 +292,120 @@ def fake_server(
 
 
 class NativeEvaluationTests(unittest.TestCase):
+    def test_open_passes_project_scope_into_retrieval_task(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            task = Path(temporary) / "task.txt"
+            task.write_text("Resume final parser validation.", encoding="utf-8")
+            args = build_parser().parse_args([
+                "--state", str(Path(temporary) / "state.json"),
+                "--task-file", str(task),
+                "--scope", "Warmind",
+                "--authorization-scope", "eval:run/case",
+                "--protocol", "simple",
+                "open",
+                "--root-ref", "Projects/Warmind/Current.md",
+                "--root-ref", "Projects/Warmind/Rules.md",
+                "--open-object-ref", "entry:one",
+            ])
+            method, path, payload = operation_request(args, {})
+            args.scope = "Recent Work"
+            _, _, generic_payload = operation_request(args, {})
+
+        self.assertEqual((method, path), ("POST", "/v1/workspace/open"))
+        self.assertEqual(payload["task"], "Warmind: Resume final parser validation.")
+        self.assertEqual(
+            payload["hints"]["root_refs"],
+            ["Projects/Warmind/Current.md", "Projects/Warmind/Rules.md"],
+        )
+        self.assertEqual(payload["hints"]["open_object_refs"], ["entry:one"])
+        self.assertEqual(
+            generic_payload["task"],
+            "Resume final parser validation.",
+        )
+
+    def test_simple_changes_exposes_generation_pagination_without_a_session(self):
+        args = build_parser().parse_args([
+            "--state", "/tmp/state.json",
+            "--task-file", "/tmp/task.txt",
+            "--scope", "Alpha",
+            "--authorization-scope", "eval:run/case",
+            "--protocol", "simple",
+            "changes",
+            "--since-generation", "240",
+            "--limit", "200",
+        ])
+
+        method, path, payload = operation_request(args, {})
+
+        self.assertEqual(method, "GET")
+        self.assertEqual(
+            path,
+            "/v1/workspace/changes?since_generation=240&limit=200",
+        )
+        self.assertIsNone(payload)
+
+    def test_simple_read_encodes_paths_and_refs_once(self):
+        args = build_parser().parse_args([
+            "--state", "/tmp/state.json",
+            "--task-file", "/tmp/task.txt",
+            "--scope", "Alpha",
+            "--authorization-scope", "eval:run/case",
+            "--protocol", "simple",
+            "read",
+            "--ref", "entry:one",
+            "--path", "one.md",
+            "--path", "two.md",
+        ])
+
+        method, path, payload = operation_request(
+            args,
+            {"session_id": "session:s1"},
+        )
+
+        self.assertEqual(method, "POST")
+        self.assertEqual(path, "/v1/workspace/read")
+        self.assertEqual(payload, {
+            "session_id": "session:s1",
+            "requests": [
+                {
+                    "ref": "entry:one",
+                    "view": "full",
+                    "max_chars": 20_000,
+                },
+                {
+                    "path": "one.md",
+                    "view": "full",
+                    "max_chars": 20_000,
+                },
+                {
+                    "path": "two.md",
+                    "view": "full",
+                    "max_chars": 20_000,
+                },
+            ],
+        })
+
+        neighbor_args = build_parser().parse_args([
+            "--state", "/tmp/state.json",
+            "--task-file", "/tmp/task.txt",
+            "--scope", "Alpha",
+            "--authorization-scope", "eval:run/case",
+            "--protocol", "simple",
+            "read",
+            "--ref", "entry:one",
+            "--neighbors", "4",
+        ])
+
+        _, _, neighbor_payload = operation_request(
+            neighbor_args,
+            {"session_id": "session:s1"},
+        )
+        self.assertEqual(neighbor_payload["requests"], [{
+            "ref": "entry:one",
+            "view": "full",
+            "max_chars": 20_000,
+        }])
+
     def test_filesystem_asset_helper_refuses_symlink_outside_root_and_wrong_hash(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -390,8 +551,8 @@ class NativeEvaluationTests(unittest.TestCase):
                     expected_size=len(handler.asset_bytes),
                 )
 
-    def test_persisted_provisioning_requires_exact_effective_scope_and_provenance(self):
-        mismatched = {
+    def test_persisted_provisioning_requires_exact_requested_scope_and_provenance(self):
+        valid = {
             "authorization_scope": "scope:root",
             "requested_authorization_scope": "eval:run-a/case-a",
             "token": "one-time-secret",
@@ -402,20 +563,16 @@ class NativeEvaluationTests(unittest.TestCase):
                 }
             },
         }
-        self.assertFalse(
+        self.assertTrue(
             provisioning_matches_run_case(
-                mismatched,
+                valid,
                 run_id="run-a",
                 case_id="case-a",
             )
         )
-        valid = {
-            **mismatched,
-            "authorization_scope": "eval:run-a/case-a",
-        }
-        self.assertTrue(
+        self.assertFalse(
             provisioning_matches_run_case(
-                valid,
+                {**valid, "requested_authorization_scope": "eval:run-a/case-b"},
                 run_id="run-a",
                 case_id="case-a",
             )
@@ -563,6 +720,51 @@ class NativeEvaluationTests(unittest.TestCase):
         self.assertNotIn("source_version", compact_candidate)
         self.assertNotIn("why_selected", compact_candidate)
 
+    def test_simple_query_projection_preserves_search_excerpts(self):
+        response = NativeResponse(
+            body={
+                "status": "complete",
+                "data": {
+                    "workspace_generation": 9,
+                    "results": [{
+                        "id": "q0",
+                        "query_status": "complete",
+                        "candidates": [{
+                            "reference": "entry:1",
+                            "path": "Projects/Warmind/Final handoff.md",
+                            "title": "Final handoff",
+                            "version": 3,
+                            "heading": "Current target",
+                            "excerpt": "The exact current target is commit abc123 on master.",
+                            "additional_sections": [{
+                                "heading": "Prior target",
+                                "excerpt": "The previous branch is historical.",
+                            }],
+                        }],
+                    }],
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+        rendered = json.loads(render_native_response("query", response))
+        self.assertEqual(
+            rendered["data"]["items"][0]["results"][0],
+            {
+                "reference": "entry:1",
+                "path": "Projects/Warmind/Final handoff.md",
+                "title": "Final handoff",
+                "version": 3,
+                "heading": "Current target",
+                "excerpt": "The exact current target is commit abc123 on master.",
+                "additional_sections": [{
+                    "heading": "Prior target",
+                    "excerpt": "The previous branch is historical.",
+                }],
+            },
+        )
+
     def test_open_projection_returns_complete_sources_and_pointer_tail(self):
         response = NativeResponse(
             body={
@@ -622,6 +824,63 @@ class NativeEvaluationTests(unittest.TestCase):
             ["evidence:12"],
         )
         self.assertNotIn("content", rendered["data"]["evidence_leads"][0])
+
+    def test_simple_open_projection_preserves_pointer_leads(self):
+        response = NativeResponse(
+            body={
+                "status": "complete",
+                "data": {
+                    "workspace_generation": 9,
+                    "evidence": [{
+                        "reference": "entry:1",
+                        "path": "Trips/Current.md",
+                        "title": "Current trip",
+                        "version": 2,
+                        "representation": "complete_source",
+                        "text": "Current exact evidence.",
+                    }],
+                    "evidence_leads": [{
+                        "reference": "entry:2",
+                        "path": "Trips/Related.md",
+                        "title": "Related trip",
+                        "version": 1,
+                    }],
+                    "changes_since_checkpoint": [{
+                        "generation": 201,
+                        "path": "Trips/Current.md",
+                    }],
+                    "changes_truncated": True,
+                    "next_changes_generation": 201,
+                    "checkpoint_text_truncated": False,
+                    "retrieval_sufficiency": {
+                        "status": "bounded_evidence",
+                        "complete_source_count": 1,
+                        "selected_source_count": 1,
+                        "pointer_source_count": 1,
+                    },
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+        rendered = json.loads(render_native_response("open", response))
+        self.assertEqual(
+            rendered["data"]["initial_evidence"][0]["content"],
+            "Current exact evidence.",
+        )
+        self.assertEqual(
+            rendered["data"]["evidence_leads"],
+            [{
+                "reference": "entry:2",
+                "path": "Trips/Related.md",
+                "title": "Related trip",
+                "version": 1,
+            }],
+        )
+        self.assertTrue(rendered["data"]["changes_truncated"])
+        self.assertEqual(rendered["data"]["next_changes_generation"], 201)
+        self.assertFalse(rendered["data"]["checkpoint_text_truncated"])
 
     def test_open_projection_applies_total_evidence_text_budget(self):
         response = NativeResponse(
@@ -724,6 +983,53 @@ class NativeEvaluationTests(unittest.TestCase):
         self.assertNotIn("content_hash", json.dumps(item))
         self.assertNotIn("start_byte", json.dumps(item))
 
+    def test_simple_partial_read_preserves_valid_items_and_missing_path(self):
+        response = NativeResponse(
+            body={
+                "status": "partial",
+                "gaps": [{
+                    "kind": "read_entries_not_found",
+                    "missing_requests": 1,
+                }],
+                "data": {
+                    "requested_count": 2,
+                    "missing_requests": 1,
+                    "response_truncated": False,
+                    "items": [
+                        {
+                            "reference": "entry:one",
+                            "path": "one.md",
+                            "view": "full",
+                            "text": "Exact text.",
+                        },
+                        {
+                            "path": "missing.md",
+                            "status": "not_found",
+                            "error": {
+                                "code": "entry_not_found",
+                                "message": "the requested reference was not found",
+                            },
+                        },
+                    ],
+                },
+            },
+            http_status=200,
+            elapsed_ms=1.0,
+            headers={},
+        )
+
+        rendered = json.loads(render_native_response("read", response))
+
+        self.assertEqual(rendered["status"], "partial")
+        self.assertEqual(rendered["data"]["requested_count"], 2)
+        self.assertEqual(rendered["data"]["missing_requests"], 1)
+        self.assertEqual(rendered["data"]["items"][0]["text"], "Exact text.")
+        self.assertEqual(rendered["data"]["items"][1]["path"], "missing.md")
+        self.assertEqual(
+            rendered["data"]["items"][1]["error"]["code"],
+            "entry_not_found",
+        )
+
     def test_checkpoint_projection_keeps_lineage_and_compacts_receipt(self):
         response = NativeResponse(
             body={
@@ -788,12 +1094,8 @@ class NativeEvaluationTests(unittest.TestCase):
                 "parent/admin credential",
             ),
             (
-                {"issued_authorization_scope": "scope:root"},
-                "exact requested scope",
-            ),
-            (
                 {"issued_authorization_scope": "__missing__"},
-                "exact requested scope",
+                "effective scope",
             ),
         )
         with tempfile.TemporaryDirectory() as temporary:
@@ -842,6 +1144,10 @@ class NativeEvaluationTests(unittest.TestCase):
             self.assertEqual(metadata["token"], "case-token")
             self.assertEqual(metadata["corpus_revision"], "revision:delta")
             self.assertEqual(metadata["authorization_scope"], "eval:run-1/case-1")
+            self.assertEqual(
+                metadata["requested_authorization_scope"],
+                "eval:run-1/case-1",
+            )
             self.assertEqual(metadata["provisioning"]["documents"], 2)
             public = public_provisioning(metadata)
             self.assertNotIn("token", json.dumps(public).casefold())
@@ -851,6 +1157,91 @@ class NativeEvaluationTests(unittest.TestCase):
             self.assertEqual(imported["case"], "case 1")
             self.assertEqual([item["path"] for item in imported["body"]["documents"]], ["one.md", "two.json"])
             self.assertTrue(all(item["content_sha256"] for item in imported["body"]["documents"]))
+            status = next(
+                item
+                for item in handler.requests
+                if item["path"] == "/v1/admin/eval/imports/import:1"
+            )
+            self.assertEqual(status["authorization"], "Bearer case-token")
+
+    def test_provision_can_return_as_soon_as_exact_and_lexical_indexes_are_ready(self):
+        with tempfile.TemporaryDirectory() as temporary, fake_server(
+            import_lexical_status="ready",
+        ) as (url, handler):
+            corpus = Path(temporary) / "corpus"
+            corpus.mkdir()
+            (corpus / "one.md").write_text("# One\n\nEvidence.\n", encoding="utf-8")
+            client = NativeApiClient(url, "admin-token", run_id="run", case_id="case")
+
+            metadata = provision_evaluation(
+                client,
+                run_id="run",
+                case_id="case",
+                display_scope="Scale test",
+                access_mode="read_write",
+                documents=text_documents(corpus),
+                timeout_seconds=2,
+                wait_for_semantic=False,
+            )
+
+            self.assertFalse(metadata["provisioning"]["semantic_waited"])
+            self.assertFalse(metadata["provisioning"]["semantic_ready_at_start"])
+            self.assertEqual(
+                metadata["provisioning"]["index_status_at_start"]["lexical"],
+                "ready",
+            )
+            self.assertFalse(any(item["method"] == "GET" for item in handler.requests))
+
+    def test_provision_batches_large_simple_imports_under_one_credential(self):
+        with fake_server(import_lexical_status="ready") as (url, handler):
+            client = NativeApiClient(
+                url,
+                "admin-token",
+                run_id="run",
+                case_id="case",
+            )
+            documents = [
+                {
+                    "path": f"Fixture/{index}.md",
+                    "content": f"# Fixture {index}\n",
+                    "content_sha256": hashlib.sha256(
+                        f"# Fixture {index}\n".encode(),
+                    ).hexdigest(),
+                    "media_type": "text/markdown",
+                }
+                for index in range(5)
+            ]
+            metadata = provision_evaluation(
+                client,
+                run_id="run",
+                case_id="case",
+                display_scope="Scale test",
+                access_mode="read_write",
+                documents=documents,
+                timeout_seconds=2,
+                wait_for_semantic=False,
+                batch_size=2,
+            )
+
+            imports = [
+                item for item in handler.requests
+                if item["path"] == "/v1/admin/eval/import"
+            ]
+            self.assertEqual(len(imports), 3)
+            self.assertEqual(
+                [len(item["body"]["documents"]) for item in imports],
+                [2, 2, 1],
+            )
+            self.assertEqual(
+                [item["body"]["batch_index"] for item in imports],
+                [0, 1, 2],
+            )
+            self.assertTrue(all(
+                item["body"]["batch_count"] == 3 for item in imports
+            ))
+            self.assertEqual(metadata["token"], "case-token")
+            self.assertEqual(metadata["provisioning"]["import_batch_count"], 3)
+            self.assertEqual(metadata["provisioning"]["max_batch_documents"], 2)
 
     def test_native_memory_supports_batched_operations_and_records_metrics(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
@@ -865,6 +1256,7 @@ class NativeEvaluationTests(unittest.TestCase):
                 "--task-file", str(task),
                 "--scope", "Alpha",
                 "--authorization-scope", "eval:run/case",
+                "--protocol", "legacy",
                 "--checkpoint-id", "checkpoint:seed",
                 "--run-id", "run",
                 "--case-id", "case",
@@ -1008,6 +1400,7 @@ class NativeEvaluationTests(unittest.TestCase):
                 "--task-file", str(task),
                 "--scope", "Alpha",
                 "--authorization-scope", "eval:run/case",
+                "--protocol", "legacy",
                 "--checkpoint-id", "checkpoint:seed",
                 "--run-id", "run",
                 "--case-id", "case",
@@ -1037,6 +1430,7 @@ class NativeEvaluationTests(unittest.TestCase):
                 "--task-file", str(task),
                 "--scope", "Alpha",
                 "--authorization-scope", "eval:run/case",
+                "--protocol", "legacy",
                 "--run-id", "run",
                 "--case-id", "case",
             ]
@@ -1073,6 +1467,7 @@ class NativeEvaluationTests(unittest.TestCase):
                 sys.executable, str(ROOT / "native_memory.py"),
                 "--state", str(state), "--task-file", str(task),
                 "--scope", "Alpha", "--authorization-scope", "eval:run/read-only",
+                "--protocol", "legacy",
                 "--run-id", "run", "--case-id", "read-only",
             ]
             env = {**os.environ, "STRAYLIGHT_API_URL": url, "STRAYLIGHT_EVAL_TOKEN": "read-token"}
@@ -1197,6 +1592,70 @@ class NativeEvaluationTests(unittest.TestCase):
                 self.assertTrue(record["lineage"]["parent_match"])
                 self.assertEqual(record["service_calls"], 2)
                 self.assertTrue(any(item["path"] == "/v1/sessions/session:s1" for item in handler.requests))
+            finally:
+                if old_url is None:
+                    os.environ.pop("STRAYLIGHT_API_URL", None)
+                else:
+                    os.environ["STRAYLIGHT_API_URL"] = old_url
+
+    def test_simple_native_transition_reads_durable_checkpoint_entry(self):
+        with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
+            old_url = os.environ.get("STRAYLIGHT_API_URL")
+            os.environ["STRAYLIGHT_API_URL"] = url
+            try:
+                handler.child = {
+                    "checkpoint_id": "checkpoint:aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa",
+                    "parent_checkpoint_id": "checkpoint:bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb",
+                    "corpus_revision": "generation:42",
+                    "source_refs": ["prior.md", "delta.md"],
+                }
+                run_dir = Path(temporary)
+                (run_dir / "native-session.json").write_text(json.dumps({
+                    "session_id": "session:s1",
+                    "checkpoint_id": handler.child["checkpoint_id"],
+                    "checkpoint": handler.child,
+                    "corpus_revision": "generation:43",
+                    "operations": [
+                        {"operation": "resume", "result_chars": 100, "elapsed_ms": 2.5},
+                        {"operation": "checkpoint", "result_chars": 80, "elapsed_ms": 3.5},
+                    ],
+                }))
+                record = {
+                    "answer_path": str(run_dir / "answer.json"),
+                    "condition": "service_api_resume",
+                    "grade": {"pass": True},
+                    "run_id": "run",
+                }
+                case = {"id": "case", "delta_path": "delta.md"}
+                metadata = {
+                    "token": "case-token",
+                    "checkpoint_id": "checkpoint:bbbbbbbbbbbb7bbb8bbbbbbbbbbbbbbb",
+                    "corpus_revision": "generation:42",
+                    "seed_source_refs": ["prior.md"],
+                }
+
+                attach_native_lineage(
+                    record,
+                    case,
+                    metadata,
+                    max_calls=4,
+                    service_protocol="simple",
+                )
+
+                self.assertTrue(record["transition_pass"])
+                self.assertTrue(record["lineage"]["checkpoint_read_via_http"])
+                self.assertTrue(record["lineage"]["parent_match"])
+                self.assertTrue(record["lineage"]["revision_match"])
+                self.assertTrue(record["lineage"]["prior_source_preserved"])
+                self.assertTrue(record["lineage"]["delta_source_preserved"])
+                self.assertTrue(any(
+                    item["path"] == "/v1/workspace/read"
+                    for item in handler.requests
+                ))
+                self.assertFalse(any(
+                    item["path"].startswith("/v1/sessions/")
+                    for item in handler.requests
+                ))
             finally:
                 if old_url is None:
                     os.environ.pop("STRAYLIGHT_API_URL", None)

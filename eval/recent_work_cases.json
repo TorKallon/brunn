@@ -1,0 +1,256 @@
+{
+  "benchmark_version": "recent-work-v0.2",
+  "name": "Straylight recent work and Aether operations evaluation",
+  "report_title": "Straylight recent work and Aether operations evaluation",
+  "report_date": "2026-07-26",
+  "evaluation_model": "recent_personal_and_agent_operations",
+  "grading_mode": "concept_tokens_v1",
+  "fixture_domain": "Sanitized interaction patterns from recent owner work",
+  "corpus_root": "eval/corpus-recent-work-v0.1",
+  "model": "gpt-5.6-sol",
+  "conditions": ["fixed_pack", "filesystem", "workspace"],
+  "fixed_pack_chars": 22000,
+  "fixed_pack_chunks": 18,
+  "cases": [
+    {
+      "id": "recent-europe-source-authority",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "source_authority_and_itinerary_reconciliation",
+      "task": "Reconcile the Europe itinerary. Distinguish the coach sample from booked facts, state the confirmed outbound and return shape, and explain the planning consequence of the return airport.",
+      "claim_slots": {
+        "c1": "authority boundary",
+        "c2": "youth outbound and transfer",
+        "c3": "family outbound and shared return",
+        "c4": "return-airport planning consequence"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["coach sample itinerary"]}, {"any": ["must never be treated as passenger confirmations", "not proof of booking", "not passenger confirmations"]}, {"any": ["passenger-specific airline confirmations are authoritative"]}], "sources_any": ["Trips/Europe 2026/Planning and authority.md", "Trips/Europe 2026/Confirmed itinerary.md"]},
+        {"id": "c2", "checks": [{"any": ["Seattle to Amsterdam to Brussels"]}, {"any": ["August 4-5, 2026"]}, {"any": ["Brussels to Geneva"]}, {"any": ["August 10, 2026"]}], "sources_any": ["Trips/Europe 2026/Confirmed itinerary.md"]},
+        {"id": "c3", "checks": [{"any": ["Seattle to London Heathrow to Geneva"]}, {"any": ["August 9-10, 2026"]}, {"any": ["all four travelers"]}, {"any": ["August 25, 2026"]}], "sources_any": ["Trips/Europe 2026/Confirmed itinerary.md"]},
+        {"id": "c4", "checks": [{"any": ["Milan Linate, not Milan Malpensa", "Milan Linate rather than Milan Malpensa"]}, {"any": ["northern Italy finish remains feasible"]}, {"any": ["final night in Milan", "use Milan for the final night"]}], "sources_any": ["Trips/Europe 2026/Planning and authority.md", "Trips/Europe 2026/Confirmed itinerary.md"]}
+      ],
+      "forbidden": ["the coach sample proves the booking", "the return departs Malpensa", "the youth traveler returns separately"]
+    },
+    {
+      "id": "recent-europe-calendar-dedup",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "calendar_deduplication_and_truthful_action_reporting",
+      "task": "Handle the request to add every confirmed Europe flight to the family calendar. State what the bounded search found, whether any write is needed, and how the completed work should be reported.",
+      "claim_slots": {
+        "c1": "bounded duplicate search",
+        "c2": "existing coverage",
+        "c3": "write decision",
+        "c4": "truthful completion report"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["August 1 through August 27, 2026"]}, {"any": ["route or flight terms", "checked the confirmed routes and flights"]}, {"any": ["before creating", "before any creation"]}], "sources_any": ["Trips/Europe 2026/Calendar reconciliation.md"]},
+        {"id": "c2", "checks": [{"any": ["Seven airline-generated events"]}, {"any": ["cover every confirmed segment"]}, {"any": ["times, flight numbers, and routes match"]}], "sources_any": ["Trips/Europe 2026/Calendar reconciliation.md"]},
+        {"id": "c3", "checks": [{"any": ["Do not create duplicate events", "creating events would produce duplicates"]}, {"any": ["no write", "no new event", "no creation"]}], "sources_any": ["Trips/Europe 2026/Calendar reconciliation.md"]},
+        {"id": "c4", "checks": [{"any": ["flights were already present"]}, {"any": ["rather than claiming that new events were added", "not as newly added events", "must not be reported as newly added flights"]}], "sources_any": ["Trips/Europe 2026/Calendar reconciliation.md"]}
+      ],
+      "forbidden": ["created seven events", "added all flights", "calendar was empty"]
+    },
+    {
+      "id": "recent-europe-rail-resume",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "checkpoint_resume_and_consequential_action_gate",
+      "task": "Resume the Swiss rail work from its checkpoint. State what is already purchased, what remains, the duplicate state, and the exact boundary where the user must take over or approve.",
+      "claim_slots": {
+        "c1": "verified purchase",
+        "c2": "remaining reservations",
+        "c3": "duplicate state",
+        "c4": "approval and browser boundary"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["two adult Swiss Half Fare Cards"]}, {"any": ["two complimentary Swiss Family Cards"]}, {"any": ["CHF 300"]}, {"any": ["August 10 through September 9, 2026"]}], "sources_any": ["Trips/Europe 2026/Rail purchase checkpoint.md"]},
+        {"id": "c2", "checks": [{"any": ["compare August 15 SBB fares"]}, {"any": ["Pilatus for August 16"]}, {"any": ["Luzern-Interlaken for August 17"]}], "sources_any": ["Trips/Europe 2026/Rail purchase checkpoint.md"]},
+        {"id": "c3", "checks": [{"any": ["mail contains this SBB confirmation", "found the SBB confirmation in mail"]}, {"any": ["no confirmation for Pilatus or Luzern-Interlaken"]}, {"any": ["check for duplicates before every purchase"]}], "sources_any": ["Trips/Europe 2026/Rail purchase checkpoint.md"]},
+        {"id": "c4", "checks": [{"any": ["exact passengers, date, product, class, terms, and total"]}, {"any": ["wait for explicit approval"]}, {"any": ["stop for user takeover before authentication, CAPTCHA, or payment", "user must take over before authentication, CAPTCHA, or payment"]}, {"any": ["Erebus Chrome session was unavailable"]}], "sources_any": ["Trips/Europe 2026/Rail purchase checkpoint.md"]}
+      ],
+      "forbidden": ["all rail reservations are complete", "silently substitute another browser", "proceed through payment without approval"]
+    },
+    {
+      "id": "recent-europe-corrections",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "owner_correction_and_external_action_state",
+      "task": "Apply the owner's later Europe logistics decisions. Explain the final minor-consent position, the ski-bag checks, and the actual state of the two messages and camp payment.",
+      "claim_slots": {
+        "c1": "minor-consent correction",
+        "c2": "reminder boundary",
+        "c3": "ski-bag physical checks",
+        "c4": "draft and payment truth"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["owner later decided not to prepare it", "owner decided not to prepare"]}, {"any": ["Close the task", "task is closed"]}, {"any": ["Notarization is not a standing requirement"]}], "sources_any": ["Trips/Europe 2026/Consent and baggage decisions.md"]},
+        {"id": "c2", "checks": [{"any": ["do not resurface it"]}, {"any": ["unless the team, airline, or border authority specifically requires"]}], "sources_any": ["Trips/Europe 2026/Consent and baggage decisions.md"]},
+        {"id": "c3", "checks": [{"any": ["193 cm skis physically fit"]}, {"any": ["bag closes normally"]}, {"any": ["under the 50 lb camp limit"]}], "sources_any": ["Trips/Europe 2026/Consent and baggage decisions.md"]},
+        {"id": "c4", "checks": [{"any": ["saved draft, not a sent message", "saved draft, not sent"]}, {"any": ["shuttle request is also a saved draft"]}, {"any": ["EUR 694 camp payment was not paid"]}], "sources_any": ["Trips/Europe 2026/Consent and baggage decisions.md"]}
+      ],
+      "forbidden": ["notarization is required", "the equipment email was sent", "the EUR 694 payment was completed"]
+    },
+    {
+      "id": "recent-tracker-no-delta",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "quiet_monitoring_and_delta_suppression",
+      "task": "Decide what the July 25 Europe flight-watch check contributes to the morning briefing. State the reporting threshold, observed result, and correct output behavior.",
+      "claim_slots": {
+        "c1": "materiality threshold",
+        "c2": "observed result",
+        "c3": "briefing inclusion",
+        "c4": "suppressed noise"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["schedule change"]}, {"any": ["airline waiver"]}, {"any": ["strike or air traffic constraint"]}, {"any": ["materially changes cancellation risk"]}], "sources_any": ["Trips/Europe 2026/Flight watch tracker.md"]},
+        {"id": "c2", "checks": [{"any": ["July 25 check found no material change", "check at 2026-07-25 06:30 PDT found no material change"]}], "sources_any": ["Trips/Europe 2026/Flight watch tracker.md"]},
+        {"id": "c3", "checks": [{"any": ["stay out of the morning briefing"]}, {"any": ["omit", "no Travel / trackers item", "defaults to omission"]}], "sources_any": ["Trips/Europe 2026/Flight watch tracker.md", "Aether/Morning briefing policy.md"]},
+        {"id": "c4", "checks": [{"any": ["Routine monitoring"]}, {"any": ["unchanged schedules"]}, {"any": ["generic summer-travel stories"]}], "sources_any": ["Trips/Europe 2026/Flight watch tracker.md"]}
+      ],
+      "forbidden": ["report the unchanged baseline", "warn about generic summer travel", "there was a schedule change on July 25"]
+    },
+    {
+      "id": "recent-tracker-material-delta",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "material_delta_detection_and_baseline_advance",
+      "task": "Evaluate the July 26 Europe flight-watch update against the prior tracker. State the exact delta, why it matters, what to report, and what durable state changes afterward.",
+      "claim_slots": {
+        "c1": "exact new delta",
+        "c2": "material consequence",
+        "c3": "bounded user-facing report",
+        "c4": "tracker baseline update"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["August 10 Brussels-Geneva segment", "August 10 Brussels-Geneva departure"]}, {"any": ["85 minutes earlier"]}, {"any": ["flight number and airports are unchanged"]}], "sources_any": ["Trips/Europe 2026/Flight watch update.md"]},
+        {"id": "c2", "checks": [{"any": ["changes the camp transfer timing"]}], "sources_any": ["Trips/Europe 2026/Flight watch update.md"]},
+        {"id": "c3", "checks": [{"any": ["compact Travel / trackers item"]}, {"any": ["transfer-window consequence", "affecting the camp transfer window", "recheck the camp transfer window"]}, {"any": ["Do not repeat unrelated unchanged flight details", "Do not repeat the unrelated unchanged flights", "Do not repeat the unchanged flight number, airports, other flight details"]}], "sources_any": ["Trips/Europe 2026/Flight watch update.md", "Aether/Morning briefing policy.md"]},
+        {"id": "c4", "checks": [{"any": ["update the tracker baseline after reporting", "replace the prior no-change baseline"]}], "sources_any": ["Trips/Europe 2026/Flight watch update.md"]}
+      ],
+      "forbidden": ["all flights changed", "repeat the complete itinerary", "the airports changed"]
+    },
+    {
+      "id": "recent-aether-heartbeat-healthy",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "deterministic_healthy_heartbeat",
+      "task": "Handle the current healthy Aether heartbeat. State the source used, whether recovery should run, and the exact final response.",
+      "claim_slots": {
+        "c1": "current source of truth",
+        "c2": "health result",
+        "c3": "recovery ownership",
+        "c4": "exact final response"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["automation-chief health check"]}, {"any": ["current truth"]}], "sources_any": ["Aether/Heartbeat policy.md", "Aether/Automation status healthy.md"]},
+        {"id": "c2", "checks": [{"any": ["healthy"]}, {"any": ["No other current signal needs attention"]}], "sources_any": ["Aether/Automation status healthy.md"]},
+        {"id": "c3", "checks": [{"any": ["Do not rerun managed jobs"]}, {"any": ["scheduler and supervisor own recovery"]}], "sources_any": ["Aether/Heartbeat policy.md"]},
+        {"id": "c4", "checks": [{"any": ["HEARTBEAT_OK"]}, {"any": ["reply exactly", "HEARTBEAT_OK"]}], "sources_any": ["Aether/Heartbeat policy.md"]}
+      ],
+      "forbidden": ["rerun the morning briefing", "repeat old tasks", "everything looks mostly fine"]
+    },
+    {
+      "id": "recent-aether-heartbeat-failure",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "bounded_failure_heartbeat",
+      "task": "Handle the unhealthy Aether heartbeat. Report only the permitted fields for each affected task and explain why no managed job is rerun.",
+      "claim_slots": {
+        "c1": "failing task",
+        "c2": "stale task",
+        "c3": "status path",
+        "c4": "no-rerun boundary"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["morning-briefing"]}, {"any": ["delivery receipt missing"]}], "sources_any": ["Aether/Automation status failing.md"]},
+        {"id": "c2", "checks": [{"any": ["gmail-forward-intake"]}, {"any": ["last successful run is 95 minutes old"]}], "sources_any": ["Aether/Automation status failing.md"]},
+        {"id": "c3", "checks": [{"any": ["/Users/example/.aether/status/automation-chief.json"]}], "sources_any": ["Aether/Automation status failing.md"]},
+        {"id": "c4", "checks": [{"any": ["supervisor has already scheduled recovery"]}, {"any": ["Do not rerun managed jobs", "No managed job is rerun"]}], "sources_any": ["Aether/Heartbeat policy.md", "Aether/Automation status failing.md"]}
+      ],
+      "forbidden": ["HEARTBEAT_OK", "reran morning-briefing", "manually restarted gmail-forward-intake"]
+    },
+    {
+      "id": "recent-aether-gmail-no-action",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "quiet_deterministic_intake",
+      "task": "Handle the current Gmail intake result. Explain why no deeper work is needed, whether broad mailbox triage should be repeated, and give the exact final response.",
+      "claim_slots": {
+        "c1": "script authority",
+        "c2": "no-action classification",
+        "c3": "no duplicate triage",
+        "c4": "exact response"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["deterministic triage script"]}, {"any": ["source of truth"]}], "sources_any": ["Aether/Gmail forward intake.md"]},
+        {"id": "c2", "checks": [{"any": ["actionable is empty", "actionable: []"]}, {"any": ["only results were routine no-op archives", "archived message-a, message-b, and message-c as routine no-ops"]}, {"any": ["no meaningful errors", "errors: []"]}], "sources_any": ["Aether/Gmail forward intake.md", "Aether/Gmail run no action.md"]},
+        {"id": "c3", "checks": [{"any": ["Do not redo broad mailbox triage manually", "should not be repeated manually", "Do not repeat broad mailbox triage manually"]}, {"any": ["unless the script itself failed", "only repeated when the deterministic script fails", "because the script did not fail"]}], "sources_any": ["Aether/Gmail forward intake.md"]},
+        {"id": "c4", "checks": [{"any": ["No eligible new inbox messages."]}, {"any": ["return exactly", "No eligible new inbox messages."]}], "sources_any": ["Aether/Gmail forward intake.md"]}
+      ],
+      "forbidden": ["NO_REPLY", "processed three actionable messages", "manually search the whole inbox"]
+    },
+    {
+      "id": "recent-aether-gmail-actions",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "action_boundary_dedup_and_attachment_preservation",
+      "task": "Plan the two actionable Gmail items. Decide what to do with the calendar request, its attachment, and the ambiguous payment, including final mailbox state for each message.",
+      "claim_slots": {
+        "c1": "calendar duplicate decision",
+        "c2": "attachment preservation",
+        "c3": "successful-message mailbox state",
+        "c4": "ambiguous payment boundary"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["existing Team practice event", "already contains Team practice"]}, {"any": ["same date and time", "requested time"]}, {"any": ["do not create", "avoid duplicate"]}], "sources_any": ["Aether/Gmail run actionable.md", "Aether/Gmail forward intake.md"]},
+        {"id": "c2", "checks": [{"any": ["unique per-message folder"]}, {"any": ["leave originals in place"]}, {"any": ["practice-map.pdf"]}], "sources_any": ["Aether/Gmail forward intake.md", "Aether/Gmail run actionable.md"]},
+        {"id": "c3", "checks": [{"any": ["After successful handling", "successfully handled after", "successfully handle"]}, {"any": ["mark the message read and archive it"]}], "sources_any": ["Aether/Gmail forward intake.md"]},
+        {"id": "c4", "checks": [{"any": ["does not specify authorization or the intended payment method"]}, {"any": ["leave it unread in the inbox"]}, {"any": ["USD 480"]}], "sources_any": ["Aether/Gmail forward intake.md", "Aether/Gmail run actionable.md"]}
+      ],
+      "forbidden": ["create a duplicate Team practice event", "pay USD 480", "archive the ambiguous payment message"]
+    },
+    {
+      "id": "recent-aether-morning-brief",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "freshness_aware_briefing_and_delivery_gate",
+      "task": "Select the July 26 morning briefing content from the evidence. Identify what is genuinely new, what must be omitted, and the required delivery order.",
+      "claim_slots": {
+        "c1": "fresh included items",
+        "c2": "stale and empty omissions",
+        "c3": "seasonal and source omissions",
+        "c4": "delivery order and silence"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["Orion 3.1"]}, {"any": ["morning-briefing delivery receipts are missing"]}, {"any": ["August 10 Brussels-Geneva flight now departs 85 minutes earlier"]}], "sources_any": ["Aether/Morning briefing evidence.md"]},
+        {"id": "c2", "checks": [{"any": ["Orion 3 model launch on July 24", "Orion 3 launch from July 24"]}, {"any": ["version 2.1 game patch"]}, {"any": ["previously delivered", "omit", "do not repeat"]}], "sources_any": ["Aether/Morning briefing evidence.md", "Aether/Morning briefing policy.md"]},
+        {"id": "c3", "checks": [{"any": ["No fresh health data"]}, {"any": ["no material game update"]}, {"any": ["seasonal Crystal Mountain reporting remains paused"]}], "sources_any": ["Aether/Morning briefing evidence.md", "Aether/Morning briefing policy.md"]},
+        {"id": "c4", "checks": [{"any": ["create or update today's note first"]}, {"any": ["update the home-page pointer"]}, {"any": ["run the sync step"]}, {"any": ["only then return the final short summary"]}, {"any": ["do not emit progress updates"]}], "sources_any": ["Aether/Morning briefing policy.md"]}
+      ],
+      "forbidden": ["include the unchanged flight-watch baseline", "include a ski report", "send a progress placeholder"]
+    },
+    {
+      "id": "recent-current-over-history",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "current_truth_over_historical_checkpoint",
+      "task": "Assess Straylight's current owner readiness using both status notes. Explain which source controls, identify the production failure mechanisms, and state the approved direction without letting the older green checkpoint win.",
+      "claim_slots": {
+        "c1": "current-source authority",
+        "c2": "retrieval failure",
+        "c3": "write amplification",
+        "c4": "approved simplification"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["2026-07-26T12:00:00-07:00"]}, {"any": ["historical evidence"]}, {"any": ["must not override the newer current-status note", "must not override the newer conclusion"]}], "sources_any": ["Projects/Straylight current status.md", "Projects/Straylight stale checkpoint.md"]},
+        {"id": "c2", "checks": [{"any": ["broad memory.open and lexical retrieval are slow"]}, {"any": ["30-second database timeout"]}, {"any": ["one successful retrieval lane can be lost when a later lane fails", "later lane failure can discard an earlier successful lane", "later lane failure can cause one successful retrieval lane to be lost"]}], "sources_any": ["Projects/Straylight current status.md"]},
+        {"id": "c3", "checks": [{"any": ["normal writes copy a full corpus membership manifest"]}, {"any": ["not ready for dependable owner use at 10x corpus growth"]}], "sources_any": ["Projects/Straylight current status.md"]},
+        {"id": "c4", "checks": [{"any": ["current Markdown files the workspace truth"]}, {"any": ["version only changed files"]}, {"any": ["indexes and derived views rebuildable"]}, {"any": ["checkpoint with exact path, version, and hash references"]}, {"any": ["retain coherent source hydration"]}], "sources_any": ["Projects/Straylight current status.md"]}
+      ],
+      "forbidden": ["open the owner alpha immediately", "current retrieval is healthy", "the ready endpoint proves owner readiness"]
+    }
+  ]
+}

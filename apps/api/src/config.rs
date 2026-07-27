@@ -5,6 +5,8 @@ use crate::error::{ApiError, ApiResult};
 #[derive(Clone)]
 pub struct Config {
     pub deployment_environment: String,
+    pub legacy_api_enabled: bool,
+    pub evaluation_api_enabled: bool,
     pub bind: SocketAddr,
     pub database_url_admin: Option<String>,
     pub database_url_rw: String,
@@ -59,6 +61,11 @@ impl Config {
 
     pub fn from_env() -> ApiResult<Self> {
         let deployment_environment = env_default("STRAYLIGHT_ENV", "development");
+        let non_production_default = if deployment_environment == "production" {
+            "false"
+        } else {
+            "true"
+        };
         let bind = env_parse_value(
             "STRAYLIGHT_BIND",
             first_env(&["STRAYLIGHT_BIND", "STRAYLIGHT_BIND_ADDR"])
@@ -97,6 +104,11 @@ impl Config {
 
         let config = Self {
             deployment_environment,
+            legacy_api_enabled: env_parse("STRAYLIGHT_LEGACY_API_ENABLED", non_production_default)?,
+            evaluation_api_enabled: env_parse(
+                "STRAYLIGHT_EVALUATION_API_ENABLED",
+                non_production_default,
+            )?,
             bind,
             database_url_admin: first_env_or_file(&[
                 "DATABASE_URL_ADMIN",
@@ -536,6 +548,8 @@ mod tests {
                 assert_eq!(config.s3_secret_key, None);
                 assert!(!config.s3_force_path_style);
                 assert!(!config.s3_create_bucket);
+                assert!(!config.legacy_api_enabled);
+                assert!(!config.evaluation_api_enabled);
             }
             "minio_aliases" => {
                 let config = Config::from_env().unwrap();
@@ -549,6 +563,8 @@ mod tests {
                 assert_eq!(config.s3_secret_key.as_deref(), Some("minio-secret"));
                 assert!(config.s3_force_path_style);
                 assert!(config.s3_create_bucket);
+                assert!(config.legacy_api_enabled);
+                assert!(config.evaluation_api_enabled);
             }
             "explicit_overrides" => {
                 let config = Config::from_env().unwrap();

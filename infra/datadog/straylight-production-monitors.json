@@ -91,21 +91,6 @@
     }
   },
   {
-    "name": "[Straylight] Deletion propagation failure",
-    "type": "query alert",
-    "query": "sum(last_5m):sum:straylight.deletion.surfaces{env:__DD_ENV__,service:__DD_SERVICE__,result:failed} by {surface}.as_count() >= 1",
-    "message": "A canonical deletion surface failed. Do not report deletion complete until every surface is terminal and verified.__NOTIFY__",
-    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
-    "options": {
-      "include_tags": true,
-      "notify_audit": true,
-      "require_full_window": false,
-      "renotify_interval": 15,
-      "new_group_delay": 60,
-      "thresholds": {"critical": 1}
-    }
-  },
-  {
     "name": "[Straylight] Model request degraded",
     "type": "query alert",
     "query": "sum(last_10m):sum:straylight.model.requests{env:__DD_ENV__,service:__DD_SERVICE__,status IN (degraded_unavailable,invalid_output)} by {purpose,model,status}.as_count() >= 1",
@@ -192,6 +177,64 @@
       "require_full_window": false,
       "renotify_interval": 30,
       "thresholds": {"critical": 1}
+    }
+  },
+  {
+    "name": "[Straylight] Simplified workspace open is slow",
+    "type": "query alert",
+    "query": "percentile(last_10m):p95:straylight.simple.open.duration_ms{env:__DD_ENV__,service:__DD_SERVICE__,component:api} > 15000",
+    "message": "Simplified workspace opens are taking long enough to damage interactive agent use. Inspect workspace route latency, retrieval lane timeouts, database pool pressure, and deployment version. The warning threshold is 5 seconds; the critical threshold is 15 seconds.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"warning": 5000, "critical": 15000}
+    }
+  },
+  {
+    "name": "[Straylight] Simplified retrieval lanes repeatedly timed out",
+    "type": "query alert",
+    "query": "sum(last_10m):sum:straylight.simple.retrieval.lane_timeout{env:__DD_ENV__,service:__DD_SERVICE__,component:api} by {lane}.as_count() >= 3",
+    "message": "A simplified retrieval lane repeatedly exceeded its bounded deadline. Inspect the affected lane and workspace search route latency. A single timeout warns for visibility; three in ten minutes is critical.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 1, "critical": 3}
+    }
+  },
+  {
+    "name": "[Straylight] Simplified workspace search is slow",
+    "type": "query alert",
+    "query": "percentile(last_10m):p95:straylight.http.request.duration_ms{env:__DD_ENV__,service:__DD_SERVICE__,component:api,route:/v1/workspace/search} > 10000",
+    "message": "Workspace search latency is no longer interactive. This catches broad-query regressions even when individual retrieval lanes eventually return. The warning threshold matches the 3-second performance-harness gate; ten seconds is critical.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"warning": 3000, "critical": 10000}
+    }
+  },
+  {
+    "name": "[Straylight] Simplified jobs repeatedly retrying",
+    "type": "query alert",
+    "query": "sum(last_15m):sum:straylight.simple.jobs.processed{env:__DD_ENV__,service:__DD_SERVICE__,component:worker,result:retry} by {kind}.as_count() >= 5",
+    "message": "A simplified workspace job kind is repeatedly returning to retry. Inspect worker logs, embedding or model dependencies, and job duration before increasing retry limits. This metric does not distinguish the terminal fifth failure.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "new_group_delay": 60,
+      "thresholds": {"warning": 2, "critical": 5}
     }
   }
 ]

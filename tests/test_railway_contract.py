@@ -157,8 +157,15 @@ class RailwayContractTests(unittest.TestCase):
                 if len(parts) >= 4 and parts[2].upper() == "AS":
                     local_stages.add(parts[3])
 
-    def test_shared_api_dockerfile_avoids_service_scoped_cache_mounts(self):
-        self.assertNotIn("--mount=type=cache", API_DOCKERFILE)
+    def test_shared_api_dockerfile_uses_stable_shared_cache_mounts(self):
+        cache_ids = re.findall(
+            r"--mount=type=cache,id=([^,\\\s]+)",
+            API_DOCKERFILE,
+        )
+        self.assertGreaterEqual(len(cache_ids), 3)
+        for cache_id in cache_ids:
+            self.assertTrue(cache_id.startswith("straylight-"), cache_id)
+            self.assertNotRegex(cache_id, r"[$}{]", cache_id)
 
 
 if __name__ == "__main__":

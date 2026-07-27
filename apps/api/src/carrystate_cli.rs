@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args, Parser, Subcommand};
 use futures::StreamExt;
-use reqwest::{Client, Method, Response, Url, header};
+use reqwest::{Body, Client, Method, Response, Url, header};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::{
@@ -22,7 +22,7 @@ use crate::{carrystate_export, carrystate_import};
 #[command(
     name = "carrystate",
     version,
-    about = "CarryState vault and native-asset client"
+    about = "Straylight workspace and binary client"
 )]
 pub struct Cli {
     #[arg(long, env = "CARRYSTATE_API_URL")]
@@ -35,9 +35,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    Vault {
+    #[command(alias = "vault")]
+    Workspace {
         #[command(subcommand)]
-        command: VaultCommand,
+        command: WorkspaceCommand,
     },
     Asset {
         #[command(subcommand)]
@@ -46,7 +47,7 @@ enum Command {
 }
 
 #[derive(Debug, Subcommand)]
-enum VaultCommand {
+enum WorkspaceCommand {
     Import(carrystate_import::ImportArgs),
     Export(carrystate_export::ExportArgs),
 }
@@ -86,8 +87,12 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(base_url: &str, token: String) -> Result<Self> {
-        let base_url = Url::parse(base_url)
+        let mut base_url = Url::parse(base_url)
             .with_context(|| format!("invalid CarryState API URL: {base_url}"))?;
+        if !base_url.path().ends_with('/') {
+            let path = format!("{}/", base_url.path());
+            base_url.set_path(&path);
+        }
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(20))
             .timeout(Duration::from_secs(15 * 60))
@@ -104,6 +109,10 @@ impl ApiClient {
         self.base_url
             .join(path.trim_start_matches('/'))
             .with_context(|| format!("invalid API path: {path}"))
+    }
+
+    pub fn endpoint(&self) -> &str {
+        self.base_url.as_str()
     }
 
     pub fn authorized(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
@@ -162,6 +171,27 @@ impl ApiClient {
         .await
     }
 
+    pub async fn put_stream(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        media_type: &str,
+        size_bytes: u64,
+        body: Body,
+    ) -> Result<Value> {
+        let mut url = self.url(path)?;
+        url.query_pairs_mut().extend_pairs(query.iter().copied());
+        decode_json(
+            self.authorized(Method::PUT, url)
+                .header(header::CONTENT_TYPE, media_type)
+                .header(header::CONTENT_LENGTH, size_bytes)
+                .body(body)
+                .send()
+                .await?,
+        )
+        .await
+    }
+
     pub async fn download_verified(
         &self,
         path: &str,
@@ -201,8 +231,8 @@ pub struct VerifiedFile {
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Vault {
-            command: VaultCommand::Import(args),
+        Command::Workspace {
+            command: WorkspaceCommand::Import(args),
         } if args.dry_run => carrystate_import::run(None, args).await,
         command => {
             let base_url = cli
@@ -219,11 +249,11 @@ pub async fn run() -> Result<()> {
                 })?;
             let client = ApiClient::new(&base_url, token)?;
             match command {
-                Command::Vault {
-                    command: VaultCommand::Import(args),
+                Command::Workspace {
+                    command: WorkspaceCommand::Import(args),
                 } => carrystate_import::run(Some(&client), args).await,
-                Command::Vault {
-                    command: VaultCommand::Export(args),
+                Command::Workspace {
+                    command: WorkspaceCommand::Export(args),
                 } => carrystate_export::run(&client, args).await,
                 Command::Asset {
                     command: AssetCommand::Metadata(args),
@@ -359,7 +389,7 @@ async fn write_verified_response(
             hasher.update(&chunk);
             file.write_all(&chunk).await?;
         }
-        file.sync_all().await?;
+        file.flush().await?;
         Ok(())
     }
     .await;
@@ -383,21 +413,14 @@ async fn write_verified_response(
     }
     fs::hard_link(&temporary, output)
         .await
-        .with_context(|| format!("could not atomically publish {}", output.display()))?;
+        .with_context(|| format!("could not publish {}", output.display()))?;
     fs::remove_file(&temporary).await?;
-    sync_directory(parent).await?;
     Ok(VerifiedFile {
         path: output.to_owned(),
         sha256: actual_hash,
         size_bytes,
         media_type,
     })
-}
-
-async fn sync_directory(path: &Path) -> Result<()> {
-    let file = fs::File::open(path).await?;
-    file.sync_all().await?;
-    Ok(())
 }
 
 pub fn unwrap_data(value: &Value) -> &Value {
@@ -432,5 +455,14 @@ mod tests {
         assert_eq!(unwrap_data(&wrapped)["status"], "ready");
         let raw = json!({"status": "ready"});
         assert_eq!(unwrap_data(&raw)["status"], "ready");
+    }
+
+    #[test]
+    fn api_base_paths_are_preserved() {
+        let client = ApiClient::new("https://straylight.example/api", "secret".to_owned()).unwrap();
+        assert_eq!(
+            client.url("/v1/workspace/manifest").unwrap().as_str(),
+            "https://straylight.example/api/v1/workspace/manifest"
+        );
     }
 }

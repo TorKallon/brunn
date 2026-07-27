@@ -5,7 +5,6 @@ import {
   createRoute,
   createRouter,
   redirect,
-  useParams,
   type RouterHistory,
 } from "@tanstack/react-router";
 import { AuthBoundary } from "./components/AuthBoundary";
@@ -15,10 +14,7 @@ import { CapturePage } from "./pages/CapturePage";
 import { ControlPage } from "./pages/ControlPage";
 import { DreamsPage } from "./pages/DreamsPage";
 import { ExplorePage } from "./pages/ExplorePage";
-import { ObjectPage } from "./pages/ObjectPage";
-import { SourcePage } from "./pages/SourcePage";
 import { WorkPage } from "./pages/WorkPage";
-import { WorkspacePage } from "./pages/WorkspacePage";
 
 function RootLayout() {
   return (
@@ -45,31 +41,45 @@ const indexRoute = createRoute({
   },
 });
 const workRoute = createRoute({ getParentRoute: () => rootRoute, path: "/work", component: WorkPage });
-const sessionRoute = createRoute({ getParentRoute: () => rootRoute, path: "/sessions/$sessionId", component: WorkspacePage });
 const assetsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/assets", component: AssetsPage });
-
-function SessionAssetsRoute() {
-  const { sessionId } = useParams({ from: "/assets/$sessionId" });
-  return <AssetsPage sessionId={sessionId} />;
-}
-
+const sessionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sessions/$sessionId",
+  beforeLoad: () => {
+    throw redirect({ to: "/work" });
+  },
+});
 const sessionAssetsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/assets/$sessionId",
-  component: SessionAssetsRoute,
+  beforeLoad: () => {
+    throw redirect({ to: "/assets" });
+  },
 });
 const exploreRoute = createRoute({ getParentRoute: () => rootRoute, path: "/explore", component: ExplorePage });
-const objectRoute = createRoute({ getParentRoute: () => rootRoute, path: "/objects/$objectId", component: ObjectPage });
-const sourceRoute = createRoute({ getParentRoute: () => rootRoute, path: "/sources/$sourceId", component: SourcePage });
+const objectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/objects/$objectId",
+  beforeLoad: () => {
+    throw redirect({ to: "/explore" });
+  },
+});
+const sourceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sources/$sourceId",
+  beforeLoad: () => {
+    throw redirect({ to: "/explore" });
+  },
+});
 const captureRoute = createRoute({ getParentRoute: () => rootRoute, path: "/capture", component: CapturePage });
 const dreamsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/dreams", component: DreamsPage });
-
-function DreamDetailRoute() {
-  const { dreamId } = useParams({ from: "/dreams/$dreamId" });
-  return <DreamsPage dreamId={dreamId} />;
-}
-
-const dreamDetailRoute = createRoute({ getParentRoute: () => rootRoute, path: "/dreams/$dreamId", component: DreamDetailRoute });
+const dreamDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dreams/$dreamId",
+  beforeLoad: () => {
+    throw redirect({ to: "/dreams" });
+  },
+});
 const controlRoute = createRoute({ getParentRoute: () => rootRoute, path: "/control", component: ControlPage });
 
 const routeTree = rootRoute.addChildren([

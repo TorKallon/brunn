@@ -1,6 +1,6 @@
 {
   "title": "Straylight Production",
-  "description": "Production health, reasoning quality, learning, durable work, and dependencies for Straylight. Metrics are content-free and use bounded dimensions only. Source: infra/datadog/straylight-production-dashboard.json.",
+  "description": "Production health for the simplified agent workspace plus retained legacy and asset operations. The first group is the owner view for open, search, write, indexing, and usage-tracking symptoms. Metrics are content-free and use bounded dimensions only. Source: infra/datadog/straylight-production-dashboard.json.",
   "layout_type": "ordered",
   "reflow_type": "auto",
   "tags": [
@@ -40,12 +40,355 @@
     {
       "definition": {
         "type": "note",
-        "content": "Use **env**, **version**, and **component** to isolate a rollout. Start with request errors and latency, then inspect retrieval quality, model health, durable queues, and dependencies. Metric tags never contain user IDs, record IDs, paths, queries, or source content.",
+        "content": "Use **env**, **version**, and **component** to isolate a rollout. Start with **00 Simplified Workspace**: it exposes the slow-open and broad-search symptoms that matter to the owner, then worker progress and dependencies. Metric tags never contain user IDs, record IDs, paths, queries, or source content.",
         "background_color": "white",
         "font_size": "14",
         "text_align": "left",
         "vertical_align": "center",
         "show_tick": false
+      }
+    },
+    {
+      "definition": {
+        "type": "group",
+        "title": "00 Simplified Workspace",
+        "layout_type": "ordered",
+        "background_color": "vivid_green",
+        "show_title": true,
+        "widgets": [
+          {
+            "definition": {
+              "type": "note",
+              "content": "This is the primary owner view for the simplified Markdown and binary workspace. A healthy open should remain comfortably below seconds, broad `/workspace/search` calls should stay bounded, and one failed retrieval lane should degrade rather than stall the whole request. **Current gap:** the API does not emit simple queue depth or oldest-job age; the worker panels therefore show processed work and retry/failure transitions, not backlog.",
+              "background_color": "white",
+              "font_size": "14",
+              "text_align": "left",
+              "vertical_align": "center",
+              "show_tick": false
+            }
+          },
+          {
+            "definition": {
+              "type": "query_value",
+              "title": "Workspace open p95",
+              "autoscale": true,
+              "precision": 0,
+              "custom_unit": "ms",
+              "requests": [
+                {
+                  "q": "p95:straylight.simple.open.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "aggregator": "last",
+                  "conditional_formats": [
+                    {
+                      "comparator": ">",
+                      "value": 15000,
+                      "palette": "white_on_red"
+                    },
+                    {
+                      "comparator": ">",
+                      "value": 5000,
+                      "palette": "black_on_light_yellow"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "query_value",
+              "title": "Workspace open max",
+              "autoscale": true,
+              "precision": 0,
+              "custom_unit": "ms",
+              "requests": [
+                {
+                  "q": "max:straylight.simple.open.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "aggregator": "last",
+                  "conditional_formats": [
+                    {
+                      "comparator": ">",
+                      "value": 30000,
+                      "palette": "white_on_red"
+                    },
+                    {
+                      "comparator": ">",
+                      "value": 10000,
+                      "palette": "black_on_light_yellow"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "query_value",
+              "title": "Retrieval lane timeouts",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "q": "sum:straylight.simple.retrieval.lane_timeout{env:$env,service:$service,version:$version,component:api}.as_count()",
+                  "aggregator": "sum",
+                  "conditional_formats": [
+                    {
+                      "comparator": ">",
+                      "value": 2,
+                      "palette": "white_on_red"
+                    },
+                    {
+                      "comparator": ">",
+                      "value": 0,
+                      "palette": "black_on_light_yellow"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "query_value",
+              "title": "Simple job failures",
+              "autoscale": true,
+              "precision": 0,
+              "requests": [
+                {
+                  "q": "sum:straylight.simple.jobs.processed{env:$env,service:$service,version:$version,component:worker,result:retry}.as_count()",
+                  "aggregator": "sum",
+                  "conditional_formats": [
+                    {
+                      "comparator": ">",
+                      "value": 4,
+                      "palette": "white_on_red"
+                    },
+                    {
+                      "comparator": ">",
+                      "value": 0,
+                      "palette": "black_on_light_yellow"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Workspace open latency",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["avg", "max", "value"],
+              "requests": [
+                {
+                  "q": "p50:straylight.simple.open.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                },
+                {
+                  "q": "p95:straylight.simple.open.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                },
+                {
+                  "q": "p99:straylight.simple.open.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                },
+                {
+                  "q": "max:straylight.simple.open.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                }
+              ],
+              "markers": [
+                {
+                  "value": "y = 5000",
+                  "display_type": "warning dashed"
+                },
+                {
+                  "value": "y = 15000",
+                  "display_type": "error dashed"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Workspace route latency, p95",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["avg", "max", "value"],
+              "requests": [
+                {
+                  "q": "p95:straylight.http.request.duration_ms{env:$env,service:$service,version:$version,component:api,route:/v1/workspace/*} by {route}",
+                  "display_type": "line"
+                }
+              ],
+              "markers": [
+                {
+                  "value": "y = 2500",
+                  "display_type": "warning dashed"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Retrieval timeouts by lane",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["sum", "value"],
+              "requests": [
+                {
+                  "q": "sum:straylight.simple.retrieval.lane_timeout{env:$env,service:$service,version:$version,component:api} by {lane}.as_count()",
+                  "display_type": "bars"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Retrieval latency and candidates, p95",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["avg", "max", "value"],
+              "requests": [
+                {
+                  "q": "p95:straylight.simple.retrieval.lane_duration_ms{env:$env,service:$service,version:$version,component:api} by {lane,result}",
+                  "display_type": "line"
+                },
+                {
+                  "q": "p95:straylight.simple.retrieval.lane_candidates{env:$env,service:$service,version:$version,component:api} by {lane}",
+                  "display_type": "line",
+                  "on_right_yaxis": true
+                },
+                {
+                  "q": "p95:straylight.simple.search.candidates{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line",
+                  "on_right_yaxis": true
+                }
+              ],
+              "markers": [
+                {
+                  "value": "y = 2500",
+                  "display_type": "warning dashed"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Search and exact-read latency, p95",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["avg", "max", "value"],
+              "requests": [
+                {
+                  "q": "p95:straylight.simple.search.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                },
+                {
+                  "q": "p95:straylight.simple.read.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                }
+              ],
+              "markers": [
+                {
+                  "value": "y = 3000",
+                  "display_type": "warning dashed"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Evidence, read batch size, and write latency",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["avg", "max", "value"],
+              "requests": [
+                {
+                  "q": "p95:straylight.simple.open.evidence_sources{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                },
+                {
+                  "q": "p95:straylight.simple.write.duration_ms{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line",
+                  "on_right_yaxis": true
+                },
+                {
+                  "q": "p95:straylight.simple.write.changed_entries{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                },
+                {
+                  "q": "p95:straylight.simple.read.entries{env:$env,service:$service,version:$version,component:api}",
+                  "display_type": "line"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Simple job outcomes",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["sum", "value"],
+              "requests": [
+                {
+                  "q": "sum:straylight.simple.jobs.processed{env:$env,service:$service,version:$version,component:worker} by {kind,result}.as_count()",
+                  "display_type": "bars"
+                },
+                {
+                  "q": "sum:straylight.simple.jobs.transitions{env:$env,service:$service,version:$version,component:worker} by {kind,result}.as_count()",
+                  "display_type": "bars"
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Simple job duration and embedding batch size, p95",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["avg", "max", "value"],
+              "requests": [
+                {
+                  "q": "p95:straylight.simple.jobs.duration_ms{env:$env,service:$service,version:$version,component:worker} by {kind,result}",
+                  "display_type": "line"
+                },
+                {
+                  "q": "p95:straylight.simple.jobs.batch_size{env:$env,service:$service,version:$version,component:worker,kind:embed_entry} by {result}",
+                  "display_type": "line",
+                  "on_right_yaxis": true
+                }
+              ]
+            }
+          },
+          {
+            "definition": {
+              "type": "timeseries",
+              "title": "Usage tracking buffer health",
+              "show_legend": true,
+              "legend_layout": "auto",
+              "legend_columns": ["sum", "value"],
+              "requests": [
+                {
+                  "q": "sum:straylight.simple.usage.events{env:$env,service:$service,version:$version,component:api} by {result}.as_count()",
+                  "display_type": "bars"
+                },
+                {
+                  "q": "sum:straylight.simple.usage.flushes{env:$env,service:$service,version:$version,component:api} by {result}.as_count()",
+                  "display_type": "bars"
+                }
+              ]
+            }
+          }
+        ]
       }
     },
     {
@@ -406,166 +749,6 @@
                   "display_type": "bars",
                   "style": {
                     "palette": "orange",
-                    "line_type": "solid",
-                    "line_width": "normal"
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "definition": {
-        "type": "group",
-        "title": "04 Reasoning and Retrieval Quality",
-        "layout_type": "ordered",
-        "background_color": "vivid_green",
-        "show_title": true,
-        "widgets": [
-          {
-            "definition": {
-              "type": "timeseries",
-              "title": "Retrieval lane runs",
-              "show_legend": true,
-              "legend_layout": "auto",
-              "legend_columns": [
-                "avg",
-                "sum",
-                "value"
-              ],
-              "requests": [
-                {
-                  "q": "sum:straylight.retrieval.lane.runs{env:$env,service:$service,version:$version,component:$component} by {lane,result}.as_rate()",
-                  "display_type": "bars",
-                  "style": {
-                    "palette": "semantic",
-                    "line_type": "solid",
-                    "line_width": "normal"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "definition": {
-              "type": "toplist",
-              "title": "Retrieval lane p95 latency",
-              "requests": [
-                {
-                  "q": "p95:straylight.retrieval.lane.duration_ms{env:$env,service:$service,version:$version,component:$component} by {lane}"
-                }
-              ]
-            }
-          },
-          {
-            "definition": {
-              "type": "timeseries",
-              "title": "Candidates per retrieval lane",
-              "show_legend": true,
-              "legend_layout": "auto",
-              "legend_columns": [
-                "avg",
-                "value",
-                "max"
-              ],
-              "requests": [
-                {
-                  "q": "p95:straylight.retrieval.lane.raw_candidates{env:$env,service:$service,version:$version,component:$component} by {lane}",
-                  "display_type": "line",
-                  "style": {
-                    "palette": "cool",
-                    "line_type": "solid",
-                    "line_width": "normal"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "definition": {
-              "type": "timeseries",
-              "title": "Open sufficiency and query outcomes",
-              "show_legend": true,
-              "legend_layout": "auto",
-              "legend_columns": [
-                "avg",
-                "sum",
-                "value"
-              ],
-              "requests": [
-                {
-                  "q": "sum:straylight.retrieval.open.sufficiency{env:$env,service:$service,version:$version,component:$component} by {status}.as_rate()",
-                  "display_type": "bars",
-                  "style": {
-                    "palette": "semantic",
-                    "line_type": "solid",
-                    "line_width": "normal"
-                  }
-                },
-                {
-                  "q": "sum:straylight.retrieval.query.items{env:$env,service:$service,version:$version,component:$component} by {status}.as_rate()",
-                  "display_type": "line",
-                  "style": {
-                    "palette": "dog_classic",
-                    "line_type": "solid",
-                    "line_width": "normal"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "definition": {
-              "type": "timeseries",
-              "title": "Read and compute step latency, p95",
-              "show_legend": true,
-              "legend_layout": "auto",
-              "legend_columns": [
-                "avg",
-                "max",
-                "value"
-              ],
-              "requests": [
-                {
-                  "q": "p95:straylight.read.item.duration_ms{env:$env,service:$service,version:$version,component:$component} by {view,status}",
-                  "display_type": "line",
-                  "style": {
-                    "palette": "cool",
-                    "line_type": "solid",
-                    "line_width": "normal"
-                  }
-                },
-                {
-                  "q": "p95:straylight.compute.step.duration_ms{env:$env,service:$service,version:$version,component:$component} by {operator,status}",
-                  "display_type": "line",
-                  "style": {
-                    "palette": "warm",
-                    "line_type": "dashed",
-                    "line_width": "normal"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "definition": {
-              "type": "timeseries",
-              "title": "Verification classifications",
-              "show_legend": true,
-              "legend_layout": "auto",
-              "legend_columns": [
-                "avg",
-                "sum",
-                "value"
-              ],
-              "requests": [
-                {
-                  "q": "sum:straylight.verify.classifications{env:$env,service:$service,version:$version,component:$component} by {classification}.as_rate()",
-                  "display_type": "bars",
-                  "style": {
-                    "palette": "semantic",
                     "line_type": "solid",
                     "line_width": "normal"
                   }
@@ -994,7 +1177,7 @@
           {
             "definition": {
               "type": "timeseries",
-              "title": "Dream scheduler and actions",
+              "title": "Dream actions",
               "show_legend": true,
               "legend_layout": "auto",
               "legend_columns": [
@@ -1003,41 +1186,8 @@
                 "value"
               ],
               "requests": [
-                {
-                  "q": "sum:straylight.dream.scheduler.scans{env:$env,service:$service,version:$version,component:$component} by {result}.as_rate()",
-                  "display_type": "line",
-                  "style": {
-                    "palette": "cool",
-                    "line_type": "solid",
-                    "line_width": "normal"
-                  }
-                },
                 {
                   "q": "sum:straylight.dream.actions{env:$env,service:$service,version:$version,component:$component} by {action,status,kind}.as_rate()",
-                  "display_type": "bars",
-                  "style": {
-                    "palette": "semantic",
-                    "line_type": "solid",
-                    "line_width": "normal"
-                  }
-                }
-              ]
-            }
-          },
-          {
-            "definition": {
-              "type": "timeseries",
-              "title": "Deletion surface outcomes",
-              "show_legend": true,
-              "legend_layout": "auto",
-              "legend_columns": [
-                "avg",
-                "sum",
-                "value"
-              ],
-              "requests": [
-                {
-                  "q": "sum:straylight.deletion.surfaces{env:$env,service:$service,version:$version,component:$component} by {surface,result}.as_rate()",
                   "display_type": "bars",
                   "style": {
                     "palette": "semantic",

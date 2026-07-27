@@ -25,6 +25,20 @@ import type {
   SourceRecord,
   StageReceipt,
   VerificationResult,
+  WorkspaceBinary,
+  WorkspaceBinaryListData,
+  WorkspaceBinaryReceipt,
+  WorkspaceChangesData,
+  WorkspaceCheckpointReceipt,
+  WorkspaceDreamReceipt,
+  WorkspaceJobsData,
+  WorkspaceManifestData,
+  WorkspaceOpenData,
+  WorkspaceReadData,
+  WorkspaceSearchData,
+  WorkspaceUsageData,
+  WorkspaceUsageSort,
+  WorkspaceWriteReceipt,
 } from "./types";
 
 const API_ROOT = "/api/v1";
@@ -69,6 +83,48 @@ async function parseBody(response: Response): Promise<unknown> {
 export interface StraylightApi {
   me(): Promise<ApiEnvelope<MeData>>;
   status(): Promise<ApiEnvelope<ServiceStatus>>;
+  workspaceOpen(payload: JsonObject): Promise<ApiEnvelope<WorkspaceOpenData>>;
+  workspaceSearch(payload: JsonObject): Promise<ApiEnvelope<WorkspaceSearchData>>;
+  workspaceRead(payload: JsonObject): Promise<ApiEnvelope<WorkspaceReadData>>;
+  workspaceWrite(payload: JsonObject): Promise<ApiEnvelope<WorkspaceWriteReceipt>>;
+  workspaceCapture(payload: JsonObject): Promise<ApiEnvelope<WorkspaceWriteReceipt>>;
+  workspaceChanges(
+    sinceGeneration?: number,
+    limit?: number,
+  ): Promise<ApiEnvelope<WorkspaceChangesData>>;
+  workspaceCheckpoint(
+    payload: JsonObject,
+  ): Promise<ApiEnvelope<WorkspaceCheckpointReceipt>>;
+  workspaceBinaries(
+    offset?: number,
+    limit?: number,
+  ): Promise<ApiEnvelope<WorkspaceBinaryListData>>;
+  workspaceBinary(entryRef: string): Promise<ApiEnvelope<WorkspaceBinary>>;
+  uploadWorkspaceBinary(
+    payload: FormData,
+  ): Promise<ApiEnvelope<WorkspaceBinaryReceipt>>;
+  downloadWorkspaceBinary(
+    entryRef: string,
+    expectedHash: string,
+    expectedSize: number,
+  ): Promise<AssetDownload>;
+  workspaceManifest(
+    offset?: number,
+    limit?: number,
+  ): Promise<ApiEnvelope<WorkspaceManifestData>>;
+  workspaceUsage(
+    sort?: WorkspaceUsageSort,
+    offset?: number,
+    limit?: number,
+  ): Promise<ApiEnvelope<WorkspaceUsageData>>;
+  workspaceJobs(
+    status?: string,
+    offset?: number,
+    limit?: number,
+  ): Promise<ApiEnvelope<WorkspaceJobsData>>;
+  workspaceDream(
+    payload: JsonObject,
+  ): Promise<ApiEnvelope<WorkspaceDreamReceipt>>;
   sessions(cursor?: string): Promise<ApiEnvelope<ListData<SessionSummary> | SessionSummary[]>>;
   session(id: string): Promise<ApiEnvelope<SessionDetail>>;
   refreshSession(id: string): Promise<ApiEnvelope<SessionDetail>>;
@@ -269,6 +325,74 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
   return {
     me: () => get<MeData>("/me"),
     status: () => get<ServiceStatus>("/status"),
+    workspaceOpen: (payload) =>
+      post<WorkspaceOpenData>("/workspace/open", payload),
+    workspaceSearch: (payload) =>
+      post<WorkspaceSearchData>("/workspace/search", payload),
+    workspaceRead: (payload) =>
+      post<WorkspaceReadData>("/workspace/read", payload),
+    workspaceWrite: (payload) =>
+      post<WorkspaceWriteReceipt>("/workspace/write", payload),
+    workspaceCapture: (payload) =>
+      post<WorkspaceWriteReceipt>("/workspace/capture", payload),
+    workspaceChanges: (sinceGeneration = 0, limit = 200) => {
+      const query = new URLSearchParams({
+        since_generation: String(sinceGeneration),
+        limit: String(limit),
+      });
+      return get<WorkspaceChangesData>(`/workspace/changes?${query.toString()}`);
+    },
+    workspaceCheckpoint: (payload) =>
+      post<WorkspaceCheckpointReceipt>("/workspace/checkpoint", payload),
+    workspaceBinaries: (offset = 0, limit = 100) => {
+      const query = new URLSearchParams({
+        offset: String(offset),
+        limit: String(limit),
+      });
+      return get<WorkspaceBinaryListData>(
+        `/workspace/binaries?${query.toString()}`,
+      );
+    },
+    workspaceBinary: (entryRef) =>
+      get<WorkspaceBinary>(
+        `/workspace/binaries/${encodeURIComponent(entryRef)}`,
+      ),
+    uploadWorkspaceBinary: (payload) =>
+      post<WorkspaceBinaryReceipt>("/workspace/binaries", payload),
+    downloadWorkspaceBinary: (entryRef, expectedHash, expectedSize) =>
+      download(
+        `/workspace/binaries/${encodeURIComponent(entryRef)}/content`,
+        { contentHash: expectedHash, sizeBytes: expectedSize },
+      ),
+    workspaceManifest: (offset = 0, limit = 1_000) => {
+      const query = new URLSearchParams({
+        offset: String(offset),
+        limit: String(limit),
+      });
+      return get<WorkspaceManifestData>(
+        `/workspace/manifest?${query.toString()}`,
+      );
+    },
+    workspaceUsage: (sort = "most_used", offset = 0, limit = 100) => {
+      const query = new URLSearchParams({
+        sort,
+        offset: String(offset),
+        limit: String(limit),
+      });
+      return get<WorkspaceUsageData>(
+        `/workspace/usage?${query.toString()}`,
+      );
+    },
+    workspaceJobs: (status, offset = 0, limit = 100) => {
+      const query = new URLSearchParams({
+        offset: String(offset),
+        limit: String(limit),
+      });
+      if (status) query.set("status", status);
+      return get<WorkspaceJobsData>(`/workspace/jobs?${query.toString()}`);
+    },
+    workspaceDream: (payload) =>
+      post<WorkspaceDreamReceipt>("/workspace/dreams", payload),
     sessions: (cursor) =>
       get<ListData<SessionSummary> | SessionSummary[]>(
         cursor ? `/sessions?cursor=${encodeURIComponent(cursor)}` : "/sessions",

@@ -396,6 +396,232 @@ export interface AssetDownload {
   contentHash?: string;
 }
 
+export interface WorkspaceEvidence {
+  reference: string;
+  path: string;
+  title: string;
+  version: number;
+  content_hash: string;
+  representation: "complete_source" | "source_excerpt";
+  text: string;
+  heading?: string;
+  why_selected?: string[];
+  score?: number;
+}
+
+export interface WorkspaceChange {
+  generation: number;
+  operation: "create" | "update" | "delete" | string;
+  path: string;
+  version: number;
+  content_hash: string;
+  recorded_at: string;
+}
+
+export interface WorkspaceCheckpointRead {
+  checkpoint_id: string;
+  path: string;
+  workspace_generation?: number;
+  text: string;
+  source_entries?: string[];
+}
+
+export interface WorkspaceOpenData {
+  workspace_generation: number;
+  authorization_scope?: string;
+  evidence: WorkspaceEvidence[];
+  checkpoint?: WorkspaceCheckpointRead | null;
+  changes_since_checkpoint: WorkspaceChange[];
+  retrieval_sufficiency?: {
+    status: string;
+    complete_source_count: number;
+    selected_source_count: number;
+  };
+}
+
+export interface WorkspaceSearchCandidate {
+  reference?: string;
+  entry_id?: string;
+  entry_ref?: string;
+  path: string;
+  title: string;
+  version: number;
+  content_sha256?: string;
+  heading?: string;
+  excerpt: string;
+  score?: number;
+  lanes?: string[];
+}
+
+export interface WorkspaceSearchResultSet {
+  id: string;
+  goal?: string;
+  query_status?: string;
+  candidates: WorkspaceSearchCandidate[];
+  lane_failures?: string[];
+}
+
+export interface WorkspaceSearchData {
+  workspace_generation: number;
+  results: WorkspaceSearchResultSet[];
+}
+
+export interface WorkspaceReadItem {
+  reference: string;
+  path: string;
+  title: string;
+  version: number;
+  version_ref: string;
+  content_hash: string;
+  media_type: string;
+  view: "full" | "current_state" | "outline" | "range" | string;
+  status: string;
+  text: string;
+  metadata: JsonValue;
+  updated_at: string;
+}
+
+export interface WorkspaceReadData {
+  workspace_generation: number;
+  items: WorkspaceReadItem[];
+}
+
+export interface WorkspaceWriteReceipt {
+  entry_ref: string;
+  version_ref?: string | null;
+  path: string;
+  version: number;
+  content_hash: string;
+  workspace_generation: number;
+  search_status?: string;
+  no_op: boolean;
+}
+
+export interface WorkspaceBinaryReceipt extends WorkspaceWriteReceipt {
+  size_bytes: number;
+  media_type: string;
+  description_status: string;
+  companion: {
+    entry_ref: string;
+    path: string;
+    version: number;
+  };
+}
+
+export interface WorkspaceCheckpointReceipt {
+  checkpoint_id: string;
+  checkpoint_ref: string;
+  path: string;
+  workspace_generation: number;
+  source_entries: string[];
+  write: WorkspaceWriteReceipt;
+}
+
+export interface WorkspaceChangesData {
+  since_generation: number;
+  workspace_generation: number;
+  changes: WorkspaceChange[];
+  truncated: boolean;
+}
+
+export interface WorkspaceManifestEntry {
+  entry_ref: string;
+  path: string;
+  title: string;
+  kind: "markdown" | "binary" | string;
+  media_type: string;
+  version: number;
+  version_ref?: string;
+  current?: boolean;
+  deleted?: boolean;
+  content_hash: string;
+  size_bytes: number;
+  metadata: JsonValue;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WorkspaceManifestData {
+  workspace_generation: number;
+  entries: WorkspaceManifestEntry[];
+  offset: number;
+  limit: number;
+  truncated: boolean;
+}
+
+export interface WorkspaceBinary {
+  entry_ref: string;
+  path: string;
+  title: string;
+  media_type: string;
+  version: number;
+  content_hash: string;
+  size_bytes: number;
+  metadata: JsonValue;
+  updated_at: string;
+}
+
+export interface WorkspaceBinaryListData {
+  binaries: WorkspaceBinary[];
+}
+
+export interface WorkspaceUsageEntry {
+  entry_ref: string;
+  path: string;
+  title: string;
+  kind: string;
+  read_count: number;
+  search_count: number;
+  total_uses: number;
+  first_used_at?: string | null;
+  last_used_at?: string | null;
+  last_read_at?: string | null;
+  last_search_at?: string | null;
+}
+
+export type WorkspaceUsageSort =
+  | "most_used"
+  | "least_used"
+  | "most_recently_used"
+  | "least_recently_used";
+
+export interface WorkspaceUsageData {
+  sort: WorkspaceUsageSort;
+  entries: WorkspaceUsageEntry[];
+  offset: number;
+  limit: number;
+}
+
+export interface WorkspaceJob {
+  job_ref: string;
+  kind: string;
+  status: "queued" | "running" | "complete" | "failed" | string;
+  payload: JsonValue;
+  watermark?: number | null;
+  attempts: number;
+  available_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  last_error?: string | null;
+  created_at: string;
+}
+
+export interface WorkspaceJobsData {
+  jobs: WorkspaceJob[];
+  offset: number;
+  limit: number;
+  truncated: boolean;
+}
+
+export interface WorkspaceDreamReceipt {
+  job_ref?: string;
+  status?: string;
+  workspace_generation: number;
+  watermark: number;
+  no_op: boolean;
+  reason?: string;
+}
+
 export interface CommitReceipt {
   id: string;
   operation_id?: string;

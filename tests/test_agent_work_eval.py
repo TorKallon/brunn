@@ -123,9 +123,12 @@ class AgentWorkEvalTests(unittest.TestCase):
             './memory open --scope "RuptureOps"',
             render_prompt(case, "workspace"),
         )
-        service_prompt = render_prompt(case, "service_api")
+        service_prompt = render_prompt(case, "service_api", "simple")
         self.assertIn("treat its initial evidence", service_prompt)
         self.assertIn("repeat `--path` or `--ref`", service_prompt)
+        self.assertIn("complete entry", service_prompt)
+        self.assertIn("intentionally has no compute or verify operation", service_prompt)
+        self.assertNotIn("--neighbors", service_prompt)
         self.assertIn("exactly from authoritative evidence", service_prompt)
         self.assertIn("Build a facet checklist", service_prompt)
         self.assertIn("repeat a fact when it is needed in more than one slot", service_prompt)
@@ -288,6 +291,103 @@ class AgentWorkEvalTests(unittest.TestCase):
                     "open_questions": ["Await new authoritative evidence"],
                     "next_actions": ["Advance the cited work item"],
                     "artifacts": ["Frozen corpus sources"],
+                },
+            }
+            self.assertTrue(grade_answer(case, answer, paths)["pass"], case["id"])
+
+    def test_recent_work_suite_shape_and_source_boundaries(self):
+        manifest_path = ROOT / "eval" / "recent_work_cases.json"
+        validated = validate(manifest_path, ROOT / "eval" / "work_answer_schema.json")
+        manifest = validated["manifest"]
+
+        self.assertEqual(validated["errors"], [])
+        self.assertEqual(manifest["benchmark_version"], "recent-work-v0.2")
+        self.assertEqual(len(manifest["cases"]), 12)
+        self.assertEqual(
+            sum(len(case["rubric"]) for case in manifest["cases"]),
+            48,
+        )
+        self.assertEqual(len(validated["documents"]), 17)
+        self.assertEqual(len(validated["chunks"]), 20)
+        self.assertEqual(
+            validated["corpus_sha256"],
+            "1e4f1a1da7c87189d20d8ed01b228eee08058bb5c45afffca62d1dd40518528c",
+        )
+        self.assertTrue(
+            {
+                "recent-europe-source-authority",
+                "recent-europe-calendar-dedup",
+                "recent-europe-rail-resume",
+                "recent-tracker-no-delta",
+                "recent-aether-heartbeat-healthy",
+                "recent-aether-gmail-actions",
+                "recent-aether-morning-brief",
+                "recent-current-over-history",
+            }
+            <= {case["id"] for case in manifest["cases"]}
+        )
+
+        frozen_text = manifest_path.read_text() + "\n" + "\n".join(
+            document.text for document in validated["documents"]
+        )
+        self.assertNotIn("/Users/aether/", frozen_text)
+        self.assertNotIn("@rourkem.com", frozen_text)
+        self.assertNotRegex(frozen_text, r"\b[A-Z0-9]{6}\b")
+        emails = re.findall(
+            r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})",
+            frozen_text,
+        )
+        self.assertEqual(set(emails), {"example.com"})
+
+    def test_recent_work_rubrics_are_satisfiable_and_fixed_packs_are_fair(self):
+        manifest = json.loads(
+            (ROOT / "eval" / "recent_work_cases.json").read_text()
+        )
+        documents, chunks = load_corpus(ROOT / manifest["corpus_root"])
+        documents_by_path = {document.path: document for document in documents}
+        paths = set(documents_by_path)
+        index = BM25Index(chunks)
+
+        for case in manifest["cases"]:
+            context = render_fixed_context(case, index, manifest)
+            self.assertLessEqual(len(context), manifest["fixed_pack_chars"] + 2000)
+            claims = []
+            for rubric in case["rubric"]:
+                source_text = "\n".join(
+                    documents_by_path[path].text for path in rubric["sources_any"]
+                )
+                for check in rubric["checks"]:
+                    self.assertTrue(
+                        any(
+                            candidate_matches(
+                                candidate,
+                                source_text,
+                                manifest["grading_mode"],
+                            )
+                            for candidate in check["any"]
+                        ),
+                        f"{case['id']}:{rubric['id']} has an unsatisfied source check {check}",
+                    )
+                self.assertTrue(
+                    any(path in context for path in rubric["sources_any"]),
+                    f"{case['id']}:{rubric['id']} has no expected source in its fixed pack",
+                )
+                claims.append({
+                    "id": rubric["id"],
+                    "value": " ".join(check["any"][0] for check in rubric["checks"]),
+                    "source_paths": [rubric["sources_any"][0]],
+                    "confidence": "high",
+                })
+            answer = {
+                "answer": "Source-backed recent-work continuation.",
+                "claims": claims,
+                "checkpoint": {
+                    "objective": "Continue from current evidence.",
+                    "current_state": ["Recovered the latest source-backed state"],
+                    "decisions": ["Respect authority and action boundaries"],
+                    "open_questions": ["Await new evidence where needed"],
+                    "next_actions": ["Advance only the cited current work"],
+                    "artifacts": ["Frozen recent-work corpus"],
                 },
             }
             self.assertTrue(grade_answer(case, answer, paths)["pass"], case["id"])

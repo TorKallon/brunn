@@ -90,6 +90,7 @@ def validate(manifest_path: Path) -> dict[str, Any]:
                 if source not in base_paths and not (ROOT / source).is_file():
                     errors.append(f"{case['id']}:{rubric['id']}: missing source {source}")
     return {
+        "manifest_path": manifest_path,
         "manifest": manifest,
         "base_root": base_root,
         "base_paths": base_paths,
@@ -179,6 +180,7 @@ def prepare_native_assets(
     timeout_seconds: float,
     existing: dict[str, dict[str, Any]] | None = None,
     state_path: Path | None = None,
+    service_protocol: str = "legacy",
 ) -> dict[str, dict[str, Any]]:
     documents = text_documents(validated["base_root"])
     work_cases = load_json(ROOT / "eval" / "work_cases.json")
@@ -210,6 +212,12 @@ def prepare_native_assets(
             delta_documents=[file_document(ROOT / case["delta_path"], case["delta_path"])],
             seed_checkpoint=seed,
             timeout_seconds=timeout_seconds,
+            import_path=(
+                "/v1/workspace/admin/eval/import"
+                if service_protocol == "simple"
+                else "/v1/admin/eval/import"
+            ),
+            wait_for_semantic=service_protocol != "simple",
         )
         if not metadata.get("checkpoint_id"):
             raise RuntimeError(f"{case['id']}: eval import did not return seed checkpoint_id")
@@ -245,6 +253,7 @@ Task:
 {case['task']}
 
 Return the required JSON object. Include exactly one `claims` entry for every slot below, using the exact ID. Cite the source paths that support each claim. The final checkpoint must represent the revised child state, not merely restate the parent.
+Keep every claim slot self-contained: repeat a changed fact, threshold, authority boundary, or next action when that slot needs it, even if it already appears in another claim or the checkpoint.
 
 {slots}
 """
@@ -279,6 +288,7 @@ def prepare_run_dirs(
     embeddings: str,
     embedding_model: str,
     conditions: Sequence[str] | None = None,
+    service_protocol: str = "legacy",
 ) -> list[tuple[dict[str, Any], str, Path]]:
     jobs = []
     selected_conditions = list(conditions or validated["manifest"]["conditions"])
@@ -314,6 +324,7 @@ def prepare_run_dirs(
                     run_id=run_root.name,
                     case_id=case["id"],
                     checkpoint_id=native["checkpoint_id"],
+                    protocol=service_protocol,
                 )
             else:
                 corpus_link = run_dir / "corpus"
@@ -483,6 +494,9 @@ def checkpoint_source_paths(value: dict[str, Any] | None) -> set[str]:
         locator = source.get("locator")
         if isinstance(locator, dict) and isinstance(locator.get("ref"), str):
             paths.add(locator["ref"])
+    for source in payload.get("source_entries", []):
+        if isinstance(source, dict) and isinstance(source.get("path"), str):
+            paths.add(source["path"])
     return paths
 
 
@@ -550,6 +564,7 @@ def attach_native_lineage(
     case: dict[str, Any],
     metadata: dict[str, Any],
     max_calls: int,
+    service_protocol: str = "legacy",
 ) -> None:
     run_dir = Path(record["answer_path"]).parent
     state_path = run_dir / "native-session.json"
@@ -590,17 +605,55 @@ def attach_native_lineage(
             case_id=case["id"],
         )
         try:
-            session_response = client.get_session(session_id)
-            session_revision = session_response.data.get("corpus_revision")
-            child = find_checkpoint(session_response.body, child_id)
-            if child is None:
-                checkpoint_response = client.get_checkpoint(child_id)
-                child = checkpoint_response.data
-            payload = checkpoint_payload(child)
-            checkpoint_read_via_http = bool(
-                payload
-                and canonical_api_ref(payload.get("checkpoint_id")) == canonical_api_ref(child_id)
-            )
+            if service_protocol == "simple":
+                checkpoint_response = client.post("/v1/workspace/read", {
+                    "session_id": session_id,
+                    "requests": [{
+                        "ref": child_id,
+                        "view": "full",
+                        "max_chars": 20_000,
+                    }],
+                })
+                items = checkpoint_response.data.get("items", [])
+                if not isinstance(items, list) or len(items) != 1:
+                    raise ValueError("workspace.read returned no child checkpoint")
+                item = items[0]
+                item_metadata = item.get("metadata", {})
+                if not isinstance(item_metadata, dict):
+                    raise ValueError("workspace.read child checkpoint has no metadata")
+                generation = item_metadata.get("workspace_generation")
+                session_revision = (
+                    f"generation:{generation}"
+                    if isinstance(generation, int)
+                    else None
+                )
+                child = {
+                    "checkpoint_id": item_metadata.get("checkpoint_ref"),
+                    "parent_checkpoint_ref": item_metadata.get(
+                        "parent_checkpoint_ref"
+                    ),
+                    "corpus_revision": session_revision,
+                    "path": item.get("path"),
+                    "source_refs": item_metadata.get("source_refs", []),
+                    "source_entries": item_metadata.get("source_entries", []),
+                }
+                checkpoint_read_via_http = bool(
+                    canonical_api_ref(child.get("checkpoint_id"))
+                    == canonical_api_ref(child_id)
+                )
+            else:
+                session_response = client.get_session(session_id)
+                session_revision = session_response.data.get("corpus_revision")
+                child = find_checkpoint(session_response.body, child_id)
+                if child is None:
+                    checkpoint_response = client.get_checkpoint(child_id)
+                    child = checkpoint_response.data
+                payload = checkpoint_payload(child)
+                checkpoint_read_via_http = bool(
+                    payload
+                    and canonical_api_ref(payload.get("checkpoint_id"))
+                    == canonical_api_ref(child_id)
+                )
         except (NativeApiError, ValueError) as exc:
             lineage_error = str(exc)
     if child is None:
@@ -609,7 +662,7 @@ def attach_native_lineage(
     payload = checkpoint_payload(child)
     source_paths = checkpoint_source_paths(child)
     provenance_resolution_error = None
-    if client is not None and session_id:
+    if client is not None and session_id and service_protocol != "simple":
         source_paths, provenance_resolution_error = resolve_checkpoint_source_paths(
             client,
             session_id,
@@ -657,6 +710,7 @@ def attach_results(
     metadata: dict[str, Any],
     corpus_paths: set[str],
     max_calls: int,
+    service_protocol: str = "legacy",
 ) -> None:
     answer_path = Path(record["answer_path"])
     record["events"] = parse_event_metrics(Path(record["events_path"]))
@@ -678,7 +732,13 @@ def attach_results(
         record["transition_pass"] = bool(record["grade"]["pass"])
         return
     if record["condition"] == "service_api_resume":
-        attach_native_lineage(record, case, metadata["native"], max_calls)
+        attach_native_lineage(
+            record,
+            case,
+            metadata["native"],
+            max_calls,
+            service_protocol,
+        )
         return
 
     run_dir = answer_path.parent
@@ -775,6 +835,65 @@ def summarize(records: Sequence[dict[str, Any]], conditions: Sequence[str]) -> d
             "mean_elapsed_seconds": round(statistics.fmean(row["elapsed_seconds"] for row in rows), 2) if rows else 0,
         }
     return summary
+
+
+def regrade_run(
+    run: dict[str, Any],
+    validated: dict[str, Any],
+    schema_path: Path = ROOT / "eval" / "work_answer_schema.json",
+) -> dict[str, Any]:
+    run.setdefault(
+        "execution_fingerprints",
+        {
+            key: run.get(key)
+            for key in (
+                "manifest_sha256",
+                "harness_sha256",
+                "schema_sha256",
+                "workspace_cli_sha256",
+                "native_memory_sha256",
+            )
+            if run.get(key)
+        },
+    )
+    case_by_id = {case["id"]: case for case in validated["manifest"]["cases"]}
+    corpus_paths = set(validated["base_paths"]) | {
+        case["delta_path"] for case in validated["manifest"]["cases"]
+    }
+    selected_case_ids = {case["id"] for case in run["manifest"]["cases"]}
+    run["manifest"]["cases"] = [
+        case for case in validated["manifest"]["cases"] if case["id"] in selected_case_ids
+    ]
+    for record in run["records"]:
+        case = case_by_id.get(record["case_id"])
+        answer = record.get("answer")
+        if case is None or not answer:
+            continue
+        record["grade"] = grade_transition_answer(case, answer, corpus_paths)
+        if record["condition"] == "filesystem_rebuild":
+            record["transition_pass"] = bool(record["grade"]["pass"])
+            continue
+        lineage = record.get("lineage") or {}
+        record["transition_pass"] = bool(
+            record["grade"]["pass"]
+            and lineage.get("parent_match")
+            and lineage.get("revision_match")
+            and lineage.get("delta_source_preserved")
+            and lineage.get("prior_source_preserved")
+            and lineage.get("within_call_budget")
+        )
+    run["summary"] = summarize(run["records"], run["manifest"]["conditions"])
+    run["regraded_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+    run["manifest_sha256"] = sha256_file(Path(validated["manifest_path"]))
+    run["harness_sha256"] = sha256_file(Path(__file__))
+    run["regrade_fingerprints"] = {
+        "manifest_sha256": run["manifest_sha256"],
+        "harness_sha256": run["harness_sha256"],
+        "schema_sha256": sha256_file(schema_path),
+        "workspace_cli_sha256": sha256_file(ROOT / "workspace_cli.py"),
+        "native_memory_sha256": sha256_file(ROOT / "native_memory.py"),
+    }
+    return run
 
 
 def render_report(run: dict[str, Any]) -> str:
@@ -927,6 +1046,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
             timeout_seconds=args.native_index_timeout,
             existing=native_metadata,
             state_path=native_state_path,
+            service_protocol=args.service_protocol,
         )
         for case_id, metadata in native_metadata.items():
             prepared[case_id]["native"] = metadata
@@ -937,6 +1057,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         args.embeddings,
         args.embedding_model,
         selected_conditions,
+        args.service_protocol,
     )
     semaphore = asyncio.Semaphore(args.concurrency)
     tasks = []
@@ -983,6 +1104,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
             prepared[record["case_id"]],
             corpus_paths,
             manifest["workspace_max_completed_calls"],
+            args.service_protocol,
         )
     run = {
         "benchmark_version": manifest["benchmark_version"],
@@ -1000,6 +1122,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
             for case_id, metadata in native_metadata.items()
         },
         "records": records,
+        "service_protocol": args.service_protocol,
     }
     run["summary"] = summarize(records, manifest["conditions"])
     return run
@@ -1027,9 +1150,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="run only filesystem reconstruction and native service checkpoint resume",
     )
     run.add_argument("--native-index-timeout", type=float, default=300.0)
+    run.add_argument(
+        "--service-protocol",
+        choices=("legacy", "simple"),
+        default="simple",
+    )
     run.add_argument("--reuse-input", type=Path)
     run.add_argument("--out", type=Path, required=True)
     run.add_argument("--report", type=Path)
+    regrade = subparsers.add_parser("regrade")
+    regrade.add_argument("--input", type=Path, required=True)
+    regrade.add_argument("--out", type=Path, required=True)
+    regrade.add_argument("--report", type=Path)
     return parser
 
 
@@ -1048,6 +1180,20 @@ def main() -> None:
         return
     if validated["errors"]:
         raise ValueError("\n".join(validated["errors"]))
+    if args.command == "regrade":
+        run = regrade_run(load_json(args.input), validated, args.schema)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
+        if args.report:
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(render_report(run), encoding="utf-8")
+        print(json.dumps({
+            "status": "ok",
+            "out": str(args.out),
+            "report": str(args.report) if args.report else None,
+            "summary": run["summary"],
+        }, indent=2))
+        return
     run = asyncio.run(run_all(args, validated))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
