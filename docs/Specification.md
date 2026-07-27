@@ -97,10 +97,9 @@ versions or reads changes after its cursor.
 
 ## Consistency Posture
 
-In this specification, an atomic publish is only one short local entry change:
-readers see either the previous version or the new version of that entry. It
-does not mean ACID coordination across a workspace, a batch, PostgreSQL and S3,
-or background providers.
+Single-entry visibility means readers see either the previous version or the
+new version of one entry. It does not mean ACID coordination across a
+workspace, a batch, PostgreSQL and S3, or background providers.
 
 Batch reads retain valid items when another exact path is stale. Import,
 export, embedding, description, dreaming, usage, and maintenance work may make
@@ -125,7 +124,10 @@ Each chunk contains:
 
 Chunks and embeddings are rebuildable. Missing embeddings produce lexical-only
 availability and a queued embedding job. Search never waits for whole-workspace
-reindexing.
+reindexing. After user-visible dreaming and binary-description jobs, workers
+prefer the newest ready embedding jobs so a historical import does not starve
+current work. Under sustained overload, older derived jobs may wait; exact and
+lexical retrieval do not.
 
 ## Markdown Conventions
 
@@ -227,9 +229,12 @@ read the source. Lane failure produces a partial or degraded response, not loss
 of successful candidates.
 
 Exact mode resolves explicit quoted or backticked relative paths plus exact
-path or title text. Lexical mode uses the FTS GIN index and may add at most two
-explicit quoted or compound-identifier anchors from a natural-language task.
-Semantic mode uses the HNSW index through the validated transaction user
+path or title text. Lexical mode checks the 256 most recently changed entries
+first. When fewer than 128 recent entries match, it also queries a bounded
+candidate set from the full FTS GIN index so sparse recent leads do not hide
+older authority. Dense broad queries remain recent-bounded. It may add at most
+two explicit quoted or compound-identifier anchors from a natural-language
+task. Semantic mode uses the HNSW index through the validated transaction user
 context.
 
 ### Read

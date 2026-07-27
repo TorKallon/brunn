@@ -439,6 +439,13 @@ def synthetic_documents(count: int) -> tuple[list[dict[str, Any]], str, str]:
                 "source authority across fresh-agent resumes. "
                 f"Its exact audit answer is `{old_source_marker(count)}`.\n"
             )
+        if index == count - 2 and index != 0:
+            body += (
+                "\n## Recent incomplete coordination lead\n\n"
+                "A new request mentions the meridian continuity doctrine and "
+                "durable workspace source authority, but this recent note does "
+                "not contain the archived audit answer.\n"
+            )
         if path == target_path:
             overflow_marker = lexical_overflow_marker(count)
             body += (

@@ -285,7 +285,7 @@ async fn claim_embedding(pool: &PgPool) -> ApiResult<Option<Job>> {
             AND attempts < $1
             AND status='queued'
             AND available_at <= CURRENT_TIMESTAMP
-          ORDER BY available_at,created_at,id
+          ORDER BY available_at DESC,created_at DESC,id DESC
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
@@ -357,7 +357,7 @@ async fn claim_more_embeddings(pool: &PgPool, limit: i64) -> ApiResult<Vec<Job>>
             AND attempts < $1
             AND status='queued'
             AND available_at <= CURRENT_TIMESTAMP
-          ORDER BY available_at,created_at,id
+          ORDER BY available_at DESC,created_at DESC,id DESC
           FOR UPDATE SKIP LOCKED
           LIMIT $2
         )
@@ -825,7 +825,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn priority_jobs_claim_before_an_older_embedding_backlog() {
+    async fn priority_jobs_precede_backlog_and_embeddings_prefer_recent_writes() {
         let Ok(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL") else {
             eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping worker priority test");
             return;
@@ -859,7 +859,7 @@ mod tests {
               id,user_id,kind,status,payload,available_at,created_at
             )
             SELECT id,$2,'embed_entry','queued','{}'::jsonb,
-                   '2000-01-01 00:00:00+00'::timestamptz,
+                   clock_timestamp() + interval '100 milliseconds',
                    '2000-01-01 00:00:00+00'::timestamptz
                      + (ordinality * interval '1 second')
             FROM unnest($1::uuid[]) WITH ORDINALITY AS queued(id,ordinality)
@@ -900,7 +900,9 @@ mod tests {
         assert_eq!(first.id, dream_id);
         assert_eq!(second.id, description_id);
 
+        tokio::time::sleep(std::time::Duration::from_millis(125)).await;
         let first_embedding = claim_embedding(&pool).await.unwrap().unwrap();
+        assert_eq!(first_embedding.id, *embedding_ids.last().unwrap());
         let mut embedding_batch = vec![first_embedding];
         embedding_batch.extend(
             claim_more_embeddings(&pool, MAX_EMBED_BATCH_JOBS - 1)

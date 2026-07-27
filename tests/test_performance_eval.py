@@ -20,6 +20,7 @@ from performance_eval import (  # noqa: E402
     counter_growth,
     evaluate_gates,
     load_reused_flat_controls,
+    old_source_marker,
     percentile,
     resolve_run_profile,
     response_character_metrics,
@@ -50,6 +51,11 @@ class PerformanceEvalTests(unittest.TestCase):
             sum(marker in document["content"] for document in documents),
             1,
         )
+        self.assertIn(
+            "Recent incomplete coordination lead",
+            documents[-2]["content"],
+        )
+        self.assertNotIn(old_source_marker(1_000), documents[-2]["content"])
         overflow_marker = lexical_overflow_marker(1_000)
         self.assertEqual(
             sum(overflow_marker in document["content"] for document in documents),

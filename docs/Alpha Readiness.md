@@ -100,8 +100,8 @@ generated `manifest.json`. It has 48 applied migrations and passed:
   reconciliation, complete export, schema-derived deletion, exact object
   purge, and proof-gated account deletion;
 - exact-once upload finalization, read-only exact/range/version downloads,
-  expired-stage rollback, atomic multi-batch import, and a 72 MB resumable
-  upload with byte-exact round trip.
+  expired-stage rollback, single-generation multi-batch import, and a 72 MB
+  resumable upload with byte-exact round trip.
 
 The coordinated backup is:
 

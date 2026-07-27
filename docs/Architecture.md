@@ -79,12 +79,11 @@ Straylight uses short PostgreSQL transactions where partial visibility would
 be confusing. It does not provide distributed ACID behavior across PostgreSQL,
 S3, model providers, workers, or clients.
 
-In this document, **atomic** or **publish** means only one small local entry
-change: readers see either the previous version or the new version of that one
-entry. It never means a globally isolated workspace, an all-or-nothing batch,
-or replayable coordination across services. Batch reads, imports, exports,
-semantic indexing, dreaming, and maintenance may make partial progress and
-report exactly what succeeded.
+Single-entry visibility means readers see either the previous version or the
+new version of one entry. It never means a globally isolated workspace, an
+all-or-nothing batch, or replayable coordination across services. Batch reads,
+imports, exports, semantic indexing, dreaming, and maintenance may make partial
+progress and report exactly what succeeded.
 
 Normal Markdown write:
 
@@ -100,6 +99,12 @@ and the worker yields between groups. Partial semantic coverage is valid:
 lexical retrieval remains complete, and a retry skips chunks that already
 have vectors. Straylight never holds a document-sized transaction merely to
 make derived embeddings appear together.
+
+Workers prefer the newest ready embedding jobs after user-visible dreaming and
+binary-description work. This keeps current work semantically searchable while
+a finite historical import catches up in the background. Embeddings are
+rebuildable acceleration data, so an old job may wait under sustained overload;
+exact and lexical retrieval never wait with it.
 
 Self-hosted PostgreSQL keeps enough write-ahead-log headroom to spread
 checkpoints across sustained imports and semantic catch-up. Derived work may
@@ -160,12 +165,15 @@ callers cannot supply a user ID.
 5. Hydrate the strongest coherent Markdown entries under one token budget.
 6. Optionally read one checkpoint and changed paths since its generation.
 
-The exact lane uses paths and exact titles. The lexical lane uses PostgreSQL
-FTS and a GIN index. The semantic lane embeds the query and uses pgvector HNSW.
-Each lane has a 2.5-second budget so a slow optional dependency cannot delay
-successful evidence from another lane. Candidate ranking is bounded before
-content hydration. No read computes a
-corpus map, exact corpus count, global manifest, or full materialization.
+The exact lane uses paths and exact titles. The lexical lane first checks the
+256 most recently changed entries. When fewer than 128 of those entries match,
+it also takes a bounded candidate set from the full PostgreSQL FTS GIN index so
+one plausible recent note cannot hide older authoritative material. Dense
+broad queries remain recent-bounded. The semantic lane embeds the query and
+uses pgvector HNSW. Each lane has a 2.5-second budget so a slow optional
+dependency cannot delay successful evidence from another lane. Candidate
+ranking is bounded before content hydration. No read computes a corpus map,
+exact corpus count, global manifest, or full materialization.
 
 `search` runs at most four bounded queries concurrently and returns compact
 candidates with path, entry reference, current version, heading, and excerpt.
