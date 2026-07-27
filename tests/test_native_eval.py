@@ -32,6 +32,7 @@ from native_memory import (
     response_payload_metrics,
 )
 from transition_eval import (
+    attach_filesystem_sidecar_lineage,
     attach_native_lineage,
     build_codex_command as build_transition_codex_command,
     select_transition_conditions,
@@ -1546,6 +1547,62 @@ class NativeEvaluationTests(unittest.TestCase):
         self.assertIn("sandbox_workspace_write.network_access=true", native)
         self.assertNotIn("sandbox_workspace_write.network_access=true", filesystem)
         self.assertIn("workspace-write", native)
+
+    def test_transition_filesystem_sidecar_requires_linked_child_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            (run_dir / "sidecar").mkdir()
+            checkpoint = {
+                "parent_checkpoint_id": "checkpoint:parent",
+                "corpus_revision": "revision:delta",
+                "source_refs": ["prior.md", "delta.md"],
+                "state": {
+                    "objective": "Advance safely",
+                    "current_state": ["Delta incorporated"],
+                    "decisions": [],
+                    "open_questions": [],
+                    "next_actions": ["Verify"],
+                    "artifacts": ["delta.md"],
+                },
+            }
+            (run_dir / "sidecar" / "checkpoint.json").write_text(
+                json.dumps(checkpoint) + "\n",
+                encoding="utf-8",
+            )
+            record = {
+                "answer_path": str(run_dir / "answer.json"),
+                "grade": {"pass": True},
+            }
+            case = {"delta_path": "delta.md"}
+            metadata = {
+                "seed_checkpoint": {
+                    "checkpoint_id": "checkpoint:parent",
+                    "source_refs": ["prior.md"],
+                },
+                "delta_revision": {"revision_id": "revision:delta"},
+            }
+            attach_filesystem_sidecar_lineage(record, case, metadata)
+            self.assertTrue(record["transition_pass"])
+            self.assertEqual(record["persisted_checkpoint"], checkpoint)
+            self.assertTrue(record["lineage"]["state_valid"])
+
+            del checkpoint["state"]["artifacts"]
+            (run_dir / "sidecar" / "checkpoint.json").write_text(
+                json.dumps(checkpoint) + "\n",
+                encoding="utf-8",
+            )
+            invalid_record = {
+                "answer_path": str(run_dir / "answer.json"),
+                "grade": {"pass": True},
+            }
+            attach_filesystem_sidecar_lineage(
+                invalid_record,
+                case,
+                metadata,
+            )
+            self.assertFalse(invalid_record["transition_pass"])
+            self.assertIsNone(invalid_record["persisted_checkpoint"])
+            self.assertFalse(invalid_record["lineage"]["state_valid"])
 
     def test_native_transition_reads_child_checkpoint_over_http(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):

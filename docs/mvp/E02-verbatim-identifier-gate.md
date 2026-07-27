@@ -13,10 +13,10 @@ Stage 1 exists to document the defect on the current build before any code chang
 
 ## Preconditions and build items
 
-- B1 (S): Extend performance_eval.py synthetic_documents generation to plant a unique identifier token (format `STRAYID-<scale>-<n>-<hex8>`) at a byte offset strictly greater than 2,400 into 30 selected documents per scale, recording (path, identifier, offset) in the fixture manifest. Anchor: performance_eval.py synthetic corpus generator.
-- B2 (S): Verbatim-return checker: for each planted identifier, issue a search and assert the exact identifier string appears verbatim in the raw search response payload (in-payload only; follow-up open/read does not count). Register as named gate `verbatim_identifier` in the performance_eval gate set. Anchor: performance_eval.py correctness-marker gates.
+- B1 (S): Extend performance_eval.py synthetic_documents generation to plant a unique identifier token (format `STRAYID-<scale>-<n>-<hex8>`) at a UTF-8 byte offset strictly greater than 2,400 into 30 selected documents per scale, recording (path, identifier, byte offset, position, section depth) in the fixture manifest. Anchor: performance_eval.py synthetic corpus generator.
+- B2 (S): Verbatim-return checker: for each planted identifier, issue an exact-only search whose query contains the exact path plus the identifier and assert the identifier appears in a source-text field of the raw search response. Request/query echoes never count, and follow-up open/read does not count. Register this as the named blocking gate `verbatim_identifier`. This isolates the exact-lane 2,400-char excerpt defect; allowing lexical mode would trivially retrieve the planted identifier and invalidate stage 1.
 - B3 (M, stage 2 only): D02 built behind verbatim_spans — exact-lane response assembly in apps/api/src/simple_core.rs plus byte-for-byte passthrough in apps/mcp memory.query.
-- B4 (S): n≥3 paired-draw aggregator eval/aggregate_draws.py (per-case win/loss/tie, exact-binomial McNemar, case-level bootstrap CIs, stdlib only) — known build item, does not exist yet; shared, specified in E01-paired-draw-machinery-and-baseline.md.
+- B4 (S): n≥3 paired-draw aggregator eval/aggregate_draws.py (draws averaged within case, per-case claim win/loss/tie, exact-binomial McNemar on collapsed binary outcomes, case-clustered corpus-total bootstrap CIs, stdlib only) — shared with E01-paired-draw-machinery-and-baseline.md.
 - B5 (S): Identifier-heavy case tag in eval/recent_work_cases.json covering D02's full chronic identifier list (D02-verbatim-span-contract.md): recent-aether-gmail-actions, recent-europe-calendar-dedup, recent-aether-morning-brief, and the tracker cases, for targeted repeats.
 
 Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane, and all latency baselines are exact+lexical; use tests/mock_openai_embeddings.py only if a run insists on semantic coverage.
@@ -29,21 +29,25 @@ Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane
 
 ## Corpus and fixtures
 
-- Synthetic performance corpus at default scales 1k/10k/64k plus 640k via --future-soak; 30 planted identifiers per scale, all past char 2,400, mixed positions (mid-document and tail) and mixed section depths.
+- Synthetic performance corpus at default scales 1k/10k/64k plus 640k via --future-soak; 30 planted identifiers per scale, all past UTF-8 byte 2,400, mixed positions (mid-document and tail) and mixed section depths.
 - Reasoning: the recent-work fixture corpus used by agent_work_eval (12 cases / 48 claims), model gpt-5.6-sol from manifest.
 
 ## Procedure
 
 1. Land B1+B2 on a clean git tree (implementation fingerprint gate requires it).
-2. Stage 1 run: `python performance_eval.py run --label verbatim-identifier-stage1 --out results/2026-MM-DD-verbatim-identifier-stage1.json` at default scales, 30 samples (definitive; `--quick` acceptable only for smoke).
-3. Record the expected failure per scale (target: 0/30 verbatim in-payload). If any identifier does return verbatim, record which lane and position, and re-scope D02 before proceeding.
-4. Mark `verbatim_identifier` as a known-failing documented gate until D02 ships. Stage 1 is complete; no model runs occurred.
-5. Stage 2 begins only after B3 lands on a clean tree. Deterministic pass: `python performance_eval.py run --label verbatim-identifier-stage2-off --out results/2026-MM-DD-verbatim-identifier-stage2-off.json` with flag off (failure must persist unchanged), the same with `--label verbatim-identifier-stage2-on` and flag on at 1k/10k/64k, then `python performance_eval.py run --label verbatim-identifier-stage2-soak --future-soak --out results/2026-MM-DD-verbatim-identifier-stage2-soak.json` with flag on. Require 30/30 at every scale with flag on.
-6. Reasoning pass, paired draws. For N in 1..3, flag off: `python agent_work_eval.py run --manifest eval/recent_work_cases.json --condition service_api --concurrency 3 --timeout 360 --run-id verbatim-off-draw<N> --out results/2026-MM-DD-verbatim-off-draw<N>.json --report results/2026-MM-DD-verbatim-off-draw<N>.md`. Flip the runtime flag on (record flag state in the run record) and repeat with slug verbatim-on-draw<N>.
-7. Aggregate with B4: `python eval/aggregate_draws.py results/2026-MM-DD-verbatim-*-draw*.json --out results/2026-MM-DD-verbatim-aggregate.json` — per-case pairing across draws, exact McNemar, bootstrap CIs.
-8. If overall delta is inside the noise floor but identifier-tagged cases move, run the 5-draw targeted repeat on the tagged subset (both arms) and aggregate separately.
-9. Use `agent_work_eval.py regrade` for any rubric corrections; never regenerate answers to fix grading.
-10. Promote `verbatim_identifier` to a permanent, blocking performance_eval gate: with flag on it fails closed below 30/30; with flag off it remains a documented expected-fail.
+2. Resolve the isolated stack's exact container IDs (`API_CONTAINER=$(docker compose ps -q api)` and `DB_CONTAINER=$(docker compose ps -q db)`). A definitive run must record both and must configure the semantic-provider failure/restore hooks even though the identifier probe itself is exact-only.
+   Start the isolated mock embedding provider in its healthy state and wire the service to it before the run; the hooks below deliberately stop and restore that already-running provider.
+3. Stage 1 run at default scales and 30 samples:
+   `python3 performance_eval.py run --protocol simple --label verbatim-identifier-stage1 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --semantic-failure-start-command "python3 tests/mock_openai_embeddings.py stop" --semantic-failure-stop-command "python3 tests/mock_openai_embeddings.py start" --out results/2026-MM-DD-verbatim-identifier-stage1.json`.
+   The command is expected to exit nonzero because `verbatim_identifier` is a blocking known-failing gate before D02. `--quick` is acceptable only for smoke.
+4. Record the expected failure per scale (target: 0/30 exact-only source payloads). If any identifier does return verbatim, record its position and response field and re-scope D02 before proceeding.
+5. Keep `verbatim_identifier` blocking but document the stage-1 failure until D02 ships. Stage 1 is complete; no model runs occurred.
+6. Stage 2 begins only after B3 lands on a clean tree. Repeat the same definitive `--protocol simple`, container-fingerprint, and semantic-hook flags for `verbatim-identifier-stage2-off` and `verbatim-identifier-stage2-on`; add `--future-soak` for `verbatim-identifier-stage2-soak`. Flag off must preserve the failure; flag on must reach 30/30 at every scale.
+7. Reasoning pass, paired draws. For N in 1..3, flag off: `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --concurrency 3 --timeout 360 --run-id verbatim-off-draw<N> --out results/2026-MM-DD-verbatim-off-draw<N>.json --report results/2026-MM-DD-verbatim-off-draw<N>.md`. Flip the runtime flag on (record flag state in the run record) and repeat with slug verbatim-on-draw<N>.
+8. Aggregate with B4: `python3 eval/aggregate_draws.py results/2026-MM-DD-verbatim-*-draw*.json --out results/2026-MM-DD-verbatim-aggregate.json` — repeated draws remain clustered by case; McNemar is reported separately from the claim-difference bootstrap.
+9. If overall delta is inside the noise floor but identifier-tagged cases move, run the 5-draw targeted repeat on the tagged subset (both arms) and aggregate separately.
+10. Use `agent_work_eval.py regrade` for any rubric corrections; never regenerate answers to fix grading.
+11. Promote `verbatim_identifier` to a permanent, blocking performance_eval gate: with flag on it fails closed below 30/30; with flag off it remains a documented expected-fail.
 
 ## Metrics
 

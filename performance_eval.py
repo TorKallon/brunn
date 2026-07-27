@@ -34,6 +34,8 @@ PRODUCTION_RECORDS = 64_000
 FUTURE_RECORDS = 640_000
 DEFINITIVE_SAMPLES = 30
 QUICK_SAMPLES = 3
+VERBATIM_IDENTIFIER_PROBES = 30
+VERBATIM_IDENTIFIER_MIN_OFFSET = 2_401
 BROAD_QUERY = "deterministic performance-fixture material"
 OLD_SOURCE_QUERY = (
     "Reconcile the meridian continuity doctrine with a new request and explain "
@@ -124,6 +126,23 @@ def rendered_contains(value: Any, needle: str) -> bool:
         ensure_ascii=False,
         sort_keys=True,
     ).casefold()
+
+
+def source_text_contains(value: Any, needle: str) -> bool:
+    folded = needle.casefold()
+
+    def visit(item: Any, parent_key: str | None = None) -> bool:
+        if isinstance(item, dict):
+            return any(visit(child, key) for key, child in item.items())
+        if isinstance(item, list):
+            return any(visit(child, parent_key) for child in item)
+        return bool(
+            isinstance(item, str)
+            and parent_key in SOURCE_TEXT_KEYS
+            and folded in item.casefold()
+        )
+
+    return visit(value)
 
 
 def response_reports_lane_failure(value: Any, lane: str) -> bool:
@@ -410,12 +429,27 @@ def resolve_run_profile(args: argparse.Namespace) -> RunProfile:
     )
 
 
-def synthetic_documents(count: int) -> tuple[list[dict[str, Any]], str, str]:
+def synthetic_documents(
+    count: int,
+    *,
+    include_fixture_manifest: bool = False,
+) -> Any:
     if count < 2:
         raise ValueError("scale must contain at least two documents")
     target_path = f"Synthetic/records/{count - 1:07d}.md"
     marker = f"narrow-fact-{count}-cobalt"
     discovery_key = synthetic_discovery_key(count)
+    available_probe_indexes = [
+        index
+        for index in range(count)
+        if index not in {0, count - 2, count - 1}
+    ]
+    selected_probe_indexes = available_probe_indexes[:VERBATIM_IDENTIFIER_PROBES]
+    probe_number_by_index = {
+        index: probe_number
+        for probe_number, index in enumerate(selected_probe_indexes, start=1)
+    }
+    verbatim_identifiers: list[dict[str, Any]] = []
     documents: list[dict[str, Any]] = []
     for index in range(count):
         path = f"Synthetic/records/{index:07d}.md"
@@ -458,6 +492,42 @@ def synthetic_documents(count: int) -> tuple[list[dict[str, Any]], str, str]:
                 f"more relevant to {BROAD_QUERY} than the earlier broad matches. "
                 f"{BROAD_QUERY}. {BROAD_QUERY}.\n"
             )
+        probe_number = probe_number_by_index.get(index)
+        if probe_number is not None:
+            identifier_hash = hashlib.sha256(
+                f"{count}:{probe_number}:{path}".encode("utf-8")
+            ).hexdigest()[:8]
+            identifier = (
+                f"STRAYID-{count}-{probe_number}-{identifier_hash}"
+            )
+            section_depth = 2 + (probe_number % 3)
+            body += (
+                "\n"
+                + "#" * section_depth
+                + f" Verbatim identifier probe {probe_number}\n\n"
+            )
+            requested_offset = (
+                VERBATIM_IDENTIFIER_MIN_OFFSET
+                + 199
+                + (probe_number % 7) * 181
+            )
+            current_bytes = len(body.encode("utf-8"))
+            identifier_offset = max(requested_offset, current_bytes + 1)
+            body += "x" * (identifier_offset - current_bytes)
+            assert len(body.encode("utf-8")) == identifier_offset
+            body += identifier + "\n"
+            if probe_number % 2 == 0:
+                body += (
+                    "Deterministic tail material follows the planted identifier. "
+                    * 12
+                )
+            verbatim_identifiers.append({
+                "path": path,
+                "identifier": identifier,
+                "byte_offset": identifier_offset,
+                "position": "mid_document" if probe_number % 2 == 0 else "tail",
+                "section_depth": section_depth,
+            })
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         documents.append({
             "path": path,
@@ -465,6 +535,17 @@ def synthetic_documents(count: int) -> tuple[list[dict[str, Any]], str, str]:
             "content_sha256": digest,
             "media_type": "text/markdown",
         })
+    if include_fixture_manifest:
+        return (
+            documents,
+            target_path,
+            marker,
+            {
+                "schema": "straylight-synthetic-fixture@v2",
+                "scale": count,
+                "verbatim_identifiers": verbatim_identifiers,
+            },
+        )
     return documents, target_path, marker
 
 
@@ -1129,6 +1210,61 @@ def semantic_failure_probe(
     }
 
 
+def verbatim_identifier_probe(
+    client: NativeApiClient,
+    *,
+    protocol: str,
+    authorization_scope: str,
+    session_id: str,
+    probes: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    if protocol != "simple":
+        return {
+            "status": "not_applicable_protocol",
+            "expected": 0,
+            "returned": 0,
+            "pass": None,
+            "results": [],
+        }
+    results = []
+    for index, probe in enumerate(probes, start=1):
+        response, elapsed_ms = request_with_result(
+            client,
+            "/v1/workspace/search",
+            {
+                "session_id": session_id,
+                "queries": [{
+                    "id": f"verbatim-identifier-{index}",
+                    "goal": "return the literal identifier from the exact path",
+                    "query": f"{probe['path']} {probe['identifier']}",
+                    "scope": authorization_scope,
+                    "modes": ["exact"],
+                    "limit": 1,
+                }],
+            },
+        )
+        present = source_text_contains(response, str(probe["identifier"]))
+        results.append({
+            **probe,
+            "modes": ["exact"],
+            "verbatim_in_source_payload": present,
+            "elapsed_ms": round(elapsed_ms, 3),
+            "payload_chars": response_character_metrics(response)["payload_chars"],
+        })
+    returned = sum(
+        bool(item["verbatim_in_source_payload"])
+        for item in results
+    )
+    expected = len(results)
+    return {
+        "status": "complete",
+        "expected": expected,
+        "returned": returned,
+        "pass": returned == expected,
+        "results": results,
+    }
+
+
 def concurrent_write_search_probe(
     client: NativeApiClient,
     *,
@@ -1294,7 +1430,12 @@ def benchmark_scale(
     flat_file_control_source: str | None = None,
 ) -> dict[str, Any]:
     scale_started = time.monotonic()
-    documents, target_path, marker = synthetic_documents(scale)
+    (
+        documents,
+        target_path,
+        marker,
+        fixture_manifest,
+    ) = synthetic_documents(scale, include_fixture_manifest=True)
     discovery_key = synthetic_discovery_key(scale)
     flat_file_control = (
         dict(flat_file_control_override)
@@ -1529,6 +1670,14 @@ def benchmark_scale(
         read_found.append(rendered_contains(read, marker))
         response_samples.append(("read", read))
 
+    verbatim_probe = verbatim_identifier_probe(
+        client,
+        protocol=protocol,
+        authorization_scope=authorization_scope,
+        session_id=latest_session_id,
+        probes=fixture_manifest["verbatim_identifiers"],
+    )
+
     before_checkpoint = (
         database_snapshot(db_container)
         if db_container and protocol != "simple"
@@ -1749,6 +1898,8 @@ def benchmark_scale(
         "documents": scale,
         "target_path": target_path,
         "marker": marker,
+        "fixture_manifest": fixture_manifest,
+        "verbatim_identifier": verbatim_probe,
         "scale_elapsed_ms": round(
             (time.monotonic() - scale_started) * 1000,
             3,
@@ -2118,6 +2269,29 @@ def evaluate_gates(
                 for scale, item in zip(scales, accounting)
             ],
             f"ratio <= {thresholds['protocol_to_evidence_ratio']}",
+        ))
+    verbatim_scales = [
+        item
+        for item in scales
+        if item.get("verbatim_identifier", {}).get("status") == "complete"
+    ]
+    if verbatim_scales:
+        observed = [
+            {
+                "scale": item["scale"],
+                "returned": item["verbatim_identifier"]["returned"],
+                "expected": item["verbatim_identifier"]["expected"],
+            }
+            for item in verbatim_scales
+        ]
+        gates.append((
+            "verbatim_identifier",
+            all(
+                item["verbatim_identifier"].get("pass") is True
+                for item in verbatim_scales
+            ),
+            observed,
+            "every planted identifier appears in exact-lane source payload",
         ))
     if semantic_failure_required:
         probe = largest.get("semantic_failure_probe", {})

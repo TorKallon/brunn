@@ -51,13 +51,15 @@ REASONING_BILLING_POLICY = {
     "route": "chatgpt_subscription",
     "api_fallback": "forbidden",
 }
+RUN_LEDGER_SCHEMA = "straylight-eval-run-ledger@v1"
+SIDECAR_CHECKPOINT_RELATIVE_PATH = Path("sidecar") / "checkpoint.json"
 
 
 def subscription_reasoning_environment(
     source: dict[str, str] | None = None,
 ) -> dict[str, str]:
     env = dict(os.environ if source is None else source)
-    for key in (
+    explicit_denials = {
         "OPENAI_API_KEY",
         "OPENAI_API_BASE",
         "OPENAI_BASE_URL",
@@ -69,8 +71,22 @@ def subscription_reasoning_environment(
         "AZURE_OPENAI_ENDPOINT",
         "CODEX_API_KEY",
         "CARRYSTATE_EVAL_DIRECT_OPENAI",
-    ):
-        env.pop(key, None)
+    }
+    for key in list(env):
+        upper = key.upper()
+        if (
+            upper in explicit_denials
+            or upper.startswith(("OPENAI_", "AZURE_OPENAI_"))
+            or upper.endswith("_API_KEY")
+            or (
+                upper.startswith("CODEX_")
+                and any(
+                    marker in upper
+                    for marker in ("API_BASE", "BASE_URL", "ENDPOINT", "ORGANIZATION", "PROJECT")
+                )
+            )
+        ):
+            env.pop(key, None)
     return env
 
 
@@ -101,13 +117,119 @@ def require_codex_subscription(codex: Path) -> dict[str, str]:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError(f"Could not verify Codex subscription authentication: {exc}") from exc
     rendered = "\n".join((status.stdout, status.stderr)).strip()
-    if status.returncode != 0 or "Logged in using ChatGPT" not in rendered:
+    auth_lines = {
+        line.strip()
+        for line in rendered.splitlines()
+        if line.strip()
+    }
+    if status.returncode != 0 or "Logged in using ChatGPT" not in auth_lines:
         raise ValueError(
             "Straylight reasoning evaluations require Codex logged in through "
             "ChatGPT. API-key billing is forbidden; switch accounts or wait for "
             "the subscription reset."
         )
-    return dict(REASONING_BILLING_POLICY)
+    try:
+        version = subprocess.run(
+            [str(codex), "--version"],
+            env=subscription_reasoning_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"Could not record the Codex version: {exc}") from exc
+    version_rendered = "\n".join((version.stdout, version.stderr)).strip()
+    if version.returncode != 0 or not version_rendered:
+        raise ValueError("Could not record the Codex version for the run ledger")
+    return {
+        **REASONING_BILLING_POLICY,
+        "codex_path": str(codex.expanduser().resolve()),
+        "codex_version": version_rendered.splitlines()[0],
+        "auth_checked_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "auth_status": "Logged in using ChatGPT",
+    }
+
+
+def git_source_fingerprint(repository: Path = PROJECT_ROOT) -> dict[str, Any]:
+    def output(command: list[str]) -> str | None:
+        completed = subprocess.run(
+            command,
+            cwd=repository,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return None
+        rendered = completed.stdout.strip()
+        return rendered or None
+
+    revision = output(["git", "rev-parse", "HEAD"])
+    tracked = subprocess.run(
+        ["git", "diff", "--quiet", "HEAD", "--"],
+        cwd=repository,
+        check=False,
+    )
+    untracked = output([
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+    ])
+    untracked_source_files = [
+        path
+        for path in (untracked or "").splitlines()
+        if not path.startswith(("results/", "runs/"))
+    ]
+    clean = bool(
+        revision
+        and tracked.returncode == 0
+        and not untracked_source_files
+    )
+    return {
+        "revision": revision,
+        "tracked_source_clean": tracked.returncode == 0,
+        "untracked_source_files": untracked_source_files,
+        "clean": clean,
+    }
+
+
+def build_run_ledger(
+    *,
+    run_id: str,
+    reasoning_billing: dict[str, str],
+    model: str,
+    conditions: Sequence[str],
+    service_protocol: str,
+    manifest_sha256: str,
+    schema_sha256: str,
+    harness_sha256: str,
+) -> dict[str, Any]:
+    return {
+        "schema": RUN_LEDGER_SCHEMA,
+        "run_id": run_id,
+        "captured_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "source": git_source_fingerprint(),
+        "codex": {
+            "path": reasoning_billing["codex_path"],
+            "version": reasoning_billing["codex_version"],
+            "auth_route": reasoning_billing["route"],
+            "auth_status": reasoning_billing["auth_status"],
+            "auth_checked_at": reasoning_billing["auth_checked_at"],
+            "api_fallback": reasoning_billing["api_fallback"],
+        },
+        "configuration": {
+            "model": model,
+            "conditions": list(conditions),
+            "service_protocol": service_protocol,
+        },
+        "artifacts": {
+            "manifest_sha256": manifest_sha256,
+            "schema_sha256": schema_sha256,
+            "harness_sha256": harness_sha256,
+        },
+    }
 
 
 def load_native_provisioning_state(path: Path, run_id: str) -> dict[str, dict[str, Any]]:
@@ -139,6 +261,10 @@ def write_native_provisioning_state(
 CONDITION_ADAPTERS = {
     "fixed_pack": {"label": "Fixed handoff pack", "kind": "fixed_pack"},
     "filesystem": {"label": "Filesystem agent", "kind": "filesystem"},
+    "filesystem_sidecar": {
+        "label": "Filesystem agent with writable sidecar",
+        "kind": "filesystem_sidecar",
+    },
     "workspace": {"label": "Straylight workspace agent", "kind": "legacy_workspace"},
     "service_api": {"label": "Native Straylight API agent", "kind": "native_service"},
 }
@@ -333,6 +459,14 @@ def render_prompt(
             "The frozen evidence corpus is available at ./corpus. Use ordinary filesystem tools such as rg, sed, "
             "and read-only scripts. Do not browse, modify corpus files, or use paths outside ./corpus."
         )
+    elif condition == "filesystem_sidecar":
+        access = (
+            "The frozen evidence corpus is available read-only at ./corpus. Use ordinary filesystem tools such as rg, sed, "
+            "and read-only scripts. The only writable durable-work surface is the run-scoped ./sidecar directory. Before "
+            "answering, write ./sidecar/checkpoint.json as one JSON object with objective, current_state, decisions, "
+            "open_questions, next_actions, and artifacts fields. Do not browse, modify corpus files, or read or write paths "
+            "outside ./corpus and ./sidecar."
+        )
     elif condition == "service_api" and case.get("workspace_access") == "read_only":
         access = (
             "Use the read-only native Straylight service through ./memory only. Do not inspect the wrapper or any corpus path. "
@@ -389,7 +523,12 @@ def render_prompt(
         "For this read-only workspace case, the required checkpoint-shaped response is an output proposal only. "
         "Do not persist it through ./memory."
         if condition in WORKSPACE_CONDITIONS and case.get("workspace_access") == "read_only"
-        else "The checkpoint must be useful to the next fresh agent."
+        else (
+            "The checkpoint must be useful to the next fresh agent and must also be persisted at "
+            "./sidecar/checkpoint.json."
+            if condition == "filesystem_sidecar"
+            else "The checkpoint must be useful to the next fresh agent."
+        )
     )
     return f"""You are a fresh agent taking over durable work from prior agents.
 
@@ -440,8 +579,10 @@ def prepare_case_dir(
         context = render_fixed_context(case, index, manifest)
         (run_dir / "context.md").write_text(context, encoding="utf-8")
         context_chars = len(context)
-    elif condition == "filesystem":
+    elif condition in {"filesystem", "filesystem_sidecar"}:
         (run_dir / "corpus").symlink_to(corpus, target_is_directory=True)
+        if condition == "filesystem_sidecar":
+            (run_dir / "sidecar").mkdir()
     elif condition == "workspace":
         write_memory_wrapper(
             run_dir,
@@ -506,6 +647,41 @@ def parse_event_metrics(path: Path) -> dict:
         "command_output_chars": command_output_chars,
         "tokens": totals,
     }
+
+
+def read_sidecar_checkpoint(run_dir: Path) -> dict[str, Any]:
+    path = run_dir / SIDECAR_CHECKPOINT_RELATIVE_PATH
+    result: dict[str, Any] = {
+        "path": str(path),
+        "exists": path.is_file() and not path.is_symlink(),
+        "valid": False,
+        "bytes": 0,
+        "characters": 0,
+        "sha256": None,
+        "checkpoint": None,
+        "error": None,
+    }
+    if not result["exists"]:
+        result["error"] = "missing run-scoped sidecar checkpoint"
+        return result
+    try:
+        raw = path.read_bytes()
+        if len(raw) > 1_048_576:
+            raise ValueError("sidecar checkpoint exceeds 1 MiB")
+        text = raw.decode("utf-8")
+        checkpoint = json.loads(text)
+        if not isinstance(checkpoint, dict):
+            raise ValueError("sidecar checkpoint must be a JSON object")
+        result.update({
+            "valid": True,
+            "bytes": len(raw),
+            "characters": len(text),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "checkpoint": checkpoint,
+        })
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        result["error"] = str(exc)
+    return result
 
 
 def source_matches(cited: str, expected: Sequence[str]) -> bool:
@@ -686,6 +862,39 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     record["workspace_result_chars"] = 0
     record["workspace_checkpoint"] = None
     record["workspace_state_error"] = None
+    record["sidecar_checkpoint"] = None
+    record["sidecar_checkpoint_metrics"] = None
+    record["persisted_checkpoint"] = None
+    if record.get("condition") == "filesystem_sidecar":
+        sidecar = read_sidecar_checkpoint(run_dir)
+        checkpoint = sidecar["checkpoint"] if sidecar["valid"] else None
+        required_fields = {
+            "objective",
+            "current_state",
+            "decisions",
+            "open_questions",
+            "next_actions",
+            "artifacts",
+        }
+        state_valid = bool(
+            isinstance(checkpoint, dict)
+            and required_fields <= set(checkpoint)
+            and checkpoint.get("objective")
+            and checkpoint.get("current_state")
+            and checkpoint.get("next_actions")
+            and checkpoint.get("artifacts")
+        )
+        record["sidecar_checkpoint_metrics"] = {
+            key: value
+            for key, value in sidecar.items()
+            if key != "checkpoint"
+        }
+        record["sidecar_checkpoint_metrics"]["state_valid"] = state_valid
+        record["sidecar_checkpoint"] = (
+            checkpoint if state_valid else None
+        )
+        record["workspace_checkpoint"] = record["sidecar_checkpoint"]
+        record["persisted_checkpoint"] = record["sidecar_checkpoint"]
     if session_path.exists():
         try:
             session = load_json(session_path)
@@ -697,6 +906,7 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
                 operation.get("result_chars", 0) for operation in session.get("operations", [])
             )
             record["workspace_checkpoint"] = session.get("checkpoint")
+            record["persisted_checkpoint"] = record["workspace_checkpoint"]
 
     native_path = run_dir / "native-session.json"
     if not native_path.exists():
@@ -736,6 +946,7 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     record["workspace_operations"] = operations
     record["workspace_result_chars"] = record["service_result_chars"]
     record["workspace_checkpoint"] = native.get("checkpoint")
+    record["persisted_checkpoint"] = native.get("checkpoint")
 
 
 def load_existing_record(
@@ -765,6 +976,10 @@ def load_existing_record(
         record["error"] = f"Invalid existing answer JSON: {exc}"
         record["grade"] = None
     record["events"] = parse_event_metrics(run_dir / "events.jsonl")
+    record["model_visible_tool_output_chars"] = record["events"].get(
+        "command_output_chars",
+        0,
+    )
     attach_workspace_metrics(record, run_dir)
     return record
 
@@ -879,6 +1094,10 @@ async def run_one(
                 record["error"] = f"Invalid answer JSON: {exc}"
                 record["grade"] = None
         record["events"] = parse_event_metrics(events_path)
+        record["model_visible_tool_output_chars"] = record["events"].get(
+            "command_output_chars",
+            0,
+        )
         attach_workspace_metrics(record, run_dir)
         (run_dir / "record.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         return record
@@ -903,8 +1122,12 @@ def summarize(manifest: dict, records: Sequence[dict]) -> dict:
         checkpoint_eligible_runs = sum(
             1
             for row in rows
-            if row["condition"] in WORKSPACE_CONDITIONS
-            and case_by_id.get(row["case_id"], {}).get("workspace_access") != "read_only"
+            if row["condition"] == "filesystem_sidecar"
+            or (
+                row["condition"] in WORKSPACE_CONDITIONS
+                and case_by_id.get(row["case_id"], {}).get("workspace_access")
+                != "read_only"
+            )
         )
         return {
             "runs": len(rows),
@@ -919,7 +1142,9 @@ def summarize(manifest: dict, records: Sequence[dict]) -> dict:
             "mean_elapsed_seconds": round(statistics.fmean(elapsed_values), 2) if elapsed_values else None,
             "mean_fixed_context_chars": round(statistics.fmean(row["fixed_context_chars"] for row in rows), 1) if rows else 0,
             "mean_workspace_result_chars": round(statistics.fmean(row["workspace_result_chars"] for row in rows), 1) if rows else 0,
-            "persisted_checkpoints": sum(1 for row in rows if row.get("workspace_checkpoint")),
+            "persisted_checkpoints": sum(
+                1 for row in rows if row.get("persisted_checkpoint")
+            ),
             "checkpoint_eligible_runs": checkpoint_eligible_runs,
             "mean_service_calls": round(
                 statistics.fmean(row.get("service_calls", 0) for row in rows), 1
@@ -944,6 +1169,16 @@ def summarize(manifest: dict, records: Sequence[dict]) -> dict:
             ) if rows else 0,
             "mean_command_output_chars": round(
                 statistics.fmean(row["events"].get("command_output_chars", 0) for row in rows), 1
+            ) if rows else 0,
+            "mean_model_visible_tool_output_chars": round(
+                statistics.fmean(
+                    row.get(
+                        "model_visible_tool_output_chars",
+                        row["events"].get("command_output_chars", 0),
+                    )
+                    for row in rows
+                ),
+                1,
             ) if rows else 0,
             "mean_tokens": mean_tokens,
         }
@@ -1002,6 +1237,10 @@ def render_report(run: dict) -> str:
     condition_descriptions = {
         "fixed_pack": "- **Fixed handoff pack:** a fresh agent receives one task-specific context file and cannot retrieve more.",
         "filesystem": "- **Filesystem agent:** a fresh agent receives the frozen corpus and ordinary read/search/script tools.",
+        "filesystem_sidecar": (
+            "- **Filesystem agent with writable sidecar:** the corpus remains read-only, while a run-scoped sidecar "
+            "must receive a durable JSON checkpoint."
+        ),
         "workspace": (
             "- **Straylight workspace agent:** a fresh agent uses the initial BM25-backed shell CLI. "
             "This legacy condition does not test semantic retrieval or the native API."
@@ -1042,7 +1281,7 @@ def render_report(run: dict) -> str:
         row = summary["by_condition"][condition]
         checkpoints = (
             f"{row['persisted_checkpoints']}/{row['checkpoint_eligible_runs']} eligible"
-            if condition in WORKSPACE_CONDITIONS
+            if condition in WORKSPACE_CONDITIONS or condition == "filesystem_sidecar"
             else "output only"
         )
         lines.append(
@@ -1470,6 +1709,16 @@ async def run_all(args: argparse.Namespace) -> dict:
         "reasoning_billing": reasoning_billing,
         "records": records,
     }
+    run["run_ledger"] = build_run_ledger(
+        run_id=run_id,
+        reasoning_billing=reasoning_billing,
+        model=selected_manifest["model"],
+        conditions=selected_conditions,
+        service_protocol=args.service_protocol,
+        manifest_sha256=run["manifest_sha256"],
+        schema_sha256=run["schema_sha256"],
+        harness_sha256=run["harness_sha256"],
+    )
     run["summary"] = summarize(selected_manifest, records)
     return run
 
@@ -1563,6 +1812,10 @@ def main() -> None:
                 record["grade"] = grade_answer(case_by_id[record["case_id"]], record["answer"], corpus_paths)
             run_dir = Path(record["answer_path"]).parent
             record["events"] = parse_event_metrics(run_dir / "events.jsonl")
+            record["model_visible_tool_output_chars"] = record["events"].get(
+                "command_output_chars",
+                0,
+            )
             attach_workspace_metrics(record, run_dir)
         run["summary"] = summarize(run["manifest"], run["records"])
         run["regraded_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -1576,6 +1829,8 @@ def main() -> None:
             "schema_sha256": sha256_file(args.schema),
             "workspace_cli_sha256": run["workspace_cli_sha256"],
             "native_memory_sha256": run["native_memory_sha256"],
+            "source": git_source_fingerprint(),
+            "captured_at": run["regraded_at"],
         }
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")

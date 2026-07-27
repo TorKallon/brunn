@@ -14,6 +14,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agent_work_eval import (  # noqa: E402
+    attach_workspace_metrics,
+    build_run_ledger,
     build_codex_command,
     candidate_matches,
     forbidden_is_asserted,
@@ -23,8 +25,10 @@ from agent_work_eval import (  # noqa: E402
     require_codex_subscription,
     render_fixed_context,
     render_prompt,
+    read_sidecar_checkpoint,
     resolve_codex_path,
     select_cases,
+    summarize,
     subscription_reasoning_environment,
     load_native_provisioning_state,
     validate,
@@ -68,6 +72,8 @@ class AgentWorkEvalTests(unittest.TestCase):
             "OPENAI_API_KEY": "embedding-key",
             "OPENAI_BASE_URL": "https://paid-api.example.test/v1",
             "AZURE_OPENAI_API_KEY": "alternate-paid-key",
+            "FUTURE_PROVIDER_API_KEY": "future-paid-key",
+            "CODEX_BASE_URL": "https://alternate-route.example.test",
             "CODEX_API_KEY": "paid-reasoning-key",
             "CARRYSTATE_EVAL_DIRECT_OPENAI": "1",
         })
@@ -75,6 +81,8 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertNotIn("OPENAI_API_KEY", env)
         self.assertNotIn("OPENAI_BASE_URL", env)
         self.assertNotIn("AZURE_OPENAI_API_KEY", env)
+        self.assertNotIn("FUTURE_PROVIDER_API_KEY", env)
+        self.assertNotIn("CODEX_BASE_URL", env)
         self.assertNotIn("CODEX_API_KEY", env)
         self.assertNotIn("CARRYSTATE_EVAL_DIRECT_OPENAI", env)
 
@@ -83,26 +91,54 @@ class AgentWorkEvalTests(unittest.TestCase):
             root = Path(temporary)
             chatgpt = root / "chatgpt-codex"
             chatgpt.write_text(
-                "#!/bin/sh\necho 'Logged in using ChatGPT'\n",
+                (
+                    "#!/bin/sh\n"
+                    "if [ \"$1\" = \"--version\" ]; then\n"
+                    "  echo 'codex-test 1.2.3'\n"
+                    "else\n"
+                    "  echo 'Logged in using ChatGPT'\n"
+                    "fi\n"
+                ),
                 encoding="utf-8",
             )
             chatgpt.chmod(0o755)
             api_key = root / "api-key-codex"
             api_key.write_text(
-                "#!/bin/sh\necho 'Logged in using an API key'\n",
+                (
+                    "#!/bin/sh\n"
+                    "if [ \"$1\" = \"--version\" ]; then\n"
+                    "  echo 'codex-test 1.2.3'\n"
+                    "else\n"
+                    "  echo 'Logged in using an API key'\n"
+                    "fi\n"
+                ),
                 encoding="utf-8",
             )
             api_key.chmod(0o755)
-
-            self.assertEqual(
-                require_codex_subscription(chatgpt),
-                {
-                    "route": "chatgpt_subscription",
-                    "api_fallback": "forbidden",
-                },
+            misleading = root / "misleading-codex"
+            misleading.write_text(
+                (
+                    "#!/bin/sh\n"
+                    "if [ \"$1\" = \"--version\" ]; then\n"
+                    "  echo 'codex-test 1.2.3'\n"
+                    "else\n"
+                    "  echo 'Not Logged in using ChatGPT'\n"
+                    "fi\n"
+                ),
+                encoding="utf-8",
             )
+            misleading.chmod(0o755)
+
+            billing = require_codex_subscription(chatgpt)
+            self.assertEqual(billing["route"], "chatgpt_subscription")
+            self.assertEqual(billing["api_fallback"], "forbidden")
+            self.assertEqual(billing["codex_version"], "codex-test 1.2.3")
+            self.assertEqual(billing["auth_status"], "Logged in using ChatGPT")
+            self.assertTrue(billing["auth_checked_at"])
             with self.assertRaisesRegex(ValueError, "require Codex logged in"):
                 require_codex_subscription(api_key)
+            with self.assertRaisesRegex(ValueError, "require Codex logged in"):
+                require_codex_subscription(misleading)
 
     def test_reasoning_preflight_rejects_direct_api_override(self):
         with patch.dict(
@@ -144,6 +180,107 @@ class AgentWorkEvalTests(unittest.TestCase):
         for command in (native, filesystem):
             sandbox_index = command.index("--sandbox")
             self.assertEqual(command[sandbox_index + 1], "workspace-write")
+
+    def test_run_ledger_records_clean_source_and_codex_auth_provenance(self):
+        billing = {
+            "route": "chatgpt_subscription",
+            "api_fallback": "forbidden",
+            "codex_path": "/opt/codex",
+            "codex_version": "codex-test 1.2.3",
+            "auth_checked_at": "2026-07-27T12:00:00-07:00",
+            "auth_status": "Logged in using ChatGPT",
+        }
+        source = {
+            "revision": "a" * 40,
+            "tracked_source_clean": True,
+            "untracked_source_files": [],
+            "clean": True,
+        }
+        with patch("agent_work_eval.git_source_fingerprint", return_value=source):
+            ledger = build_run_ledger(
+                run_id="draw-1",
+                reasoning_billing=billing,
+                model="gpt-test",
+                conditions=["filesystem", "filesystem_sidecar"],
+                service_protocol="simple",
+                manifest_sha256="b" * 64,
+                schema_sha256="c" * 64,
+                harness_sha256="d" * 64,
+            )
+        self.assertEqual(ledger["schema"], "straylight-eval-run-ledger@v1")
+        self.assertEqual(ledger["source"], source)
+        self.assertEqual(ledger["codex"]["path"], "/opt/codex")
+        self.assertEqual(
+            ledger["codex"]["auth_checked_at"],
+            "2026-07-27T12:00:00-07:00",
+        )
+
+    def test_filesystem_sidecar_prompt_and_checkpoint_accounting(self):
+        case = self.manifest["cases"][0]
+        prompt = render_prompt(case, "filesystem_sidecar")
+        self.assertIn("./sidecar/checkpoint.json", prompt)
+        self.assertIn("only writable durable-work surface", prompt)
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            (run_dir / "sidecar").mkdir()
+            checkpoint = {
+                "objective": "Resume safely",
+                "current_state": ["Evidence recovered"],
+                "decisions": [],
+                "open_questions": [],
+                "next_actions": ["Continue"],
+                "artifacts": ["Evidence.md"],
+            }
+            path = run_dir / "sidecar" / "checkpoint.json"
+            path.write_text(json.dumps(checkpoint) + "\n", encoding="utf-8")
+            measured = read_sidecar_checkpoint(run_dir)
+            self.assertTrue(measured["valid"])
+            self.assertEqual(measured["checkpoint"], checkpoint)
+            self.assertEqual(len(measured["sha256"]), 64)
+            record = {
+                "condition": "filesystem_sidecar",
+                "events": {"command_output_chars": 123},
+            }
+            attach_workspace_metrics(record, run_dir)
+            self.assertEqual(record["persisted_checkpoint"], checkpoint)
+            self.assertEqual(record["sidecar_checkpoint"], checkpoint)
+
+    def test_filesystem_sidecar_is_checkpoint_eligible_for_read_only_cases(self):
+        manifest = {
+            "conditions": ["filesystem_sidecar"],
+            "cases": [{
+                "id": "read-only-case",
+                "workload": "work",
+                "capability": "read",
+                "workspace_access": "read_only",
+            }],
+        }
+        record = {
+            "case_id": "read-only-case",
+            "condition": "filesystem_sidecar",
+            "elapsed_seconds": 1.0,
+            "fixed_context_chars": 0,
+            "workspace_result_chars": 0,
+            "persisted_checkpoint": {"objective": "Preserve progress"},
+            "events": {
+                "tokens": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "cached_input_tokens": 0,
+                },
+                "commands": 1,
+                "command_output_chars": 1,
+            },
+            "grade": {
+                "pass": True,
+                "score": 1.0,
+                "claims_passed": 1,
+                "claims_total": 1,
+            },
+        }
+        result = summarize(manifest, [record])["by_condition"]["filesystem_sidecar"]
+        self.assertEqual(result["persisted_checkpoints"], 1)
+        self.assertEqual(result["checkpoint_eligible_runs"], 1)
 
     def test_rupture_ops_suite_shape_hash_and_code_artifacts(self):
         manifest_path = ROOT / "eval" / "rupture_ops_cases.json"

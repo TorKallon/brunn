@@ -27,12 +27,14 @@ from performance_eval import (  # noqa: E402
     response_reports_lane_failure,
     response_reports_gap_kind,
     semantic_failure_probe,
+    source_text_contains,
     lexical_overflow_marker,
     simple_checkpoint_footprint,
     summarize_response_accounting,
     synthetic_discovery_key,
     synthetic_discovery_task,
     synthetic_documents,
+    verbatim_identifier_probe,
     table_growth,
 )
 
@@ -75,6 +77,74 @@ class PerformanceEvalTests(unittest.TestCase):
             ),
             1,
         )
+
+    def test_synthetic_corpus_plants_deterministic_verbatim_identifiers(self):
+        documents, _, _, manifest = synthetic_documents(
+            1_000,
+            include_fixture_manifest=True,
+        )
+        probes = manifest["verbatim_identifiers"]
+        self.assertEqual(len(probes), 30)
+        self.assertEqual(len({item["identifier"] for item in probes}), 30)
+        by_path = {document["path"]: document["content"] for document in documents}
+        for probe in probes:
+            self.assertRegex(
+                probe["identifier"],
+                r"^STRAYID-1000-\d+-[0-9a-f]{8}$",
+            )
+            self.assertGreater(probe["byte_offset"], 2_400)
+            content = by_path[probe["path"]]
+            encoded = content.encode("utf-8")
+            identifier = probe["identifier"].encode("utf-8")
+            self.assertEqual(
+                encoded[probe["byte_offset"]:probe["byte_offset"] + len(identifier)],
+                identifier,
+            )
+
+    def test_verbatim_identifier_probe_is_exact_only_and_checks_source_text(self):
+        identifier = "STRAYID-1000-1-deadbeef"
+
+        class Response:
+            def __init__(self, body):
+                self.body = body
+                self.elapsed_ms = 1.25
+
+        class Client:
+            def __init__(self):
+                self.payloads = []
+
+            def post(self, _path, payload):
+                self.payloads.append(payload)
+                return Response({
+                    "data": {
+                        "query": payload["queries"][0]["query"],
+                        "results": [{"path": "Synthetic/a.md", "excerpt": "truncated"}],
+                    }
+                })
+
+        client = Client()
+        result = verbatim_identifier_probe(
+            client,  # type: ignore[arg-type]
+            protocol="simple",
+            authorization_scope="scope:test",
+            session_id="session:test",
+            probes=[{
+                "path": "Synthetic/a.md",
+                "identifier": identifier,
+                "byte_offset": 2_500,
+            }],
+        )
+        self.assertEqual(result["returned"], 0)
+        self.assertFalse(result["pass"])
+        self.assertEqual(client.payloads[0]["queries"][0]["modes"], ["exact"])
+        self.assertFalse(source_text_contains(
+            {"query": identifier, "excerpt": "truncated"},
+            identifier,
+        ))
+        self.assertTrue(source_text_contains(
+            {"results": [{"text": identifier}]},
+            identifier,
+        ))
 
     def test_default_profile_is_definitive_and_includes_production_scale(self):
         parser = build_parser()
@@ -450,6 +520,42 @@ class PerformanceEvalTests(unittest.TestCase):
 
         self.assertFalse(definitive["lexical_search_uses_gin_index"]["pass"])
         self.assertNotIn("lexical_search_uses_gin_index", quick)
+
+    def test_verbatim_identifier_is_a_named_blocking_gate(self):
+        scale = {
+            "scale": 1_000,
+            "protocol": "simple",
+            "open_found": [True],
+            "open_p95_ms": 100.0,
+            "search_p95_ms": 80.0,
+            "read_p95_ms": 20.0,
+            "checkpoint_ms": 50.0,
+            "resume_ms": 100.0,
+            "search_found": [True],
+            "read_found": [True],
+            "resume_found": True,
+            "checkpoint_database_growth": {
+                "rows": 1,
+                "bytes": None,
+                "tables": {},
+            },
+            "verbatim_identifier": {
+                "status": "complete",
+                "returned": 0,
+                "expected": 30,
+                "pass": False,
+            },
+        }
+        gates = {
+            gate["name"]: gate
+            for gate in evaluate_gates(
+                [scale],
+                DEFAULT_THRESHOLDS,
+                require_gin_index=False,
+            )
+        }
+        self.assertIn("verbatim_identifier", gates)
+        self.assertFalse(gates["verbatim_identifier"]["pass"])
 
     def test_gates_reject_corpus_sized_checkpoint_growth(self):
         base = {

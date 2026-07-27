@@ -17,10 +17,13 @@ from typing import Any, Sequence
 from agent_work_eval import (
     DEFAULT_CODEX,
     NATIVE_PROVISIONING_STATE,
+    build_run_ledger,
+    git_source_fingerprint,
     grade_answer,
     load_native_provisioning_state,
     parse_event_metrics,
     parse_json_answer,
+    read_sidecar_checkpoint,
     require_codex_subscription,
     sha256_file,
     subscription_reasoning_environment,
@@ -44,11 +47,13 @@ from straylight.embeddings import HashingEmbeddingProvider, OpenAIEmbeddingProvi
 ROOT = Path(__file__).resolve().parent
 LABELS = {
     "filesystem_rebuild": "Filesystem rebuild",
+    "filesystem_sidecar": "Filesystem rebuild with writable sidecar",
     "workspace_resume": "Straylight checkpoint resume",
     "service_api_resume": "Native Straylight checkpoint resume",
 }
 TRANSITION_ADAPTERS = {
     "filesystem_rebuild": "filesystem",
+    "filesystem_sidecar": "filesystem_sidecar",
     "workspace_resume": "legacy_workspace",
     "service_api_resume": "native_service",
 }
@@ -245,6 +250,10 @@ def render_prompt(case: dict[str, Any], condition: str) -> str:
 
 Do not call help or schema. Use no more than four workspace calls. The checkpoint write returns a receipt instead of echoing the state."""
         access = access.replace("typed Straylight adapter", adapter).replace("workspace calls", "service calls")
+    elif condition == "filesystem_sidecar":
+        access = """Use only `./checkpoint.json`, `./delta.json`, the exact delta source under `./eval/transition-deltas`, the frozen `./corpus`, and the run-scoped writable `./sidecar`.
+
+Reconcile the prior checkpoint with the N+1 delta, then persist `./sidecar/checkpoint.json` before answering. The file must be one JSON object with `parent_checkpoint_id` copied exactly from `./checkpoint.json`, `corpus_revision` copied exactly from `to_revision` in `./delta.json`, `source_refs` containing both at least one prior source from the parent checkpoint and the exact delta path, and a `state` object with objective, current_state, decisions, open_questions, next_actions, and artifacts. The checkpoint is prior durable state, not an infallible source. Do not browse, modify the corpus, or read or write outside the listed paths."""
     else:
         access = """Use only `./checkpoint.json`, `./delta.json`, the exact delta source under `./eval/transition-deltas`, and the frozen `./corpus`. Ordinary read-only filesystem search and scripts are allowed. The checkpoint is prior durable state, not an infallible source; reconcile it with the new delta and cite original relative source paths. Do not browse or read outside this run directory."""
     return f"""You are a genuinely fresh agent continuing work at corpus revision N+1.
@@ -347,6 +356,8 @@ def prepare_run_dirs(
                     }, indent=2) + "\n",
                     encoding="utf-8",
                 )
+                if condition == "filesystem_sidecar":
+                    (run_dir / "sidecar").mkdir(exist_ok=True)
             jobs.append((case, condition, run_dir))
     return jobs
 
@@ -696,6 +707,7 @@ def attach_native_lineage(
         "error": lineage_error,
     }
     record["lineage"] = lineage
+    record["persisted_checkpoint"] = child
     record["transition_pass"] = bool(
         record["grade"]["pass"]
         and lineage["checkpoint_read_via_http"]
@@ -704,6 +716,79 @@ def attach_native_lineage(
         and lineage["delta_source_preserved"]
         and lineage["prior_source_preserved"]
         and lineage["within_call_budget"]
+    )
+
+
+def attach_filesystem_sidecar_lineage(
+    record: dict[str, Any],
+    case: dict[str, Any],
+    metadata: dict[str, Any],
+) -> None:
+    run_dir = Path(record["answer_path"]).parent
+    sidecar = read_sidecar_checkpoint(run_dir)
+    checkpoint = sidecar["checkpoint"] if sidecar["valid"] else None
+    state = checkpoint.get("state") if isinstance(checkpoint, dict) else None
+    source_refs = {
+        value
+        for value in (
+            checkpoint.get("source_refs", [])
+            if isinstance(checkpoint, dict)
+            else []
+        )
+        if isinstance(value, str)
+    }
+    prior_sources = set(metadata["seed_checkpoint"].get("source_refs", []))
+    required_state_fields = {
+        "objective",
+        "current_state",
+        "decisions",
+        "open_questions",
+        "next_actions",
+        "artifacts",
+    }
+    lineage = {
+        "sidecar_checkpoint": checkpoint,
+        "sidecar_checkpoint_metrics": {
+            key: value
+            for key, value in sidecar.items()
+            if key != "checkpoint"
+        },
+        "parent_match": bool(
+            checkpoint
+            and checkpoint.get("parent_checkpoint_id")
+            == metadata["seed_checkpoint"]["checkpoint_id"]
+        ),
+        "revision_match": bool(
+            checkpoint
+            and checkpoint.get("corpus_revision")
+            == metadata["delta_revision"]["revision_id"]
+        ),
+        "delta_source_preserved": case["delta_path"] in source_refs,
+        "prior_source_preserved": bool(source_refs & prior_sources),
+        "state_valid": bool(
+            isinstance(state, dict)
+            and required_state_fields <= set(state)
+            and state.get("objective")
+            and state.get("current_state")
+            and state.get("next_actions")
+            and state.get("artifacts")
+        ),
+        "within_call_budget": True,
+        "operations": {
+            "completed_calls": 0,
+            "result_chars": 0,
+            "operations": [],
+        },
+    }
+    record["lineage"] = lineage
+    record["persisted_checkpoint"] = checkpoint if lineage["state_valid"] else None
+    record["transition_pass"] = bool(
+        record["grade"]["pass"]
+        and lineage["parent_match"]
+        and lineage["revision_match"]
+        and lineage["delta_source_preserved"]
+        and lineage["prior_source_preserved"]
+        and lineage["state_valid"]
     )
 
 
@@ -717,6 +802,11 @@ def attach_results(
 ) -> None:
     answer_path = Path(record["answer_path"])
     record["events"] = parse_event_metrics(Path(record["events_path"]))
+    record["model_visible_tool_output_chars"] = record["events"].get(
+        "command_output_chars",
+        0,
+    )
+    record["persisted_checkpoint"] = None
     if not answer_path.exists():
         record["grade"] = None
         record["transition_pass"] = False
@@ -733,6 +823,9 @@ def attach_results(
     if record["condition"] == "filesystem_rebuild":
         record["lineage"] = None
         record["transition_pass"] = bool(record["grade"]["pass"])
+        return
+    if record["condition"] == "filesystem_sidecar":
+        attach_filesystem_sidecar_lineage(record, case, metadata)
         return
     if record["condition"] == "service_api_resume":
         attach_native_lineage(
@@ -778,6 +871,7 @@ def attach_results(
         "operations": operation_summary,
     }
     record["lineage"] = lineage
+    record["persisted_checkpoint"] = child
     record["transition_pass"] = bool(
         record["grade"]["pass"]
         and lineage["parent_match"]
@@ -830,6 +924,20 @@ def summarize(records: Sequence[dict[str, Any]], conditions: Sequence[str]) -> d
             "mean_uncached_input_tokens": round(statistics.fmean(a - b for a, b in zip(inputs, cached, strict=True)), 1) if inputs else 0,
             "mean_shell_calls": round(statistics.fmean(shell_calls), 1) if shell_calls else 0,
             "mean_workspace_calls": round(statistics.fmean(workspace_calls), 1) if workspace_calls else None,
+            "persisted_checkpoints": sum(
+                bool(row.get("persisted_checkpoint"))
+                for row in rows
+            ),
+            "mean_model_visible_tool_output_chars": round(
+                statistics.fmean(
+                    row.get(
+                        "model_visible_tool_output_chars",
+                        row["events"].get("command_output_chars", 0),
+                    )
+                    for row in rows
+                ),
+                1,
+            ) if rows else 0,
             "mean_service_latency_ms": round(statistics.fmean(service_latencies), 3) if service_latencies else None,
             "mean_service_result_chars": round(statistics.fmean(service_result_chars), 1) if service_result_chars else None,
             "mean_service_source_text_chars": round(statistics.fmean(service_source_text_chars), 1) if service_source_text_chars else None,
@@ -884,6 +992,10 @@ def regrade_run(
             and lineage.get("delta_source_preserved")
             and lineage.get("prior_source_preserved")
             and lineage.get("within_call_budget")
+            and (
+                record["condition"] != "filesystem_sidecar"
+                or lineage.get("state_valid")
+            )
         )
     run["summary"] = summarize(run["records"], run["manifest"]["conditions"])
     run["regraded_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
@@ -895,6 +1007,8 @@ def regrade_run(
         "schema_sha256": sha256_file(schema_path),
         "workspace_cli_sha256": sha256_file(ROOT / "workspace_cli.py"),
         "native_memory_sha256": sha256_file(ROOT / "native_memory.py"),
+        "source": git_source_fingerprint(),
+        "captured_at": run["regraded_at"],
     }
     return run
 
@@ -1032,7 +1146,11 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         run_root.mkdir(parents=True, exist_ok=False)
     selected_conditions = select_transition_conditions(manifest, args)
     legacy_embeddings = args.embeddings if "workspace_resume" in selected_conditions else "none"
-    if {"filesystem_rebuild", "workspace_resume"} & set(selected_conditions):
+    if {
+        "filesystem_rebuild",
+        "filesystem_sidecar",
+        "workspace_resume",
+    } & set(selected_conditions):
         prepared = (
             load_prepared_assets(run_root, validated)
             if args.resume_run_id
@@ -1129,6 +1247,16 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         "service_protocol": args.service_protocol,
         "reasoning_billing": reasoning_billing,
     }
+    run["run_ledger"] = build_run_ledger(
+        run_id=run_id,
+        reasoning_billing=reasoning_billing,
+        model=manifest["model"],
+        conditions=manifest["conditions"],
+        service_protocol=args.service_protocol,
+        manifest_sha256=run["manifest_sha256"],
+        schema_sha256=sha256_file(args.schema),
+        harness_sha256=run["harness_sha256"],
+    )
     run["summary"] = summarize(records, manifest["conditions"])
     return run
 
