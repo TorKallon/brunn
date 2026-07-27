@@ -119,6 +119,9 @@ const MAX_READ_RESPONSE_CHARS: usize = MAX_EXACT_READ_CHARS;
 const MAX_SEARCH_LIMIT: usize = 50;
 const MAX_SEARCH_RESPONSE_CANDIDATES: usize = 128;
 const MAX_SEARCH_RESPONSE_CHARS: usize = 96_000;
+const MAX_VERBATIM_MATCHES_PER_CANDIDATE: usize = 3;
+const MAX_VERBATIM_LINE_CHARS: usize = 2_400;
+const MAX_VERBATIM_RESPONSE_CHARS: usize = 9_600;
 const OPEN_CANDIDATE_LIMIT: usize = 32;
 const HYDRATED_DOCUMENT_LIMIT: usize = 8;
 const MAX_OPEN_COMPLETE_SOURCE_CHARS: usize = 24_000;
@@ -277,6 +280,18 @@ struct CandidateSection {
 }
 
 #[derive(Clone, Debug, Serialize)]
+struct VerbatimMatch {
+    line_no: usize,
+    byte_start: usize,
+    byte_end: usize,
+    text: String,
+    version: i64,
+    content_hash: String,
+    #[serde(skip_serializing_if = "is_false")]
+    truncated: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
 struct Candidate {
     entry_id: Uuid,
     path: String,
@@ -288,6 +303,11 @@ struct Candidate {
     score: f64,
     lanes: Vec<String>,
     sections: Vec<CandidateSection>,
+    verbatim_matches: Vec<VerbatimMatch>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -476,7 +496,7 @@ pub async fn open(
     } else {
         match bounded_retrieval_lane(
             "continuation_exact",
-            exact_candidates(&state, &auth, &continuation_paths),
+            exact_candidates(&state, &auth, &continuation_paths, None),
         )
         .await
         {
@@ -686,6 +706,7 @@ pub async fn search(
     let mut all_candidates = Vec::new();
     let mut remaining_candidates = MAX_SEARCH_RESPONSE_CANDIDATES;
     let mut remaining_excerpt_chars = MAX_SEARCH_RESPONSE_CHARS;
+    let mut remaining_verbatim_chars = MAX_VERBATIM_RESPONSE_CHARS;
     let mut response_truncated = budgeted_truncated;
     for (position, (index, query, (mut candidates, failures, timings))) in
         completed.into_iter().enumerate()
@@ -700,7 +721,12 @@ pub async fn search(
             all_candidates.extend(query_views.iter().map(|view| view.candidate.clone()));
             query_views
                 .iter()
-                .map(render_budgeted_search_candidate)
+                .map(|view| {
+                    render_budgeted_search_candidate(
+                        view,
+                        &mut remaining_verbatim_chars,
+                    )
+                })
                 .collect::<Vec<_>>()
         } else {
             if candidates.len() > remaining_candidates {
@@ -717,7 +743,12 @@ pub async fn search(
             all_candidates.extend(candidates.iter().cloned());
             candidates
                 .iter()
-                .map(render_search_candidate)
+                .map(|candidate| {
+                    render_search_candidate(
+                        candidate,
+                        &mut remaining_verbatim_chars,
+                    )
+                })
                 .collect::<Vec<_>>()
         };
         any_failures |= !failures.is_empty();
@@ -2921,7 +2952,11 @@ async fn search_one(
         let started = Instant::now();
         if exact_enabled && !exact_paths.is_empty() {
             (
-                bounded_retrieval_lane("exact", exact_candidates(state, auth, &exact_paths)).await,
+                bounded_retrieval_lane(
+                    "exact",
+                    exact_candidates(state, auth, &exact_paths, Some(query)),
+                )
+                .await,
                 elapsed_ms(started),
             )
         } else {
@@ -3143,13 +3178,23 @@ async fn exact_candidates(
     state: &AppState,
     auth: &AuthContext,
     paths: &[String],
+    verbatim_query: Option<&str>,
 ) -> ApiResult<Vec<Candidate>> {
+    let verbatim_terms = if state.config.verbatim_spans {
+        verbatim_query.map(verbatim_match_terms).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let include_verbatim_source = !verbatim_terms.is_empty();
     let mut tx = state.begin_read(auth).await?;
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.title,entry.current_version,
                version.content_sha256,
-               left(coalesce(version.content,''),2400) AS content
+               CASE
+                 WHEN $3 THEN coalesce(version.content,'')
+                 ELSE left(coalesce(version.content,''),2400)
+               END AS content
         FROM straylight.entries AS entry
         JOIN straylight.entry_versions AS version
           ON version.user_id=entry.user_id
@@ -3164,19 +3209,25 @@ async fn exact_candidates(
     )
     .bind(auth.user_id.0)
     .bind(paths)
+    .bind(include_verbatim_source)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
     Ok(rows
         .into_iter()
         .map(|row| {
-            let excerpt = truncate_chars(&row.get::<String, _>("content"), 2_400);
+            let content = row.get::<String, _>("content");
+            let excerpt = truncate_chars(&content, 2_400);
+            let version = row.get("current_version");
+            let content_sha256 = row.get::<String, _>("content_sha256");
+            let verbatim_matches =
+                extract_verbatim_matches(&content, &verbatim_terms, version, &content_sha256);
             Candidate {
                 entry_id: row.get("id"),
                 path: row.get("path"),
                 title: row.get("title"),
-                version: row.get("current_version"),
-                content_sha256: row.get("content_sha256"),
+                version,
+                content_sha256,
                 heading: String::new(),
                 excerpt: excerpt.clone(),
                 score: 10.0,
@@ -3186,6 +3237,7 @@ async fn exact_candidates(
                     excerpt,
                     score: 10.0,
                 }],
+                verbatim_matches,
             }
         })
         .collect())
@@ -3257,6 +3309,7 @@ async fn fetch_lexical_candidates(
                     excerpt,
                     score,
                 }],
+                verbatim_matches: vec![],
             }
         })
         .collect())
@@ -3313,6 +3366,7 @@ async fn semantic_candidates(
                     excerpt,
                     score,
                 }],
+                verbatim_matches: vec![],
             }
         })
         .collect();
@@ -3352,6 +3406,18 @@ fn merge_candidate(merged: &mut HashMap<Uuid, Candidate>, mut candidate: Candida
                 existing.lanes.push(lane);
             }
         }
+        existing.verbatim_matches.extend(candidate.verbatim_matches);
+        existing
+            .verbatim_matches
+            .sort_by_key(|source_match| source_match.line_no);
+        existing.verbatim_matches.dedup_by(|left, right| {
+            left.line_no == right.line_no
+                && left.byte_start == right.byte_start
+                && left.byte_end == right.byte_end
+        });
+        existing
+            .verbatim_matches
+            .truncate(MAX_VERBATIM_MATCHES_PER_CANDIDATE);
     } else {
         merged.insert(candidate.entry_id, candidate);
     }
@@ -3631,7 +3697,10 @@ fn apply_search_view_budget(
     (starting.saturating_sub(remaining), truncated)
 }
 
-fn render_budgeted_search_candidate(view: &SearchCandidateView) -> Value {
+fn render_budgeted_search_candidate(
+    view: &SearchCandidateView,
+    remaining_verbatim_chars: &mut usize,
+) -> Value {
     let candidate = &view.candidate;
     let representation = match view.representation {
         SearchRepresentation::CompleteSource => "complete_source",
@@ -3720,10 +3789,83 @@ fn render_budgeted_search_candidate(view: &SearchCandidateView) -> Value {
             }
         }
     }
+    let verbatim_matches =
+        render_verbatim_matches(candidate, remaining_verbatim_chars);
+    if !verbatim_matches.is_empty() {
+        rendered.insert(
+            "verbatim_matches".to_owned(),
+            Value::Array(verbatim_matches),
+        );
+    }
     Value::Object(rendered)
 }
 
-fn render_search_candidate(candidate: &Candidate) -> Value {
+fn verbatim_match_terms(query: &str) -> Vec<String> {
+    search_anchors(query)
+        .into_iter()
+        .filter(|term| !looks_like_path(term))
+        .take(MAX_VERBATIM_MATCHES_PER_CANDIDATE)
+        .collect()
+}
+
+fn extract_verbatim_matches(
+    content: &str,
+    terms: &[String],
+    version: i64,
+    content_sha256: &str,
+) -> Vec<VerbatimMatch> {
+    if terms.is_empty() {
+        return vec![];
+    }
+    let mut byte_start = 0_usize;
+    let mut matches = Vec::new();
+    for (index, source_line) in content.split_inclusive('\n').enumerate() {
+        let line = source_line.strip_suffix('\n').unwrap_or(source_line);
+        if terms.iter().any(|term| line.contains(term)) {
+            let text = truncate_chars(line, MAX_VERBATIM_LINE_CHARS);
+            let truncated = text.len() < line.len();
+            matches.push(VerbatimMatch {
+                line_no: index + 1,
+                byte_start,
+                byte_end: byte_start + text.len(),
+                text,
+                version,
+                content_hash: format!("sha256:{content_sha256}"),
+                truncated,
+            });
+            if matches.len() >= MAX_VERBATIM_MATCHES_PER_CANDIDATE {
+                break;
+            }
+        }
+        byte_start += source_line.len();
+    }
+    matches
+}
+
+fn render_verbatim_matches(candidate: &Candidate, remaining_chars: &mut usize) -> Vec<Value> {
+    let mut rendered = Vec::new();
+    for source_match in &candidate.verbatim_matches {
+        if *remaining_chars == 0 {
+            break;
+        }
+        let mut retained = source_match.clone();
+        retained.text = truncate_chars(
+            &source_match.text,
+            (*remaining_chars).min(MAX_VERBATIM_LINE_CHARS),
+        );
+        let retained_chars = retained.text.chars().count();
+        if retained_chars == 0 {
+            break;
+        }
+        *remaining_chars = remaining_chars.saturating_sub(retained_chars);
+        retained.byte_end = retained.byte_start + retained.text.len();
+        retained.truncated |= retained.text.len() < source_match.text.len();
+        rendered.push(json!(retained));
+    }
+    rendered
+}
+
+fn render_search_candidate(candidate: &Candidate, remaining_verbatim_chars: &mut usize) -> Value {
     let mut rendered = serde_json::Map::from_iter([
         (
             "reference".to_owned(),
@@ -3762,6 +3904,13 @@ fn render_search_candidate(candidate: &Candidate) -> Value {
         rendered.insert(
             "additional_sections".to_owned(),
             Value::Array(additional_sections),
+        );
+    }
+    let verbatim_matches = render_verbatim_matches(candidate, remaining_verbatim_chars);
+    if !verbatim_matches.is_empty() {
+        rendered.insert(
+            "verbatim_matches".to_owned(),
+            Value::Array(verbatim_matches),
         );
     }
     Value::Object(rendered)
@@ -3861,6 +4010,7 @@ async fn open_hint_candidates(
                 score: 40.0,
                 lanes: vec!["hint".to_owned()],
                 sections: vec![],
+                verbatim_matches: vec![],
             }),
             Err(ApiError::Public {
                 status: StatusCode::NOT_FOUND,
@@ -6400,6 +6550,81 @@ mod tests {
     }
 
     #[test]
+    fn verbatim_matches_preserve_exact_lines_beyond_excerpt_window() {
+        let identifier = "STRAYID-64000-07-deadbeef";
+        let prefix = format!("{}\n", "x".repeat(2_500));
+        let line = format!("literal identifier: {identifier}");
+        let content = format!("{prefix}{line}\ntrailing material\n");
+        let terms = verbatim_match_terms(&format!("Synthetic/records/0000007.md {identifier}"));
+
+        assert_eq!(terms, vec![identifier]);
+        let matches = extract_verbatim_matches(&content, &terms, 9, &"a".repeat(64));
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].line_no, 2);
+        assert_eq!(matches[0].byte_start, prefix.len());
+        assert_eq!(matches[0].byte_end, prefix.len() + line.len());
+        assert_eq!(matches[0].text, line);
+        assert_eq!(matches[0].version, 9);
+        assert_eq!(
+            matches[0].content_hash,
+            format!("sha256:{}", "a".repeat(64))
+        );
+        assert!(!matches[0].truncated);
+    }
+
+    #[test]
+    fn verbatim_response_budget_truncates_text_and_offsets_together() {
+        let candidate = Candidate {
+            entry_id: Uuid::nil(),
+            path: "Synthetic/record.md".to_owned(),
+            title: "Record".to_owned(),
+            version: 1,
+            content_sha256: "a".repeat(64),
+            heading: String::new(),
+            excerpt: "prefix".to_owned(),
+            score: 10.0,
+            lanes: vec!["exact".to_owned()],
+            sections: vec![],
+            verbatim_matches: vec![VerbatimMatch {
+                line_no: 3,
+                byte_start: 100,
+                byte_end: 112,
+                text: "abcdefghijkl".to_owned(),
+                version: 1,
+                content_hash: format!("sha256:{}", "a".repeat(64)),
+                truncated: false,
+            }],
+        };
+        let mut remaining = 5;
+
+        let rendered = render_search_candidate(&candidate, &mut remaining);
+        let source_match = rendered
+            .get("verbatim_matches")
+            .and_then(Value::as_array)
+            .and_then(|matches| matches.first())
+            .expect("verbatim match");
+
+        assert_eq!(
+            source_match.get("text").and_then(Value::as_str),
+            Some("abcde")
+        );
+        assert_eq!(
+            source_match.get("byte_start").and_then(Value::as_u64),
+            Some(100)
+        );
+        assert_eq!(
+            source_match.get("byte_end").and_then(Value::as_u64),
+            Some(105)
+        );
+        assert_eq!(
+            source_match.get("truncated").and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(remaining, 0);
+    }
+
+    #[test]
     fn search_candidates_expose_identity_and_evidence_without_ranking_internals() {
         let candidate = Candidate {
             entry_id: Uuid::nil(),
@@ -6423,8 +6648,10 @@ mod tests {
                     score: 11.0,
                 },
             ],
+            verbatim_matches: vec![],
         };
-        let rendered = render_search_candidate(&candidate);
+        let mut remaining_verbatim_chars = MAX_VERBATIM_RESPONSE_CHARS;
+        let rendered = render_search_candidate(&candidate, &mut remaining_verbatim_chars);
         assert_eq!(
             rendered.get("reference").and_then(Value::as_str),
             Some("entry:00000000-0000-0000-0000-000000000000")
@@ -6490,6 +6717,7 @@ mod tests {
                     score: 0.8,
                 },
             ],
+            verbatim_matches: vec![],
         };
         let mut remaining = 5;
         assert!(truncate_candidate_evidence(&mut candidate, &mut remaining));
@@ -6627,7 +6855,11 @@ mod tests {
         let (views, truncated) =
             assemble_search_candidate_views(candidate_sets, &HashMap::new(), options);
         assert!(truncated);
-        let rendered = render_budgeted_search_candidate(&views[0][1]);
+        let mut remaining_verbatim_chars = MAX_VERBATIM_RESPONSE_CHARS;
+        let rendered = render_budgeted_search_candidate(
+            &views[0][1],
+            &mut remaining_verbatim_chars,
+        );
         let lead = rendered["additional_sections"][0].as_object().unwrap();
         assert_eq!(
             lead.get("representation").and_then(Value::as_str),

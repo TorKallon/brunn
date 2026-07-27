@@ -381,6 +381,7 @@ function compactSimpleCandidate(candidate: JsonObject): JsonObject {
     "excerpt",
     "text",
     "additional_sections",
+    "verbatim_matches",
   ]);
   const reference = typeof candidate.reference === "string"
     ? candidate.reference

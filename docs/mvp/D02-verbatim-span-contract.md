@@ -1,6 +1,6 @@
 # D02 — Verbatim Span Contract
 
-Status: Proposed — not started
+Status: Implemented behind default-off flag — awaiting E02 stage 2
 Date: 2026-07-27
 Depends on: none
 Gated by: E02 (E02-verbatim-identifier-gate.md)
@@ -31,6 +31,17 @@ With verbatim_spans on, every exact-lane candidate in a search response addition
 - Ranking untouched: spans annotate candidates; they never contribute to scoring or ordering.
 
 Request delta: none (server-side flag). Response delta: the single field above on exact-lane candidates only. Lexical and semantic lanes are out of scope for this design.
+
+Implementation note (2026-07-27): `STRAYLIGHT_VERBATIM_SPANS=false` is
+plumbed through startup configuration and Compose. When enabled, an exact path
+query conditionally retrieves that version's full source in the same SQL
+round trip, extracts at most three query-anchor lines, and returns
+hash/version/byte-pinned matches under the 9,600-character response cap.
+Flag-off SQL still selects only the existing 2,400-character prefix. The MCP
+reasoning-view compactor preserves `verbatim_matches` structurally unchanged.
+API and MCP contract tests cover a planted identifier beyond byte 2,400,
+offset-preserving truncation, and passthrough. E02's deterministic and
+reasoning gates remain unrun, so the flag remains off.
 
 ## What this does NOT change
 

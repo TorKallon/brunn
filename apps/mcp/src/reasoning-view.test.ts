@@ -110,6 +110,14 @@ test("simple query keeps exact entry identity and retrieval lanes without score 
             heading: "Fallback",
             excerpt: "Keep the flexible train as a backup.",
           }],
+          verbatim_matches: [{
+            line_no: 37,
+            byte_start: 4096,
+            byte_end: 4137,
+            text: "Exact booking id: VBG-2026-07-27-ALPHA",
+            version: 3,
+            content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          }],
           score: 9.81,
           lanes: ["exact", "lexical", "lexical"],
         }],
@@ -131,6 +139,14 @@ test("simple query keeps exact entry identity and retrieval lanes without score 
     additional_sections: [{
       heading: "Fallback",
       excerpt: "Keep the flexible train as a backup.",
+    }],
+    verbatim_matches: [{
+      line_no: 37,
+      byte_start: 4096,
+      byte_end: 4137,
+      text: "Exact booking id: VBG-2026-07-27-ALPHA",
+      version: 3,
+      content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     }],
     lanes: ["exact", "lexical"],
   });

@@ -38,6 +38,7 @@ pub struct Config {
     pub embedding_provider: String,
     pub allow_degraded_embeddings: bool,
     pub observability_timings_ms: bool,
+    pub verbatim_spans: bool,
     pub continuation_secret: String,
     pub materialize_token_budget: usize,
     pub search_fair_share: bool,
@@ -177,6 +178,7 @@ impl Config {
             embedding_provider: env_default("STRAYLIGHT_EMBEDDING_PROVIDER", "openai"),
             allow_degraded_embeddings: env_parse("STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS", "false")?,
             observability_timings_ms: env_parse("STRAYLIGHT_OBSERVABILITY_TIMINGS_MS", "true")?,
+            verbatim_spans: env_parse("STRAYLIGHT_VERBATIM_SPANS", "false")?,
             continuation_secret,
             materialize_token_budget: env_parse("STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET", "24000")?,
             search_fair_share: env_parse("STRAYLIGHT_SEARCH_FAIR_SHARE", "false")?,
@@ -543,7 +545,8 @@ mod tests {
                     .env("STRAYLIGHT_S3_FORCE_PATH_STYLE", "false")
                     .env("STRAYLIGHT_S3_CREATE_BUCKET", "false")
                     .env("STRAYLIGHT_S3_ACCESS_KEY", "s3-access")
-                    .env("STRAYLIGHT_S3_SECRET_KEY", "s3-secret");
+                    .env("STRAYLIGHT_S3_SECRET_KEY", "s3-secret")
+                    .env("STRAYLIGHT_VERBATIM_SPANS", "true");
             }
             "partial_credentials" => {
                 command.env("STRAYLIGHT_S3_ACCESS_KEY", "access-without-secret");
@@ -585,6 +588,7 @@ mod tests {
                 assert!(!config.s3_create_bucket);
                 assert!(!config.legacy_api_enabled);
                 assert!(!config.evaluation_api_enabled);
+                assert!(!config.verbatim_spans);
             }
             "minio_aliases" => {
                 let config = Config::from_env().unwrap();
@@ -600,6 +604,7 @@ mod tests {
                 assert!(config.s3_create_bucket);
                 assert!(config.legacy_api_enabled);
                 assert!(config.evaluation_api_enabled);
+                assert!(!config.verbatim_spans);
             }
             "explicit_overrides" => {
                 let config = Config::from_env().unwrap();
@@ -611,6 +616,7 @@ mod tests {
                 assert_eq!(config.s3_secret_key.as_deref(), Some("s3-secret"));
                 assert!(!config.s3_force_path_style);
                 assert!(!config.s3_create_bucket);
+                assert!(config.verbatim_spans);
             }
             "partial_credentials" => {
                 let error = Config::from_env().err().expect("partial keys must fail");
