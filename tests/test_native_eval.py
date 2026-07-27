@@ -35,7 +35,10 @@ from transition_eval import (
     attach_filesystem_sidecar_lineage,
     attach_native_lineage,
     build_codex_command as build_transition_codex_command,
+    build_parser as build_transition_parser,
+    run_mutation_hook,
     select_transition_conditions,
+    validate as validate_transition,
 )
 
 
@@ -59,6 +62,7 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
         "corpus_revision": "revision:delta",
         "source_refs": ["prior.md", "delta.md"],
     }
+    workspace_sources: dict[str, dict[str, Any]] = {}
 
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -213,6 +217,33 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                 },
             })
         elif self.path == "/v1/workspace/read":
+            requested_paths = [
+                request.get("path")
+                for request in body.get("requests", [])
+                if isinstance(request, dict) and isinstance(request.get("path"), str)
+            ]
+            if requested_paths and self.workspace_sources:
+                self.send_json(200, {
+                    "request_id": "req-workspace-read",
+                    "corpus_revision": "generation:43",
+                    "status": "complete",
+                    "data": {
+                        "items": [
+                            {
+                                "reference": f"entry:{index}",
+                                "path": path,
+                                "version": self.workspace_sources[path]["version"],
+                                "content_hash": self.workspace_sources[path]["content_hash"],
+                                "media_type": "text/markdown",
+                                "view": "full",
+                                "text": self.workspace_sources[path]["text"],
+                            }
+                            for index, path in enumerate(requested_paths, 1)
+                        ],
+                        "requested_count": len(requested_paths),
+                    },
+                })
+                return
             source_refs = self.child.get("source_refs", [])
             self.send_json(200, {
                 "request_id": "req-workspace-read",
@@ -244,6 +275,35 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                         },
                     }],
                     "requested_count": 1,
+                },
+            })
+        elif self.path == "/v1/workspace/write":
+            path = body["path"]
+            current = self.workspace_sources[path]
+            if body.get("expected_version") != current["version"]:
+                self.send_json(409, {
+                    "error": {
+                        "code": "entry_version_conflict",
+                        "message": "wrong expected version",
+                    }
+                })
+                return
+            content_hash = "sha256:" + hashlib.sha256(
+                body["content"].encode()
+            ).hexdigest()
+            current.update({
+                "text": body["content"],
+                "version": current["version"] + 1,
+                "content_hash": content_hash,
+            })
+            self.send_json(200, {
+                "request_id": "req-workspace-write",
+                "corpus_revision": f"generation:{42 + current['version']}",
+                "status": "committed",
+                "data": {
+                    "path": path,
+                    "version": current["version"],
+                    "content_hash": content_hash,
                 },
             })
         elif self.path.startswith("/v1/memory/"):
@@ -279,6 +339,7 @@ def fake_server(
     handler.issued_authorization_scope = issued_authorization_scope
     handler.session_revision = FakeNativeHandler.session_revision
     handler.evidence_sources = {}
+    handler.workspace_sources = {}
     handler.asset_bytes = FakeNativeHandler.asset_bytes
     handler.child = dict(FakeNativeHandler.child)
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -845,6 +906,18 @@ class NativeEvaluationTests(unittest.TestCase):
                         "path": "Trips/Related.md",
                         "title": "Related trip",
                         "version": 1,
+                        "annotation": "changed since checkpoint: version 1 → 2",
+                        "delta_omitted_reason": "delta character budget",
+                    }],
+                    "resume_deltas": [{
+                        "path": "Trips/Current.md",
+                        "pinned_version": 1,
+                        "pinned_sha256": f"sha256:{'a' * 64}",
+                        "current_version": 2,
+                        "current_sha256": f"sha256:{'b' * 64}",
+                        "mode": "whole_pair",
+                        "before": "Old plan.",
+                        "after": "Current plan.",
                     }],
                     "changes_since_checkpoint": [{
                         "generation": 201,
@@ -877,7 +950,13 @@ class NativeEvaluationTests(unittest.TestCase):
                 "path": "Trips/Related.md",
                 "title": "Related trip",
                 "version": 1,
+                "annotation": "changed since checkpoint: version 1 → 2",
+                "delta_omitted_reason": "delta character budget",
             }],
+        )
+        self.assertEqual(
+            rendered["data"]["resume_deltas"][0]["after"],
+            "Current plan.",
         )
         self.assertTrue(rendered["data"]["changes_truncated"])
         self.assertEqual(rendered["data"]["next_changes_generation"], 201)
@@ -1603,6 +1682,99 @@ class NativeEvaluationTests(unittest.TestCase):
             self.assertFalse(invalid_record["transition_pass"])
             self.assertIsNone(invalid_record["persisted_checkpoint"])
             self.assertFalse(invalid_record["lineage"]["state_valid"])
+
+    def test_e06_mutation_manifest_is_valid_and_exercises_both_delta_modes(self):
+        validated = validate_transition(
+            ROOT / "eval" / "transition_cases.json",
+            mutation_script=ROOT / "eval" / "e06_mutate.py",
+            mutation_seed="e06-draw1",
+        )
+
+        self.assertEqual(validated["errors"], [])
+        self.assertEqual(len(validated["mutation_plans"]), 5)
+        for case in validated["manifest"]["cases"]:
+            plan = validated["mutation_plans"][case["id"]]
+            self.assertEqual(len(plan["source_refs"]), 3)
+            self.assertEqual(case["delta_path"], plan["source_refs"][0])
+            self.assertIn("whole_pair", case["mutation"]["modes_exercised"])
+            self.assertTrue(any(
+                target["before_chars"] > 2_400 for target in plan["targets"]
+            ))
+            self.assertTrue(any(
+                target["before_chars"] <= 2_400
+                and target["after_chars"] <= 2_400
+                for target in plan["targets"]
+            ))
+
+    def test_e06_mutation_hook_writes_exactly_three_sources_and_mirrors_bytes(self):
+        script = ROOT / "eval" / "e06_mutate.py"
+        base_root = ROOT / "eval" / "corpus-v0.2"
+        plan = run_mutation_hook(
+            script,
+            "plan",
+            case_id="straylight-api-gate-transition",
+            base_root=base_root,
+            seed="e06-draw1",
+        )
+        with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
+            handler.workspace_sources = {
+                target["path"]: {
+                    "text": target["before"],
+                    "version": 1,
+                    "content_hash": target["before_sha256"],
+                }
+                for target in plan["targets"]
+            }
+            environment = {
+                **os.environ,
+                "STRAYLIGHT_API_URL": url,
+                "STRAYLIGHT_EVAL_TOKEN": "case-token",
+                "STRAYLIGHT_EVAL_RUN": "e06-a-draw1",
+            }
+            receipt = run_mutation_hook(
+                script,
+                "apply",
+                case_id="straylight-api-gate-transition",
+                base_root=base_root,
+                seed="e06-draw1",
+                mirror_root=Path(temporary),
+                environment=environment,
+            )
+
+            writes = [
+                request for request in handler.requests
+                if request["path"] == "/v1/workspace/write"
+            ]
+            reads = [
+                request for request in handler.requests
+                if request["path"] == "/v1/workspace/read"
+            ]
+            self.assertEqual(len(writes), 3)
+            self.assertEqual(len(reads), 2)
+            self.assertTrue(receipt["exactly_three_sources"])
+            self.assertTrue(receipt["workspace_vault_byte_identical"])
+            self.assertEqual(receipt["corpus_revision"], "generation:43")
+            for target in plan["targets"]:
+                mirrored = (
+                    Path(temporary) / target["path"]
+                ).read_text(encoding="utf-8")
+                self.assertEqual(mirrored, target["after"])
+                self.assertEqual(
+                    handler.workspace_sources[target["path"]]["text"],
+                    mirrored,
+                )
+
+    def test_transition_cli_accepts_documented_e06_mutation_options(self):
+        args = build_transition_parser().parse_args([
+            "validate",
+            "--mutation-script",
+            "eval/e06_mutate.py",
+            "--mutation-seed",
+            "e06-draw2",
+        ])
+
+        self.assertEqual(args.command, "validate")
+        self.assertEqual(args.mutation_seed, "e06-draw2")
 
     def test_native_transition_reads_child_checkpoint_over_http(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):

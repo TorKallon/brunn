@@ -443,6 +443,7 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
         for key in (
             "checkpoint",
             "changes_since_checkpoint",
+            "resume_deltas",
             "changes_truncated",
             "next_changes_generation",
             "checkpoint_text_truncated",
@@ -811,6 +812,8 @@ def compact_simple_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
             "additional_sections",
             "superseded_by",
             "content_hash",
+            "annotation",
+            "delta_omitted_reason",
         )
         if key in candidate and candidate[key] not in (None, [], {})
     }

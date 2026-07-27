@@ -1,6 +1,6 @@
 # E06 — Resume Delta Experiment
 
-Status: Specified — not run
+Status: Build prerequisites implemented — experiment not run
 Date: 2026-07-27
 Gates: D03 (D03-resume-delta-packets.md)
 Phase: 1 (requires D03 built behind resume_deltas)
@@ -13,10 +13,10 @@ Transitions are 0/5 in every run to date; failures are claim-slot omissions, nev
 
 ## Preconditions and build items
 
-- B1 (M): D03 built behind resume_deltas — resume-open path in apps/api/src/simple_core.rs: source_refs × changes_since_checkpoint intersection, batched pinned-version fetch from entry_versions, whole_pair/unified_diff/lead materialization, ≤6,000-char budget charged against open evidence.
-- B2 (S): Scripted mutation step for transition_eval.py — a new `--mutation-script` flag (the exact name the procedure uses) that runs between seed and resume and applies deterministic edits to exactly 3 of the card's checkpoint source_refs paths via the workspace write API (producing new entry_versions and workspace_changes rows), AND mirrors the identical edits into the vault Markdown so filesystem_rebuild sees the same post-mutation world. Divergence between the two worlds invalidates the draw. Anchor: transition_eval.py run flow at the seed→resume boundary.
+- B1 (M): IMPLEMENTED. D03 is behind `STRAYLIGHT_RESUME_DELTAS=false` by default. The resume-open path in `apps/api/src/simple_core.rs` performs the source_refs × changes_since_checkpoint intersection, one batched pinned/current history statement, whole_pair/unified_diff/lead materialization, integrity checks, and ≤6,000-char accounting against open evidence.
+- B2 (S): IMPLEMENTED. `transition_eval.py --mutation-script` invokes `eval/e06_mutate.py` after the seed checkpoint exists. The hook applies deterministic, expected-version writes to exactly 3 author-ordered checkpoint paths and mirrors identical bytes into an isolated filesystem corpus. It reads both worlds before and after mutation and fails the draw on divergence. `eval/e06_mutations.json` and `eval/e06-sources/` are explicitly tagged synthetic fixtures.
 - B3 (S): n≥3 paired-draw aggregator eval/aggregate_draws.py (per-case win/loss/tie, exact-binomial McNemar, bootstrap CIs, stdlib only) — known build item, shared with E02 (E02-verbatim-identifier-gate.md), specified in E01-paired-draw-machinery-and-baseline.md.
-- B4 (S): resume p95 probe with resume_deltas on in performance_eval.py --future-soak, gate tightened to 150ms when the flag is on. Anchor: performance_eval.py resume/checkpoint gates.
+- B4 (S): INTEGRATION DEPENDENCY. The definitive 30-sample resume p95 and query-count reporting belong to the shared D09/performance harness and must be present in the clean integrated execution fingerprint before E06 is run.
 - Note: transition_eval seeds currently accept only workspace checkpoints; the writable-sidecar extension (Medium) is NOT required here — filesystem_rebuild is an existing runnable condition — but B2's vault mirror is mandatory for arm fairness.
 
 ## Arms
@@ -35,15 +35,17 @@ Transitions are 0/5 in every run to date; failures are claim-slot omissions, nev
 ## Procedure
 
 1. Land B1–B4 on a clean git tree (implementation fingerprint gate).
-2. `python transition_eval.py validate` with the mutation hook enabled; confirm each card's mutation touches exactly 3 source_refs paths and that workspace and vault mirrors are byte-identical post-mutation.
+2. Validate the deterministic mutation plans: `python3 transition_eval.py validate --mutation-script eval/e06_mutate.py --mutation-seed e06-draw<N>`. Validation requires exactly 3 unique author-ordered checkpoint paths per card, at least one source that remains ≤2,400 chars/version for `whole_pair`, and at least one larger source for `unified_diff`. Runtime receipts prove workspace/vault byte equality.
 3. For draw N in 1..3, run the three arms with identical mutation seeds per card:
-   - Arm A (flag off): `python transition_eval.py run --condition service_api_resume --embeddings hashing --mutation-script eval/e06_mutate.py --run-id resume-deltas-a-draw<N> --out results/2026-MM-DD-resume-deltas-a-draw<N>.json --report results/2026-MM-DD-resume-deltas-a-draw<N>.md`
-   - Arm B: flip resume_deltas on (runtime flag; record flag state), same command with slug resume-deltas-b-draw<N>.
-   - Arm C: `--condition filesystem_rebuild`, slug resume-deltas-c-draw<N>.
+   - Arm A (isolated stack with `STRAYLIGHT_RESUME_DELTAS=false`): `python3 transition_eval.py run --condition service_api_resume --service-protocol simple --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed e06-draw<N> --run-id resume-deltas-a-draw<N> --out results/2026-MM-DD-resume-deltas-a-draw<N>.json --report results/2026-MM-DD-resume-deltas-a-draw<N>.md`
+   - Arm B (separate isolated stack with `STRAYLIGHT_RESUME_DELTAS=true`): same command with slug `resume-deltas-b-draw<N>`. Never flip the flag on a stack serving another concurrent arm.
+   - Arm C: `python3 transition_eval.py run --condition filesystem_rebuild --service-protocol simple --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed e06-draw<N> --run-id resume-deltas-c-draw<N> --out results/2026-MM-DD-resume-deltas-c-draw<N>.json --report results/2026-MM-DD-resume-deltas-c-draw<N>.md`
 4. Aggregate with B3: `python eval/aggregate_draws.py results/2026-MM-DD-resume-deltas-*-draw*.json --out results/2026-MM-DD-resume-deltas-aggregate.json` — per-card pairing B-vs-A and B-vs-C across the 3 draws; exact McNemar at claim level; bootstrap CIs at card level.
 5. `python performance_eval.py run --label resume-deltas-soak --future-soak --out results/2026-MM-DD-resume-deltas-soak.json` with resume_deltas on; read resume p95, concurrent write/search probe, checkpoint footprint, protocol-to-evidence ratio, and the query-count assertion.
 6. If the headline is inside the noise floor but straylight-api-gate-transition moves, run a targeted 5-draw repeat on that card, all three arms.
 7. Use `transition_eval.py regrade` for rubric corrections; never regenerate answers to fix grading.
+
+The run JSON fingerprints the mutation script, embeds every per-card plan and receipt, records the feature-flag state, and uses the mutated authority path in grading/lineage checks. The control sees only its prior checkpoint plus the post-mutation file tree; it is not handed a synthetic change-log file.
 
 ## Metrics
 

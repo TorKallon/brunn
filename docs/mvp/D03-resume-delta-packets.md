@@ -1,6 +1,6 @@
 # D03 — Resume Delta Packets
 
-Status: Proposed — not started
+Status: Implemented behind a default-off flag — E06 not run
 Date: 2026-07-27
 Depends on: none
 Gated by: E06 (E06-resume-delta-experiment.md)
@@ -25,8 +25,8 @@ With resume_deltas on, open with resume_checkpoint_ref additionally computes:
 3. Materialize a delta per source:
    - Small files — both versions ≤2,400 chars each — are returned whole, both versions (`mode: whole_pair`, fields before/after). Rationale: an out-of-context bare diff recreates the section-selection loss D02 targets; for small sources the full pair is cheaper and strictly more legible.
    - Larger files get a standard unified diff, 3 context lines (`mode: unified_diff`).
-4. Budgets: aggregate delta budget ≤6,000 chars, charged against the open evidence budget — deltas displace other open evidence rather than growing the payload. Per-source soft cap 2,000 chars. Sources beyond the ≤8 limit or the char budget degrade to pointer `evidence_leads` annotated "changed since checkpoint: version N → M" (existing lead mechanism).
-5. Prioritization when more than 8 refs changed: checkpoint source_refs order (authoring order reflects the checkpoint author's priority). OWNER DECISION: confirm source_refs order over most-recently-changed-first before build.
+4. Budgets: aggregate delta budget ≤6,000 chars, charged against the open evidence budget — deltas displace other open evidence rather than growing the payload. Unified diffs have a 2,000-char per-source cap. A `whole_pair` is indivisible and may exceed that soft cap when both complete versions still fit the aggregate budget; otherwise it degrades to a pointer rather than returning a partial “whole” pair. Sources beyond the ≤8 limit or the char budget degrade to pointer `evidence_leads` annotated "changed since checkpoint: version N → M" (existing lead mechanism).
+5. Prioritization when more than 8 refs changed: checkpoint source_refs order (authoring order reflects the checkpoint author's priority). The E06 build adopts this specified default; it does not introduce a recency heuristic.
 6. Response delta: new open field `resume_deltas: [{path, pinned_version, pinned_sha256, current_version, current_sha256, mode, before?, after?, diff?}]`. Hashes reuse the checkpoint source-ref format, so every delta is verifiable against lineage. Request delta: none.
 7. Integrity: if a pinned version's stored sha256 does not match the recomputed hash, the open fails loud with a lineage error — never a silent empty delta.
 
@@ -59,6 +59,16 @@ Latency gate: resume p95 ≤150ms at 640K — ~4x the measured 35.2ms v8 baselin
 ## Rollout and kill switch
 
 Flag resume_deltas, default off. Sequence: eval environment for E06 → Nyx under the Tier B read/write plan (D14 frame; checkpoint-resume canaries) → default on after gates. Kill switch is the runtime flag — flip disables delta computation entirely and restores today's resume payload with no deploy. Any checkpoint-lineage incident during rollout follows the Tier C tripwire: immediate flag-off and revert to Markdown authority.
+
+## Implementation record
+
+- Runtime configuration: `STRAYLIGHT_RESUME_DELTAS`, default `false`, exposed through Compose as `resume_deltas`.
+- Resume behavior: only a flagged open with `resume_checkpoint_ref` enters the delta path. Non-resume opens and all flag-off requests retain the previous response shape.
+- History read: one batched SQL statement accepts the author-ordered `(entry_id, pinned_version)` pairs and returns pinned/current text plus hashes. Missing entries or versions, path drift, checkpoint/stored hash disagreement, and recomputed text-hash disagreement return `checkpoint_lineage_error`.
+- Evidence accounting: returned before/after or diff characters are deducted from the existing evidence token allowance before ordinary hydration.
+- Evaluation checkpoints: the simple evaluation importer now records exact `entry_ref`, path, version, and hash structures, including when a batched import placed a source in an earlier batch.
+- Agent projection: both `native_memory.py` and the MCP reasoning view preserve `resume_deltas` and annotated delta pointers.
+- Verification is unit and harness-level only in this commit. The definitive 640K/30-sample performance and query-count gates remain part of E06/D09 execution, not an implementation result.
 
 ## References
 

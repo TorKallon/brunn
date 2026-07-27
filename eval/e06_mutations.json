@@ -1,0 +1,95 @@
+{
+  "schema": "straylight-e06-mutations@v1",
+  "cases": {
+    "warmind-alpha-budget-transition": {
+      "delta_path": "eval/transition-deltas/warmind-alpha-budget-change.md",
+      "targets": [
+        {
+          "path": "Evaluation/E06/warmind-alpha-budget-transition.md",
+          "fixture": "eval/e06-sources/warmind-alpha-budget-transition.md",
+          "operation": "append_delta"
+        },
+        {
+          "path": "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md",
+          "operation": "append_pointer"
+        },
+        {
+          "path": "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+          "operation": "append_pointer"
+        }
+      ]
+    },
+    "charlemagne-storage-observation-transition": {
+      "delta_path": "eval/transition-deltas/charlemagne-storage-observation.md",
+      "targets": [
+        {
+          "path": "Evaluation/E06/charlemagne-storage-observation-transition.md",
+          "fixture": "eval/e06-sources/charlemagne-storage-observation-transition.md",
+          "operation": "append_delta"
+        },
+        {
+          "path": "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+          "operation": "append_pointer"
+        },
+        {
+          "path": "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+          "operation": "append_pointer"
+        }
+      ]
+    },
+    "star-rupture-second-facturer-transition": {
+      "delta_path": "eval/transition-deltas/star-rupture-second-facturer.md",
+      "targets": [
+        {
+          "path": "Evaluation/E06/star-rupture-second-facturer-transition.md",
+          "fixture": "eval/e06-sources/star-rupture-second-facturer-transition.md",
+          "operation": "append_delta"
+        },
+        {
+          "path": "Topics/Star Rupture/Star Rupture logistics.md",
+          "operation": "append_pointer"
+        },
+        {
+          "path": "Topics/Star Rupture/Star Rupture production.md",
+          "operation": "append_pointer"
+        }
+      ]
+    },
+    "switzerland-reservation-transition": {
+      "delta_path": "eval/transition-deltas/switzerland-family-window-and-reservation.md",
+      "targets": [
+        {
+          "path": "Evaluation/E06/switzerland-reservation-transition.md",
+          "fixture": "eval/e06-sources/switzerland-reservation-transition.md",
+          "operation": "append_delta"
+        },
+        {
+          "path": "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+          "operation": "append_pointer"
+        },
+        {
+          "path": "Trips/Switzerland/Switzerland trip planning.md",
+          "operation": "append_pointer"
+        }
+      ]
+    },
+    "straylight-api-gate-transition": {
+      "delta_path": "eval/transition-deltas/straylight-api-gate.md",
+      "targets": [
+        {
+          "path": "Evaluation/E06/straylight-api-gate-transition.md",
+          "fixture": "eval/e06-sources/straylight-api-gate-transition.md",
+          "operation": "append_delta"
+        },
+        {
+          "path": "Projects/Straylight/Decisions.md",
+          "operation": "append_pointer"
+        },
+        {
+          "path": "Projects/Straylight/Straylight.md",
+          "operation": "append_pointer"
+        }
+      ]
+    }
+  }
+}

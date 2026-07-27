@@ -9,6 +9,8 @@ import os
 import shutil
 import sqlite3
 import statistics
+import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -71,7 +73,94 @@ def embedding_provider(kind: str, model: str):
     return None
 
 
-def validate(manifest_path: Path) -> dict[str, Any]:
+def run_mutation_hook(
+    script: Path,
+    command: str,
+    *,
+    case_id: str,
+    base_root: Path,
+    seed: str,
+    mirror_root: Path | None = None,
+    mirror_only: bool = False,
+    environment: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    arguments = [
+        sys.executable,
+        str(script),
+        command,
+        "--case-id",
+        case_id,
+        "--base-root",
+        str(base_root),
+        "--seed",
+        seed,
+    ]
+    if mirror_root is not None:
+        arguments.extend(["--mirror-root", str(mirror_root)])
+    if mirror_only:
+        arguments.append("--mirror-only")
+    completed = subprocess.run(
+        arguments,
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode:
+        raise RuntimeError(
+            f"mutation hook failed for {case_id} ({command}): "
+            f"{completed.stderr[-2_000:]}"
+        )
+    try:
+        value = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"mutation hook returned invalid JSON for {case_id}: "
+            f"{completed.stdout[-2_000:]}"
+        ) from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"mutation hook returned a non-object for {case_id}")
+    return value
+
+
+def apply_mutation_manifest(
+    manifest: dict[str, Any],
+    plans: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    mutated = json.loads(json.dumps(manifest))
+    for case in mutated["cases"]:
+        plan = plans[case["id"]]
+        original_delta_path = case["delta_path"]
+        authority_path = plan["source_refs"][0]
+        case["original_delta_path"] = original_delta_path
+        case["delta_path"] = authority_path
+        case["mutation"] = {
+            "schema": plan["schema"],
+            "seed": plan["seed"],
+            "source_refs": plan["source_refs"],
+            "modes_exercised": ["whole_pair", "unified_diff"],
+            "tags": ["E06", "resume_delta", "synthetic_fixture"],
+        }
+        for rubric in case["rubric"]:
+            rubric["sources_any"] = [
+                authority_path if source == original_delta_path else source
+                for source in rubric["sources_any"]
+            ]
+    mutated["experiment"] = {
+        "id": "E06",
+        "mutation_schema": "straylight-e06-mutation-plan@v1",
+        "synthetic_fixtures": True,
+    }
+    return mutated
+
+
+def validate(
+    manifest_path: Path,
+    *,
+    mutation_script: Path | None = None,
+    mutation_seed: str = "e06-default",
+) -> dict[str, Any]:
     manifest = load_json(manifest_path)
     base_root = ROOT / manifest["base_corpus_root"]
     base_paths = {
@@ -96,12 +185,67 @@ def validate(manifest_path: Path) -> dict[str, Any]:
             for source in rubric["sources_any"]:
                 if source not in base_paths and not (ROOT / source).is_file():
                     errors.append(f"{case['id']}:{rubric['id']}: missing source {source}")
+    mutation_plans: dict[str, dict[str, Any]] = {}
+    if mutation_script is not None:
+        if not mutation_script.is_file():
+            errors.append(f"missing mutation script {mutation_script}")
+        else:
+            for case in manifest["cases"]:
+                try:
+                    plan = run_mutation_hook(
+                        mutation_script,
+                        "plan",
+                        case_id=case["id"],
+                        base_root=base_root,
+                        seed=mutation_seed,
+                    )
+                except (RuntimeError, ValueError) as exc:
+                    errors.append(f"{case['id']}: {exc}")
+                    continue
+                source_refs = plan.get("source_refs")
+                targets = plan.get("targets")
+                if (
+                    plan.get("schema") != "straylight-e06-mutation-plan@v1"
+                    or not isinstance(source_refs, list)
+                    or len(source_refs) != 3
+                    or len(set(source_refs)) != 3
+                    or not isinstance(targets, list)
+                    or len(targets) != 3
+                ):
+                    errors.append(
+                        f"{case['id']}: mutation plan must name exactly three unique sources"
+                    )
+                    continue
+                if not any(
+                    target.get("before_chars", 2_401) <= 2_400
+                    and target.get("after_chars", 2_401) <= 2_400
+                    for target in targets
+                    if isinstance(target, dict)
+                ):
+                    errors.append(f"{case['id']}: mutation plan lacks a whole_pair source")
+                if not any(
+                    target.get("before_chars", 0) > 2_400
+                    for target in targets
+                    if isinstance(target, dict)
+                ):
+                    errors.append(f"{case['id']}: mutation plan lacks a unified_diff source")
+                mutation_plans[case["id"]] = plan
+            if len(mutation_plans) == len(manifest["cases"]):
+                manifest = apply_mutation_manifest(manifest, mutation_plans)
+                base_paths.update(
+                    path
+                    for plan in mutation_plans.values()
+                    for path in plan["source_refs"]
+                )
     return {
         "manifest_path": manifest_path,
         "manifest": manifest,
         "base_root": base_root,
         "base_paths": base_paths,
         "seed_records": seed_records,
+        "mutation_script": mutation_script,
+        "mutation_seed": mutation_seed,
+        "mutation_plans": mutation_plans,
         "errors": errors,
     }
 
@@ -180,6 +324,83 @@ def load_prepared_assets(
     return prepared
 
 
+def prepare_mutation_mirrors(
+    run_root: Path,
+    validated: dict[str, Any],
+) -> dict[str, Path]:
+    mirrors: dict[str, Path] = {}
+    for case in validated["manifest"]["cases"]:
+        plan = validated["mutation_plans"][case["id"]]
+        mirror = run_root / "assets" / case["id"] / "vault"
+        if not mirror.exists():
+            shutil.copytree(validated["base_root"], mirror)
+        for target in plan["targets"]:
+            path = mirror / target["path"]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                current = path.read_text(encoding="utf-8")
+                if current not in {target["before"], target["after"]}:
+                    raise ValueError(
+                        f"{case['id']}:{target['path']}: mutation mirror has unexpected bytes"
+                    )
+            else:
+                path.write_text(target["before"], encoding="utf-8")
+        mirrors[case["id"]] = mirror
+    return mirrors
+
+
+def mutation_documents(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "path": target["path"],
+            "content": target["before"],
+            "content_sha256": target["before_sha256"].removeprefix("sha256:"),
+            "media_type": "text/markdown",
+        }
+        for target in plan["targets"]
+        if target.get("fixture")
+    ]
+
+
+def apply_case_mutation(
+    *,
+    script: Path,
+    validated: dict[str, Any],
+    case_id: str,
+    mirror_root: Path,
+    metadata: dict[str, Any] | None,
+    mirror_only: bool,
+) -> dict[str, Any]:
+    environment = dict(os.environ)
+    if metadata is not None:
+        environment.update(
+            {
+                "STRAYLIGHT_EVAL_TOKEN": metadata["token"],
+                "STRAYLIGHT_EVAL_RUN": metadata["run_id"],
+            }
+        )
+    receipt = run_mutation_hook(
+        script,
+        "apply",
+        case_id=case_id,
+        base_root=validated["base_root"],
+        seed=validated["mutation_seed"],
+        mirror_root=mirror_root,
+        mirror_only=mirror_only,
+        environment=environment,
+    )
+    if (
+        receipt.get("schema") != "straylight-e06-mutation-receipt@v1"
+        or receipt.get("paths")
+        != validated["mutation_plans"][case_id]["source_refs"]
+        or receipt.get("exactly_three_sources") is not True
+    ):
+        raise ValueError(f"{case_id}: mutation receipt failed the three-source gate")
+    if not mirror_only and receipt.get("workspace_vault_byte_identical") is not True:
+        raise ValueError(f"{case_id}: workspace/vault mutation divergence")
+    return receipt
+
+
 def prepare_native_assets(
     run_id: str,
     validated: dict[str, Any],
@@ -188,6 +409,8 @@ def prepare_native_assets(
     existing: dict[str, dict[str, Any]] | None = None,
     state_path: Path | None = None,
     service_protocol: str = "legacy",
+    mutation_script: Path | None = None,
+    mutation_mirrors: dict[str, Path] | None = None,
 ) -> dict[str, dict[str, Any]]:
     documents = text_documents(validated["base_root"])
     work_cases = load_json(ROOT / "eval" / "work_cases.json")
@@ -204,10 +427,30 @@ def prepare_native_assets(
                 raise ValueError(
                     f"Invalid persisted native provisioning for {case['id']}"
                 )
+            if (
+                validated["mutation_plans"].get(case["id"]) is not None
+                and (
+                    persisted.get("mutation", {}).get("schema")
+                    != "straylight-e06-mutation-receipt@v1"
+                )
+            ):
+                raise ValueError(
+                    f"Persisted native provisioning lacks the E06 mutation receipt "
+                    f"for {case['id']}"
+                )
             continue
         state = validated["seed_records"][case["seed_case_id"]]["workspace_checkpoint"]
-        sources = seed_sources(case, work_cases, validated["base_paths"])
+        mutation_plan = validated["mutation_plans"].get(case["id"])
+        sources = (
+            list(mutation_plan["source_refs"])
+            if mutation_plan is not None
+            else seed_sources(case, work_cases, validated["base_paths"])
+        )
         seed = {"state": state, "source_refs": sources}
+        case_documents = [
+            *documents,
+            *(mutation_documents(mutation_plan) if mutation_plan is not None else []),
+        ]
         client = NativeApiClient(run_id=run_id, case_id=case["id"])
         metadata = provision_evaluation(
             client,
@@ -215,8 +458,12 @@ def prepare_native_assets(
             case_id=case["id"],
             display_scope=case["workload"],
             access_mode="read_write",
-            documents=documents,
-            delta_documents=[file_document(ROOT / case["delta_path"], case["delta_path"])],
+            documents=case_documents,
+            delta_documents=(
+                []
+                if mutation_plan is not None
+                else [file_document(ROOT / case["delta_path"], case["delta_path"])]
+            ),
             seed_checkpoint=seed,
             timeout_seconds=timeout_seconds,
             import_path=(
@@ -229,13 +476,33 @@ def prepare_native_assets(
         if not metadata.get("checkpoint_id"):
             raise RuntimeError(f"{case['id']}: eval import did not return seed checkpoint_id")
         metadata["seed_source_refs"] = sources
+        metadata["run_id"] = run_id
+        if mutation_plan is not None:
+            if mutation_script is None or mutation_mirrors is None:
+                raise ValueError("mutation provisioning requires its script and mirrors")
+            metadata["mutation"] = apply_case_mutation(
+                script=mutation_script,
+                validated=validated,
+                case_id=case["id"],
+                mirror_root=mutation_mirrors[case["id"]],
+                metadata=metadata,
+                mirror_only=False,
+            )
+            corpus_revision = metadata["mutation"].get("corpus_revision")
+            if corpus_revision:
+                metadata["corpus_revision"] = corpus_revision
         prepared[case["id"]] = metadata
         if state_path is not None:
             write_native_provisioning_state(state_path, run_id, prepared)
     return prepared
 
 
-def render_prompt(case: dict[str, Any], condition: str) -> str:
+def render_prompt(
+    case: dict[str, Any],
+    condition: str,
+    *,
+    mutation_enabled: bool = False,
+) -> str:
     slots = "\n".join(f"- {key}: {value}" for key, value in case["claim_slots"].items())
     if condition in {"workspace_resume", "service_api_resume"}:
         adapter = "native Straylight service" if condition == "service_api_resume" else "typed Straylight adapter"
@@ -254,6 +521,8 @@ Do not call help or schema. Use no more than four workspace calls. The checkpoin
         access = """Use only `./checkpoint.json`, `./delta.json`, the exact delta source under `./eval/transition-deltas`, the frozen `./corpus`, and the run-scoped writable `./sidecar`.
 
 Reconcile the prior checkpoint with the N+1 delta, then persist `./sidecar/checkpoint.json` before answering. The file must be one JSON object with `parent_checkpoint_id` copied exactly from `./checkpoint.json`, `corpus_revision` copied exactly from `to_revision` in `./delta.json`, `source_refs` containing both at least one prior source from the parent checkpoint and the exact delta path, and a `state` object with objective, current_state, decisions, open_questions, next_actions, and artifacts. The checkpoint is prior durable state, not an infallible source. Do not browse, modify the corpus, or read or write outside the listed paths."""
+    elif mutation_enabled:
+        access = """Use only `./checkpoint.json` and the frozen post-mutation `./corpus` tree. The checkpoint is prior durable state, not an infallible source; reconcile it against the current files and cite original relative source paths. A file tree has no version history or generation log, so determine what is current from the files themselves. Do not browse or read outside this run directory."""
     else:
         access = """Use only `./checkpoint.json`, `./delta.json`, the exact delta source under `./eval/transition-deltas`, and the frozen `./corpus`. Ordinary read-only filesystem search and scripts are allowed. The checkpoint is prior durable state, not an infallible source; reconcile it with the new delta and cite original relative source paths. Do not browse or read outside this run directory."""
     return f"""You are a genuinely fresh agent continuing work at corpus revision N+1.
@@ -300,6 +569,7 @@ def prepare_run_dirs(
     embedding_model: str,
     conditions: Sequence[str] | None = None,
     service_protocol: str = "legacy",
+    mutation_mirrors: dict[str, Path] | None = None,
 ) -> list[tuple[dict[str, Any], str, Path]]:
     jobs = []
     selected_conditions = list(conditions or validated["manifest"]["conditions"])
@@ -311,7 +581,15 @@ def prepare_run_dirs(
             if (run_dir / "answer.json").is_file() and (run_dir / "run-record.json").is_file():
                 jobs.append((case, condition, run_dir))
                 continue
-            (run_dir / "prompt.txt").write_text(render_prompt(case, condition), encoding="utf-8")
+            mutation_enabled = mutation_mirrors is not None
+            (run_dir / "prompt.txt").write_text(
+                render_prompt(
+                    case,
+                    condition,
+                    mutation_enabled=mutation_enabled,
+                ),
+                encoding="utf-8",
+            )
             if condition == "workspace_resume":
                 workspace_database = run_dir / "workspace.db"
                 backup_database(Path(metadata["database"]), workspace_database)
@@ -340,22 +618,51 @@ def prepare_run_dirs(
             else:
                 corpus_link = run_dir / "corpus"
                 if not corpus_link.exists() and not corpus_link.is_symlink():
-                    corpus_link.symlink_to(validated["base_root"], target_is_directory=True)
-                delta_target = run_dir / case["delta_path"]
-                delta_target.parent.mkdir(parents=True, exist_ok=True)
-                if not delta_target.exists() and not delta_target.is_symlink():
-                    delta_target.symlink_to(ROOT / case["delta_path"])
-                (run_dir / "checkpoint.json").write_text(
-                    json.dumps(metadata["seed_checkpoint"], indent=2) + "\n", encoding="utf-8"
-                )
-                (run_dir / "delta.json").write_text(
-                    json.dumps({
-                        "from_revision": metadata["base_revision"]["revision_id"],
-                        "to_revision": metadata["delta_revision"]["revision_id"],
-                        "changed_paths": [case["delta_path"]],
-                    }, indent=2) + "\n",
-                    encoding="utf-8",
-                )
+                    corpus_link.symlink_to(
+                        (
+                            mutation_mirrors[case["id"]]
+                            if mutation_mirrors is not None
+                            else validated["base_root"]
+                        ),
+                        target_is_directory=True,
+                    )
+                if mutation_enabled:
+                    plan = validated["mutation_plans"][case["id"]]
+                    checkpoint = {
+                        "state": validated["seed_records"][case["seed_case_id"]][
+                            "workspace_checkpoint"
+                        ],
+                        "source_refs": plan["source_refs"],
+                        "source_entries": [
+                            {
+                                "path": target["path"],
+                                "version": 1,
+                                "content_hash": target["before_sha256"],
+                            }
+                            for target in plan["targets"]
+                        ],
+                    }
+                    (run_dir / "checkpoint.json").write_text(
+                        json.dumps(checkpoint, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                else:
+                    delta_target = run_dir / case["delta_path"]
+                    delta_target.parent.mkdir(parents=True, exist_ok=True)
+                    if not delta_target.exists() and not delta_target.is_symlink():
+                        delta_target.symlink_to(ROOT / case["delta_path"])
+                    (run_dir / "checkpoint.json").write_text(
+                        json.dumps(metadata["seed_checkpoint"], indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                    (run_dir / "delta.json").write_text(
+                        json.dumps({
+                            "from_revision": metadata["base_revision"]["revision_id"],
+                            "to_revision": metadata["delta_revision"]["revision_id"],
+                            "changed_paths": [case["delta_path"]],
+                        }, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
                 if condition == "filesystem_sidecar":
                     (run_dir / "sidecar").mkdir(exist_ok=True)
             jobs.append((case, condition, run_dir))
@@ -1145,8 +1452,22 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
     else:
         run_root.mkdir(parents=True, exist_ok=False)
     selected_conditions = select_transition_conditions(manifest, args)
+    mutation_script = validated.get("mutation_script")
+    mutation_enabled = mutation_script is not None
+    if mutation_enabled and "workspace_resume" in selected_conditions:
+        raise ValueError(
+            "the E06 mutation hook supports service_api_resume and "
+            "filesystem_rebuild; workspace_resume is not an E06 arm"
+        )
+    mutation_mirrors = (
+        prepare_mutation_mirrors(run_root, validated)
+        if mutation_enabled
+        else None
+    )
     legacy_embeddings = args.embeddings if "workspace_resume" in selected_conditions else "none"
-    if {
+    if mutation_enabled:
+        prepared = {case["id"]: {} for case in manifest["cases"]}
+    elif {
         "filesystem_rebuild",
         "filesystem_sidecar",
         "workspace_resume",
@@ -1169,9 +1490,22 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
             existing=native_metadata,
             state_path=native_state_path,
             service_protocol=args.service_protocol,
+            mutation_script=mutation_script,
+            mutation_mirrors=mutation_mirrors,
         )
         for case_id, metadata in native_metadata.items():
             prepared[case_id]["native"] = metadata
+    if mutation_enabled and "service_api_resume" not in selected_conditions:
+        assert mutation_mirrors is not None
+        for case in manifest["cases"]:
+            prepared[case["id"]]["mutation"] = apply_case_mutation(
+                script=mutation_script,
+                validated=validated,
+                case_id=case["id"],
+                mirror_root=mutation_mirrors[case["id"]],
+                metadata=None,
+                mirror_only=True,
+            )
     jobs = prepare_run_dirs(
         run_root,
         validated,
@@ -1180,6 +1514,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         args.embedding_model,
         selected_conditions,
         args.service_protocol,
+        mutation_mirrors,
     )
     semaphore = asyncio.Semaphore(args.concurrency)
     tasks = []
@@ -1245,6 +1580,31 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         },
         "records": records,
         "service_protocol": args.service_protocol,
+        "feature_flags": {
+            "resume_deltas": os.environ.get(
+                "STRAYLIGHT_RESUME_DELTAS", "false"
+            ).casefold()
+            in {"1", "true", "yes", "on"}
+        },
+        "mutation": (
+            {
+                "script": str(mutation_script),
+                "script_sha256": sha256_file(mutation_script),
+                "seed": validated["mutation_seed"],
+                "plans": validated["mutation_plans"],
+                "receipts": {
+                    case["id"]: (
+                        prepared[case["id"]]
+                        .get("native", {})
+                        .get("mutation")
+                        or prepared[case["id"]].get("mutation")
+                    )
+                    for case in manifest["cases"]
+                },
+            }
+            if mutation_enabled
+            else None
+        ),
         "reasoning_billing": reasoning_billing,
     }
     run["run_ledger"] = build_run_ledger(
@@ -1266,7 +1626,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, default=ROOT / "eval" / "transition_cases.json")
     parser.add_argument("--schema", type=Path, default=ROOT / "eval" / "work_answer_schema.json")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("validate")
+    validate_command = subparsers.add_parser("validate")
+    validate_command.add_argument("--mutation-script", type=Path)
+    validate_command.add_argument("--mutation-seed", default="e06-default")
     run = subparsers.add_parser("run")
     run.add_argument("--codex", type=Path, default=DEFAULT_CODEX)
     run.add_argument("--model")
@@ -1289,24 +1651,36 @@ def build_parser() -> argparse.ArgumentParser:
         default="simple",
     )
     run.add_argument("--reuse-input", type=Path)
+    run.add_argument("--mutation-script", type=Path)
+    run.add_argument("--mutation-seed", default="e06-default")
     run.add_argument("--out", type=Path, required=True)
     run.add_argument("--report", type=Path)
     regrade = subparsers.add_parser("regrade")
     regrade.add_argument("--input", type=Path, required=True)
     regrade.add_argument("--out", type=Path, required=True)
     regrade.add_argument("--report", type=Path)
+    regrade.add_argument("--mutation-script", type=Path)
+    regrade.add_argument("--mutation-seed", default="e06-default")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    validated = validate(args.manifest)
+    mutation_script = getattr(args, "mutation_script", None)
+    if mutation_script is not None:
+        mutation_script = mutation_script.resolve()
+    validated = validate(
+        args.manifest,
+        mutation_script=mutation_script,
+        mutation_seed=getattr(args, "mutation_seed", "e06-default"),
+    )
     if args.command == "validate":
         print(json.dumps({
             "status": "ok" if not validated["errors"] else "error",
             "errors": validated["errors"],
             "cards": len(validated["manifest"]["cases"]),
             "workloads": sorted({case["workload"] for case in validated["manifest"]["cases"]}),
+            "mutation_cases": len(validated["mutation_plans"]),
         }, indent=2))
         if validated["errors"]:
             raise SystemExit(1)

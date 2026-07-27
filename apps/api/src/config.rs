@@ -12,6 +12,7 @@ pub struct Config {
     pub intention_ledger: bool,
     pub read_path_roundtrip_v1: bool,
     pub lexical_single_scan: bool,
+    pub resume_deltas: bool,
     pub bind: SocketAddr,
     pub database_url_admin: Option<String>,
     pub database_url_rw: String,
@@ -128,6 +129,7 @@ impl Config {
             intention_ledger: env_parse("STRAYLIGHT_INTENTION_LEDGER", "false")?,
             read_path_roundtrip_v1: env_parse("STRAYLIGHT_READ_PATH_ROUNDTRIP_V1", "false")?,
             lexical_single_scan: env_parse("STRAYLIGHT_LEXICAL_SINGLE_SCAN", "false")?,
+            resume_deltas: env_parse("STRAYLIGHT_RESUME_DELTAS", "false")?,
             bind,
             database_url_admin: first_env_or_file(&[
                 "DATABASE_URL_ADMIN",
@@ -527,6 +529,11 @@ mod tests {
         run_config_env_probe("search_contract_flags");
     }
 
+    #[test]
+    fn resume_delta_flag_is_default_off_and_explicit() {
+        run_config_env_probe("resume_delta_flag");
+    }
+
     fn run_config_env_probe(scenario: &str) {
         let mut command = Command::new(std::env::current_exe().unwrap());
         command
@@ -579,6 +586,9 @@ mod tests {
                     .env("STRAYLIGHT_SEARCH_CHAR_CAP", "true")
                     .env("STRAYLIGHT_SEARCH_SECTION_DEMOTION_TOP_N", "8");
             }
+            "resume_delta_flag" => {
+                command.env("STRAYLIGHT_RESUME_DELTAS", "true");
+            }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
         let output = command.output().unwrap();
@@ -612,6 +622,7 @@ mod tests {
                 assert!(!config.supersession_demotion);
                 assert!(!config.intention_ledger);
                 assert_eq!(config.supersession_demotion_weight, 1.5);
+                assert!(!config.resume_deltas);
             }
             "minio_aliases" => {
                 let config = Config::from_env().unwrap();
@@ -630,6 +641,7 @@ mod tests {
                 assert!(!config.verbatim_spans);
                 assert!(!config.supersession_demotion);
                 assert!(!config.intention_ledger);
+                assert!(!config.resume_deltas);
             }
             "explicit_overrides" => {
                 let config = Config::from_env().unwrap();
@@ -664,6 +676,10 @@ mod tests {
                 assert!(config.search_top1_hydration);
                 assert!(config.search_char_cap);
                 assert_eq!(config.search_section_demotion_top_n, Some(8));
+            }
+            "resume_delta_flag" => {
+                let config = Config::from_env().unwrap();
+                assert!(config.resume_deltas);
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }

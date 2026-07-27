@@ -86,6 +86,7 @@ function compactOpenData(data: JsonObject): JsonObject {
     for (const key of [
       "checkpoint",
       "changes_since_checkpoint",
+      "resume_deltas",
       "changes_truncated",
       "next_changes_generation",
       "checkpoint_text_truncated",
@@ -390,6 +391,8 @@ function compactSimpleCandidate(candidate: JsonObject): JsonObject {
     "additional_sections",
     "verbatim_matches",
     "superseded_by",
+    "annotation",
+    "delta_omitted_reason",
   ]);
   const reference = typeof candidate.reference === "string"
     ? candidate.reference

@@ -134,6 +134,10 @@ const MAX_VERBATIM_RESPONSE_CHARS: usize = 9_600;
 const OPEN_CANDIDATE_LIMIT: usize = 32;
 const HYDRATED_DOCUMENT_LIMIT: usize = 8;
 const MAX_OPEN_COMPLETE_SOURCE_CHARS: usize = 24_000;
+const RESUME_DELTA_SOURCE_LIMIT: usize = 8;
+const RESUME_DELTA_TOTAL_CHARS: usize = 6_000;
+const RESUME_DELTA_SOURCE_CHARS: usize = 2_000;
+const RESUME_DELTA_WHOLE_PAIR_CHARS: usize = 2_400;
 const MAX_STREAMED_BINARY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const RETRIEVAL_LANE_TIMEOUT: Duration = Duration::from_millis(2_500);
 const CHUNK_INSERT_BATCH_SIZE: usize = 256;
@@ -405,6 +409,30 @@ struct ChangePage {
 }
 
 #[derive(Clone, Debug)]
+struct CheckpointSource {
+    entry_id: Uuid,
+    path: String,
+    pinned_version: i64,
+    pinned_sha256: String,
+}
+
+#[derive(Clone, Debug)]
+struct ResumeVersionPair {
+    source: CheckpointSource,
+    current_version: i64,
+    current_sha256: String,
+    before: Option<String>,
+    after: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct ResumeDeltaBatch {
+    deltas: Vec<Value>,
+    leads: Vec<Value>,
+    charged_chars: usize,
+}
+
+#[derive(Clone, Debug)]
 struct PreparedMarkdown {
     entry_id_hint: Option<Uuid>,
     path: String,
@@ -526,8 +554,23 @@ pub async fn open(
         };
     let (mut checkpoint, change_page, checkpoint_read_ms, changes_ms) = checkpoint_and_changes?;
 
-    let (checkpoint_text_truncated, evidence_budget) =
+    let (checkpoint_text_truncated, mut evidence_budget) =
         apply_checkpoint_budget(&mut checkpoint, budget);
+    let resume_delta_batch =
+        if state.config.resume_deltas && request.resume_checkpoint_ref.is_some() {
+            materialize_resume_deltas(
+                &state,
+                &auth,
+                checkpoint.as_ref(),
+                &change_page.changes,
+                evidence_budget.saturating_mul(4),
+            )
+            .await?
+        } else {
+            ResumeDeltaBatch::default()
+        };
+    evidence_budget =
+        evidence_budget.saturating_sub(resume_delta_batch.charged_chars.saturating_add(3) / 4);
     let (search_candidates, mut lane_failures, search_timings) = match search {
         Ok((candidates, failures, timings, _)) => (candidates, failures, timings),
         Err(error) => {
@@ -608,13 +651,14 @@ pub async fn open(
         .iter()
         .filter_map(|item| item.get("reference").and_then(Value::as_str))
         .collect::<HashSet<_>>();
-    let evidence_leads = candidates
+    let mut evidence_leads = candidates
         .iter()
         .filter(|candidate| {
             !hydrated_refs.contains(format!("entry:{}", candidate.entry_id).as_str())
         })
         .map(render_evidence_lead)
         .collect::<Vec<_>>();
+    evidence_leads.extend(resume_delta_batch.leads);
     record_candidate_usage(&state, &auth, &candidates);
 
     let mut response_data = json!({
@@ -643,6 +687,9 @@ pub async fn open(
                 .map(|snapshot| snapshot.pending_intentions(&request.task))
                 .unwrap_or_default()
         );
+    }
+    if state.config.resume_deltas && request.resume_checkpoint_ref.is_some() {
+        response_data["resume_deltas"] = Value::Array(resume_delta_batch.deltas);
     }
     let mut envelope = WorkspaceEnvelope::complete(response_data);
     envelope.session_id = Some(session_id);
@@ -2914,6 +2961,45 @@ pub async fn import_evaluation(
     let checkpoint_id = if let Some(seed) = &request.seed_checkpoint {
         let checkpoint_id = Uuid::now_v7();
         let checkpoint_path = format!(".straylight/checkpoints/{checkpoint_id}.md");
+        let source_rows = sqlx::query(
+            r#"
+            WITH requested AS (
+              SELECT path,position
+              FROM unnest($2::text[]) WITH ORDINALITY AS source(path,position)
+            )
+            SELECT entry.id,entry.path,entry.current_version,version.content_sha256
+            FROM requested
+            JOIN straylight.entries AS entry
+              ON entry.user_id=$1
+             AND lower(normalize(entry.path,NFC))=lower(normalize(requested.path,NFC))
+             AND entry.deleted_at IS NULL
+            JOIN straylight.entry_versions AS version
+              ON version.user_id=entry.user_id
+             AND version.entry_id=entry.id
+             AND version.version=entry.current_version
+            ORDER BY requested.position
+            "#,
+        )
+        .bind(user_id)
+        .bind(&seed.source_refs)
+        .fetch_all(&mut *tx)
+        .await?;
+        let source_entries = source_rows
+            .into_iter()
+            .map(|row| {
+                json!({
+                    "entry_ref": format!("entry:{}", row.get::<Uuid, _>("id")),
+                    "path": row.get::<String, _>("path"),
+                    "version": row.get::<i64, _>("current_version"),
+                    "content_hash": format!("sha256:{}", row.get::<String, _>("content_sha256"))
+                })
+            })
+            .collect::<Vec<_>>();
+        if source_entries.len() != seed.source_refs.len() {
+            return Err(ApiError::invalid(
+                "every seed checkpoint source_ref must identify a base document",
+            ));
+        }
         let checkpoint_content = render_seed_checkpoint(
             checkpoint_id,
             base_generation,
@@ -2932,7 +3018,8 @@ pub async fn import_evaluation(
             "kind": "checkpoint",
             "checkpoint_ref": format!("checkpoint:{checkpoint_id}"),
             "workspace_generation": base_generation,
-            "source_entries": seed.source_refs
+            "source_refs": seed.source_refs,
+            "source_entries": source_entries
         });
         insert_bulk_documents(
             &mut tx,
@@ -5637,6 +5724,400 @@ async fn read_checkpoint(
     }))
 }
 
+fn checkpoint_sources(checkpoint: Option<&Value>) -> Vec<CheckpointSource> {
+    checkpoint
+        .and_then(|value| value.get("source_entries"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|source| {
+            let entry_id = source
+                .get("entry_ref")
+                .and_then(Value::as_str)?
+                .strip_prefix("entry:")?
+                .parse::<Uuid>()
+                .ok()?;
+            let pinned_hash = source
+                .get("content_hash")
+                .or_else(|| source.get("pinned_sha256"))
+                .and_then(Value::as_str)?;
+            let pinned_sha256 = pinned_hash
+                .strip_prefix("sha256:")
+                .unwrap_or(pinned_hash)
+                .to_ascii_lowercase();
+            Some(CheckpointSource {
+                entry_id,
+                path: source.get("path")?.as_str()?.to_owned(),
+                pinned_version: source.get("version")?.as_i64()?,
+                pinned_sha256,
+            })
+        })
+        .collect()
+}
+
+fn changed_checkpoint_sources(
+    checkpoint: Option<&Value>,
+    changes: &[Value],
+) -> (Vec<CheckpointSource>, Vec<CheckpointSource>) {
+    let changed = changes
+        .iter()
+        .filter_map(|change| change.get("path").and_then(Value::as_str))
+        .map(portable_path_key)
+        .collect::<HashSet<_>>();
+    let mut selected = Vec::new();
+    let mut overflow = Vec::new();
+    for source in checkpoint_sources(checkpoint)
+        .into_iter()
+        .filter(|source| changed.contains(&portable_path_key(&source.path)))
+    {
+        if selected.len() < RESUME_DELTA_SOURCE_LIMIT {
+            selected.push(source);
+        } else {
+            overflow.push(source);
+        }
+    }
+    (selected, overflow)
+}
+
+async fn materialize_resume_deltas(
+    state: &AppState,
+    auth: &AuthContext,
+    checkpoint: Option<&Value>,
+    changes: &[Value],
+    evidence_chars: usize,
+) -> ApiResult<ResumeDeltaBatch> {
+    let (selected, overflow) = changed_checkpoint_sources(checkpoint, changes);
+    if selected.is_empty() {
+        return Ok(ResumeDeltaBatch {
+            leads: overflow
+                .into_iter()
+                .map(|source| resume_delta_pointer(&source, None, "source limit"))
+                .collect(),
+            ..ResumeDeltaBatch::default()
+        });
+    }
+    let pairs = load_resume_version_pairs(state, auth, &selected).await?;
+    let mut remaining = RESUME_DELTA_TOTAL_CHARS.min(evidence_chars);
+    let mut result = ResumeDeltaBatch::default();
+    for pair in pairs {
+        let Some(before) = pair.before.as_deref() else {
+            result.leads.push(resume_delta_pointer(
+                &pair.source,
+                Some(pair.current_version),
+                "non-text pinned source",
+            ));
+            continue;
+        };
+        let Some(after) = pair.after.as_deref() else {
+            result.leads.push(resume_delta_pointer(
+                &pair.source,
+                Some(pair.current_version),
+                "non-text current source",
+            ));
+            continue;
+        };
+        let before_chars = before.chars().count();
+        let after_chars = after.chars().count();
+        if before_chars <= RESUME_DELTA_WHOLE_PAIR_CHARS
+            && after_chars <= RESUME_DELTA_WHOLE_PAIR_CHARS
+        {
+            let charged = before_chars.saturating_add(after_chars);
+            if charged > remaining {
+                result.leads.push(resume_delta_pointer(
+                    &pair.source,
+                    Some(pair.current_version),
+                    "delta character budget",
+                ));
+                continue;
+            }
+            result.deltas.push(render_resume_delta(
+                &pair,
+                "whole_pair",
+                Some(before.to_owned()),
+                Some(after.to_owned()),
+                None,
+                false,
+            ));
+            remaining -= charged;
+            result.charged_chars += charged;
+            continue;
+        }
+        if remaining == 0 {
+            result.leads.push(resume_delta_pointer(
+                &pair.source,
+                Some(pair.current_version),
+                "delta character budget",
+            ));
+            continue;
+        }
+        let diff = unified_line_diff(&pair.source.path, before, after);
+        let cap = RESUME_DELTA_SOURCE_CHARS.min(remaining);
+        let diff_chars = diff.chars().count();
+        let truncated = diff_chars > cap;
+        let rendered_diff = truncate_chars(&diff, cap);
+        let charged = rendered_diff.chars().count();
+        result.deltas.push(render_resume_delta(
+            &pair,
+            "unified_diff",
+            None,
+            None,
+            Some(rendered_diff),
+            truncated,
+        ));
+        remaining -= charged;
+        result.charged_chars += charged;
+    }
+    result.leads.extend(
+        overflow
+            .into_iter()
+            .map(|source| resume_delta_pointer(&source, None, "source limit")),
+    );
+    Ok(result)
+}
+
+async fn load_resume_version_pairs(
+    state: &AppState,
+    auth: &AuthContext,
+    sources: &[CheckpointSource],
+) -> ApiResult<Vec<ResumeVersionPair>> {
+    let entry_ids = sources
+        .iter()
+        .map(|source| source.entry_id)
+        .collect::<Vec<_>>();
+    let pinned_versions = sources
+        .iter()
+        .map(|source| source.pinned_version)
+        .collect::<Vec<_>>();
+    let mut tx = state.begin_read(auth).await?;
+    let rows = sqlx::query(
+        r#"
+        WITH requested AS (
+          SELECT entry_id,pinned_version,position
+          FROM unnest($2::uuid[],$3::bigint[]) WITH ORDINALITY
+            AS source(entry_id,pinned_version,position)
+        )
+        SELECT requested.position,entry.path,entry.current_version,
+               pinned.content_sha256 AS pinned_sha256,pinned.content AS before,
+               current.content_sha256 AS current_sha256,current.content AS after
+        FROM requested
+        LEFT JOIN straylight.entries AS entry
+          ON entry.user_id=$1 AND entry.id=requested.entry_id
+        LEFT JOIN straylight.entry_versions AS pinned
+          ON pinned.user_id=$1
+         AND pinned.entry_id=requested.entry_id
+         AND pinned.version=requested.pinned_version
+        LEFT JOIN straylight.entry_versions AS current
+          ON current.user_id=entry.user_id
+         AND current.entry_id=entry.id
+         AND current.version=entry.current_version
+        ORDER BY requested.position
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(&entry_ids)
+    .bind(&pinned_versions)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    if rows.len() != sources.len() {
+        return Err(resume_lineage_error(
+            "the checkpoint source batch did not return every pinned source",
+            json!({"expected": sources.len(), "actual": rows.len()}),
+        ));
+    }
+    rows.into_iter()
+        .zip(sources)
+        .map(|(row, source)| {
+            let path = row.try_get::<Option<String>, _>("path")?.ok_or_else(|| {
+                resume_lineage_error(
+                    "a checkpoint source entry is missing",
+                    json!({"path": source.path, "entry_ref": format!("entry:{}", source.entry_id)}),
+                )
+            })?;
+            if portable_path_key(&path) != portable_path_key(&source.path) {
+                return Err(resume_lineage_error(
+                    "a checkpoint source now resolves to a different path",
+                    json!({"pinned_path": source.path, "current_path": path}),
+                ));
+            }
+            let pinned_sha256 = row
+                .try_get::<Option<String>, _>("pinned_sha256")?
+                .ok_or_else(|| {
+                    resume_lineage_error(
+                        "a checkpoint-pinned version is missing",
+                        json!({"path": source.path, "version": source.pinned_version}),
+                    )
+                })?;
+            if pinned_sha256 != source.pinned_sha256 {
+                return Err(resume_lineage_error(
+                    "checkpoint metadata does not match the pinned version hash",
+                    json!({
+                        "path": source.path,
+                        "version": source.pinned_version,
+                        "checkpoint_hash": format!("sha256:{}", source.pinned_sha256),
+                        "stored_hash": format!("sha256:{pinned_sha256}")
+                    }),
+                ));
+            }
+            let before = row.try_get::<Option<String>, _>("before")?;
+            if let Some(content) = before.as_deref() {
+                verify_resume_content_hash(source, source.pinned_version, &pinned_sha256, content)?;
+            }
+            let current_version = row
+                .try_get::<Option<i64>, _>("current_version")?
+                .ok_or_else(|| {
+                    resume_lineage_error(
+                        "the current checkpoint source entry is missing",
+                        json!({"path": source.path}),
+                    )
+                })?;
+            let current_sha256 = row
+                .try_get::<Option<String>, _>("current_sha256")?
+                .ok_or_else(|| {
+                    resume_lineage_error(
+                        "the current checkpoint source version is missing",
+                        json!({"path": source.path, "version": current_version}),
+                    )
+                })?;
+            let after = row.try_get::<Option<String>, _>("after")?;
+            if let Some(content) = after.as_deref() {
+                verify_resume_content_hash(source, current_version, &current_sha256, content)?;
+            }
+            Ok(ResumeVersionPair {
+                source: source.clone(),
+                current_version,
+                current_sha256,
+                before,
+                after,
+            })
+        })
+        .collect()
+}
+
+fn verify_resume_content_hash(
+    source: &CheckpointSource,
+    version: i64,
+    expected: &str,
+    content: &str,
+) -> ApiResult<()> {
+    let actual = hex::encode(Sha256::digest(content.as_bytes()));
+    if actual == expected {
+        return Ok(());
+    }
+    Err(resume_lineage_error(
+        "a checkpoint source version failed content-hash verification",
+        json!({
+            "path": source.path,
+            "version": version,
+            "expected_hash": format!("sha256:{expected}"),
+            "actual_hash": format!("sha256:{actual}")
+        }),
+    ))
+}
+
+fn resume_lineage_error(message: impl Into<String>, details: Value) -> ApiError {
+    ApiError::conflict("checkpoint_lineage_error", message, details)
+}
+
+fn render_resume_delta(
+    pair: &ResumeVersionPair,
+    mode: &str,
+    before: Option<String>,
+    after: Option<String>,
+    diff: Option<String>,
+    truncated: bool,
+) -> Value {
+    let mut value = json!({
+        "path": pair.source.path,
+        "pinned_version": pair.source.pinned_version,
+        "pinned_sha256": format!("sha256:{}", pair.source.pinned_sha256),
+        "current_version": pair.current_version,
+        "current_sha256": format!("sha256:{}", pair.current_sha256),
+        "mode": mode
+    });
+    if let Some(before) = before {
+        value["before"] = Value::String(before);
+    }
+    if let Some(after) = after {
+        value["after"] = Value::String(after);
+    }
+    if let Some(diff) = diff {
+        value["diff"] = Value::String(diff);
+    }
+    if truncated {
+        value["truncated"] = Value::Bool(true);
+    }
+    value
+}
+
+fn resume_delta_pointer(
+    source: &CheckpointSource,
+    current_version: Option<i64>,
+    reason: &str,
+) -> Value {
+    let transition = current_version
+        .map(|version| format!("version {} \u{2192} {version}", source.pinned_version))
+        .unwrap_or_else(|| format!("version {} \u{2192} current", source.pinned_version));
+    json!({
+        "reference": format!("entry:{}", source.entry_id),
+        "path": source.path,
+        "version": current_version,
+        "annotation": format!("changed since checkpoint: {transition}"),
+        "delta_omitted_reason": reason
+    })
+}
+
+fn unified_line_diff(path: &str, before: &str, after: &str) -> String {
+    let left = before.lines().collect::<Vec<_>>();
+    let right = after.lines().collect::<Vec<_>>();
+    let prefix = left
+        .iter()
+        .zip(&right)
+        .take_while(|(before, after)| before == after)
+        .count();
+    let suffix = left[prefix..]
+        .iter()
+        .rev()
+        .zip(right[prefix..].iter().rev())
+        .take_while(|(before, after)| before == after)
+        .count();
+    let context_start = prefix.saturating_sub(3);
+    let left_changed_end = left.len().saturating_sub(suffix);
+    let right_changed_end = right.len().saturating_sub(suffix);
+    let left_end = (left_changed_end + 3).min(left.len());
+    let right_end = (right_changed_end + 3).min(right.len());
+    let left_count = left_end.saturating_sub(context_start);
+    let right_count = right_end.saturating_sub(context_start);
+    let mut output = format!(
+        "--- a/{path}\n+++ b/{path}\n@@ -{},{} +{},{} @@\n",
+        context_start + 1,
+        left_count,
+        context_start + 1,
+        right_count
+    );
+    for line in &left[context_start..prefix] {
+        output.push(' ');
+        output.push_str(line);
+        output.push('\n');
+    }
+    for line in &left[prefix..left_changed_end] {
+        output.push('-');
+        output.push_str(line);
+        output.push('\n');
+    }
+    for line in &right[prefix..right_changed_end] {
+        output.push('+');
+        output.push_str(line);
+        output.push('\n');
+    }
+    for line in &right[right_changed_end..right_end] {
+        output.push(' ');
+        output.push_str(line);
+        output.push('\n');
+    }
+    output
+}
+
 async fn resolve_checkpoint_sources(
     state: &AppState,
     auth: &AuthContext,
@@ -7625,6 +8106,113 @@ mod tests {
                 .and_then(Value::as_str),
             Some("abcd")
         );
+    }
+
+    #[test]
+    fn resume_delta_sources_follow_checkpoint_authoring_order() {
+        let first = Uuid::now_v7();
+        let second = Uuid::now_v7();
+        let checkpoint = json!({
+            "source_entries": [
+                {
+                    "entry_ref": format!("entry:{first}"),
+                    "path": "Plans/First.md",
+                    "version": 3,
+                    "content_hash": format!("sha256:{}", "a".repeat(64))
+                },
+                {
+                    "entry_ref": format!("entry:{second}"),
+                    "path": "Plans/Second.md",
+                    "version": 7,
+                    "content_hash": format!("sha256:{}", "b".repeat(64))
+                }
+            ]
+        });
+        let changes = vec![
+            json!({"path": "Plans/Second.md"}),
+            json!({"path": "Plans/First.md"}),
+        ];
+
+        let (selected, overflow) = changed_checkpoint_sources(Some(&checkpoint), &changes);
+
+        assert!(overflow.is_empty());
+        assert_eq!(
+            selected
+                .iter()
+                .map(|source| source.path.as_str())
+                .collect::<Vec<_>>(),
+            ["Plans/First.md", "Plans/Second.md"]
+        );
+        assert_eq!(selected[0].pinned_version, 3);
+        assert_eq!(selected[1].pinned_sha256, "b".repeat(64));
+    }
+
+    #[test]
+    fn resume_delta_source_limit_degrades_in_authoring_order() {
+        let entries = (0..10)
+            .map(|index| {
+                json!({
+                    "entry_ref": format!("entry:{}", Uuid::now_v7()),
+                    "path": format!("Plans/{index}.md"),
+                    "version": 1,
+                    "content_hash": format!("sha256:{}", "c".repeat(64))
+                })
+            })
+            .collect::<Vec<_>>();
+        let changes = (0..10)
+            .rev()
+            .map(|index| json!({"path": format!("Plans/{index}.md")}))
+            .collect::<Vec<_>>();
+
+        let (selected, overflow) =
+            changed_checkpoint_sources(Some(&json!({"source_entries": entries})), &changes);
+
+        assert_eq!(selected.len(), RESUME_DELTA_SOURCE_LIMIT);
+        assert_eq!(selected[0].path, "Plans/0.md");
+        assert_eq!(selected[7].path, "Plans/7.md");
+        assert_eq!(
+            overflow
+                .iter()
+                .map(|source| source.path.as_str())
+                .collect::<Vec<_>>(),
+            ["Plans/8.md", "Plans/9.md"]
+        );
+    }
+
+    #[test]
+    fn resume_unified_diff_has_three_context_lines() {
+        let before = "one\ntwo\nthree\nfour\nold\nsix\nseven\neight\nnine\n";
+        let after = "one\ntwo\nthree\nfour\nnew\nsix\nseven\neight\nnine\n";
+
+        let diff = unified_line_diff("Plans/Current.md", before, after);
+
+        assert!(
+            diff.starts_with("--- a/Plans/Current.md\n+++ b/Plans/Current.md\n@@ -2,7 +2,7 @@\n")
+        );
+        assert!(diff.contains(" four\n-old\n+new\n six\n seven\n eight\n"));
+        assert!(!diff.contains(" one\n"));
+        assert!(!diff.contains(" nine\n"));
+    }
+
+    #[test]
+    fn resume_content_hash_mismatch_is_a_lineage_error() {
+        let source = CheckpointSource {
+            entry_id: Uuid::now_v7(),
+            path: "Plans/Current.md".to_owned(),
+            pinned_version: 1,
+            pinned_sha256: "0".repeat(64),
+        };
+
+        let error = verify_resume_content_hash(&source, 1, &"0".repeat(64), "changed")
+            .expect_err("mismatched content must fail");
+
+        assert!(matches!(
+            error,
+            ApiError::Public {
+                code: "checkpoint_lineage_error",
+                ..
+            }
+        ));
     }
 
     #[test]

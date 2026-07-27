@@ -269,6 +269,18 @@ test("simple open preserves pointer leads and continuation pagination", () => {
           path: "Work/Newest.md",
           head_entry: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bf",
         },
+        annotation: "changed since checkpoint: version 1 → 2",
+        delta_omitted_reason: "delta character budget",
+      }],
+      resume_deltas: [{
+        path: "Work/Current.md",
+        pinned_version: 3,
+        pinned_sha256: `sha256:${"a".repeat(64)}`,
+        current_version: 4,
+        current_sha256: `sha256:${"b".repeat(64)}`,
+        mode: "whole_pair",
+        before: "Before",
+        after: "After",
       }],
       changes_since_checkpoint: [{ generation: 201, path: "Work/Current.md" }],
       changes_truncated: true,
@@ -294,6 +306,18 @@ test("simple open preserves pointer leads and continuation pagination", () => {
       path: "Work/Newest.md",
       head_entry: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bf",
     },
+    annotation: "changed since checkpoint: version 1 → 2",
+    delta_omitted_reason: "delta character budget",
+  }]);
+  assert.deepEqual(data.resume_deltas, [{
+    path: "Work/Current.md",
+    pinned_version: 3,
+    pinned_sha256: `sha256:${"a".repeat(64)}`,
+    current_version: 4,
+    current_sha256: `sha256:${"b".repeat(64)}`,
+    mode: "whole_pair",
+    before: "Before",
+    after: "After",
   }]);
   assert.deepEqual(data.pending_intentions, [{
     path: "Intentions/Follow up.md",
