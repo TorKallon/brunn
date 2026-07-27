@@ -72,24 +72,30 @@ receive safe fresh learned context, recover canonical knowledge, resume complex
 work, inspect artifacts, reason across superseded state, revise plans, verify
 claims, and leave a useful durable checkpoint.
 
-### 2026-07-26 simplified workspace
+### 2026-07-27 simplified workspace
 
-The simplified workspace recovered 193/228 claims across 57 paired cases
-versus 183/228 through direct Markdown. It completed 30/57 strict cards versus
-22/57 and persisted all 56 eligible checkpoints. Weighted mean uncached input
-was 25.4K tokens per case versus 26.5K for files, 4.2% lower.
+The latest strict 57-case draw recovered 160/228 claims through the simplified
+service, 170/228 through the legacy service, and 171/228 through direct
+Markdown. A matched repeat of all 16 ordinary cases where legacy initially won
+narrowed the legacy-to-simplified gap to 46/64 versus 45/64 claims. The
+simplified response contained an accepted source for 21 of the 22 disputed
+claims, and all five changed-evidence continuations preserved exact parent,
+revision, prior-source, delta-source, and checkpoint lineage. This does not
+prove perfect parity, but it found no material retrieval-driven degradation.
+RuptureOps context overfetch remains the leading quality risk.
 
-The changed-evidence transition lane remains one claim behind files, 13/20
-versus 14/20, while preserving complete parent, generation, prior-source,
-delta-source, and call-budget lineage in all five cases. That deficit remains
-visible rather than being tuned away.
+Mean uncached model input was 24,260 tokens for simplified Straylight, 24,092
+for legacy Straylight, and 25,168 for direct Markdown. The simplified path is
+effectively tied with legacy and 3.6% below files.
 
-The definitive clean performance run passed at 1K, 10K, and 64K entries. At
-64K, p95 was 154 ms for open, 98 ms for search, 667 ms for broad search, and
-64 ms for exact API read. Retrieval remained available while semantic indexing
-was pending and during a forced embedding-provider outage.
+At the accumulated 3,340-entry production reproduction, the legacy service
+failed with HTTP 408 after 26.088 seconds before useful retrieval. The
+simplified service completed open in 1.047 seconds, targeted search in 0.674
+seconds, and broad search in 1.867 seconds. Direct-file discovery took
+0.119-0.124 seconds, so the simplified service is practical but still has
+lookup overhead to reduce.
 
-See `results/2026-07-26-simplified-final-comparison.md`.
+See `results/2026-07-27-simplification-final-evaluation.md`.
 
 ### 2026-07-23 alpha hardening candidate
 

@@ -1,0 +1,3048 @@
+{
+  "benchmark_version": "0.2",
+  "run_at": "2026-07-27T05:41:21-07:00",
+  "run_id": "rc-v7-borderline-20260727a",
+  "harness_sha256": "90159d116b413871fe968b43713175bd1d0775e044a7a056bf66927fd93d3ab5",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "ffbab60f250f0a5eac7341c0b7f25f7416f3b4a437469111086b1fc74b1d3f74",
+  "manifest_sha256": "755b94565d28da776a2544ca4808de89e73b8d6b49e8a4deb5db4a29ce26b21b",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+    "sha256": "b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2",
+    "artifact_tree_sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+    "documents": 73,
+    "chunks": 1563,
+    "characters": 1280331
+  },
+  "manifest": {
+    "benchmark_version": "0.2",
+    "name": "Straylight agent-work evaluation",
+    "grading_mode": "concept_tokens_v1",
+    "corpus_root": "eval/corpus-v0.2",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "warmind-final-validation-handoff",
+        "workload": "Warmind",
+        "capability": "durable_handoff",
+        "task": "Take over the final parser validation work from its long handoff. Report the latest recorded target, distinguish completed performance rows from unfinished validation, identify the known failing scenario, and state the next safe execution boundary. Do not collapse code cleanup, scorecard evidence, and full validation into one status.",
+        "claim_slots": {
+          "c1": "latest recorded target",
+          "c2": "performance scorecard state",
+          "c3": "full validation state",
+          "c4": "safe next boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "6c5153d5063137ef16fc9bc4872c9b5f01f5831f",
+                  "6c5153d506"
+                ]
+              },
+              {
+                "any": [
+                  "master",
+                  "origin/master"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "alpha",
+                  "eta"
+                ]
+              },
+              {
+                "any": [
+                  "theta",
+                  "FAIL",
+                  "failed"
+                ]
+              },
+              {
+                "any": [
+                  "D2",
+                  "cache repair",
+                  "S3 repair"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Stage 3",
+                  "full data integrity"
+                ]
+              },
+              {
+                "any": [
+                  "not run",
+                  "unfinished",
+                  "pending"
+                ]
+              },
+              {
+                "any": [
+                  "S3",
+                  "restart",
+                  "oracle"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "latest merged",
+                  "current target",
+                  "ground",
+                  "lock and prove",
+                  "confirm the target",
+                  "confirm where",
+                  "pin the final target",
+                  "target/bundle proof"
+                ]
+              },
+              {
+                "any": [
+                  "do not touch production",
+                  "no production",
+                  "dev-S3",
+                  "validation-safe",
+                  "production side effects off"
+                ]
+              },
+              {
+                "any": [
+                  "do not claim",
+                  "not complete",
+                  "until",
+                  "do not enter",
+                  "before",
+                  "only after"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "final validation is complete",
+          "all validation passed"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "switzerland-itinerary-revision",
+        "workload": "Switzerland",
+        "capability": "constraint_driven_iteration",
+        "task": "New planning scenario: Radley pickup is now assumed at Milano Malpensa on August 21. Revise the family plan while keeping the family trip at no more than about two weeks, preserving a low-altitude fallback during the first Saas-Fee days, avoiding repetitive mountain-town travel, and giving the reunited family a 3-4 day Italy finish. This is a scenario, not a booking.",
+        "claim_slots": {
+          "c1": "Swiss-side base",
+          "c2": "pickup and Italy sequence",
+          "c3": "trip rhythm and constraints",
+          "c4": "status and next booking work"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "Vevey",
+                  "Montreux",
+                  "Lausanne"
+                ]
+              },
+              {
+                "any": [
+                  "low altitude",
+                  "lakefront"
+                ]
+              },
+              {
+                "any": [
+                  "Saas-Fee",
+                  "Saas Fee",
+                  "return"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "Malpensa",
+                  "MXP"
+                ]
+              },
+              {
+                "any": [
+                  "August 21",
+                  "Aug 21"
+                ]
+              },
+              {
+                "any": [
+                  "Stresa",
+                  "Baveno",
+                  "Lake Maggiore"
+                ]
+              },
+              {
+                "any": [
+                  "3-4",
+                  "3 to 4",
+                  "four calendar days"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "two weeks",
+                  "14 days",
+                  "14 nights"
+                ]
+              },
+              {
+                "any": [
+                  "one anchor",
+                  "breathing room",
+                  "transfer day",
+                  "two principal",
+                  "two settings",
+                  "two bases"
+                ]
+              },
+              {
+                "any": [
+                  "not mountain",
+                  "lake",
+                  "city"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "scenario",
+                  "proposed",
+                  "not booked"
+                ]
+              },
+              {
+                "any": [
+                  "availability",
+                  "lodging",
+                  "flight",
+                  "handoff"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ],
+        "forbidden": [],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "straylight-product-resume",
+        "workload": "Straylight",
+        "capability": "project_continuation",
+        "task": "Resume Straylight after the product-framing correction. State what the product is, what durable state it must preserve beyond learned memory, why Obsidian is not the product boundary, why the first benchmark was too narrow, and what the expanded evaluation must now prove.",
+        "claim_slots": {
+          "c1": "correct product category",
+          "c2": "durable work state",
+          "c3": "relationship to Obsidian",
+          "c4": "new evaluation gate"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "agent context",
+                  "durable-work",
+                  "durable work"
+                ]
+              },
+              {
+                "any": [
+                  "agent-first",
+                  "agent first"
+                ]
+              },
+              {
+                "any": [
+                  "learn",
+                  "continue",
+                  "advance",
+                  "continuity"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "goals",
+                  "evidence"
+                ]
+              },
+              {
+                "any": [
+                  "hypotheses",
+                  "plans"
+                ]
+              },
+              {
+                "any": [
+                  "artifacts",
+                  "computations"
+                ]
+              },
+              {
+                "any": [
+                  "open questions",
+                  "rejected",
+                  "checkpoints",
+                  "next actions"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "projection",
+                  "prototype input",
+                  "export"
+                ]
+              },
+              {
+                "any": [
+                  "not the product",
+                  "not canonical",
+                  "not the boundary"
+                ]
+              },
+              {
+                "any": [
+                  "Markdown",
+                  "Obsidian"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "resume",
+                  "continuation"
+                ]
+              },
+              {
+                "any": [
+                  "iterate",
+                  "planning",
+                  "constraints"
+                ]
+              },
+              {
+                "any": [
+                  "compute",
+                  "verify",
+                  "checkpoint",
+                  "next-state"
+                ]
+              },
+              {
+                "any": [
+                  "Warmind",
+                  "StarRupture",
+                  "Switzerland"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          }
+        ],
+        "forbidden": [],
+        "grading_mode": "concept_tokens_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "warmind-final-validation-handoff": {
+      "authorization_scope": "eval:rc-v7-borderline-20260727a/warmind-final-validation-handoff",
+      "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/warmind-final-validation-handoff",
+      "display_scope": "Warmind",
+      "access_mode": "read_write",
+      "import_id": "simple-import:15c923c3-6762-4f97-8ddf-925e9b5b26ff",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:717594",
+      "corpus_revision": "generation:717594",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:15c923c3-6762-4f97-8ddf-925e9b5b26ff",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 620.445,
+        "import_batch_count": 1,
+        "max_batch_documents": 73,
+        "ready_elapsed_ms": 620.445,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:rc-v7-borderline-20260727a/warmind-final-validation-handoff",
+          "base_corpus_revision": "generation:717594",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:717594",
+          "credential_id": "credential:d3ec8cdc-b1a4-46d0-b842-1d61911ce7bf",
+          "delta_documents": 0,
+          "display_scope": "Warmind",
+          "documents": 73,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:15c923c3-6762-4f97-8ddf-925e9b5b26ff",
+          "index_counts": {
+            "chunks": 1664,
+            "documents": 73,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/warmind-final-validation-handoff",
+          "scope_id": "scope:7b3a296f-b198-4abb-8949-13b395f9798d",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:15c923c3-6762-4f97-8ddf-925e9b5b26ff",
+          "token_status": "issued_once",
+          "user_id": "user:15c923c3-6762-4f97-8ddf-925e9b5b26ff"
+        },
+        "ready_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:rc-v7-borderline-20260727a/warmind-final-validation-handoff",
+          "base_corpus_revision": "generation:717594",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:717594",
+          "credential_id": "credential:d3ec8cdc-b1a4-46d0-b842-1d61911ce7bf",
+          "delta_documents": 0,
+          "display_scope": "Warmind",
+          "documents": 73,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:15c923c3-6762-4f97-8ddf-925e9b5b26ff",
+          "index_counts": {
+            "chunks": 1664,
+            "documents": 73,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/warmind-final-validation-handoff",
+          "scope_id": "scope:7b3a296f-b198-4abb-8949-13b395f9798d",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:15c923c3-6762-4f97-8ddf-925e9b5b26ff",
+          "token_status": "issued_once",
+          "user_id": "user:15c923c3-6762-4f97-8ddf-925e9b5b26ff"
+        }
+      }
+    },
+    "switzerland-itinerary-revision": {
+      "authorization_scope": "eval:rc-v7-borderline-20260727a/switzerland-itinerary-revision",
+      "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/switzerland-itinerary-revision",
+      "display_scope": "Switzerland",
+      "access_mode": "read_write",
+      "import_id": "simple-import:171a17e3-10ab-4eae-9c30-389d42a11c8d",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:717667",
+      "corpus_revision": "generation:717667",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:171a17e3-10ab-4eae-9c30-389d42a11c8d",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 721.768,
+        "import_batch_count": 1,
+        "max_batch_documents": 73,
+        "ready_elapsed_ms": 721.768,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:rc-v7-borderline-20260727a/switzerland-itinerary-revision",
+          "base_corpus_revision": "generation:717667",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:717667",
+          "credential_id": "credential:016d599c-96a8-48e9-8101-b405db9bd253",
+          "delta_documents": 0,
+          "display_scope": "Switzerland",
+          "documents": 73,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:171a17e3-10ab-4eae-9c30-389d42a11c8d",
+          "index_counts": {
+            "chunks": 1664,
+            "documents": 73,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/switzerland-itinerary-revision",
+          "scope_id": "scope:19df8741-efd0-4696-9f85-c9a4786c68ae",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:171a17e3-10ab-4eae-9c30-389d42a11c8d",
+          "token_status": "issued_once",
+          "user_id": "user:171a17e3-10ab-4eae-9c30-389d42a11c8d"
+        },
+        "ready_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:rc-v7-borderline-20260727a/switzerland-itinerary-revision",
+          "base_corpus_revision": "generation:717667",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:717667",
+          "credential_id": "credential:016d599c-96a8-48e9-8101-b405db9bd253",
+          "delta_documents": 0,
+          "display_scope": "Switzerland",
+          "documents": 73,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:171a17e3-10ab-4eae-9c30-389d42a11c8d",
+          "index_counts": {
+            "chunks": 1664,
+            "documents": 73,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/switzerland-itinerary-revision",
+          "scope_id": "scope:19df8741-efd0-4696-9f85-c9a4786c68ae",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:171a17e3-10ab-4eae-9c30-389d42a11c8d",
+          "token_status": "issued_once",
+          "user_id": "user:171a17e3-10ab-4eae-9c30-389d42a11c8d"
+        }
+      }
+    },
+    "straylight-product-resume": {
+      "authorization_scope": "eval:rc-v7-borderline-20260727a/straylight-product-resume",
+      "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/straylight-product-resume",
+      "display_scope": "Straylight",
+      "access_mode": "read_write",
+      "import_id": "simple-import:cec64331-540d-4856-9547-da30a82b120e",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:717740",
+      "corpus_revision": "generation:717740",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:cec64331-540d-4856-9547-da30a82b120e",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 383.607,
+        "import_batch_count": 1,
+        "max_batch_documents": 73,
+        "ready_elapsed_ms": 383.607,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:rc-v7-borderline-20260727a/straylight-product-resume",
+          "base_corpus_revision": "generation:717740",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:717740",
+          "credential_id": "credential:56a84a85-5fd9-4b0d-894b-509af31f602f",
+          "delta_documents": 0,
+          "display_scope": "Straylight",
+          "documents": 73,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:cec64331-540d-4856-9547-da30a82b120e",
+          "index_counts": {
+            "chunks": 1664,
+            "documents": 73,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/straylight-product-resume",
+          "scope_id": "scope:6c7c0a4e-527c-48b3-9e34-d3354c0a9874",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:cec64331-540d-4856-9547-da30a82b120e",
+          "token_status": "issued_once",
+          "user_id": "user:cec64331-540d-4856-9547-da30a82b120e"
+        },
+        "ready_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:rc-v7-borderline-20260727a/straylight-product-resume",
+          "base_corpus_revision": "generation:717740",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:717740",
+          "credential_id": "credential:56a84a85-5fd9-4b0d-894b-509af31f602f",
+          "delta_documents": 0,
+          "display_scope": "Straylight",
+          "documents": 73,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:cec64331-540d-4856-9547-da30a82b120e",
+          "index_counts": {
+            "chunks": 1664,
+            "documents": 73,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:rc-v7-borderline-20260727a/straylight-product-resume",
+          "scope_id": "scope:6c7c0a4e-527c-48b3-9e34-d3354c0a9874",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:cec64331-540d-4856-9547-da30a82b120e",
+          "token_status": "issued_once",
+          "user_id": "user:cec64331-540d-4856-9547-da30a82b120e"
+        }
+      }
+    }
+  },
+  "service_protocol": "simple",
+  "records": [
+    {
+      "case_id": "warmind-final-validation-handoff",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 81.033,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/rc-v7-borderline-20260727a/service_api/warmind-final-validation-handoff/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Latest target: `master` / `origin/master` at `6c5153d5063137ef16fc9bc4872c9b5f01f5831f`. Code cleanup is verified, Stage 2 has seven fully passing rows and one split failure, and Stage 3 remains entirely unrun. The next safe boundary is the bounded D2 cache repair and Cortex rollup/archive proof before restarting the parser.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The latest recorded target is clean `master` / `origin/master` at `6c5153d5063137ef16fc9bc4872c9b5f01f5831f` (`fix(parser): harden d2 cache repair routing`), following `204d22330e` (`test(analytics): cover closed population rollups`). Focused tests, builds, and `git diff --check HEAD~2..HEAD` passed, but this establishes code-cleanup/readiness\u2014not scorecard or full-validation completion.",
+            "source_paths": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Stage 2 performance scorecard: alpha PASS (D1 peak `1425.1/s`, D2 `1715.4/s`), beta PASS (`1380.1/s`, `1901.2/s`), gamma PASS (`1242.9/s`, `1224.9/s`), delta PASS (`1016.9/s`, `1001.3/s`), epsilon PASS (`1455.1/s`, `1830.0/s`), zeta PASS (fault runs, `0/s`), and eta PASS (fault runs, `0/s`). Theta is not complete: D1 PASS at `2704.7/s`, D2 FAIL at `3683.5/s`. The known D2 failure occurred after the verified source archive ended: whole-missing S3 fallback rows were written as S3-repair cache (`s3_refresh`) rather than normal local cache, and D2 rollup rejected the repair filename shape.",
+            "source_paths": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Stage 3 full data-integrity and PGCR S3 validation is unfinished: applicable D1/D2 sides of gates 3.1\u20133.10 are all recorded `not run`. This includes target/bundle and schema/environment proof; D2 full replay, fresh dev-S3 verification, rollup jobs, and oracle/restart proof; D1 full replay with Cortex, fresh dev-S3 verification, and oracle/restart proof; and final DB/Redis/process hygiene. Cleanup verification and Stage 2 row evidence do not satisfy these gates.",
+            "source_paths": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The next safe execution boundary is to pull/build the exact current target while keeping parser and Cortex stopped during the bounded repair. For blocked window `16864554001-16864555000`, use `d2-cache-repair` replacement mode only in the documented bounded flow; prove exactly `1000` normal cache rows with no missing raw/cache coverage, then start Cortex and verify rollup/archive advancement before restarting the parser. Do not manually advance Redis or delete pending cache/S3-repair rows. Afterward, Rourke must either require theta rerun or explicitly skip that remaining performance gate before Stage 3 begins.",
+            "source_paths": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Preserve an evidence-backed handoff for final Warmind parser validation while keeping code cleanup, Stage 2 scorecard evidence, and Stage 3 validation distinct.",
+          "current_state": [
+            "Current recorded target is `6c5153d5063137ef16fc9bc4872c9b5f01f5831f` on clean `master` / `origin/master`.",
+            "Stage 2 alpha\u2013eta pass for D1 and D2; theta is D1 PASS and D2 FAIL.",
+            "Stage 3 gates 3.1\u20133.10 remain unrun on their applicable sides.",
+            "Checkpoint persisted as `checkpoint:70784da3-4a2c-0a8f-8475-a6f6df64e8af`."
+          ],
+          "decisions": [
+            "Treat cleanup tests/builds as readiness evidence only.",
+            "Do not declare Stage 2 complete while theta D2 is FAIL.",
+            "Require the bounded repair and Cortex advancement proof before parser restart.",
+            "Treat older targets `f82e7efe36cdd14f14de5d6513b5ddfb15a255a2` and `d74ab795fa07deae562399a4ed85aca77c0b7ae4` as superseded history."
+          ],
+          "open_questions": [
+            "Will Rourke require theta rerun or explicitly skip the remaining performance gate?",
+            "Which full replay slices and fresh dev-S3 prefixes will be approved for Stage 3?"
+          ],
+          "next_actions": [
+            "Execute the bounded repair for `16864554001-16864555000` with parser and Cortex stopped.",
+            "Prove `1000` normal cache rows and complete raw/cache coverage.",
+            "Start Cortex and verify rollup/archive advancement before restarting parser.",
+            "Resolve the theta decision, then execute and record Stage 3 gates 3.1\u20133.10."
+          ],
+          "artifacts": [
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            ".straylight/checkpoints/70784da3-4a2c-0a8f-8475-a6f6df64e8af.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 4,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "6c5153d5063137ef16fc9bc4872c9b5f01f5831f",
+                  "6c5153d506"
+                ],
+                "matched": "6c5153d5063137ef16fc9bc4872c9b5f01f5831f"
+              },
+              {
+                "alternatives": [
+                  "master",
+                  "origin/master"
+                ],
+                "matched": "master"
+              }
+            ],
+            "citations": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "alpha",
+                  "eta"
+                ],
+                "matched": "alpha"
+              },
+              {
+                "alternatives": [
+                  "theta",
+                  "FAIL",
+                  "failed"
+                ],
+                "matched": "theta"
+              },
+              {
+                "alternatives": [
+                  "D2",
+                  "cache repair",
+                  "S3 repair"
+                ],
+                "matched": "D2"
+              }
+            ],
+            "citations": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Stage 3",
+                  "full data integrity"
+                ],
+                "matched": "Stage 3"
+              },
+              {
+                "alternatives": [
+                  "not run",
+                  "unfinished",
+                  "pending"
+                ],
+                "matched": "not run"
+              },
+              {
+                "alternatives": [
+                  "S3",
+                  "restart",
+                  "oracle"
+                ],
+                "matched": "S3"
+              }
+            ],
+            "citations": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 0.7333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "latest merged",
+                  "current target",
+                  "ground",
+                  "lock and prove",
+                  "confirm the target",
+                  "confirm where",
+                  "pin the final target",
+                  "target/bundle proof"
+                ],
+                "matched": "current target"
+              },
+              {
+                "alternatives": [
+                  "do not touch production",
+                  "no production",
+                  "dev-S3",
+                  "validation-safe",
+                  "production side effects off"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "do not claim",
+                  "not complete",
+                  "until",
+                  "do not enter",
+                  "before",
+                  "only after"
+                ],
+                "matched": "before"
+              }
+            ],
+            "citations": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 15,
+        "commands": 4,
+        "command_output_chars": 97461,
+        "tokens": {
+          "input_tokens": 162364,
+          "cached_input_tokens": 131840,
+          "output_tokens": 3307
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T05:40:04.379-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa396e9357c62abbd6cbebb171d4f",
+          "elapsed_ms": 243.233,
+          "result_chars": 52634,
+          "source_text_chars": 44693,
+          "metadata_chars": 7941,
+          "evidence_items": 8,
+          "complete_sources": 3,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Charlemagne.md",
+            "Projects/Charlemagne/Logbook.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking backend implementation - 2026-06-04.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking production diagnostic - 2026-06-08.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Metis/Document processing pipeline.md",
+            "Projects/Metis/Obsidian knowledge base master plan.md",
+            "Projects/Metis/Plan.md",
+            "Projects/Metis/Rune bridge API handoff - 2026-04-21.md",
+            "Projects/Metis/Rune personal context bridge plan - 2026-04-21.md",
+            "Projects/Metis/UpNote to Obsidian migration plan.md",
+            "Projects/Metis/Vault semantic search.md",
+            "Projects/Metis/Worklog.md",
+            "Projects/N24 RaceWatch/2026-05-18 FastN24 competitor note.md",
+            "Projects/N24 RaceWatch/2027 Endurance Calendar and Timing Research.md",
+            "Projects/N24 RaceWatch/Cleanup audit 2026-05-15.md",
+            "Projects/N24 RaceWatch/N24 RaceWatch.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Write API and Dreaming - Initial Design.md",
+            "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/Mode 0 Override Moon investigation - 2026-06-24.md",
+            "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md",
+            "Projects/Warmind/Pantheon materializer backlog investigation - 2026-06-18.md",
+            "Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md",
+            "Projects/Warmind/Warmind.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-27T05:40:18.609-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa3971ea872f2a70e98b8296f8c29",
+          "elapsed_ms": 790.269,
+          "result_chars": 22641,
+          "source_text_chars": 0,
+          "metadata_chars": 22641,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne alerts diagnostic handoff - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking backend implementation - 2026-06-04.md",
+            "Projects/Metis/Rune bridge API handoff - 2026-04-21.md",
+            "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md",
+            "Projects/Warmind/Warmind.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T05:40:26.100-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "partial",
+          "request_id": "req_019fa3973ee872e1bcd9008c9eb42205",
+          "elapsed_ms": 24.513,
+          "result_chars": 21128,
+          "source_text_chars": 20000,
+          "metadata_chars": 1128,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/Final parser scorecard validation progress - 2026-06-05.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T05:40:51.733-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa397a1ca7e32ad159d30af1e0bbb",
+          "elapsed_ms": 351.655,
+          "result_chars": 1054,
+          "source_text_chars": 0,
+          "metadata_chars": 1054,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/70784da3-4a2c-0a8f-8475-a6f6df64e8af.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 97457,
+      "service_source_text_chars": 64693,
+      "service_metadata_chars": 32764,
+      "service_replay_weighted_chars": 321769,
+      "service_latency_ms": 1409.67,
+      "service_http_calls": 4,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:70784da3-4a2c-0a8f-8475-a6f6df64e8af",
+        "checkpoint_ref": "checkpoint:70784da3-4a2c-0a8f-8475-a6f6df64e8af",
+        "path": ".straylight/checkpoints/70784da3-4a2c-0a8f-8475-a6f6df64e8af.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:d0a224d00a4e0fdaa6d66158c9bd92c053152abc1e7d97d85e48959f8edcc504",
+            "entry_ref": "entry:019fa396-bf97-7c71-91a9-15a60227910f",
+            "path": "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 717742,
+        "write": {
+          "content_hash": "sha256:e1f115b2fb7b4a5033261e4e5a139959992b7021760520fb43f1105439b08bd5",
+          "entry_ref": "entry:70784da3-4a2c-0a8f-8475-a6f6df64e8af",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/70784da3-4a2c-0a8f-8475-a6f6df64e8af.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa397-a1d9-7040-8d74-2b46531aba41",
+          "workspace_generation": 717742
+        }
+      },
+      "service_session_id": "session:019fa396-e936-7973-ba1a-38aa83d33d7e",
+      "service_corpus_revision": "generation:717742",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T05:40:04.379-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa396e9357c62abbd6cbebb171d4f",
+          "elapsed_ms": 243.233,
+          "result_chars": 52634,
+          "source_text_chars": 44693,
+          "metadata_chars": 7941,
+          "evidence_items": 8,
+          "complete_sources": 3,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Charlemagne.md",
+            "Projects/Charlemagne/Logbook.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking backend implementation - 2026-06-04.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking production diagnostic - 2026-06-08.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Metis/Document processing pipeline.md",
+            "Projects/Metis/Obsidian knowledge base master plan.md",
+            "Projects/Metis/Plan.md",
+            "Projects/Metis/Rune bridge API handoff - 2026-04-21.md",
+            "Projects/Metis/Rune personal context bridge plan - 2026-04-21.md",
+            "Projects/Metis/UpNote to Obsidian migration plan.md",
+            "Projects/Metis/Vault semantic search.md",
+            "Projects/Metis/Worklog.md",
+            "Projects/N24 RaceWatch/2026-05-18 FastN24 competitor note.md",
+            "Projects/N24 RaceWatch/2027 Endurance Calendar and Timing Research.md",
+            "Projects/N24 RaceWatch/Cleanup audit 2026-05-15.md",
+            "Projects/N24 RaceWatch/N24 RaceWatch.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Write API and Dreaming - Initial Design.md",
+            "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/Mode 0 Override Moon investigation - 2026-06-24.md",
+            "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md",
+            "Projects/Warmind/Pantheon materializer backlog investigation - 2026-06-18.md",
+            "Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md",
+            "Projects/Warmind/Warmind.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-27T05:40:18.609-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa3971ea872f2a70e98b8296f8c29",
+          "elapsed_ms": 790.269,
+          "result_chars": 22641,
+          "source_text_chars": 0,
+          "metadata_chars": 22641,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne alerts diagnostic handoff - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking backend implementation - 2026-06-04.md",
+            "Projects/Metis/Rune bridge API handoff - 2026-04-21.md",
+            "Projects/Warmind/D1 parser autonomy and autotuning context summary - 2026-05-25.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md",
+            "Projects/Warmind/Warmind.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T05:40:26.100-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "partial",
+          "request_id": "req_019fa3973ee872e1bcd9008c9eb42205",
+          "elapsed_ms": 24.513,
+          "result_chars": 21128,
+          "source_text_chars": 20000,
+          "metadata_chars": 1128,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/Final parser scorecard validation progress - 2026-06-05.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T05:40:51.733-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa397a1ca7e32ad159d30af1e0bbb",
+          "elapsed_ms": 351.655,
+          "result_chars": 1054,
+          "source_text_chars": 0,
+          "metadata_chars": 1054,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/70784da3-4a2c-0a8f-8475-a6f6df64e8af.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 97457,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:70784da3-4a2c-0a8f-8475-a6f6df64e8af",
+        "checkpoint_ref": "checkpoint:70784da3-4a2c-0a8f-8475-a6f6df64e8af",
+        "path": ".straylight/checkpoints/70784da3-4a2c-0a8f-8475-a6f6df64e8af.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:d0a224d00a4e0fdaa6d66158c9bd92c053152abc1e7d97d85e48959f8edcc504",
+            "entry_ref": "entry:019fa396-bf97-7c71-91a9-15a60227910f",
+            "path": "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 717742,
+        "write": {
+          "content_hash": "sha256:e1f115b2fb7b4a5033261e4e5a139959992b7021760520fb43f1105439b08bd5",
+          "entry_ref": "entry:70784da3-4a2c-0a8f-8475-a6f6df64e8af",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/70784da3-4a2c-0a8f-8475-a6f6df64e8af.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa397-a1d9-7040-8d74-2b46531aba41",
+          "workspace_generation": 717742
+        }
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "switzerland-itinerary-revision",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 86.428,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/rc-v7-borderline-20260727a/service_api/switzerland-itinerary-revision/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Proposed, not booked: an 11-night family trip from August 14\u201325. Base in Vevey/Montreux through August 21, collect Radley at Milano Malpensa, spend three nights in Stresa/Baveno, and finish with one night in Milan.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Use Vevey/Montreux as the single Swiss-side base from August 14\u201321. It is low altitude, lakefront, and about 1 hour 50 minutes by car from Saas-Fee, providing a practical descent/return fallback during the family's first days nearby without repeating the alpine-resort experience. Choose lodging with space for Radley if an altitude problem requires him to join the family.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Assume pickup at Milano Malpensa Airport on August 21, matching the camp's scheduled Saas-Fee-to-MXP transfer; possible morning make-up training means the rendezvous time remains to be confirmed. From MXP, go directly to Stresa/Baveno on Lake Maggiore for August 21\u201324, then Milan for August 24\u201325. This gives the reunited family a four-night Italy finish with only one hotel change and an airport-friendly final night.",
+            "source_paths": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The proposed family trip is August 14\u201325: 11 nights, within the preference of no more than about two weeks. Its rhythm is seven nights in one low-altitude Lake Geneva base, followed by three nights on Lake Maggiore and one night in Milan. It avoids a chain of similar mountain towns; do not add Interlaken, Como, Orta, or another alpine base unless the family deliberately trades simplicity for another move.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "This is an active planning scenario, not a booking, and no live prices or availability have been verified. Next confirm the August 21 MXP handoff time, terminal, ski-bag transfer, and whether possible morning make-up training affects arrival; then price cancellable lodging in Vevey/Montreux, Stresa/Baveno, and Milan, verify an extra bed or sofa where needed, compare family open-jaw flights, and check Swiss-to-Italian one-way rental-car fees, insurance, parking, and Milan ZTL implications.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Revise the family scenario around an assumed August 21 Milano Malpensa pickup while retaining the altitude fallback, limiting the trip to about two weeks, reducing mountain-town repetition, and providing a 3\u20134 day Italy finish.",
+          "current_state": [
+            "Historical evidence: the Saas Fee camp runs August 10\u201322; team travel to Milano Malpensa is scheduled for August 21, potentially after morning make-up training.",
+            "Superseding proposal, not booked: family travels August 14\u201325, staying in Vevey/Montreux August 14\u201321, Stresa/Baveno August 21\u201324, and Milan August 24\u201325.",
+            "No live availability, pricing, flight schedule, hotel inventory, or rental-car terms were verified."
+          ],
+          "decisions": [
+            "Use one low-altitude Lake Geneva base for seven nights rather than moving among Swiss mountain towns.",
+            "After the MXP pickup, use a three-night Lake Maggiore stay and one Milan night, avoiding extra destinations and hotel changes.",
+            "Treat August 21 pickup as the scenario assumption but not as a confirmed rendezvous."
+          ],
+          "open_questions": [
+            "What exact time and terminal will the team reach MXP on August 21?",
+            "Will morning make-up training occur, and how will Radley's luggage and ski bags be transferred?",
+            "Which flights, cancellable rooms, and cross-border rental arrangement are available at acceptable prices?"
+          ],
+          "next_actions": [
+            "Confirm the handoff details with CMAC or the coach.",
+            "Price cancellable, appropriately sized lodging in all three bases.",
+            "Compare open-jaw flights and Swiss-to-Italian one-way car-rental terms, including fees, insurance, parking, and ZTL exposure."
+          ],
+          "artifacts": [
+            "Trips/Switzerland/Switzerland trip planning.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            ".straylight/checkpoints/7a7831e1-69b1-1a3f-6182-73b238092b1b.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9575,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.95,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 8,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Vevey",
+                  "Montreux",
+                  "Lausanne"
+                ],
+                "matched": "Vevey"
+              },
+              {
+                "alternatives": [
+                  "low altitude",
+                  "lakefront"
+                ],
+                "matched": "low altitude"
+              },
+              {
+                "alternatives": [
+                  "Saas-Fee",
+                  "Saas Fee",
+                  "return"
+                ],
+                "matched": "Saas-Fee"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 0.8,
+            "pass": false,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Malpensa",
+                  "MXP"
+                ],
+                "matched": "Malpensa"
+              },
+              {
+                "alternatives": [
+                  "August 21",
+                  "Aug 21"
+                ],
+                "matched": "August 21"
+              },
+              {
+                "alternatives": [
+                  "Stresa",
+                  "Baveno",
+                  "Lake Maggiore"
+                ],
+                "matched": "Stresa"
+              },
+              {
+                "alternatives": [
+                  "3-4",
+                  "3 to 4",
+                  "four calendar days"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "two weeks",
+                  "14 days",
+                  "14 nights"
+                ],
+                "matched": "two weeks"
+              },
+              {
+                "alternatives": [
+                  "one anchor",
+                  "breathing room",
+                  "transfer day",
+                  "two principal",
+                  "two settings",
+                  "two bases"
+                ],
+                "matched": "two bases"
+              },
+              {
+                "alternatives": [
+                  "not mountain",
+                  "lake",
+                  "city"
+                ],
+                "matched": "not mountain"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "scenario",
+                  "proposed",
+                  "not booked"
+                ],
+                "matched": "scenario"
+              },
+              {
+                "alternatives": [
+                  "availability",
+                  "lodging",
+                  "flight",
+                  "handoff"
+                ],
+                "matched": "availability"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 15,
+        "commands": 4,
+        "command_output_chars": 65741,
+        "tokens": {
+          "input_tokens": 139228,
+          "cached_input_tokens": 104448,
+          "output_tokens": 2970
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T05:40:03.463-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa396e4db719398a5fa3992e6ef1f",
+          "elapsed_ms": 440.939,
+          "result_chars": 55971,
+          "source_text_chars": 47006,
+          "metadata_chars": 8965,
+          "evidence_items": 8,
+          "complete_sources": 7,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Logbook.md",
+            "Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md",
+            "Projects/Charlemagne/Research/Charlemagne alerts diagnostic handoff - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking production diagnostic - 2026-06-08.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Metis/Codex session search and dream distillation.md",
+            "Projects/Metis/Codex vault write access and AGENTS setup.md",
+            "Projects/Metis/Drive organization and tracking plan.md",
+            "Projects/Metis/Karpathy wiki for Rourke.md",
+            "Projects/Metis/Obsidian knowledge base master plan.md",
+            "Projects/Metis/Obsidian vault architecture plan.md",
+            "Projects/Metis/Rune personal context bridge plan - 2026-04-21.md",
+            "Projects/Metis/Scanned documents in Drive runbook.md",
+            "Projects/Metis/UpNote migration runbook.md",
+            "Projects/Metis/UpNote to Obsidian migration plan.md",
+            "Projects/N24 RaceWatch/2026-05-18 FastN24 competitor note.md",
+            "Projects/N24 RaceWatch/2027 Endurance Calendar and Timing Research.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Write API and Dreaming - Initial Design.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md",
+            "Topics/Star Rupture/Star Rupture production.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-27T05:40:15.626-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa397160070d08d9a8b5cf02fcf2b",
+          "elapsed_ms": 25.034,
+          "result_chars": 7361,
+          "source_text_chars": 6731,
+          "metadata_chars": 630,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T05:40:54.544-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa397adea75e183699fab80fb59de",
+          "elapsed_ms": 65.815,
+          "result_chars": 1472,
+          "source_text_chars": 0,
+          "metadata_chars": 1472,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/7a7831e1-69b1-1a3f-6182-73b238092b1b.md",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 3,
+      "service_result_chars": 64804,
+      "service_source_text_chars": 53737,
+      "service_metadata_chars": 11067,
+      "service_replay_weighted_chars": 184107,
+      "service_latency_ms": 531.788,
+      "service_http_calls": 3,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:7a7831e1-69b1-1a3f-6182-73b238092b1b",
+        "checkpoint_ref": "checkpoint:7a7831e1-69b1-1a3f-6182-73b238092b1b",
+        "path": ".straylight/checkpoints/7a7831e1-69b1-1a3f-6182-73b238092b1b.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:9cc13035212d4e653b10079a70cd0cc49624f1d7fa78a582721cc62fac1126be",
+            "entry_ref": "entry:019fa396-c1db-7da3-88a4-42fa13a8796c",
+            "path": "Trips/Switzerland/Switzerland trip planning.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:005a670f89fdd019ae492709cabb07d32bc5917e6691830e27071b6ace05ae00",
+            "entry_ref": "entry:019fa396-c1db-7da3-88a4-42d97f4c4e0f",
+            "path": "Trips/Switzerland/Nearby family options menu.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:9987bae8527cfa96ec18977e20ef5ccf4bce887c8e69f6215bcadedd49608b63",
+            "entry_ref": "entry:019fa396-c1db-7da3-88a4-42b6b704dcff",
+            "path": "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 717743,
+        "write": {
+          "content_hash": "sha256:79e271e5f5119158f8482142ef6c21ca8373a554919ac7085770b4b534b68ee5",
+          "entry_ref": "entry:7a7831e1-69b1-1a3f-6182-73b238092b1b",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/7a7831e1-69b1-1a3f-6182-73b238092b1b.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa397-ae08-7c43-a833-69d722eaee23",
+          "workspace_generation": 717743
+        }
+      },
+      "service_session_id": "session:019fa396-e4df-7fe3-b339-5ca03430c872",
+      "service_corpus_revision": "generation:717743",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T05:40:03.463-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa396e4db719398a5fa3992e6ef1f",
+          "elapsed_ms": 440.939,
+          "result_chars": 55971,
+          "source_text_chars": 47006,
+          "metadata_chars": 8965,
+          "evidence_items": 8,
+          "complete_sources": 7,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Logbook.md",
+            "Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md",
+            "Projects/Charlemagne/Research/Charlemagne alerts diagnostic handoff - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking production diagnostic - 2026-06-08.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Metis/Codex session search and dream distillation.md",
+            "Projects/Metis/Codex vault write access and AGENTS setup.md",
+            "Projects/Metis/Drive organization and tracking plan.md",
+            "Projects/Metis/Karpathy wiki for Rourke.md",
+            "Projects/Metis/Obsidian knowledge base master plan.md",
+            "Projects/Metis/Obsidian vault architecture plan.md",
+            "Projects/Metis/Rune personal context bridge plan - 2026-04-21.md",
+            "Projects/Metis/Scanned documents in Drive runbook.md",
+            "Projects/Metis/UpNote migration runbook.md",
+            "Projects/Metis/UpNote to Obsidian migration plan.md",
+            "Projects/N24 RaceWatch/2026-05-18 FastN24 competitor note.md",
+            "Projects/N24 RaceWatch/2027 Endurance Calendar and Timing Research.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Write API and Dreaming - Initial Design.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md",
+            "Topics/Star Rupture/Star Rupture production.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-27T05:40:15.626-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa397160070d08d9a8b5cf02fcf2b",
+          "elapsed_ms": 25.034,
+          "result_chars": 7361,
+          "source_text_chars": 6731,
+          "metadata_chars": 630,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T05:40:54.544-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa397adea75e183699fab80fb59de",
+          "elapsed_ms": 65.815,
+          "result_chars": 1472,
+          "source_text_chars": 0,
+          "metadata_chars": 1472,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/7a7831e1-69b1-1a3f-6182-73b238092b1b.md",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 64804,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:7a7831e1-69b1-1a3f-6182-73b238092b1b",
+        "checkpoint_ref": "checkpoint:7a7831e1-69b1-1a3f-6182-73b238092b1b",
+        "path": ".straylight/checkpoints/7a7831e1-69b1-1a3f-6182-73b238092b1b.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:9cc13035212d4e653b10079a70cd0cc49624f1d7fa78a582721cc62fac1126be",
+            "entry_ref": "entry:019fa396-c1db-7da3-88a4-42fa13a8796c",
+            "path": "Trips/Switzerland/Switzerland trip planning.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:005a670f89fdd019ae492709cabb07d32bc5917e6691830e27071b6ace05ae00",
+            "entry_ref": "entry:019fa396-c1db-7da3-88a4-42d97f4c4e0f",
+            "path": "Trips/Switzerland/Nearby family options menu.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:9987bae8527cfa96ec18977e20ef5ccf4bce887c8e69f6215bcadedd49608b63",
+            "entry_ref": "entry:019fa396-c1db-7da3-88a4-42b6b704dcff",
+            "path": "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 717743,
+        "write": {
+          "content_hash": "sha256:79e271e5f5119158f8482142ef6c21ca8373a554919ac7085770b4b534b68ee5",
+          "entry_ref": "entry:7a7831e1-69b1-1a3f-6182-73b238092b1b",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/7a7831e1-69b1-1a3f-6182-73b238092b1b.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa397-ae08-7c43-a833-69d722eaee23",
+          "workspace_generation": 717743
+        }
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "straylight-product-resume",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 67.692,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/rc-v7-borderline-20260727a/service_api/straylight-product-resume/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Straylight is a user-owned, portable agent context and durable-work layer for machine continuity. The correction expands its boundary from learned memory and retrieval to resumable work state, source-grounded reasoning, verification, revision, checkpointing, and handoff. Obsidian is a prototype corpus and human-readable projection, not the canonical product surface. The next evaluation must therefore test whether fresh agents can correctly resume and advance representative real work\u2014not merely retrieve evidence.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Straylight\u2019s correct product category is a user-owned, portable agent context and durable-work layer: an agent-first product and protocol for durable machine continuity across agent ecosystems. It is not primarily a notes app, wiki, transcript archive, synchronized folder, retrieval product, or memory database.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Beyond durable knowledge and learned patterns, Straylight must preserve the live, resumable state of work: goals, current state, evidence, decisions, hypotheses, plans, artifacts and their canonical versions, computations, unresolved questions, rejected paths, checkpoints, blockers, pending decisions, and the next safe actions. A later agent must be able to inspect how that state was reached, verify or revise it, advance the work, and leave a better durable state behind.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Obsidian and Markdown are useful prototype corpora, human-readable projections, inspection surfaces, and export formats, but they are not Straylight\u2019s canonical product boundary, storage representation, or interaction model. Metis organizes the human knowledge base and supplies the first representative corpus; Straylight is the agent-first context and durable-work product built to operate across vendors, devices, runtimes, and user-chosen trust domains, with full source and artifact access rather than raw notes defining the system.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The first benchmark was too narrow because it evaluated retrieval readiness rather than the full product: it used 44 non-private notes, 20 questions, and 53 gold evidence items, and exercised memory.open, memory.query, and memory.read while leaving model-directed memory.compute and memory.verify untested. Tuned workspace policy 0.2 tied one-shot top-k at 17 of 20 cases but recovered 46 of 53 evidence items versus 48 of 53, while using about 2,932 versus 1,070 mean estimated tokens; consequently, the workspace justification gate was not cleared and retrieval-only scoring is now only a regression lane. The expanded gate must use blinded, untouched cases to compare model-directed open, query, read, compute, verify, checkpoint, and revision behavior against direct filesystem tools and fixed handoff/context packs. It must prove that a fresh agent can resume, iterate after constraints change, inspect complete sources, reason over temporal changes and contradictions, perform quantitative artifact work, verify before acting, advance the work, and leave correct durable next-state artifacts and handoffs across Warmind/Charlemagne performance and incident work, StarRupture factory planning, Switzerland trip planning, and Straylight\u2019s own evolution. That expanded evaluation is defined but not yet completed in the available evidence.",
+            "source_paths": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Open questions.md",
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Worklog.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Resume Straylight after the product-framing correction and preserve the corrected product category, durable-work scope, Obsidian relationship, and expanded evaluation gate for the next agent.",
+          "current_state": [
+            "Current fact: Straylight is a user-owned, portable agent context and durable-work layer, not primarily a notes or retrieval product.",
+            "Current fact: its durable state includes learned knowledge plus goals, evidence, decisions, hypotheses, plans, artifacts, computations, unresolved questions, rejected paths, checkpoints, current state, and resumable next actions.",
+            "Historical verified result: policy 0.2 tied one-shot top-k on 17 of 20 cases but recovered 46 of 53 evidence items versus 48 of 53 and used about 2,932 versus 1,070 mean estimated tokens.",
+            "Incomplete work: the expanded real-agent-work evaluation is specified, but the available evidence contains no completed results."
+          ],
+          "decisions": [
+            "Obsidian and Markdown remain prototype corpora, projections, and export formats rather than the canonical product boundary.",
+            "Retrieval-only scoring is a regression lane; successful continuation and advancement of real work is the primary product gate.",
+            "The expanded comparison must cover model-directed workspace calls, direct filesystem tools, and fixed handoff/context packs."
+          ],
+          "open_questions": [
+            "Whether model-directed workspace calls outperform controls on blinded, untouched holdout cases by enough to justify their additional calls and context cost remains unresolved."
+          ],
+          "next_actions": [
+            "Run the expanded evaluation on Warmind/Charlemagne, StarRupture, Switzerland trip planning, and Straylight workloads.",
+            "Measure resumption, iteration, computation, source fidelity, temporal and contradiction reasoning, verification before action, and durable checkpoint/revision/handoff quality."
+          ],
+          "artifacts": [
+            "checkpoint:b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8",
+            ".straylight/checkpoints/b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8.md",
+            "Projects/Straylight/Decisions.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Worklog.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 10,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "agent context",
+                  "durable-work",
+                  "durable work"
+                ],
+                "matched": "agent context"
+              },
+              {
+                "alternatives": [
+                  "agent-first",
+                  "agent first"
+                ],
+                "matched": "agent-first"
+              },
+              {
+                "alternatives": [
+                  "learn",
+                  "continue",
+                  "advance",
+                  "continuity"
+                ],
+                "matched": "continuity"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "goals",
+                  "evidence"
+                ],
+                "matched": "goals"
+              },
+              {
+                "alternatives": [
+                  "hypotheses",
+                  "plans"
+                ],
+                "matched": "hypotheses"
+              },
+              {
+                "alternatives": [
+                  "artifacts",
+                  "computations"
+                ],
+                "matched": "artifacts"
+              },
+              {
+                "alternatives": [
+                  "open questions",
+                  "rejected",
+                  "checkpoints",
+                  "next actions"
+                ],
+                "matched": "rejected"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "projection",
+                  "prototype input",
+                  "export"
+                ],
+                "matched": "projection"
+              },
+              {
+                "alternatives": [
+                  "not the product",
+                  "not canonical",
+                  "not the boundary"
+                ],
+                "matched": "not the product"
+              },
+              {
+                "alternatives": [
+                  "Markdown",
+                  "Obsidian"
+                ],
+                "matched": "Markdown"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Straylight.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "resume",
+                  "continuation"
+                ],
+                "matched": "resume"
+              },
+              {
+                "alternatives": [
+                  "iterate",
+                  "planning",
+                  "constraints"
+                ],
+                "matched": "iterate"
+              },
+              {
+                "alternatives": [
+                  "compute",
+                  "verify",
+                  "checkpoint",
+                  "next-state"
+                ],
+                "matched": "compute"
+              },
+              {
+                "alternatives": [
+                  "Warmind",
+                  "StarRupture",
+                  "Switzerland"
+                ],
+                "matched": "Warmind"
+              }
+            ],
+            "citations": [
+              "Projects/Straylight/Decisions.md",
+              "Projects/Straylight/Open questions.md",
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Worklog.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 12,
+        "commands": 3,
+        "command_output_chars": 57089,
+        "tokens": {
+          "input_tokens": 99912,
+          "cached_input_tokens": 69888,
+          "output_tokens": 2706
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T05:40:06.164-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa396f03e7080a9d41ea0c1fbd606",
+          "elapsed_ms": 226.799,
+          "result_chars": 54535,
+          "source_text_chars": 46498,
+          "metadata_chars": 8037,
+          "evidence_items": 7,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Logbook.md",
+            "Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking production diagnostic - 2026-06-08.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Metis/Codex session search and dream distillation.md",
+            "Projects/Metis/Codex vault write access and AGENTS setup.md",
+            "Projects/Metis/Document processing pipeline.md",
+            "Projects/Metis/Drive organization and tracking plan.md",
+            "Projects/Metis/Navigation and retrieval model.md",
+            "Projects/Metis/Obsidian knowledge base master plan.md",
+            "Projects/Metis/Obsidian vault architecture plan.md",
+            "Projects/Metis/Scanned documents in Drive runbook.md",
+            "Projects/Metis/UpNote migration runbook.md",
+            "Projects/Metis/Worklog.md",
+            "Projects/N24 RaceWatch/N24 RaceWatch.md",
+            "Projects/Straylight/Decisions.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Worklog.md",
+            "Projects/Straylight/Write API and Dreaming - Initial Design.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md",
+            "Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-27T05:40:36.141-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa3976616751096be89507f8b932a",
+          "elapsed_ms": 36.646,
+          "result_chars": 1618,
+          "source_text_chars": 0,
+          "metadata_chars": 1618,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8.md",
+            "Projects/Straylight/Decisions.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Worklog.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 2,
+      "service_result_chars": 56153,
+      "service_source_text_chars": 46498,
+      "service_metadata_chars": 9655,
+      "service_replay_weighted_chars": 110688,
+      "service_latency_ms": 263.445,
+      "service_http_calls": 2,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8",
+        "checkpoint_ref": "checkpoint:b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8",
+        "path": ".straylight/checkpoints/b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:91563199f18d31c97b9a1eb8a31a99c1cc0841d27acd634280920538328b17b8",
+            "entry_ref": "entry:019fa396-c4c6-7962-bbce-2c5b74e7cef5",
+            "path": "Projects/Straylight/Decisions.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:b7e6777fd02bcbb6ce0ef49adb64977f00476984505d2defeccef7b0edd50686",
+            "entry_ref": "entry:019fa396-c4c6-7962-bbce-2cfb2ea72a30",
+            "path": "Projects/Straylight/Straylight.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:b2e1c11f71b26e208fb4ee59a8dbcf0cecec1b4558f2aff0badec0a07bb10a3c",
+            "entry_ref": "entry:019fa396-c4c6-7962-bbce-2c926771ec79",
+            "path": "Projects/Straylight/Open questions.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:e20e2cd9d8a59e688134613653b765f2054a7d6771efe90b675401d52f26c60c",
+            "entry_ref": "entry:019fa396-c4c6-7962-bbce-2d1501786dba",
+            "path": "Projects/Straylight/Worklog.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 717741,
+        "write": {
+          "content_hash": "sha256:c20859d95cb0c8500441f31137f52629800631669a4e69a42bff4f1b79f019ac",
+          "entry_ref": "entry:b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa397-6625-7090-b836-46131a9fa084",
+          "workspace_generation": 717741
+        }
+      },
+      "service_session_id": "session:019fa396-f040-7ea0-ba74-f14c9204ba36",
+      "service_corpus_revision": "generation:717741",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T05:40:06.164-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa396f03e7080a9d41ea0c1fbd606",
+          "elapsed_ms": 226.799,
+          "result_chars": 54535,
+          "source_text_chars": 46498,
+          "metadata_chars": 8037,
+          "evidence_items": 7,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Logbook.md",
+            "Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking production diagnostic - 2026-06-08.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Metis/Codex session search and dream distillation.md",
+            "Projects/Metis/Codex vault write access and AGENTS setup.md",
+            "Projects/Metis/Document processing pipeline.md",
+            "Projects/Metis/Drive organization and tracking plan.md",
+            "Projects/Metis/Navigation and retrieval model.md",
+            "Projects/Metis/Obsidian knowledge base master plan.md",
+            "Projects/Metis/Obsidian vault architecture plan.md",
+            "Projects/Metis/Scanned documents in Drive runbook.md",
+            "Projects/Metis/UpNote migration runbook.md",
+            "Projects/Metis/Worklog.md",
+            "Projects/N24 RaceWatch/N24 RaceWatch.md",
+            "Projects/Straylight/Decisions.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Worklog.md",
+            "Projects/Straylight/Write API and Dreaming - Initial Design.md",
+            "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md",
+            "Projects/Warmind/Nyx parser performance tuning rules - 2026-05-22.md",
+            "Projects/Warmind/PGCR S3 production cutover runbook - 2026-06-05.md",
+            "Projects/Warmind/Production CPU and leaderboard queue incident - 2026-06-20.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-27T05:40:36.141-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa3976616751096be89507f8b932a",
+          "elapsed_ms": 36.646,
+          "result_chars": 1618,
+          "source_text_chars": 0,
+          "metadata_chars": 1618,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8.md",
+            "Projects/Straylight/Decisions.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Straylight.md",
+            "Projects/Straylight/Worklog.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 56153,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8",
+        "checkpoint_ref": "checkpoint:b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8",
+        "path": ".straylight/checkpoints/b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:91563199f18d31c97b9a1eb8a31a99c1cc0841d27acd634280920538328b17b8",
+            "entry_ref": "entry:019fa396-c4c6-7962-bbce-2c5b74e7cef5",
+            "path": "Projects/Straylight/Decisions.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:b7e6777fd02bcbb6ce0ef49adb64977f00476984505d2defeccef7b0edd50686",
+            "entry_ref": "entry:019fa396-c4c6-7962-bbce-2cfb2ea72a30",
+            "path": "Projects/Straylight/Straylight.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:b2e1c11f71b26e208fb4ee59a8dbcf0cecec1b4558f2aff0badec0a07bb10a3c",
+            "entry_ref": "entry:019fa396-c4c6-7962-bbce-2c926771ec79",
+            "path": "Projects/Straylight/Open questions.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:e20e2cd9d8a59e688134613653b765f2054a7d6771efe90b675401d52f26c60c",
+            "entry_ref": "entry:019fa396-c4c6-7962-bbce-2d1501786dba",
+            "path": "Projects/Straylight/Worklog.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 717741,
+        "write": {
+          "content_hash": "sha256:c20859d95cb0c8500441f31137f52629800631669a4e69a42bff4f1b79f019ac",
+          "entry_ref": "entry:b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/b59d7d40-c8d7-6a6d-1e2e-cd491edc77a8.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa397-6625-7090-b836-46131a9fa084",
+          "workspace_generation": 717741
+        }
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 3,
+        "successful_runs": 3,
+        "cases_passed": 1,
+        "case_pass_rate": 0.3333333333333333,
+        "claims_passed": 10,
+        "claims_total": 12,
+        "claim_pass_rate": 0.8333333333333334,
+        "mean_score": 0.9669,
+        "elapsed_samples": 3,
+        "mean_elapsed_seconds": 78.38,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 72804.7,
+        "persisted_checkpoints": 3,
+        "checkpoint_eligible_runs": 3,
+        "mean_service_calls": 3.0,
+        "mean_service_result_chars": 72804.7,
+        "mean_service_source_text_chars": 54976.0,
+        "mean_service_metadata_chars": 17828.7,
+        "mean_service_replay_weighted_chars": 205521.3,
+        "mean_service_latency_ms": 734.968,
+        "mean_completed_commands": 3.7,
+        "mean_command_output_chars": 73430.3,
+        "mean_tokens": {
+          "input_tokens": 133834.7,
+          "output_tokens": 2994.3,
+          "cached_input_tokens": 102058.7,
+          "uncached_input_tokens": 31776.0
+        }
+      }
+    },
+    "by_workload": {
+      "Straylight": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 67.69,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 56153.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 56153.0,
+          "mean_service_source_text_chars": 46498.0,
+          "mean_service_metadata_chars": 9655.0,
+          "mean_service_replay_weighted_chars": 110688.0,
+          "mean_service_latency_ms": 263.445,
+          "mean_completed_commands": 3.0,
+          "mean_command_output_chars": 57089.0,
+          "mean_tokens": {
+            "input_tokens": 99912.0,
+            "output_tokens": 2706.0,
+            "cached_input_tokens": 69888.0,
+            "uncached_input_tokens": 30024.0
+          }
+        }
+      },
+      "Switzerland": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9575,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 86.43,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 64804.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 3.0,
+          "mean_service_result_chars": 64804.0,
+          "mean_service_source_text_chars": 53737.0,
+          "mean_service_metadata_chars": 11067.0,
+          "mean_service_replay_weighted_chars": 184107.0,
+          "mean_service_latency_ms": 531.788,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 65741.0,
+          "mean_tokens": {
+            "input_tokens": 139228.0,
+            "output_tokens": 2970.0,
+            "cached_input_tokens": 104448.0,
+            "uncached_input_tokens": 34780.0
+          }
+        }
+      },
+      "Warmind": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 81.03,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 97457.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 97457.0,
+          "mean_service_source_text_chars": 64693.0,
+          "mean_service_metadata_chars": 32764.0,
+          "mean_service_replay_weighted_chars": 321769.0,
+          "mean_service_latency_ms": 1409.67,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 97461.0,
+          "mean_tokens": {
+            "input_tokens": 162364.0,
+            "output_tokens": 3307.0,
+            "cached_input_tokens": 131840.0,
+            "uncached_input_tokens": 30524.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "constraint_driven_iteration": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9575,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 86.43,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 64804.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 3.0,
+          "mean_service_result_chars": 64804.0,
+          "mean_service_source_text_chars": 53737.0,
+          "mean_service_metadata_chars": 11067.0,
+          "mean_service_replay_weighted_chars": 184107.0,
+          "mean_service_latency_ms": 531.788,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 65741.0,
+          "mean_tokens": {
+            "input_tokens": 139228.0,
+            "output_tokens": 2970.0,
+            "cached_input_tokens": 104448.0,
+            "uncached_input_tokens": 34780.0
+          }
+        }
+      },
+      "durable_handoff": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 81.03,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 97457.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 97457.0,
+          "mean_service_source_text_chars": 64693.0,
+          "mean_service_metadata_chars": 32764.0,
+          "mean_service_replay_weighted_chars": 321769.0,
+          "mean_service_latency_ms": 1409.67,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 97461.0,
+          "mean_tokens": {
+            "input_tokens": 162364.0,
+            "output_tokens": 3307.0,
+            "cached_input_tokens": 131840.0,
+            "uncached_input_tokens": 30524.0
+          }
+        }
+      },
+      "project_continuation": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 67.69,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 56153.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 56153.0,
+          "mean_service_source_text_chars": 46498.0,
+          "mean_service_metadata_chars": 9655.0,
+          "mean_service_replay_weighted_chars": 110688.0,
+          "mean_service_latency_ms": 263.445,
+          "mean_completed_commands": 3.0,
+          "mean_command_output_chars": 57089.0,
+          "mean_tokens": {
+            "input_tokens": 99912.0,
+            "output_tokens": 2706.0,
+            "cached_input_tokens": 69888.0,
+            "uncached_input_tokens": 30024.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "warmind-final-validation-handoff": {
+        "id": "warmind-final-validation-handoff",
+        "workload": "Warmind",
+        "capability": "durable_handoff",
+        "task": "Take over the final parser validation work from its long handoff. Report the latest recorded target, distinguish completed performance rows from unfinished validation, identify the known failing scenario, and state the next safe execution boundary. Do not collapse code cleanup, scorecard evidence, and full validation into one status.",
+        "claim_slots": {
+          "c1": "latest recorded target",
+          "c2": "performance scorecard state",
+          "c3": "full validation state",
+          "c4": "safe next boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "6c5153d5063137ef16fc9bc4872c9b5f01f5831f",
+                  "6c5153d506"
+                ]
+              },
+              {
+                "any": [
+                  "master",
+                  "origin/master"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "alpha",
+                  "eta"
+                ]
+              },
+              {
+                "any": [
+                  "theta",
+                  "FAIL",
+                  "failed"
+                ]
+              },
+              {
+                "any": [
+                  "D2",
+                  "cache repair",
+                  "S3 repair"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Stage 3",
+                  "full data integrity"
+                ]
+              },
+              {
+                "any": [
+                  "not run",
+                  "unfinished",
+                  "pending"
+                ]
+              },
+              {
+                "any": [
+                  "S3",
+                  "restart",
+                  "oracle"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "latest merged",
+                  "current target",
+                  "ground",
+                  "lock and prove",
+                  "confirm the target",
+                  "confirm where",
+                  "pin the final target",
+                  "target/bundle proof"
+                ]
+              },
+              {
+                "any": [
+                  "do not touch production",
+                  "no production",
+                  "dev-S3",
+                  "validation-safe",
+                  "production side effects off"
+                ]
+              },
+              {
+                "any": [
+                  "do not claim",
+                  "not complete",
+                  "until",
+                  "do not enter",
+                  "before",
+                  "only after"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Warmind/Final parser perf and full validation handoff - 2026-06-04.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "final validation is complete",
+          "all validation passed"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "switzerland-itinerary-revision": {
+        "id": "switzerland-itinerary-revision",
+        "workload": "Switzerland",
+        "capability": "constraint_driven_iteration",
+        "task": "New planning scenario: Radley pickup is now assumed at Milano Malpensa on August 21. Revise the family plan while keeping the family trip at no more than about two weeks, preserving a low-altitude fallback during the first Saas-Fee days, avoiding repetitive mountain-town travel, and giving the reunited family a 3-4 day Italy finish. This is a scenario, not a booking.",
+        "claim_slots": {
+          "c1": "Swiss-side base",
+          "c2": "pickup and Italy sequence",
+          "c3": "trip rhythm and constraints",
+          "c4": "status and next booking work"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "Vevey",
+                  "Montreux",
+                  "Lausanne"
+                ]
+              },
+              {
+                "any": [
+                  "low altitude",
+                  "lakefront"
+                ]
+              },
+              {
+                "any": [
+                  "Saas-Fee",
+                  "Saas Fee",
+                  "return"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "Malpensa",
+                  "MXP"
+                ]
+              },
+              {
+                "any": [
+                  "August 21",
+                  "Aug 21"
+                ]
+              },
+              {
+                "any": [
+                  "Stresa",
+                  "Baveno",
+                  "Lake Maggiore"
+                ]
+              },
+              {
+                "any": [
+                  "3-4",
+                  "3 to 4",
+                  "four calendar days"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "two weeks",
+                  "14 days",
+                  "14 nights"
+                ]
+              },
+              {
+                "any": [
+                  "one anchor",
+                  "breathing room",
+                  "transfer day",
+                  "two principal",
+                  "two settings",
+                  "two bases"
+                ]
+              },
+              {
+                "any": [
+                  "not mountain",
+                  "lake",
+                  "city"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "scenario",
+                  "proposed",
+                  "not booked"
+                ]
+              },
+              {
+                "any": [
+                  "availability",
+                  "lodging",
+                  "flight",
+                  "handoff"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ],
+        "forbidden": [],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "straylight-product-resume": {
+        "id": "straylight-product-resume",
+        "workload": "Straylight",
+        "capability": "project_continuation",
+        "task": "Resume Straylight after the product-framing correction. State what the product is, what durable state it must preserve beyond learned memory, why Obsidian is not the product boundary, why the first benchmark was too narrow, and what the expanded evaluation must now prove.",
+        "claim_slots": {
+          "c1": "correct product category",
+          "c2": "durable work state",
+          "c3": "relationship to Obsidian",
+          "c4": "new evaluation gate"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "agent context",
+                  "durable-work",
+                  "durable work"
+                ]
+              },
+              {
+                "any": [
+                  "agent-first",
+                  "agent first"
+                ]
+              },
+              {
+                "any": [
+                  "learn",
+                  "continue",
+                  "advance",
+                  "continuity"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "goals",
+                  "evidence"
+                ]
+              },
+              {
+                "any": [
+                  "hypotheses",
+                  "plans"
+                ]
+              },
+              {
+                "any": [
+                  "artifacts",
+                  "computations"
+                ]
+              },
+              {
+                "any": [
+                  "open questions",
+                  "rejected",
+                  "checkpoints",
+                  "next actions"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "projection",
+                  "prototype input",
+                  "export"
+                ]
+              },
+              {
+                "any": [
+                  "not the product",
+                  "not canonical",
+                  "not the boundary"
+                ]
+              },
+              {
+                "any": [
+                  "Markdown",
+                  "Obsidian"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "resume",
+                  "continuation"
+                ]
+              },
+              {
+                "any": [
+                  "iterate",
+                  "planning",
+                  "constraints"
+                ]
+              },
+              {
+                "any": [
+                  "compute",
+                  "verify",
+                  "checkpoint",
+                  "next-state"
+                ]
+              },
+              {
+                "any": [
+                  "Warmind",
+                  "StarRupture",
+                  "Switzerland"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Straylight/Straylight.md",
+              "Projects/Straylight/Decisions.md"
+            ]
+          }
+        ],
+        "forbidden": [],
+        "grading_mode": "concept_tokens_v1"
+      }
+    }
+  }
+}

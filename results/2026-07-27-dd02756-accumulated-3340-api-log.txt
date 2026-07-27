@@ -1,0 +1,5 @@
+Source container: straylight-dd02756-cert-api-1
+API image revision: dd02756
+Captured: 2026-07-27
+
+{"timestamp":"2026-07-27T17:40:06.288836Z","level":"WARN","fields":{"message":"slow statement: execution time exceeded alert threshold","summary":"SELECT record_count, chunk_tokens FROM ...","db.statement":"SELECT record_count, chunk_tokens FROM straylight_auth.read_manifest_stats($1, $2, $3)","rows_affected":0,"rows_returned":0,"elapsed":"25.042003595s","elapsed_secs":25.042003595,"slow_threshold":"1s"},"target":"sqlx::query"}

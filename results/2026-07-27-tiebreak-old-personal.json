@@ -1,0 +1,3848 @@
+{
+  "benchmark_version": "personal-coordination-v0.1",
+  "run_at": "2026-07-27T10:30:41-07:00",
+  "run_id": "tiebreak-old-personal-20260727",
+  "harness_sha256": "90159d116b413871fe968b43713175bd1d0775e044a7a056bf66927fd93d3ab5",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "ffbab60f250f0a5eac7341c0b7f25f7416f3b4a437469111086b1fc74b1d3f74",
+  "manifest_sha256": "ad3a20cd4019d9ba574241b78924b51fcf69261d3cab802037ed9dff09abb7a2",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-personal-coordination-v0.1",
+    "sha256": "1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18",
+    "artifact_tree_sha256": "1f2d62e8f27d2309bdb9353ff349277e038a58b4753c6f3199fd608e9c97ff18",
+    "documents": 29,
+    "chunks": 36,
+    "characters": 29352
+  },
+  "manifest": {
+    "benchmark_version": "personal-coordination-v0.1",
+    "name": "Straylight personal coordination evaluation",
+    "report_title": "Straylight personal coordination evaluation",
+    "report_date": "2026-07-11",
+    "evaluation_model": "generalized_personal_coordination",
+    "grading_mode": "concept_tokens_v1",
+    "fixture_domain": "Synthetic personal coordination",
+    "generalization": {
+      "purpose": "Evaluate source-faithful coordination across identity, relationships, events, arrangements, obligations, authority, sensitivity, and resumable work.",
+      "kernel": [
+        "stable objects",
+        "source-bearing claims",
+        "qualified relations",
+        "temporal revisions",
+        "checkpoints"
+      ],
+      "profile_types": [
+        "person",
+        "organization",
+        "group",
+        "place",
+        "event",
+        "arrangement",
+        "resource",
+        "work-item",
+        "artifact"
+      ],
+      "fixture_rule": "Vacation and game examples use the same corpus primitives; fixture vocabulary is not privileged runner schema."
+    },
+    "corpus_root": "eval/corpus-personal-coordination-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "coord-person-dossier",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "derived_person_view",
+        "task": "Reconstruct Kai Rowan's person dossier as a derived view. Identify the claims, role, event, and artifact it joins, preserve provenance, and keep the morning-preference inference from becoming a trait.",
+        "claim_slots": {
+          "c1": "dossier projection boundary",
+          "c2": "joined evidence objects",
+          "c3": "inferred assessment status",
+          "c4": "rebuild and provenance behavior"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "person:p-201"
+                ]
+              },
+              {
+                "any": [
+                  "rebuildable derived view"
+                ]
+              },
+              {
+                "any": [
+                  "not a second canonical person profile"
+                ]
+              }
+            ],
+            "sources_any": [
+              "People/person-dossier-view.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "claim:kai-availability-1"
+                ]
+              },
+              {
+                "any": [
+                  "relation:kai-equipment-steward"
+                ]
+              },
+              {
+                "any": [
+                  "event-occurrence:setup-2026-07-11"
+                ]
+              },
+              {
+                "any": [
+                  "artifact:setup-checklist-v2"
+                ]
+              }
+            ],
+            "sources_any": [
+              "People/dossier-source-claims.json",
+              "People/person-dossier-view.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "assessment:kai-morning-preference"
+                ]
+              },
+              {
+                "any": [
+                  "inferred"
+                ]
+              },
+              {
+                "any": [
+                  "not a trait"
+                ]
+              }
+            ],
+            "sources_any": [
+              "People/dossier-source-claims.json",
+              "People/person-dossier-view.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "Each row retains its source ID"
+                ]
+              },
+              {
+                "any": [
+                  "Rebuilding from the cited source claims"
+                ]
+              },
+              {
+                "any": [
+                  "must not mutate those sources"
+                ]
+              }
+            ],
+            "sources_any": [
+              "People/person-dossier-view.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Kai has a morning trait",
+          "the dossier is the canonical person profile",
+          "the inferred assessment is an observed fact"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "coord-participation-independent-state",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "qualified_participation_state",
+        "task": "Summarize Jules Hart's Field Lab commitment without conflating role, requiredness, response, notification, or delegation. Report each state and the narrow scope of the accepted delegation.",
+        "claim_slots": {
+          "c1": "role and requiredness",
+          "c2": "participant response",
+          "c3": "notification state",
+          "c4": "delegation state and scope"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "participation:501"
+                ]
+              },
+              {
+                "any": [
+                  "equipment lead"
+                ]
+              },
+              {
+                "any": [
+                  "required"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Participation/commitments.csv",
+              "Participation/communication-and-delegation.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "tentative"
+                ]
+              },
+              {
+                "any": [
+                  "person:p-501",
+                  "Jules Hart",
+                  "Jules"
+                ]
+              },
+              {
+                "any": [
+                  "participant response",
+                  "response remains tentative",
+                  "remains tentative",
+                  "not accepted"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Participation/commitments.csv",
+              "Participation/communication-and-delegation.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "notification:notif-501"
+                ]
+              },
+              {
+                "any": [
+                  "delivered"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-10T14:10:00-07:00",
+                  "2026-08-10 at 14:10",
+                  "August 10 at 14:10"
+                ]
+              },
+              {
+                "any": [
+                  "Delivery is not acceptance",
+                  "Neither notification state constitutes or changes participation acceptance",
+                  "does not change Jules's participant response"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Participation/communication-and-delegation.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "delegation:del-501"
+                ]
+              },
+              {
+                "any": [
+                  "accepted delegation"
+                ]
+              },
+              {
+                "any": [
+                  "carry projector kit only"
+                ]
+              },
+              {
+                "any": [
+                  "does not make Jules optional"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Participation/communication-and-delegation.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Jules accepted participation",
+          "delivery means acceptance",
+          "delegation makes Jules optional"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "coord-deadline-readiness",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "obligation_and_readiness_gates",
+        "task": "Assess the Field Lab readiness packet. Identify the responsible person and zoned due time, enumerate prerequisites, evaluate the readiness gate, and distinguish completed evidence from the still-pending inspection and packet.",
+        "claim_slots": {
+          "c1": "responsibility and due time",
+          "c2": "prerequisite states",
+          "c3": "readiness gate",
+          "c4": "completion evidence boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "work-item:readiness-601"
+                ]
+              },
+              {
+                "any": [
+                  "person:p-601"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-14T17:00:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "America/Los_Angeles"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Work/readiness-plan.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "work-item:guardian-consent-602",
+                  "guardian consent 602"
+                ]
+              },
+              {
+                "any": [
+                  "work-item:equipment-inspection-603",
+                  "equipment inspection 603"
+                ]
+              },
+              {
+                "any": [
+                  "work-item:registration-604",
+                  "registration 604"
+                ]
+              },
+              {
+                "any": [
+                  "official schedule revision r2"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Work/readiness-plan.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "gate:field-lab-ready"
+                ]
+              },
+              {
+                "any": [
+                  "blocked"
+                ]
+              },
+              {
+                "any": [
+                  "equipment inspection is pending"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Work/readiness-plan.md",
+              "Work/completion-evidence.json"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "artifact:guardian-consent-602",
+                  "guardian consent completed"
+                ]
+              },
+              {
+                "any": [
+                  "artifact:registration-ledger-604",
+                  "registration completed"
+                ]
+              },
+              {
+                "any": [
+                  "equipment inspection remains pending",
+                  "equipment inspection is still pending",
+                  "equipment inspection is pending",
+                  "equipment inspection pending with no artifact",
+                  "inspection remains pending",
+                  "inspection is pending"
+                ]
+              },
+              {
+                "any": [
+                  "readiness packet itself remains incomplete",
+                  "readiness packet remains incomplete",
+                  "packet itself remains incomplete",
+                  "packet is not complete",
+                  "The packet itself is not complete"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Work/readiness-plan.md",
+              "Work/completion-evidence.json"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the readiness gate is open",
+          "payment proves readiness",
+          "the packet is complete"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "coord-minor-export-policy",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "fact_scoped_authority_and_redaction",
+        "task": "Audit the public projection for minor River K. Explain the guardian's fact-scoped authority, field and relationship sensitivity, the projection's policy/audience/included/withheld/transform receipt, and why organizer schedule authority and the stale family copy remain separate.",
+        "claim_slots": {
+          "c1": "guardian relation and authority scope",
+          "c2": "field and relationship sensitivity",
+          "c3": "auditable redacted projection",
+          "c4": "schedule and inference boundaries"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "relation:guardian-1201"
+                ]
+              },
+              {
+                "any": [
+                  "authority:guardian-1201"
+                ]
+              },
+              {
+                "any": [
+                  "participation consent and sharing/export decisions"
+                ]
+              },
+              {
+                "any": [
+                  "does not let the guardian edit the official event schedule",
+                  "does not authorize editing the official event schedule"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Policy/minor-sharing-policy.md",
+              "Policy/redacted-minor-projection.json"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "restricted_family"
+                ]
+              },
+              {
+                "any": [
+                  "contact_email"
+                ]
+              },
+              {
+                "any": [
+                  "precise_handoff_place"
+                ]
+              },
+              {
+                "any": [
+                  "restricted"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Policy/minor-sharing-policy.md",
+              "Policy/redacted-minor-projection.json"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Participant R."
+                ]
+              },
+              {
+                "any": [
+                  "policy:dependent-schedule@v3"
+                ]
+              },
+              {
+                "any": [
+                  "audience:public"
+                ]
+              },
+              {
+                "any": [
+                  "included_paths",
+                  "includes"
+                ]
+              },
+              {
+                "any": [
+                  "withheld",
+                  "withholds"
+                ]
+              },
+              {
+                "any": [
+                  "replace_internal_identity_with_public_alias",
+                  "public alias"
+                ]
+              },
+              {
+                "any": [
+                  "audit:redaction-1201"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Policy/redacted-minor-projection.json"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "artifact:organizer-field-lab-r2",
+                  "organizer revision r2",
+                  "organizer r2"
+                ]
+              },
+              {
+                "any": [
+                  "schedule_controller",
+                  "organizer authority",
+                  "authority:schedule-401"
+                ]
+              },
+              {
+                "any": [
+                  "family_copy_schedule_authority",
+                  "family copy"
+                ]
+              },
+              {
+                "any": [
+                  "none",
+                  "no schedule authority"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Policy/redacted-minor-projection.json",
+              "Events/schedule-snapshot-r1.md",
+              "Events/schedule-snapshot-r2.md",
+              "Relations/role-authority-review.md",
+              "Policy/minor-sharing-policy.md",
+              "CORPUS.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the guardian edits the official schedule",
+          "export the minor contact email",
+          "the family copy rewrites organizer time"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "coord-person-dossier": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-person-dossier",
+      "display_scope": "Personal Coordination",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDA2NjI5YTMtMjA5ZS00MzJjLThmMjUtN2ZmNTVkOTk2MTllIiwiY3JlZGVudGlhbF9pZCI6Ijk4N2QwNDA5LTI0Y2YtNGYxYi05YmFkLTlmYjk1MDdhZjk3YSIsInNjb3BlX2lkIjoiMTdiMGYwOTMtYWIwNS00MTcyLThjYTktMzI2Mjg0NzhlNWY4IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5YzRiNTkxOWJhYiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5ZWI2YTU3MTc3OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.UaLJ6haPhMAwQwY7M0DXZ1If_MN4UILZD_qHfVhf0e8",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019fa4a005557492a12f49eb6a571778",
+      "corpus_revision": "revision:019fa4a005557492a12f49eb6a571778",
+      "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDA2NjI5YTMtMjA5ZS00MzJjLThmMjUtN2ZmNTVkOTk2MTllIiwiY3JlZGVudGlhbF9pZCI6Ijk4N2QwNDA5LTI0Y2YtNGYxYi05YmFkLTlmYjk1MDdhZjk3YSIsInNjb3BlX2lkIjoiMTdiMGYwOTMtYWIwNS00MTcyLThjYTktMzI2Mjg0NzhlNWY4IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5YzRiNTkxOWJhYiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5ZWI2YTU3MTc3OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.UaLJ6haPhMAwQwY7M0DXZ1If_MN4UILZD_qHfVhf0e8",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 29,
+        "delta_documents": 0,
+        "characters": 29352,
+        "import_http_status": 200,
+        "import_elapsed_ms": 478.001,
+        "import_batch_count": 1,
+        "max_batch_documents": 29,
+        "ready_elapsed_ms": 478.001,
+        "semantic_waited": true,
+        "semantic_ready_at_start": true,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "ready"
+        },
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDA2NjI5YTMtMjA5ZS00MzJjLThmMjUtN2ZmNTVkOTk2MTllIiwiY3JlZGVudGlhbF9pZCI6Ijk4N2QwNDA5LTI0Y2YtNGYxYi05YmFkLTlmYjk1MDdhZjk3YSIsInNjb3BlX2lkIjoiMTdiMGYwOTMtYWIwNS00MTcyLThjYTktMzI2Mjg0NzhlNWY4IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5YzRiNTkxOWJhYiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5ZWI2YTU3MTc3OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.UaLJ6haPhMAwQwY7M0DXZ1If_MN4UILZD_qHfVhf0e8",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDA2NjI5YTMtMjA5ZS00MzJjLThmMjUtN2ZmNTVkOTk2MTllIiwiY3JlZGVudGlhbF9pZCI6Ijk4N2QwNDA5LTI0Y2YtNGYxYi05YmFkLTlmYjk1MDdhZjk3YSIsInNjb3BlX2lkIjoiMTdiMGYwOTMtYWIwNS00MTcyLThjYTktMzI2Mjg0NzhlNWY4IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5YzRiNTkxOWJhYiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5ZWI2YTU3MTc3OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.UaLJ6haPhMAwQwY7M0DXZ1If_MN4UILZD_qHfVhf0e8",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-person-dossier",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:006629a3209e432c8f257ff55d99619e",
+          "scope_id": "scope:17b0f093ab0541728ca932628478e5f8",
+          "credential_id": "credential:987d040924cf4f1b9bad9fb9507af97a",
+          "base_corpus_revision": "revision:019fa4a005557492a12f49eb6a571778",
+          "corpus_revision": "revision:019fa4a005557492a12f49eb6a571778",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDA2NjI5YTMtMjA5ZS00MzJjLThmMjUtN2ZmNTVkOTk2MTllIiwiY3JlZGVudGlhbF9pZCI6Ijk4N2QwNDA5LTI0Y2YtNGYxYi05YmFkLTlmYjk1MDdhZjk3YSIsInNjb3BlX2lkIjoiMTdiMGYwOTMtYWIwNS00MTcyLThjYTktMzI2Mjg0NzhlNWY4IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5YzRiNTkxOWJhYiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5ZWI2YTU3MTc3OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.UaLJ6haPhMAwQwY7M0DXZ1If_MN4UILZD_qHfVhf0e8",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMDA2NjI5YTMtMjA5ZS00MzJjLThmMjUtN2ZmNTVkOTk2MTllIiwiY3JlZGVudGlhbF9pZCI6Ijk4N2QwNDA5LTI0Y2YtNGYxYi05YmFkLTlmYjk1MDdhZjk3YSIsInNjb3BlX2lkIjoiMTdiMGYwOTMtYWIwNS00MTcyLThjYTktMzI2Mjg0NzhlNWY4IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5YzRiNTkxOWJhYiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA1NTUtNzQ5Mi1hMTJmLTQ5ZWI2YTU3MTc3OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.UaLJ6haPhMAwQwY7M0DXZ1If_MN4UILZD_qHfVhf0e8",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-person-dossier",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:006629a3209e432c8f257ff55d99619e",
+          "scope_id": "scope:17b0f093ab0541728ca932628478e5f8",
+          "credential_id": "credential:987d040924cf4f1b9bad9fb9507af97a",
+          "base_corpus_revision": "revision:019fa4a005557492a12f49eb6a571778",
+          "corpus_revision": "revision:019fa4a005557492a12f49eb6a571778",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "coord-participation-independent-state": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-participation-independent-state",
+      "display_scope": "Personal Coordination",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZmExYjhiMDQtOTExMi00Yzg2LWJhNTAtZmYwNzg2YTRiMWQ2IiwiY3JlZGVudGlhbF9pZCI6ImJjMzIzYzcwLTgyMGQtNDVhMS1iOGYxLWMwMDdkYWFiZmM0YiIsInNjb3BlX2lkIjoiYmJiNTE4MTYtODFhMC00ZGZjLTgwMTMtYzY5YTJmMDIzYTg5IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxNjgwOTYyMzI4ZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxODlhYTVkMjQ5OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.YZRc6Z6uyi7CygrqAcrrsZ90dDLplWwSa5S12y9Dh8Y",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019fa4a007087d52bec37189aa5d2498",
+      "corpus_revision": "revision:019fa4a007087d52bec37189aa5d2498",
+      "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZmExYjhiMDQtOTExMi00Yzg2LWJhNTAtZmYwNzg2YTRiMWQ2IiwiY3JlZGVudGlhbF9pZCI6ImJjMzIzYzcwLTgyMGQtNDVhMS1iOGYxLWMwMDdkYWFiZmM0YiIsInNjb3BlX2lkIjoiYmJiNTE4MTYtODFhMC00ZGZjLTgwMTMtYzY5YTJmMDIzYTg5IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxNjgwOTYyMzI4ZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxODlhYTVkMjQ5OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.YZRc6Z6uyi7CygrqAcrrsZ90dDLplWwSa5S12y9Dh8Y",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 29,
+        "delta_documents": 0,
+        "characters": 29352,
+        "import_http_status": 200,
+        "import_elapsed_ms": 448.722,
+        "import_batch_count": 1,
+        "max_batch_documents": 29,
+        "ready_elapsed_ms": 448.722,
+        "semantic_waited": true,
+        "semantic_ready_at_start": true,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "ready"
+        },
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZmExYjhiMDQtOTExMi00Yzg2LWJhNTAtZmYwNzg2YTRiMWQ2IiwiY3JlZGVudGlhbF9pZCI6ImJjMzIzYzcwLTgyMGQtNDVhMS1iOGYxLWMwMDdkYWFiZmM0YiIsInNjb3BlX2lkIjoiYmJiNTE4MTYtODFhMC00ZGZjLTgwMTMtYzY5YTJmMDIzYTg5IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxNjgwOTYyMzI4ZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxODlhYTVkMjQ5OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.YZRc6Z6uyi7CygrqAcrrsZ90dDLplWwSa5S12y9Dh8Y",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZmExYjhiMDQtOTExMi00Yzg2LWJhNTAtZmYwNzg2YTRiMWQ2IiwiY3JlZGVudGlhbF9pZCI6ImJjMzIzYzcwLTgyMGQtNDVhMS1iOGYxLWMwMDdkYWFiZmM0YiIsInNjb3BlX2lkIjoiYmJiNTE4MTYtODFhMC00ZGZjLTgwMTMtYzY5YTJmMDIzYTg5IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxNjgwOTYyMzI4ZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxODlhYTVkMjQ5OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.YZRc6Z6uyi7CygrqAcrrsZ90dDLplWwSa5S12y9Dh8Y",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-participation-independent-state",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:fa1b8b0491124c86ba50ff0786a4b1d6",
+          "scope_id": "scope:bbb5181681a04dfc8013c69a2f023a89",
+          "credential_id": "credential:bc323c70820d45a1b8f1c007daabfc4b",
+          "base_corpus_revision": "revision:019fa4a007087d52bec37189aa5d2498",
+          "corpus_revision": "revision:019fa4a007087d52bec37189aa5d2498",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZmExYjhiMDQtOTExMi00Yzg2LWJhNTAtZmYwNzg2YTRiMWQ2IiwiY3JlZGVudGlhbF9pZCI6ImJjMzIzYzcwLTgyMGQtNDVhMS1iOGYxLWMwMDdkYWFiZmM0YiIsInNjb3BlX2lkIjoiYmJiNTE4MTYtODFhMC00ZGZjLTgwMTMtYzY5YTJmMDIzYTg5IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxNjgwOTYyMzI4ZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxODlhYTVkMjQ5OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.YZRc6Z6uyi7CygrqAcrrsZ90dDLplWwSa5S12y9Dh8Y",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiZmExYjhiMDQtOTExMi00Yzg2LWJhNTAtZmYwNzg2YTRiMWQ2IiwiY3JlZGVudGlhbF9pZCI6ImJjMzIzYzcwLTgyMGQtNDVhMS1iOGYxLWMwMDdkYWFiZmM0YiIsInNjb3BlX2lkIjoiYmJiNTE4MTYtODFhMC00ZGZjLTgwMTMtYzY5YTJmMDIzYTg5IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxNjgwOTYyMzI4ZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA3MDgtN2Q1Mi1iZWMzLTcxODlhYTVkMjQ5OCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.YZRc6Z6uyi7CygrqAcrrsZ90dDLplWwSa5S12y9Dh8Y",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-participation-independent-state",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:fa1b8b0491124c86ba50ff0786a4b1d6",
+          "scope_id": "scope:bbb5181681a04dfc8013c69a2f023a89",
+          "credential_id": "credential:bc323c70820d45a1b8f1c007daabfc4b",
+          "base_corpus_revision": "revision:019fa4a007087d52bec37189aa5d2498",
+          "corpus_revision": "revision:019fa4a007087d52bec37189aa5d2498",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "coord-deadline-readiness": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-deadline-readiness",
+      "display_scope": "Personal Coordination",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGUxM2JhY2MtZWE3NC00ZWJlLWFkNmItMzYzOTA4ZWY0YjI4IiwiY3JlZGVudGlhbF9pZCI6ImUwMGYyZDYzLTY1NWMtNDE4MC05MTVhLWZhODNmYzlkN2M1ZCIsInNjb3BlX2lkIjoiNGEzNTAyMGItZDQwZS00MDQzLWJiMGYtNzQ2ZWMyMzI3NTEyIiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MWM1NzI3MDUwMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MzEwZDc4MzhkZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.I_w5sTjUVGzhXNBcfNLPSm3ibyqb19v-qRmjefeYRn0",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019fa4a0087777238555c4310d7838dd",
+      "corpus_revision": "revision:019fa4a0087777238555c4310d7838dd",
+      "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGUxM2JhY2MtZWE3NC00ZWJlLWFkNmItMzYzOTA4ZWY0YjI4IiwiY3JlZGVudGlhbF9pZCI6ImUwMGYyZDYzLTY1NWMtNDE4MC05MTVhLWZhODNmYzlkN2M1ZCIsInNjb3BlX2lkIjoiNGEzNTAyMGItZDQwZS00MDQzLWJiMGYtNzQ2ZWMyMzI3NTEyIiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MWM1NzI3MDUwMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MzEwZDc4MzhkZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.I_w5sTjUVGzhXNBcfNLPSm3ibyqb19v-qRmjefeYRn0",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 29,
+        "delta_documents": 0,
+        "characters": 29352,
+        "import_http_status": 200,
+        "import_elapsed_ms": 319.857,
+        "import_batch_count": 1,
+        "max_batch_documents": 29,
+        "ready_elapsed_ms": 319.857,
+        "semantic_waited": true,
+        "semantic_ready_at_start": true,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "ready"
+        },
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGUxM2JhY2MtZWE3NC00ZWJlLWFkNmItMzYzOTA4ZWY0YjI4IiwiY3JlZGVudGlhbF9pZCI6ImUwMGYyZDYzLTY1NWMtNDE4MC05MTVhLWZhODNmYzlkN2M1ZCIsInNjb3BlX2lkIjoiNGEzNTAyMGItZDQwZS00MDQzLWJiMGYtNzQ2ZWMyMzI3NTEyIiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MWM1NzI3MDUwMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MzEwZDc4MzhkZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.I_w5sTjUVGzhXNBcfNLPSm3ibyqb19v-qRmjefeYRn0",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGUxM2JhY2MtZWE3NC00ZWJlLWFkNmItMzYzOTA4ZWY0YjI4IiwiY3JlZGVudGlhbF9pZCI6ImUwMGYyZDYzLTY1NWMtNDE4MC05MTVhLWZhODNmYzlkN2M1ZCIsInNjb3BlX2lkIjoiNGEzNTAyMGItZDQwZS00MDQzLWJiMGYtNzQ2ZWMyMzI3NTEyIiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MWM1NzI3MDUwMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MzEwZDc4MzhkZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.I_w5sTjUVGzhXNBcfNLPSm3ibyqb19v-qRmjefeYRn0",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-deadline-readiness",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:0e13baccea744ebead6b363908ef4b28",
+          "scope_id": "scope:4a35020bd40e4043bb0f746ec2327512",
+          "credential_id": "credential:e00f2d63655c4180915afa83fc9d7c5d",
+          "base_corpus_revision": "revision:019fa4a0087777238555c4310d7838dd",
+          "corpus_revision": "revision:019fa4a0087777238555c4310d7838dd",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGUxM2JhY2MtZWE3NC00ZWJlLWFkNmItMzYzOTA4ZWY0YjI4IiwiY3JlZGVudGlhbF9pZCI6ImUwMGYyZDYzLTY1NWMtNDE4MC05MTVhLWZhODNmYzlkN2M1ZCIsInNjb3BlX2lkIjoiNGEzNTAyMGItZDQwZS00MDQzLWJiMGYtNzQ2ZWMyMzI3NTEyIiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MWM1NzI3MDUwMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MzEwZDc4MzhkZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.I_w5sTjUVGzhXNBcfNLPSm3ibyqb19v-qRmjefeYRn0",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGUxM2JhY2MtZWE3NC00ZWJlLWFkNmItMzYzOTA4ZWY0YjI4IiwiY3JlZGVudGlhbF9pZCI6ImUwMGYyZDYzLTY1NWMtNDE4MC05MTVhLWZhODNmYzlkN2M1ZCIsInNjb3BlX2lkIjoiNGEzNTAyMGItZDQwZS00MDQzLWJiMGYtNzQ2ZWMyMzI3NTEyIiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MWM1NzI3MDUwMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA4NzctNzcyMy04NTU1LWM0MzEwZDc4MzhkZCIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.I_w5sTjUVGzhXNBcfNLPSm3ibyqb19v-qRmjefeYRn0",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-deadline-readiness",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:0e13baccea744ebead6b363908ef4b28",
+          "scope_id": "scope:4a35020bd40e4043bb0f746ec2327512",
+          "credential_id": "credential:e00f2d63655c4180915afa83fc9d7c5d",
+          "base_corpus_revision": "revision:019fa4a0087777238555c4310d7838dd",
+          "corpus_revision": "revision:019fa4a0087777238555c4310d7838dd",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "coord-minor-export-policy": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-minor-export-policy",
+      "display_scope": "Personal Coordination",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNDU3NDRjOTAtMjAzZi00NGM4LTllMzEtNzJkMWMyNjRiYmRjIiwiY3JlZGVudGlhbF9pZCI6IjJiNzJlYjlkLTA4ZWMtNDQ0OC05YjlhLTBmZmM0N2MxOTkwMiIsInNjb3BlX2lkIjoiZGM4MTE2YWMtZWRjMy00ZjRmLWIzYjctNDNmMWM5MjAyMGI0IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYWU2NWI3NzMxMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYzE5MTE5M2U5YyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G_HessIDRenV4_lTmy0aYRtXvuW8TkjrpmA3VfK6E3w",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019fa4a009967ab297161fc191193e9c",
+      "corpus_revision": "revision:019fa4a009967ab297161fc191193e9c",
+      "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNDU3NDRjOTAtMjAzZi00NGM4LTllMzEtNzJkMWMyNjRiYmRjIiwiY3JlZGVudGlhbF9pZCI6IjJiNzJlYjlkLTA4ZWMtNDQ0OC05YjlhLTBmZmM0N2MxOTkwMiIsInNjb3BlX2lkIjoiZGM4MTE2YWMtZWRjMy00ZjRmLWIzYjctNDNmMWM5MjAyMGI0IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYWU2NWI3NzMxMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYzE5MTE5M2U5YyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G_HessIDRenV4_lTmy0aYRtXvuW8TkjrpmA3VfK6E3w",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 29,
+        "delta_documents": 0,
+        "characters": 29352,
+        "import_http_status": 200,
+        "import_elapsed_ms": 278.572,
+        "import_batch_count": 1,
+        "max_batch_documents": 29,
+        "ready_elapsed_ms": 278.572,
+        "semantic_waited": true,
+        "semantic_ready_at_start": true,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "ready"
+        },
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNDU3NDRjOTAtMjAzZi00NGM4LTllMzEtNzJkMWMyNjRiYmRjIiwiY3JlZGVudGlhbF9pZCI6IjJiNzJlYjlkLTA4ZWMtNDQ0OC05YjlhLTBmZmM0N2MxOTkwMiIsInNjb3BlX2lkIjoiZGM4MTE2YWMtZWRjMy00ZjRmLWIzYjctNDNmMWM5MjAyMGI0IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYWU2NWI3NzMxMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYzE5MTE5M2U5YyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G_HessIDRenV4_lTmy0aYRtXvuW8TkjrpmA3VfK6E3w",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNDU3NDRjOTAtMjAzZi00NGM4LTllMzEtNzJkMWMyNjRiYmRjIiwiY3JlZGVudGlhbF9pZCI6IjJiNzJlYjlkLTA4ZWMtNDQ0OC05YjlhLTBmZmM0N2MxOTkwMiIsInNjb3BlX2lkIjoiZGM4MTE2YWMtZWRjMy00ZjRmLWIzYjctNDNmMWM5MjAyMGI0IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYWU2NWI3NzMxMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYzE5MTE5M2U5YyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G_HessIDRenV4_lTmy0aYRtXvuW8TkjrpmA3VfK6E3w",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-minor-export-policy",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:45744c90203f44c89e3172d1c264bbdc",
+          "scope_id": "scope:dc8116acedc34f4fb3b743f1c92020b4",
+          "credential_id": "credential:2b72eb9d08ec44489b9a0ffc47c19902",
+          "base_corpus_revision": "revision:019fa4a009967ab297161fc191193e9c",
+          "corpus_revision": "revision:019fa4a009967ab297161fc191193e9c",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNDU3NDRjOTAtMjAzZi00NGM4LTllMzEtNzJkMWMyNjRiYmRjIiwiY3JlZGVudGlhbF9pZCI6IjJiNzJlYjlkLTA4ZWMtNDQ0OC05YjlhLTBmZmM0N2MxOTkwMiIsInNjb3BlX2lkIjoiZGM4MTE2YWMtZWRjMy00ZjRmLWIzYjctNDNmMWM5MjAyMGI0IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYWU2NWI3NzMxMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYzE5MTE5M2U5YyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G_HessIDRenV4_lTmy0aYRtXvuW8TkjrpmA3VfK6E3w",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNDU3NDRjOTAtMjAzZi00NGM4LTllMzEtNzJkMWMyNjRiYmRjIiwiY3JlZGVudGlhbF9pZCI6IjJiNzJlYjlkLTA4ZWMtNDQ0OC05YjlhLTBmZmM0N2MxOTkwMiIsInNjb3BlX2lkIjoiZGM4MTE2YWMtZWRjMy00ZjRmLWIzYjctNDNmMWM5MjAyMGI0IiwicmVjZWlwdF9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYWU2NWI3NzMxMSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNGEwLTA5OTYtN2FiMi05NzE2LTFmYzE5MTE5M2U5YyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.G_HessIDRenV4_lTmy0aYRtXvuW8TkjrpmA3VfK6E3w",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-personal-20260727/coord-minor-export-policy",
+          "display_scope": "Personal Coordination",
+          "access_mode": "read_write",
+          "user_id": "user:45744c90203f44c89e3172d1c264bbdc",
+          "scope_id": "scope:dc8116acedc34f4fb3b743f1c92020b4",
+          "credential_id": "credential:2b72eb9d08ec44489b9a0ffc47c19902",
+          "base_corpus_revision": "revision:019fa4a009967ab297161fc191193e9c",
+          "corpus_revision": "revision:019fa4a009967ab297161fc191193e9c",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 29,
+            "chunks": 36,
+            "embeddings": 36
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 29,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "service_protocol": "legacy",
+  "records": [
+    {
+      "case_id": "coord-person-dossier",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 35.711,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/tiebreak-old-personal-20260727/service_api/coord-person-dossier/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Kai Rowan\u2019s dossier is a rebuildable, provenance-preserving derived view over canonical evidence; the morning preference remains an inference, never a trait.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "As of 2026-07-09T18:00:00-07:00, the dossier identifies person:p-201 as Kai Rowan through claim:name-kai-r1. It is a rebuildable derived projection, not a second canonical person profile.",
+            "source_paths": [
+              "People/person-dossier-view.md",
+              "People/dossier-source-claims.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The dossier joins claim:kai-availability-1 (reported available_for \u201cSaturday setup,\u201d source:kai-message-2026-07-06); relation:kai-equipment-steward (equipment steward for group:g-101, source:crew-roster-r4); accepted event-occurrence:setup-2026-07-11 (source:signup-r3); and artifact:setup-checklist-v2, authored by person:p-201 (source:artifact-ledger-r2). Each row retains its source ID.",
+            "source_paths": [
+              "People/person-dossier-view.md",
+              "People/dossier-source-claims.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "assessment:kai-morning-preference states \u201cKai tends to prefer morning setup.\u201d Its epistemic status is inferred, its basis is source:signup-r2 and source:signup-r3, it expires on new contrary evidence, and its promotion status is not_a_trait; it must not become a trait.",
+            "source_paths": [
+              "People/person-dossier-view.md",
+              "People/dossier-source-claims.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Rebuilding from the cited source claims, qualified role relation, event occurrence, and artifact must reproduce the dossier while retaining provenance and source IDs. Editing the projection must not mutate its sources; source snapshots remain intact, later authoritative revisions may supersede claims without deleting them, and inferred assessments never silently become traits.",
+            "source_paths": [
+              "People/person-dossier-view.md",
+              "CORPUS.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Reconstruct Kai Rowan\u2019s person dossier as a provenance-preserving derived view.",
+          "current_state": [
+            "All four requested facets were verified from the pinned initial packet.",
+            "Checkpoint checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f was committed."
+          ],
+          "decisions": [
+            "Treat the dossier as a rebuildable projection, not a canonical profile.",
+            "Keep assessment:kai-morning-preference inferred and not_a_trait.",
+            "Retain row-level source IDs and never mutate sources through projection edits."
+          ],
+          "open_questions": [],
+          "next_actions": [
+            "No further retrieval is required for the requested dossier."
+          ],
+          "artifacts": [
+            "People/person-dossier-view.md",
+            "People/dossier-source-claims.json",
+            "CORPUS.md",
+            "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8867,
+        "pass": false,
+        "claims_passed": 2,
+        "claims_total": 4,
+        "claim_score": 0.8666,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 8,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "person:p-201"
+                ],
+                "matched": "person:p-201"
+              },
+              {
+                "alternatives": [
+                  "rebuildable derived view"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "not a second canonical person profile"
+                ],
+                "matched": "not a second canonical person profile"
+              }
+            ],
+            "citations": [
+              "People/person-dossier-view.md",
+              "People/dossier-source-claims.json"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "claim:kai-availability-1"
+                ],
+                "matched": "claim:kai-availability-1"
+              },
+              {
+                "alternatives": [
+                  "relation:kai-equipment-steward"
+                ],
+                "matched": "relation:kai-equipment-steward"
+              },
+              {
+                "alternatives": [
+                  "event-occurrence:setup-2026-07-11"
+                ],
+                "matched": "event-occurrence:setup-2026-07-11"
+              },
+              {
+                "alternatives": [
+                  "artifact:setup-checklist-v2"
+                ],
+                "matched": "artifact:setup-checklist-v2"
+              }
+            ],
+            "citations": [
+              "People/person-dossier-view.md",
+              "People/dossier-source-claims.json"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "assessment:kai-morning-preference"
+                ],
+                "matched": "assessment:kai-morning-preference"
+              },
+              {
+                "alternatives": [
+                  "inferred"
+                ],
+                "matched": "inferred"
+              },
+              {
+                "alternatives": [
+                  "not a trait"
+                ],
+                "matched": "not a trait"
+              }
+            ],
+            "citations": [
+              "People/person-dossier-view.md",
+              "People/dossier-source-claims.json"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 0.7333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Each row retains its source ID"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "Rebuilding from the cited source claims"
+                ],
+                "matched": "Rebuilding from the cited source claims"
+              },
+              {
+                "alternatives": [
+                  "must not mutate those sources"
+                ],
+                "matched": "must not mutate those sources"
+              }
+            ],
+            "citations": [
+              "People/person-dossier-view.md",
+              "CORPUS.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 12,
+        "commands": 3,
+        "command_output_chars": 17674,
+        "tokens": {
+          "input_tokens": 64364,
+          "cached_input_tokens": 46152,
+          "output_tokens": 1719
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T10:29:46.534-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa4a0239c7cf0a24eacb6a4cdebdc",
+          "elapsed_ms": 413.387,
+          "result_chars": 15903,
+          "source_text_chars": 9634,
+          "metadata_chars": 6269,
+          "evidence_items": 12,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Briefs/change-impact.md",
+            "CORPUS.md",
+            "Continuity/game-checkpoint.md",
+            "Continuity/vacation-checkpoint.md",
+            "Events/schedule-snapshot-r1.md",
+            "Events/schedule-snapshot-r2.md",
+            "Identity/equivalence-reversal.md",
+            "People/dossier-source-claims.json",
+            "People/person-dossier-view.md",
+            "Policy/minor-sharing-policy.md",
+            "Relations/role-authority-review.md",
+            "Relations/role-relations.json"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:30:06.658-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa4a0739f7193b4a96cc53c26d40b",
+          "elapsed_ms": 52.249,
+          "result_chars": 835,
+          "source_text_chars": 0,
+          "metadata_chars": 835,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 2,
+      "service_result_chars": 16738,
+      "service_source_text_chars": 9634,
+      "service_metadata_chars": 7104,
+      "service_replay_weighted_chars": 32641,
+      "service_latency_ms": 465.636,
+      "service_http_calls": 2,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019fa4a0-0555-7492-a12f-49eb6a571778",
+        "checkpoint_id": "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f",
+        "corpus_revision": "revision:019fa4a0-73b1-7b12-b90c-08b64998f359",
+        "created": [
+          {
+            "id": "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "987d0409-24cf-4f1b-9bad-9fb9507af97a",
+        "deduplicated": [],
+        "id": "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f",
+        "idempotency_key": "eval-checkpoint:session:019fa4a023ba78b39992d41adf34f5a6:462773f2d029ddc1d9e7013f55d83cfbfed93bdb430d0a9cf48c0dfe6368fdc9",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa4a0-73b1-7b12-b90c-08b64998f359",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "evidence:019fa4a003dd7042a44957b557c68a87",
+                "evidence:019fa4a003dc7291b1e04060cb9b68a5",
+                "evidence:019fa4a003db7b53870f5e473031136b"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:279d4423e39fc4b2fab5046fe7f89526373654f6c77a7d0d8a91f904c22b7815",
+        "operation_id": "operation:019fa4a0-73ae-7753-9c4a-e18fdf4dc2c4",
+        "policy": {
+          "policy_id": "538345d3-7082-4794-ac91-de5f6e6a72e5",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa4a0-73ae-7753-9c4a-e18fdf4dc2c4",
+        "replayed": false,
+        "request_hash": "sha256:764975533fb0d544ab9c3f936dbce6862f7ea132c532dc1903968a9ddb06a4ea",
+        "resulting_corpus_revision": "revision:019fa4a0-73b1-7b12-b90c-08b64998f359",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa4a023ba78b39992d41adf34f5a6",
+        "status": "committed",
+        "user_id": "user:006629a3209e432c8f257ff55d99619e"
+      },
+      "service_session_id": "session:019fa4a023ba78b39992d41adf34f5a6",
+      "service_corpus_revision": "revision:019fa4a0-73b1-7b12-b90c-08b64998f359",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T10:29:46.534-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa4a0239c7cf0a24eacb6a4cdebdc",
+          "elapsed_ms": 413.387,
+          "result_chars": 15903,
+          "source_text_chars": 9634,
+          "metadata_chars": 6269,
+          "evidence_items": 12,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Briefs/change-impact.md",
+            "CORPUS.md",
+            "Continuity/game-checkpoint.md",
+            "Continuity/vacation-checkpoint.md",
+            "Events/schedule-snapshot-r1.md",
+            "Events/schedule-snapshot-r2.md",
+            "Identity/equivalence-reversal.md",
+            "People/dossier-source-claims.json",
+            "People/person-dossier-view.md",
+            "Policy/minor-sharing-policy.md",
+            "Relations/role-authority-review.md",
+            "Relations/role-relations.json"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:30:06.658-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa4a0739f7193b4a96cc53c26d40b",
+          "elapsed_ms": 52.249,
+          "result_chars": 835,
+          "source_text_chars": 0,
+          "metadata_chars": 835,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 16738,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019fa4a0-0555-7492-a12f-49eb6a571778",
+        "checkpoint_id": "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f",
+        "corpus_revision": "revision:019fa4a0-73b1-7b12-b90c-08b64998f359",
+        "created": [
+          {
+            "id": "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "987d0409-24cf-4f1b-9bad-9fb9507af97a",
+        "deduplicated": [],
+        "id": "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f",
+        "idempotency_key": "eval-checkpoint:session:019fa4a023ba78b39992d41adf34f5a6:462773f2d029ddc1d9e7013f55d83cfbfed93bdb430d0a9cf48c0dfe6368fdc9",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa4a0-73b1-7b12-b90c-08b64998f359",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "evidence:019fa4a003dd7042a44957b557c68a87",
+                "evidence:019fa4a003dc7291b1e04060cb9b68a5",
+                "evidence:019fa4a003db7b53870f5e473031136b"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:279d4423e39fc4b2fab5046fe7f89526373654f6c77a7d0d8a91f904c22b7815",
+        "operation_id": "operation:019fa4a0-73ae-7753-9c4a-e18fdf4dc2c4",
+        "policy": {
+          "policy_id": "538345d3-7082-4794-ac91-de5f6e6a72e5",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa4a0-73ae-7753-9c4a-e18fdf4dc2c4",
+        "replayed": false,
+        "request_hash": "sha256:764975533fb0d544ab9c3f936dbce6862f7ea132c532dc1903968a9ddb06a4ea",
+        "resulting_corpus_revision": "revision:019fa4a0-73b1-7b12-b90c-08b64998f359",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa4a0-73b1-7b12-b90c-08aee4c7ac9f"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa4a023ba78b39992d41adf34f5a6",
+        "status": "committed",
+        "user_id": "user:006629a3209e432c8f257ff55d99619e"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "coord-participation-independent-state",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 31.319,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/tiebreak-old-personal-20260727/service_api/coord-participation-independent-state/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Jules remains the required equipment lead with a tentative response. The organizer update was delivered, but delivery was not acceptance; the corrected-time acknowledgment request remains undelivered. A separate accepted delegation covers only carrying the projector kit and changes neither Jules\u2019s commitment nor schedule authority.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "For participation:501, Jules Hart is the required equipment lead for event-occurrence:field-lab-2026-08-16.",
+            "source_paths": [
+              "Participation/commitments.csv"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Jules Hart\u2019s participant response for participation:501 remains tentative; neither notification delivery nor the accepted delegation changes it to accepted.",
+            "source_paths": [
+              "Participation/commitments.csv",
+              "Participation/communication-and-delegation.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Organizer update notification:notif-501 was delivered to Jules at 2026-08-10T14:10:00-07:00 from source:delivery-log-r2, but delivery is not acceptance. The separate corrected-time acknowledgment request notification:notif-502 has not yet been delivered, and neither notification changes Jules\u2019s tentative response.",
+            "source_paths": [
+              "Participation/communication-and-delegation.md",
+              "Briefs/weekly-source-digest.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Delegation:del-501 is a separate accepted delegation from person:p-501 to person:p-502, accepted at 2026-08-11T08:20:00-07:00 from source:delegation-message-r1. Its scope is only \u201ccarry projector kit only\u201d; it does not make Jules optional, change Jules\u2019s tentative response, or transfer schedule authority.",
+            "source_paths": [
+              "Participation/communication-and-delegation.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Summarize Jules Hart\u2019s Field Lab commitment while keeping role, requiredness, response, notification, and delegation independent.",
+          "current_state": [
+            "Jules is the required equipment lead and remains tentative.",
+            "notification:notif-501 was delivered; notification:notif-502 remains undelivered.",
+            "delegation:del-501 was accepted solely for carrying the projector kit."
+          ],
+          "decisions": [
+            "Notification delivery was not treated as participation acceptance.",
+            "The narrow delegation was not treated as changing requiredness, response, or schedule authority.",
+            "Checkpoint checkpoint:019fa4a0-586b-7a32-9701-335d70388204 was committed."
+          ],
+          "open_questions": [],
+          "next_actions": [],
+          "artifacts": [
+            "Participation/commitments.csv",
+            "Participation/communication-and-delegation.md",
+            "Briefs/weekly-source-digest.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.975,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 0.75,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": false,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 6,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "participation:501"
+                ],
+                "matched": "participation:501"
+              },
+              {
+                "alternatives": [
+                  "equipment lead"
+                ],
+                "matched": "equipment lead"
+              },
+              {
+                "alternatives": [
+                  "required"
+                ],
+                "matched": "required"
+              }
+            ],
+            "citations": [
+              "Participation/commitments.csv"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "tentative"
+                ],
+                "matched": "tentative"
+              },
+              {
+                "alternatives": [
+                  "person:p-501",
+                  "Jules Hart",
+                  "Jules"
+                ],
+                "matched": "Jules Hart"
+              },
+              {
+                "alternatives": [
+                  "participant response",
+                  "response remains tentative",
+                  "remains tentative",
+                  "not accepted"
+                ],
+                "matched": "participant response"
+              }
+            ],
+            "citations": [
+              "Participation/commitments.csv",
+              "Participation/communication-and-delegation.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "notification:notif-501"
+                ],
+                "matched": "notification:notif-501"
+              },
+              {
+                "alternatives": [
+                  "delivered"
+                ],
+                "matched": "delivered"
+              },
+              {
+                "alternatives": [
+                  "2026-08-10T14:10:00-07:00",
+                  "2026-08-10 at 14:10",
+                  "August 10 at 14:10"
+                ],
+                "matched": "2026-08-10T14:10:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "Delivery is not acceptance",
+                  "Neither notification state constitutes or changes participation acceptance",
+                  "does not change Jules's participant response"
+                ],
+                "matched": "Delivery is not acceptance"
+              }
+            ],
+            "citations": [
+              "Participation/communication-and-delegation.md",
+              "Briefs/weekly-source-digest.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "delegation:del-501"
+                ],
+                "matched": "delegation:del-501"
+              },
+              {
+                "alternatives": [
+                  "accepted delegation"
+                ],
+                "matched": "accepted delegation"
+              },
+              {
+                "alternatives": [
+                  "carry projector kit only"
+                ],
+                "matched": "carry projector kit only"
+              },
+              {
+                "alternatives": [
+                  "does not make Jules optional"
+                ],
+                "matched": "does not make Jules optional"
+              }
+            ],
+            "citations": [
+              "Participation/communication-and-delegation.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 12,
+        "commands": 3,
+        "command_output_chars": 16685,
+        "tokens": {
+          "input_tokens": 63708,
+          "cached_input_tokens": 45716,
+          "output_tokens": 1927
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T10:29:46.890-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa4a025f87391a9df5af2d23e036e",
+          "elapsed_ms": 161.286,
+          "result_chars": 14958,
+          "source_text_chars": 8905,
+          "metadata_chars": 6053,
+          "evidence_items": 12,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Authorization/read-only-capability-contract.md",
+            "Briefs/change-impact.md",
+            "Briefs/weekly-source-digest.md",
+            "CORPUS.md",
+            "Continuity/game-checkpoint.md",
+            "Events/schedule-snapshot-r2.md",
+            "Logistics/handoff-plan.md",
+            "Participation/commitments.csv",
+            "Participation/communication-and-delegation.md",
+            "People/person-dossier-view.md",
+            "Policy/minor-sharing-policy.md",
+            "Relations/role-authority-review.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:29:59.693-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa4a058547c8094e62c39c8122d17",
+          "elapsed_ms": 71.148,
+          "result_chars": 791,
+          "source_text_chars": 0,
+          "metadata_chars": 791,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 2,
+      "service_result_chars": 15749,
+      "service_source_text_chars": 8905,
+      "service_metadata_chars": 6844,
+      "service_replay_weighted_chars": 30707,
+      "service_latency_ms": 232.434,
+      "service_http_calls": 2,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019fa4a0-0708-7d52-bec3-7189aa5d2498",
+        "checkpoint_id": "checkpoint:019fa4a0-586b-7a32-9701-335d70388204",
+        "corpus_revision": "revision:019fa4a0-586b-7a32-9701-336d4d90dab4",
+        "created": [
+          {
+            "id": "checkpoint:019fa4a0-586b-7a32-9701-335d70388204",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "bc323c70-820d-45a1-b8f1-c007daabfc4b",
+        "deduplicated": [],
+        "id": "checkpoint:019fa4a0-586b-7a32-9701-335d70388204",
+        "idempotency_key": "eval-checkpoint:session:019fa4a0260077d18427e628dbae2b9f:cafb7eb04e4d16598f055a6d74c3efa01693a737f4541cae3a954a952e5f4f07",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa4a0-586b-7a32-9701-336d4d90dab4",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "evidence:019fa4a005b17720adb1dc4c98c5c8ab",
+                "evidence:019fa4a005b270d28212d5cdd06becc7"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa4a0-586b-7a32-9701-335d70388204",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:acd4c810dca3418fb832bc14414f7b5f90b5d51778d911ba462d57f373fa2bdf",
+        "operation_id": "operation:019fa4a0-5865-79e2-8486-37e3a8ea3e71",
+        "policy": {
+          "policy_id": "ac71a97d-5728-4d42-bb3a-b307da08bdff",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa4a0-5865-79e2-8486-37e3a8ea3e71",
+        "replayed": false,
+        "request_hash": "sha256:68a690dd08e46f2099338bf5adbcf66fba9fce031016d39b009c612c7f0b9c21",
+        "resulting_corpus_revision": "revision:019fa4a0-586b-7a32-9701-336d4d90dab4",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa4a0-586b-7a32-9701-335d70388204"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa4a0260077d18427e628dbae2b9f",
+        "status": "committed",
+        "user_id": "user:fa1b8b0491124c86ba50ff0786a4b1d6"
+      },
+      "service_session_id": "session:019fa4a0260077d18427e628dbae2b9f",
+      "service_corpus_revision": "revision:019fa4a0-586b-7a32-9701-336d4d90dab4",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T10:29:46.890-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa4a025f87391a9df5af2d23e036e",
+          "elapsed_ms": 161.286,
+          "result_chars": 14958,
+          "source_text_chars": 8905,
+          "metadata_chars": 6053,
+          "evidence_items": 12,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Authorization/read-only-capability-contract.md",
+            "Briefs/change-impact.md",
+            "Briefs/weekly-source-digest.md",
+            "CORPUS.md",
+            "Continuity/game-checkpoint.md",
+            "Events/schedule-snapshot-r2.md",
+            "Logistics/handoff-plan.md",
+            "Participation/commitments.csv",
+            "Participation/communication-and-delegation.md",
+            "People/person-dossier-view.md",
+            "Policy/minor-sharing-policy.md",
+            "Relations/role-authority-review.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:29:59.693-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa4a058547c8094e62c39c8122d17",
+          "elapsed_ms": 71.148,
+          "result_chars": 791,
+          "source_text_chars": 0,
+          "metadata_chars": 791,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 15749,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019fa4a0-0708-7d52-bec3-7189aa5d2498",
+        "checkpoint_id": "checkpoint:019fa4a0-586b-7a32-9701-335d70388204",
+        "corpus_revision": "revision:019fa4a0-586b-7a32-9701-336d4d90dab4",
+        "created": [
+          {
+            "id": "checkpoint:019fa4a0-586b-7a32-9701-335d70388204",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "bc323c70-820d-45a1-b8f1-c007daabfc4b",
+        "deduplicated": [],
+        "id": "checkpoint:019fa4a0-586b-7a32-9701-335d70388204",
+        "idempotency_key": "eval-checkpoint:session:019fa4a0260077d18427e628dbae2b9f:cafb7eb04e4d16598f055a6d74c3efa01693a737f4541cae3a954a952e5f4f07",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa4a0-586b-7a32-9701-336d4d90dab4",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "evidence:019fa4a005b17720adb1dc4c98c5c8ab",
+                "evidence:019fa4a005b270d28212d5cdd06becc7"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa4a0-586b-7a32-9701-335d70388204",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:acd4c810dca3418fb832bc14414f7b5f90b5d51778d911ba462d57f373fa2bdf",
+        "operation_id": "operation:019fa4a0-5865-79e2-8486-37e3a8ea3e71",
+        "policy": {
+          "policy_id": "ac71a97d-5728-4d42-bb3a-b307da08bdff",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa4a0-5865-79e2-8486-37e3a8ea3e71",
+        "replayed": false,
+        "request_hash": "sha256:68a690dd08e46f2099338bf5adbcf66fba9fce031016d39b009c612c7f0b9c21",
+        "resulting_corpus_revision": "revision:019fa4a0-586b-7a32-9701-336d4d90dab4",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa4a0-586b-7a32-9701-335d70388204"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa4a0260077d18427e628dbae2b9f",
+        "status": "committed",
+        "user_id": "user:fa1b8b0491124c86ba50ff0786a4b1d6"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "coord-deadline-readiness",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 36.259,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/tiebreak-old-personal-20260727/service_api/coord-deadline-readiness/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Field Lab is not ready: Niko Ward owns it, due August 14 at 17:00 Pacific. Consent and registration are complete, but inspection and the packet remain incomplete, so the gate is blocked.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Responsible person `person:p-601` Niko Ward owns `work-item:readiness-601`; it is due `2026-08-14T17:00:00-07:00` in `America/Los_Angeles`.",
+            "source_paths": [
+              "Work/readiness-plan.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Prerequisites: `work-item:guardian-consent-602` is `completed`; `work-item:equipment-inspection-603` is `pending`; `work-item:registration-604` is `completed`; and official schedule revision r2 is required. Revision r2 supersedes r1 for `event-series:field-lab schedule`.",
+            "source_paths": [
+              "Work/readiness-plan.md",
+              "Events/schedule-snapshot-r2.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "`gate:field-lab-ready` requires every prerequisite plus source-bearing completion evidence. Its current state is `blocked` because `work-item:equipment-inspection-603` remains `pending`; gate `completion_evidence` is `null`.",
+            "source_paths": [
+              "Work/readiness-plan.md",
+              "Work/completion-evidence.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Completed evidence exists for guardian consent (`artifact:guardian-consent-602`, recorded `2026-08-09T13:00:00-07:00`, source `source:consent-ledger-r2`) and registration (`artifact:registration-ledger-604`, recorded `2026-08-09T13:05:00-07:00`, source `source:registration-ledger-r3`). Equipment inspection remains `pending` with artifact `null` from `source:inspection-board-r1`; gate completion evidence is `null`, and the packet itself is not complete.",
+            "source_paths": [
+              "Work/completion-evidence.json",
+              "Work/readiness-plan.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Assess Field Lab responsibility, deadline, prerequisites, readiness gate, and completion-evidence boundary.",
+          "current_state": [
+            "All four requested facets are verified.",
+            "The readiness gate is blocked and the packet remains incomplete.",
+            "Checkpoint persisted as `checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26`."
+          ],
+          "decisions": [
+            "Used direct readiness and completion sources, plus organizer r2 for schedule authority.",
+            "No additional evidence query was necessary."
+          ],
+          "open_questions": [],
+          "next_actions": [
+            "Reassess only when source-bearing inspection or packet-completion evidence appears."
+          ],
+          "artifacts": [
+            "Work/readiness-plan.md",
+            "Work/completion-evidence.json",
+            "Events/schedule-snapshot-r2.md",
+            "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 7,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "work-item:readiness-601"
+                ],
+                "matched": "work-item:readiness-601"
+              },
+              {
+                "alternatives": [
+                  "person:p-601"
+                ],
+                "matched": "person:p-601"
+              },
+              {
+                "alternatives": [
+                  "2026-08-14T17:00:00-07:00"
+                ],
+                "matched": "2026-08-14T17:00:00-07:00"
+              },
+              {
+                "alternatives": [
+                  "America/Los_Angeles"
+                ],
+                "matched": "America/Los_Angeles"
+              }
+            ],
+            "citations": [
+              "Work/readiness-plan.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "work-item:guardian-consent-602",
+                  "guardian consent 602"
+                ],
+                "matched": "work-item:guardian-consent-602"
+              },
+              {
+                "alternatives": [
+                  "work-item:equipment-inspection-603",
+                  "equipment inspection 603"
+                ],
+                "matched": "work-item:equipment-inspection-603"
+              },
+              {
+                "alternatives": [
+                  "work-item:registration-604",
+                  "registration 604"
+                ],
+                "matched": "work-item:registration-604"
+              },
+              {
+                "alternatives": [
+                  "official schedule revision r2"
+                ],
+                "matched": "official schedule revision r2"
+              }
+            ],
+            "citations": [
+              "Work/readiness-plan.md",
+              "Events/schedule-snapshot-r2.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 0.7333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "gate:field-lab-ready"
+                ],
+                "matched": "gate:field-lab-ready"
+              },
+              {
+                "alternatives": [
+                  "blocked"
+                ],
+                "matched": "blocked"
+              },
+              {
+                "alternatives": [
+                  "equipment inspection is pending"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Work/readiness-plan.md",
+              "Work/completion-evidence.json"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "artifact:guardian-consent-602",
+                  "guardian consent completed"
+                ],
+                "matched": "artifact:guardian-consent-602"
+              },
+              {
+                "alternatives": [
+                  "artifact:registration-ledger-604",
+                  "registration completed"
+                ],
+                "matched": "artifact:registration-ledger-604"
+              },
+              {
+                "alternatives": [
+                  "equipment inspection remains pending",
+                  "equipment inspection is still pending",
+                  "equipment inspection is pending",
+                  "equipment inspection pending with no artifact",
+                  "inspection remains pending",
+                  "inspection is pending"
+                ],
+                "matched": "equipment inspection remains pending"
+              },
+              {
+                "alternatives": [
+                  "readiness packet itself remains incomplete",
+                  "readiness packet remains incomplete",
+                  "packet itself remains incomplete",
+                  "packet is not complete",
+                  "The packet itself is not complete"
+                ],
+                "matched": "packet is not complete"
+              }
+            ],
+            "citations": [
+              "Work/completion-evidence.json",
+              "Work/readiness-plan.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 15,
+        "commands": 4,
+        "command_output_chars": 17557,
+        "tokens": {
+          "input_tokens": 83017,
+          "cached_input_tokens": 64024,
+          "output_tokens": 2566
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T10:29:45.343-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa4a01f2c7d738b5a67b61441feb2",
+          "elapsed_ms": 366.838,
+          "result_chars": 15673,
+          "source_text_chars": 9572,
+          "metadata_chars": 6101,
+          "evidence_items": 12,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Arrangements/actual-use-evidence.md",
+            "Briefs/change-impact.md",
+            "Briefs/weekly-source-digest.md",
+            "CORPUS.md",
+            "Continuity/game-checkpoint.md",
+            "Events/schedule-snapshot-r2.md",
+            "Identity/equivalence-reversal.md",
+            "Identity/resolution-review.md",
+            "People/person-dossier-view.md",
+            "Policy/minor-sharing-policy.md",
+            "Work/completion-evidence.json",
+            "Work/readiness-plan.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:29:59.711-07:00",
+          "operation": "failed:checkpoint",
+          "http_status": 404,
+          "service_status": "ref_not_found",
+          "request_id": null,
+          "elapsed_ms": 57.723,
+          "result_chars": 198,
+          "source_text_chars": 0,
+          "metadata_chars": 198,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:30:07.564-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa4a077057171a691e79c7a2a4984",
+          "elapsed_ms": 83.472,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 3,
+      "service_result_chars": 16620,
+      "service_source_text_chars": 9572,
+      "service_metadata_chars": 7048,
+      "service_replay_weighted_chars": 48164,
+      "service_latency_ms": 508.033,
+      "service_http_calls": 3,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019fa4a0-0877-7723-8555-c4310d7838dd",
+        "checkpoint_id": "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26",
+        "corpus_revision": "revision:019fa4a0-771c-7511-9189-0f99d0596aca",
+        "created": [
+          {
+            "id": "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "e00f2d63-655c-4180-915a-fa83fc9d7c5d",
+        "deduplicated": [],
+        "id": "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26",
+        "idempotency_key": "eval-checkpoint:session:019fa4a01f5a7bf2a316de73bb25329c:adf0cca671032c3c7a460b1e67334c68240de95d590d2d07aa6cf7f45b983cd9",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa4a0-771c-7511-9189-0f99d0596aca",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa4a0-7718-7201-91af-43649e5fcfe7"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:2282a007e8d51748478e4bd924bdf7ae3b09ef6bc7f442971875ab94c6ea522e",
+        "operation_id": "operation:019fa4a0-7714-7c22-bf96-b2ea8fe9ecd8",
+        "policy": {
+          "policy_id": "e2f7138c-70cf-4c36-8420-441509c57f11",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa4a0-7714-7c22-bf96-b2ea8fe9ecd8",
+        "replayed": false,
+        "request_hash": "sha256:1d6bd618053b63b5ae5b711d659301ab7228ae54a05ff506fa7c79f65f94ee0f",
+        "resulting_corpus_revision": "revision:019fa4a0-771c-7511-9189-0f99d0596aca",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa4a01f5a7bf2a316de73bb25329c",
+        "status": "committed",
+        "user_id": "user:0e13baccea744ebead6b363908ef4b28"
+      },
+      "service_session_id": "session:019fa4a01f5a7bf2a316de73bb25329c",
+      "service_corpus_revision": "revision:019fa4a0-771c-7511-9189-0f99d0596aca",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T10:29:45.343-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa4a01f2c7d738b5a67b61441feb2",
+          "elapsed_ms": 366.838,
+          "result_chars": 15673,
+          "source_text_chars": 9572,
+          "metadata_chars": 6101,
+          "evidence_items": 12,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Arrangements/actual-use-evidence.md",
+            "Briefs/change-impact.md",
+            "Briefs/weekly-source-digest.md",
+            "CORPUS.md",
+            "Continuity/game-checkpoint.md",
+            "Events/schedule-snapshot-r2.md",
+            "Identity/equivalence-reversal.md",
+            "Identity/resolution-review.md",
+            "People/person-dossier-view.md",
+            "Policy/minor-sharing-policy.md",
+            "Work/completion-evidence.json",
+            "Work/readiness-plan.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:29:59.711-07:00",
+          "operation": "failed:checkpoint",
+          "http_status": 404,
+          "service_status": "ref_not_found",
+          "request_id": null,
+          "elapsed_ms": 57.723,
+          "result_chars": 198,
+          "source_text_chars": 0,
+          "metadata_chars": 198,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:30:07.564-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa4a077057171a691e79c7a2a4984",
+          "elapsed_ms": 83.472,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 16620,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019fa4a0-0877-7723-8555-c4310d7838dd",
+        "checkpoint_id": "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26",
+        "corpus_revision": "revision:019fa4a0-771c-7511-9189-0f99d0596aca",
+        "created": [
+          {
+            "id": "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "e00f2d63-655c-4180-915a-fa83fc9d7c5d",
+        "deduplicated": [],
+        "id": "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26",
+        "idempotency_key": "eval-checkpoint:session:019fa4a01f5a7bf2a316de73bb25329c:adf0cca671032c3c7a460b1e67334c68240de95d590d2d07aa6cf7f45b983cd9",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa4a0-771c-7511-9189-0f99d0596aca",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa4a0-7718-7201-91af-43649e5fcfe7"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:2282a007e8d51748478e4bd924bdf7ae3b09ef6bc7f442971875ab94c6ea522e",
+        "operation_id": "operation:019fa4a0-7714-7c22-bf96-b2ea8fe9ecd8",
+        "policy": {
+          "policy_id": "e2f7138c-70cf-4c36-8420-441509c57f11",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa4a0-7714-7c22-bf96-b2ea8fe9ecd8",
+        "replayed": false,
+        "request_hash": "sha256:1d6bd618053b63b5ae5b711d659301ab7228ae54a05ff506fa7c79f65f94ee0f",
+        "resulting_corpus_revision": "revision:019fa4a0-771c-7511-9189-0f99d0596aca",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa4a0-771c-7511-9189-0f8e483d3b26"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa4a01f5a7bf2a316de73bb25329c",
+        "status": "committed",
+        "user_id": "user:0e13baccea744ebead6b363908ef4b28"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "coord-minor-export-policy",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 30.327,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/tiebreak-old-personal-20260727/service_api/coord-minor-export-policy/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "The projection is properly redacted and auditable: guardian sharing authority, organizer schedule authority, and the stale family copy remain fact-scoped and separate.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "`relation:guardian-1201` links minor `person:p-1201` River K. to guardian `person:p-1202` Dana K. from `source:guardian-form-r2`; the relation is `restricted_family`. Fact-scoped `authority:guardian-1201` controls River\u2019s participation consent and sharing/export decisions, but cannot edit the official event schedule.",
+            "source_paths": [
+              "Policy/minor-sharing-policy.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The display alias is `shareable`; `contact_email` (`river.k@example.com`) and `precise_handoff_place` are `restricted`. Guardian relationship notes and inferred assessments are excluded from public export. The projection consequently withholds internal identity, contact email, precise handoff place, guardian relationship notes, and inferred assessments.",
+            "source_paths": [
+              "Policy/minor-sharing-policy.md",
+              "Policy/redacted-minor-projection.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Projection `projection:minor-public-1201`, based on `rev:personal-coordination-1201`, applies `policy:dependent-schedule@v3` for `audience:public` and purpose `public coordination brief`. It exposes alias `Participant R.`, occurrence `event-occurrence:field-lab-2026-08-16`, current time `2026-08-16T11:30:00-07:00`, timezone `America/Los_Angeles`, and consent `pending_guardian`. It withholds `/subject/internal_id` (`dependent_identity`), `/subject/contact_email` (`field_policy`), `/handoff/precise_place` (`dependent_location`), `/guardian/relationship_notes` (`relation_policy`), and `/subject/inferred_assessments` (`sensitive_inference`); applies `replace_internal_identity_with_public_alias` and `withhold_precise_handoff_place`; and records `generated_at` `2026-08-11T23:35:00Z` with receipt `audit:redaction-1201`.",
+            "source_paths": [
+              "Policy/redacted-minor-projection.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Organizer Morgan Ives published `artifact:organizer-field-lab-r2` under `authority:schedule-401` at `2026-08-10T14:00:00-07:00`; r2 supersedes r1 only for `event-series:field-lab schedule`, moving the occurrence\u2019s current time from `2026-08-16T09:00:00-07:00` to `2026-08-16T11:30:00-07:00` in `America/Los_Angeles`, while actual time remains `null`. `artifact:family-field-lab-copy-r1` is preserved as a historical derivative with `schedule_authority: none`; its stale 09:00 value cannot rewrite the official schedule. Guardian sharing authority cannot alter schedule facts, and inferred assessments remain excluded rather than becoming public facts.",
+            "source_paths": [
+              "Events/schedule-snapshot-r2.md",
+              "Events/schedule-snapshot-r1.md",
+              "Policy/minor-sharing-policy.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Audit River K.\u2019s public projection and preserve a durable handoff.",
+          "current_state": [
+            "All four requested facets were verified from current authoritative sources.",
+            "Checkpoint `checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f` was committed, producing revision `revision:019fa4a0-c9d9-7b33-b92f-f517ddaafa7a`.",
+            "Exact and lexical indexing were ready; semantic indexing was pending."
+          ],
+          "decisions": [
+            "Use the minor-sharing policy for guardian authority and sensitivity.",
+            "Use the projection JSON for the public redaction receipt.",
+            "Treat organizer r2 as current schedule truth and r1 as historical evidence for the authority-free family copy."
+          ],
+          "open_questions": [],
+          "next_actions": [
+            "No further retrieval is required for this audit."
+          ],
+          "artifacts": [
+            "Policy/minor-sharing-policy.md",
+            "Policy/redacted-minor-projection.json",
+            "Events/schedule-snapshot-r2.md",
+            "Events/schedule-snapshot-r1.md",
+            "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8482,
+        "pass": false,
+        "claims_passed": 0,
+        "claims_total": 4,
+        "claim_score": 0.8214,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 7,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.8,
+            "pass": false,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "relation:guardian-1201"
+                ],
+                "matched": "relation:guardian-1201"
+              },
+              {
+                "alternatives": [
+                  "authority:guardian-1201"
+                ],
+                "matched": "authority:guardian-1201"
+              },
+              {
+                "alternatives": [
+                  "participation consent and sharing/export decisions"
+                ],
+                "matched": "participation consent and sharing/export decisions"
+              },
+              {
+                "alternatives": [
+                  "does not let the guardian edit the official event schedule",
+                  "does not authorize editing the official event schedule"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Policy/minor-sharing-policy.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 0.8,
+            "pass": false,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "restricted_family"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "contact_email"
+                ],
+                "matched": "contact_email"
+              },
+              {
+                "alternatives": [
+                  "precise_handoff_place"
+                ],
+                "matched": "precise_handoff_place"
+              },
+              {
+                "alternatives": [
+                  "restricted"
+                ],
+                "matched": "restricted"
+              }
+            ],
+            "citations": [
+              "Policy/minor-sharing-policy.md",
+              "Policy/redacted-minor-projection.json"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 0.8857,
+            "pass": false,
+            "content_fraction": 0.8571,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Participant R."
+                ],
+                "matched": "Participant R."
+              },
+              {
+                "alternatives": [
+                  "policy:dependent-schedule@v3"
+                ],
+                "matched": "policy:dependent-schedule@v3"
+              },
+              {
+                "alternatives": [
+                  "audience:public"
+                ],
+                "matched": "audience:public"
+              },
+              {
+                "alternatives": [
+                  "included_paths",
+                  "includes"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "withheld",
+                  "withholds"
+                ],
+                "matched": "withholds"
+              },
+              {
+                "alternatives": [
+                  "replace_internal_identity_with_public_alias",
+                  "public alias"
+                ],
+                "matched": "replace_internal_identity_with_public_alias"
+              },
+              {
+                "alternatives": [
+                  "audit:redaction-1201"
+                ],
+                "matched": "audit:redaction-1201"
+              }
+            ],
+            "citations": [
+              "Policy/redacted-minor-projection.json"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 0.8,
+            "pass": false,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "artifact:organizer-field-lab-r2",
+                  "organizer revision r2",
+                  "organizer r2"
+                ],
+                "matched": "artifact:organizer-field-lab-r2"
+              },
+              {
+                "alternatives": [
+                  "schedule_controller",
+                  "organizer authority",
+                  "authority:schedule-401"
+                ],
+                "matched": "organizer authority"
+              },
+              {
+                "alternatives": [
+                  "family_copy_schedule_authority",
+                  "family copy"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "none",
+                  "no schedule authority"
+                ],
+                "matched": "none"
+              }
+            ],
+            "citations": [
+              "Events/schedule-snapshot-r2.md",
+              "Events/schedule-snapshot-r1.md",
+              "Policy/minor-sharing-policy.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 10,
+        "commands": 2,
+        "command_output_chars": 16210,
+        "tokens": {
+          "input_tokens": 46388,
+          "cached_input_tokens": 28733,
+          "output_tokens": 1904
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T10:30:16.082-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa4a0980f7540a799558016b38620",
+          "elapsed_ms": 146.556,
+          "result_chars": 15459,
+          "source_text_chars": 9569,
+          "metadata_chars": 5890,
+          "evidence_items": 11,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Authorization/read-only-capability-contract.md",
+            "Briefs/change-impact.md",
+            "Briefs/weekly-source-digest.md",
+            "CORPUS.md",
+            "Events/schedule-snapshot-r1.md",
+            "Events/schedule-snapshot-r2.md",
+            "Participation/communication-and-delegation.md",
+            "People/person-dossier-view.md",
+            "Policy/minor-sharing-policy.md",
+            "Policy/redacted-minor-projection.json",
+            "Relations/role-authority-review.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:30:28.729-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa4a0c9bb77b1ba182514e9be15f2",
+          "elapsed_ms": 139.599,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 2,
+      "service_result_chars": 16208,
+      "service_source_text_chars": 9569,
+      "service_metadata_chars": 6639,
+      "service_replay_weighted_chars": 31667,
+      "service_latency_ms": 286.155,
+      "service_http_calls": 2,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019fa4a0-0996-7ab2-9716-1fc191193e9c",
+        "checkpoint_id": "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f",
+        "corpus_revision": "revision:019fa4a0-c9d9-7b33-b92f-f517ddaafa7a",
+        "created": [
+          {
+            "id": "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "2b72eb9d-08ec-4448-9b9a-0ffc47c19902",
+        "deduplicated": [],
+        "id": "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f",
+        "idempotency_key": "eval-checkpoint:session:019fa4a098137f82b23184af9b43bcb8:e4ed4081c35d1bfd3a7cb5edebf6e6fed3aaef758f0cfc9d1cc616296a88d3f4",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa4a0-c9d9-7b33-b92f-f517ddaafa7a",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa4a0-c9d4-75f3-a944-5da88527e042"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:872dc12b54a550968f629182ef94366abeefa7dee6c75b8d6aac98a78e83a26d",
+        "operation_id": "operation:019fa4a0-c9d2-75a2-9788-6d8f50354d51",
+        "policy": {
+          "policy_id": "2f64fa6f-cc27-4b16-86a0-bad5458db59f",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa4a0-c9d2-75a2-9788-6d8f50354d51",
+        "replayed": false,
+        "request_hash": "sha256:3cd63a7ef9dc48ac262b8f1f4bf5a171dea5cc1263e3c765e79026237458365e",
+        "resulting_corpus_revision": "revision:019fa4a0-c9d9-7b33-b92f-f517ddaafa7a",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa4a098137f82b23184af9b43bcb8",
+        "status": "committed",
+        "user_id": "user:45744c90203f44c89e3172d1c264bbdc"
+      },
+      "service_session_id": "session:019fa4a098137f82b23184af9b43bcb8",
+      "service_corpus_revision": "revision:019fa4a0-c9d9-7b33-b92f-f517ddaafa7a",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T10:30:16.082-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa4a0980f7540a799558016b38620",
+          "elapsed_ms": 146.556,
+          "result_chars": 15459,
+          "source_text_chars": 9569,
+          "metadata_chars": 5890,
+          "evidence_items": 11,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Authorization/read-only-capability-contract.md",
+            "Briefs/change-impact.md",
+            "Briefs/weekly-source-digest.md",
+            "CORPUS.md",
+            "Events/schedule-snapshot-r1.md",
+            "Events/schedule-snapshot-r2.md",
+            "Participation/communication-and-delegation.md",
+            "People/person-dossier-view.md",
+            "Policy/minor-sharing-policy.md",
+            "Policy/redacted-minor-projection.json",
+            "Relations/role-authority-review.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:30:28.729-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa4a0c9bb77b1ba182514e9be15f2",
+          "elapsed_ms": 139.599,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 16208,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019fa4a0-0996-7ab2-9716-1fc191193e9c",
+        "checkpoint_id": "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f",
+        "corpus_revision": "revision:019fa4a0-c9d9-7b33-b92f-f517ddaafa7a",
+        "created": [
+          {
+            "id": "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "2b72eb9d-08ec-4448-9b9a-0ffc47c19902",
+        "deduplicated": [],
+        "id": "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f",
+        "idempotency_key": "eval-checkpoint:session:019fa4a098137f82b23184af9b43bcb8:e4ed4081c35d1bfd3a7cb5edebf6e6fed3aaef758f0cfc9d1cc616296a88d3f4",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa4a0-c9d9-7b33-b92f-f517ddaafa7a",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa4a0-c9d4-75f3-a944-5da88527e042"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:872dc12b54a550968f629182ef94366abeefa7dee6c75b8d6aac98a78e83a26d",
+        "operation_id": "operation:019fa4a0-c9d2-75a2-9788-6d8f50354d51",
+        "policy": {
+          "policy_id": "2f64fa6f-cc27-4b16-86a0-bad5458db59f",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa4a0-c9d2-75a2-9788-6d8f50354d51",
+        "replayed": false,
+        "request_hash": "sha256:3cd63a7ef9dc48ac262b8f1f4bf5a171dea5cc1263e3c765e79026237458365e",
+        "resulting_corpus_revision": "revision:019fa4a0-c9d9-7b33-b92f-f517ddaafa7a",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa4a0-c9d9-7b33-b92f-f50219ff9c3f"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa4a098137f82b23184af9b43bcb8",
+        "status": "committed",
+        "user_id": "user:45744c90203f44c89e3172d1c264bbdc"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 4,
+        "successful_runs": 4,
+        "cases_passed": 1,
+        "case_pass_rate": 0.25,
+        "claims_passed": 9,
+        "claims_total": 16,
+        "claim_pass_rate": 0.5625,
+        "mean_score": 0.9133,
+        "elapsed_samples": 4,
+        "mean_elapsed_seconds": 33.4,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 16328.8,
+        "persisted_checkpoints": 4,
+        "checkpoint_eligible_runs": 4,
+        "mean_service_calls": 2.2,
+        "mean_service_result_chars": 16328.8,
+        "mean_service_source_text_chars": 9420.0,
+        "mean_service_metadata_chars": 6908.8,
+        "mean_service_replay_weighted_chars": 35794.8,
+        "mean_service_latency_ms": 373.065,
+        "mean_completed_commands": 3.0,
+        "mean_command_output_chars": 17031.5,
+        "mean_tokens": {
+          "input_tokens": 64369.2,
+          "output_tokens": 2029.0,
+          "cached_input_tokens": 46156.2,
+          "uncached_input_tokens": 18213.0
+        }
+      }
+    },
+    "by_workload": {
+      "Personal Coordination": {
+        "service_api": {
+          "runs": 4,
+          "successful_runs": 4,
+          "cases_passed": 1,
+          "case_pass_rate": 0.25,
+          "claims_passed": 9,
+          "claims_total": 16,
+          "claim_pass_rate": 0.5625,
+          "mean_score": 0.9133,
+          "elapsed_samples": 4,
+          "mean_elapsed_seconds": 33.4,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 16328.8,
+          "persisted_checkpoints": 4,
+          "checkpoint_eligible_runs": 4,
+          "mean_service_calls": 2.2,
+          "mean_service_result_chars": 16328.8,
+          "mean_service_source_text_chars": 9420.0,
+          "mean_service_metadata_chars": 6908.8,
+          "mean_service_replay_weighted_chars": 35794.8,
+          "mean_service_latency_ms": 373.065,
+          "mean_completed_commands": 3.0,
+          "mean_command_output_chars": 17031.5,
+          "mean_tokens": {
+            "input_tokens": 64369.2,
+            "output_tokens": 2029.0,
+            "cached_input_tokens": 46156.2,
+            "uncached_input_tokens": 18213.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "derived_person_view": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 2,
+          "claims_total": 4,
+          "claim_pass_rate": 0.5,
+          "mean_score": 0.8867,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 35.71,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 16738.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 16738.0,
+          "mean_service_source_text_chars": 9634.0,
+          "mean_service_metadata_chars": 7104.0,
+          "mean_service_replay_weighted_chars": 32641.0,
+          "mean_service_latency_ms": 465.636,
+          "mean_completed_commands": 3.0,
+          "mean_command_output_chars": 17674.0,
+          "mean_tokens": {
+            "input_tokens": 64364.0,
+            "output_tokens": 1719.0,
+            "cached_input_tokens": 46152.0,
+            "uncached_input_tokens": 18212.0
+          }
+        }
+      },
+      "fact_scoped_authority_and_redaction": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 0,
+          "claims_total": 4,
+          "claim_pass_rate": 0.0,
+          "mean_score": 0.8482,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 30.33,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 16208.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 16208.0,
+          "mean_service_source_text_chars": 9569.0,
+          "mean_service_metadata_chars": 6639.0,
+          "mean_service_replay_weighted_chars": 31667.0,
+          "mean_service_latency_ms": 286.155,
+          "mean_completed_commands": 2.0,
+          "mean_command_output_chars": 16210.0,
+          "mean_tokens": {
+            "input_tokens": 46388.0,
+            "output_tokens": 1904.0,
+            "cached_input_tokens": 28733.0,
+            "uncached_input_tokens": 17655.0
+          }
+        }
+      },
+      "obligation_and_readiness_gates": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 36.26,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 16620.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 3.0,
+          "mean_service_result_chars": 16620.0,
+          "mean_service_source_text_chars": 9572.0,
+          "mean_service_metadata_chars": 7048.0,
+          "mean_service_replay_weighted_chars": 48164.0,
+          "mean_service_latency_ms": 508.033,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 17557.0,
+          "mean_tokens": {
+            "input_tokens": 83017.0,
+            "output_tokens": 2566.0,
+            "cached_input_tokens": 64024.0,
+            "uncached_input_tokens": 18993.0
+          }
+        }
+      },
+      "qualified_participation_state": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 0.975,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 31.32,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 15749.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 15749.0,
+          "mean_service_source_text_chars": 8905.0,
+          "mean_service_metadata_chars": 6844.0,
+          "mean_service_replay_weighted_chars": 30707.0,
+          "mean_service_latency_ms": 232.434,
+          "mean_completed_commands": 3.0,
+          "mean_command_output_chars": 16685.0,
+          "mean_tokens": {
+            "input_tokens": 63708.0,
+            "output_tokens": 1927.0,
+            "cached_input_tokens": 45716.0,
+            "uncached_input_tokens": 17992.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "coord-person-dossier": {
+        "id": "coord-person-dossier",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "derived_person_view",
+        "task": "Reconstruct Kai Rowan's person dossier as a derived view. Identify the claims, role, event, and artifact it joins, preserve provenance, and keep the morning-preference inference from becoming a trait.",
+        "claim_slots": {
+          "c1": "dossier projection boundary",
+          "c2": "joined evidence objects",
+          "c3": "inferred assessment status",
+          "c4": "rebuild and provenance behavior"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "person:p-201"
+                ]
+              },
+              {
+                "any": [
+                  "rebuildable derived view"
+                ]
+              },
+              {
+                "any": [
+                  "not a second canonical person profile"
+                ]
+              }
+            ],
+            "sources_any": [
+              "People/person-dossier-view.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "claim:kai-availability-1"
+                ]
+              },
+              {
+                "any": [
+                  "relation:kai-equipment-steward"
+                ]
+              },
+              {
+                "any": [
+                  "event-occurrence:setup-2026-07-11"
+                ]
+              },
+              {
+                "any": [
+                  "artifact:setup-checklist-v2"
+                ]
+              }
+            ],
+            "sources_any": [
+              "People/dossier-source-claims.json",
+              "People/person-dossier-view.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "assessment:kai-morning-preference"
+                ]
+              },
+              {
+                "any": [
+                  "inferred"
+                ]
+              },
+              {
+                "any": [
+                  "not a trait"
+                ]
+              }
+            ],
+            "sources_any": [
+              "People/dossier-source-claims.json",
+              "People/person-dossier-view.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "Each row retains its source ID"
+                ]
+              },
+              {
+                "any": [
+                  "Rebuilding from the cited source claims"
+                ]
+              },
+              {
+                "any": [
+                  "must not mutate those sources"
+                ]
+              }
+            ],
+            "sources_any": [
+              "People/person-dossier-view.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Kai has a morning trait",
+          "the dossier is the canonical person profile",
+          "the inferred assessment is an observed fact"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "coord-participation-independent-state": {
+        "id": "coord-participation-independent-state",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "qualified_participation_state",
+        "task": "Summarize Jules Hart's Field Lab commitment without conflating role, requiredness, response, notification, or delegation. Report each state and the narrow scope of the accepted delegation.",
+        "claim_slots": {
+          "c1": "role and requiredness",
+          "c2": "participant response",
+          "c3": "notification state",
+          "c4": "delegation state and scope"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "participation:501"
+                ]
+              },
+              {
+                "any": [
+                  "equipment lead"
+                ]
+              },
+              {
+                "any": [
+                  "required"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Participation/commitments.csv",
+              "Participation/communication-and-delegation.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "tentative"
+                ]
+              },
+              {
+                "any": [
+                  "person:p-501",
+                  "Jules Hart",
+                  "Jules"
+                ]
+              },
+              {
+                "any": [
+                  "participant response",
+                  "response remains tentative",
+                  "remains tentative",
+                  "not accepted"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Participation/commitments.csv",
+              "Participation/communication-and-delegation.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "notification:notif-501"
+                ]
+              },
+              {
+                "any": [
+                  "delivered"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-10T14:10:00-07:00",
+                  "2026-08-10 at 14:10",
+                  "August 10 at 14:10"
+                ]
+              },
+              {
+                "any": [
+                  "Delivery is not acceptance",
+                  "Neither notification state constitutes or changes participation acceptance",
+                  "does not change Jules's participant response"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Participation/communication-and-delegation.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "delegation:del-501"
+                ]
+              },
+              {
+                "any": [
+                  "accepted delegation"
+                ]
+              },
+              {
+                "any": [
+                  "carry projector kit only"
+                ]
+              },
+              {
+                "any": [
+                  "does not make Jules optional"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Participation/communication-and-delegation.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Jules accepted participation",
+          "delivery means acceptance",
+          "delegation makes Jules optional"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "coord-deadline-readiness": {
+        "id": "coord-deadline-readiness",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "obligation_and_readiness_gates",
+        "task": "Assess the Field Lab readiness packet. Identify the responsible person and zoned due time, enumerate prerequisites, evaluate the readiness gate, and distinguish completed evidence from the still-pending inspection and packet.",
+        "claim_slots": {
+          "c1": "responsibility and due time",
+          "c2": "prerequisite states",
+          "c3": "readiness gate",
+          "c4": "completion evidence boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "work-item:readiness-601"
+                ]
+              },
+              {
+                "any": [
+                  "person:p-601"
+                ]
+              },
+              {
+                "any": [
+                  "2026-08-14T17:00:00-07:00"
+                ]
+              },
+              {
+                "any": [
+                  "America/Los_Angeles"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Work/readiness-plan.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "work-item:guardian-consent-602",
+                  "guardian consent 602"
+                ]
+              },
+              {
+                "any": [
+                  "work-item:equipment-inspection-603",
+                  "equipment inspection 603"
+                ]
+              },
+              {
+                "any": [
+                  "work-item:registration-604",
+                  "registration 604"
+                ]
+              },
+              {
+                "any": [
+                  "official schedule revision r2"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Work/readiness-plan.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "gate:field-lab-ready"
+                ]
+              },
+              {
+                "any": [
+                  "blocked"
+                ]
+              },
+              {
+                "any": [
+                  "equipment inspection is pending"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Work/readiness-plan.md",
+              "Work/completion-evidence.json"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "artifact:guardian-consent-602",
+                  "guardian consent completed"
+                ]
+              },
+              {
+                "any": [
+                  "artifact:registration-ledger-604",
+                  "registration completed"
+                ]
+              },
+              {
+                "any": [
+                  "equipment inspection remains pending",
+                  "equipment inspection is still pending",
+                  "equipment inspection is pending",
+                  "equipment inspection pending with no artifact",
+                  "inspection remains pending",
+                  "inspection is pending"
+                ]
+              },
+              {
+                "any": [
+                  "readiness packet itself remains incomplete",
+                  "readiness packet remains incomplete",
+                  "packet itself remains incomplete",
+                  "packet is not complete",
+                  "The packet itself is not complete"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Work/readiness-plan.md",
+              "Work/completion-evidence.json"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the readiness gate is open",
+          "payment proves readiness",
+          "the packet is complete"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "coord-minor-export-policy": {
+        "id": "coord-minor-export-policy",
+        "workload": "Personal Coordination",
+        "scope": "Personal Coordination",
+        "capability": "fact_scoped_authority_and_redaction",
+        "task": "Audit the public projection for minor River K. Explain the guardian's fact-scoped authority, field and relationship sensitivity, the projection's policy/audience/included/withheld/transform receipt, and why organizer schedule authority and the stale family copy remain separate.",
+        "claim_slots": {
+          "c1": "guardian relation and authority scope",
+          "c2": "field and relationship sensitivity",
+          "c3": "auditable redacted projection",
+          "c4": "schedule and inference boundaries"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "relation:guardian-1201"
+                ]
+              },
+              {
+                "any": [
+                  "authority:guardian-1201"
+                ]
+              },
+              {
+                "any": [
+                  "participation consent and sharing/export decisions"
+                ]
+              },
+              {
+                "any": [
+                  "does not let the guardian edit the official event schedule",
+                  "does not authorize editing the official event schedule"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Policy/minor-sharing-policy.md",
+              "Policy/redacted-minor-projection.json"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "restricted_family"
+                ]
+              },
+              {
+                "any": [
+                  "contact_email"
+                ]
+              },
+              {
+                "any": [
+                  "precise_handoff_place"
+                ]
+              },
+              {
+                "any": [
+                  "restricted"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Policy/minor-sharing-policy.md",
+              "Policy/redacted-minor-projection.json"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Participant R."
+                ]
+              },
+              {
+                "any": [
+                  "policy:dependent-schedule@v3"
+                ]
+              },
+              {
+                "any": [
+                  "audience:public"
+                ]
+              },
+              {
+                "any": [
+                  "included_paths",
+                  "includes"
+                ]
+              },
+              {
+                "any": [
+                  "withheld",
+                  "withholds"
+                ]
+              },
+              {
+                "any": [
+                  "replace_internal_identity_with_public_alias",
+                  "public alias"
+                ]
+              },
+              {
+                "any": [
+                  "audit:redaction-1201"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Policy/redacted-minor-projection.json"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "artifact:organizer-field-lab-r2",
+                  "organizer revision r2",
+                  "organizer r2"
+                ]
+              },
+              {
+                "any": [
+                  "schedule_controller",
+                  "organizer authority",
+                  "authority:schedule-401"
+                ]
+              },
+              {
+                "any": [
+                  "family_copy_schedule_authority",
+                  "family copy"
+                ]
+              },
+              {
+                "any": [
+                  "none",
+                  "no schedule authority"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Policy/redacted-minor-projection.json",
+              "Events/schedule-snapshot-r1.md",
+              "Events/schedule-snapshot-r2.md",
+              "Relations/role-authority-review.md",
+              "Policy/minor-sharing-policy.md",
+              "CORPUS.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the guardian edits the official schedule",
+          "export the minor contact email",
+          "the family copy rewrites organizer time"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    }
+  }
+}

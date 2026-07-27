@@ -1,0 +1,819 @@
+{
+  "schema": "straylight-performance-eval@v2",
+  "created_at": "2026-07-26T16:03:49.485555-07:00",
+  "label": "simplified-final-smoke",
+  "protocol": "simple",
+  "api_url": "http://127.0.0.1:55213",
+  "run_profile": {
+    "mode": "quick",
+    "definitive": false,
+    "samples_per_retrieval": 3,
+    "requested_scales": [
+      1000,
+      10000
+    ],
+    "required_scales": [],
+    "future_soak": {
+      "requested": false,
+      "records": 640000,
+      "status": "not_requested"
+    },
+    "semantic_failure_probe_required": false,
+    "semantic_failure_hooks_configured": true,
+    "import_timeout_seconds": 1800.0
+  },
+  "production_reference_records": 64000,
+  "future_reference_records": 640000,
+  "scales": [
+    {
+      "scale": 1000,
+      "documents": 1000,
+      "target_path": "Synthetic/records/0000999.md",
+      "marker": "narrow-fact-1000-cobalt",
+      "scale_elapsed_ms": 9082.707,
+      "samples": 3,
+      "discovery_query": "terminal-corpus-1000-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-1000-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 7570.227,
+      "open_ms": [
+        87.161,
+        33.164,
+        26.015
+      ],
+      "open_p50_ms": 33.164,
+      "open_p95_ms": 81.761,
+      "search_ms": [
+        34.614,
+        29.535,
+        26.745
+      ],
+      "search_p50_ms": 29.535,
+      "search_p95_ms": 34.106,
+      "broad_search_ms": [
+        56.309,
+        47.483,
+        52.075
+      ],
+      "broad_search_p95_ms": 55.885,
+      "read_ms": [
+        7.015,
+        7.187,
+        6.091
+      ],
+      "read_p50_ms": 7.015,
+      "read_p95_ms": 7.17,
+      "checkpoint_ms": 59.035,
+      "resume_ms": 31.628,
+      "open_found": [
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true
+      ],
+      "read_found": [
+        true,
+        true,
+        true
+      ],
+      "resume_found": true,
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 1000,
+        "corpus_bytes": 316064,
+        "materialize_ms": 66.724,
+        "samples": 3,
+        "discovery_query": "terminal-corpus-1000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          26.095,
+          13.655,
+          14.89
+        ],
+        "discovery_p95_ms": 24.974,
+        "discovery_found": [
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.02,
+          0.018,
+          0.02
+        ],
+        "read_p95_ms": 0.02,
+        "read_found": [
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          6.622,
+          6.309,
+          7.361
+        ],
+        "broad_search_p95_ms": 7.287,
+        "broad_found": [
+          true,
+          true,
+          true
+        ]
+      },
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 3.274,
+        "search_discovery_p95_ratio": 1.366,
+        "exact_read_p95_ratio": 358.48,
+        "broad_search_p95_ratio": 7.669
+      },
+      "response_accounting": {
+        "payload_chars": 63755,
+        "source_text_chars": 29108,
+        "source_identity_chars": 15941,
+        "evidence_chars": 45049,
+        "metadata_chars": 34647,
+        "protocol_chars": 18706,
+        "estimated_payload_tokens": 15939,
+        "estimated_source_tokens": 7277,
+        "estimated_metadata_tokens": 8662,
+        "metadata_to_source_ratio": 1.190291,
+        "protocol_to_evidence_ratio": 0.415237,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 3,
+            "payload_chars": 21546,
+            "source_text_chars": 11892,
+            "source_identity_chars": 4209,
+            "evidence_chars": 16101,
+            "metadata_chars": 9654,
+            "protocol_chars": 5445,
+            "metadata_to_source_ratio": 0.811806,
+            "protocol_to_evidence_ratio": 0.338178
+          },
+          "search": {
+            "samples": 3,
+            "payload_chars": 7233,
+            "source_text_chars": 1986,
+            "source_identity_chars": 2499,
+            "evidence_chars": 4485,
+            "metadata_chars": 5247,
+            "protocol_chars": 2748,
+            "metadata_to_source_ratio": 2.641994,
+            "protocol_to_evidence_ratio": 0.612709
+          },
+          "broad_search": {
+            "samples": 3,
+            "payload_chars": 11295,
+            "source_text_chars": 5832,
+            "source_identity_chars": 2832,
+            "evidence_chars": 8664,
+            "metadata_chars": 5463,
+            "protocol_chars": 2631,
+            "metadata_to_source_ratio": 0.936728,
+            "protocol_to_evidence_ratio": 0.30367
+          },
+          "read": {
+            "samples": 3,
+            "payload_chars": 3249,
+            "source_text_chars": 1470,
+            "source_identity_chars": 495,
+            "evidence_chars": 1965,
+            "metadata_chars": 1779,
+            "protocol_chars": 1284,
+            "metadata_to_source_ratio": 1.210204,
+            "protocol_to_evidence_ratio": 0.653435
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 8517,
+            "source_text_chars": 4618,
+            "source_identity_chars": 1741,
+            "evidence_chars": 6359,
+            "metadata_chars": 3899,
+            "protocol_chars": 2158,
+            "metadata_to_source_ratio": 0.844305,
+            "protocol_to_evidence_ratio": 0.339362
+          },
+          "concurrent_search": {
+            "samples": 5,
+            "payload_chars": 11915,
+            "source_text_chars": 3310,
+            "source_identity_chars": 4165,
+            "evidence_chars": 7475,
+            "metadata_chars": 8605,
+            "protocol_chars": 4440,
+            "metadata_to_source_ratio": 2.599698,
+            "protocol_to_evidence_ratio": 0.59398
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "not_applicable_at_this_scale",
+        "pass": null,
+        "required": false
+      },
+      "concurrent_probe": {
+        "write_ms": 23.16,
+        "write_committed": true,
+        "search_ms": [
+          41.497,
+          80.529,
+          79.962,
+          80.418,
+          69.48
+        ],
+        "search_p95_ms": 80.507,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 0,
+        "search_chunks_fts_idx": 13
+      },
+      "checkpoint_id": "checkpoint:9a7b7317-681e-4031-f888-5cc7aa5b1cf8",
+      "checkpoint_database_growth": {
+        "bytes": 8192,
+        "rows": 12,
+        "tables": {
+          "entries": 1,
+          "entry_versions": 1,
+          "jobs": 1,
+          "search_chunks": 8,
+          "workspace_changes": 1
+        }
+      },
+      "provisioning": {
+        "documents": 1000,
+        "delta_documents": 0,
+        "characters": 316064,
+        "import_http_status": 200,
+        "import_elapsed_ms": 258.418,
+        "ready_elapsed_ms": 20.323
+      }
+    },
+    {
+      "scale": 10000,
+      "documents": 10000,
+      "target_path": "Synthetic/records/0009999.md",
+      "marker": "narrow-fact-10000-cobalt",
+      "scale_elapsed_ms": 87532.356,
+      "samples": 3,
+      "discovery_query": "terminal-corpus-10000-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-10000-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 77692.006,
+      "open_ms": [
+        33.412,
+        172.724,
+        35.145
+      ],
+      "open_p50_ms": 35.145,
+      "open_p95_ms": 158.966,
+      "search_ms": [
+        24.484,
+        180.315,
+        24.507
+      ],
+      "search_p50_ms": 24.507,
+      "search_p95_ms": 164.734,
+      "broad_search_ms": [
+        1058.837,
+        457.071,
+        408.554
+      ],
+      "broad_search_p95_ms": 998.661,
+      "read_ms": [
+        50.215,
+        14.97,
+        10.64
+      ],
+      "read_p50_ms": 14.97,
+      "read_p95_ms": 46.69,
+      "checkpoint_ms": 42.52,
+      "resume_ms": 44.764,
+      "open_found": [
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true
+      ],
+      "read_found": [
+        true,
+        true,
+        true
+      ],
+      "resume_found": true,
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 10000,
+        "corpus_bytes": 3169066,
+        "materialize_ms": 716.016,
+        "samples": 3,
+        "discovery_query": "terminal-corpus-10000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          224.394,
+          87.518,
+          88.171
+        ],
+        "discovery_p95_ms": 210.772,
+        "discovery_found": [
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.02,
+          0.021,
+          0.021
+        ],
+        "read_p95_ms": 0.021,
+        "read_found": [
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          10.907,
+          7.821,
+          7.529
+        ],
+        "broad_search_p95_ms": 10.598,
+        "broad_found": [
+          true,
+          true,
+          true
+        ]
+      },
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 0.754,
+        "search_discovery_p95_ratio": 0.782,
+        "exact_read_p95_ratio": 2223.357,
+        "broad_search_p95_ratio": 94.231
+      },
+      "response_accounting": {
+        "payload_chars": 74171,
+        "source_text_chars": 38862,
+        "source_identity_chars": 16725,
+        "evidence_chars": 55587,
+        "metadata_chars": 35309,
+        "protocol_chars": 18584,
+        "estimated_payload_tokens": 18543,
+        "estimated_source_tokens": 9716,
+        "estimated_metadata_tokens": 8828,
+        "metadata_to_source_ratio": 0.908574,
+        "protocol_to_evidence_ratio": 0.334323,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 3,
+            "payload_chars": 21585,
+            "source_text_chars": 11919,
+            "source_identity_chars": 4209,
+            "evidence_chars": 16128,
+            "metadata_chars": 9666,
+            "protocol_chars": 5457,
+            "metadata_to_source_ratio": 0.810974,
+            "protocol_to_evidence_ratio": 0.338356
+          },
+          "search": {
+            "samples": 3,
+            "payload_chars": 11109,
+            "source_text_chars": 5625,
+            "source_identity_chars": 2793,
+            "evidence_chars": 8418,
+            "metadata_chars": 5484,
+            "protocol_chars": 2691,
+            "metadata_to_source_ratio": 0.974933,
+            "protocol_to_evidence_ratio": 0.319672
+          },
+          "broad_search": {
+            "samples": 3,
+            "payload_chars": 11301,
+            "source_text_chars": 5832,
+            "source_identity_chars": 2832,
+            "evidence_chars": 8664,
+            "metadata_chars": 5469,
+            "protocol_chars": 2637,
+            "metadata_to_source_ratio": 0.937757,
+            "protocol_to_evidence_ratio": 0.304363
+          },
+          "read": {
+            "samples": 3,
+            "payload_chars": 3264,
+            "source_text_chars": 1479,
+            "source_identity_chars": 495,
+            "evidence_chars": 1974,
+            "metadata_chars": 1785,
+            "protocol_chars": 1290,
+            "metadata_to_source_ratio": 1.206897,
+            "protocol_to_evidence_ratio": 0.653495
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 8537,
+            "source_text_chars": 4632,
+            "source_identity_chars": 1741,
+            "evidence_chars": 6373,
+            "metadata_chars": 3905,
+            "protocol_chars": 2164,
+            "metadata_to_source_ratio": 0.843048,
+            "protocol_to_evidence_ratio": 0.339558
+          },
+          "concurrent_search": {
+            "samples": 5,
+            "payload_chars": 18375,
+            "source_text_chars": 9375,
+            "source_identity_chars": 4655,
+            "evidence_chars": 14030,
+            "metadata_chars": 9000,
+            "protocol_chars": 4345,
+            "metadata_to_source_ratio": 0.96,
+            "protocol_to_evidence_ratio": 0.309694
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "passed",
+        "pass": true,
+        "required": false,
+        "baseline_found": true,
+        "semantic_failure_observed": true,
+        "semantic_failure_http_status": null,
+        "exact_lexical_found_during_failure": true,
+        "mixed_lane_found_during_failure": true,
+        "semantic_found_after_restore": true,
+        "start_hook": {
+          "command": "python3",
+          "exit_code": 0,
+          "elapsed_ms": 402.113,
+          "pass": true
+        },
+        "restore_hook": {
+          "command": "python3",
+          "exit_code": 0,
+          "elapsed_ms": 596.588,
+          "pass": true
+        },
+        "error": null
+      },
+      "concurrent_probe": {
+        "write_ms": 42.501,
+        "write_committed": true,
+        "search_ms": [
+          45.285,
+          65.671,
+          47.268,
+          51.123,
+          69.42
+        ],
+        "search_p95_ms": 68.67,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 15,
+        "search_chunks_fts_idx": 17
+      },
+      "checkpoint_id": "checkpoint:4b977231-81dc-055e-12e8-07d7b5285ae3",
+      "checkpoint_database_growth": {
+        "bytes": 0,
+        "rows": 12,
+        "tables": {
+          "entries": 1,
+          "entry_versions": 1,
+          "jobs": 1,
+          "search_chunks": 8,
+          "workspace_changes": 1
+        }
+      },
+      "provisioning": {
+        "documents": 10000,
+        "delta_documents": 0,
+        "characters": 3169066,
+        "import_http_status": 200,
+        "import_elapsed_ms": 1817.773,
+        "ready_elapsed_ms": 41.186
+      }
+    }
+  ],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "broad_search_p95_ms": 3000.0,
+    "concurrent_search_p95_ms": 3000.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0,
+    "protocol_to_evidence_ratio": 1.0
+  },
+  "gates": [
+    {
+      "name": "all_opens_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_searches_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_resumes_return_target",
+      "pass": true,
+      "observed": [
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_exact_reads_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "largest_open_p95",
+      "pass": true,
+      "observed": 158.966,
+      "threshold": 5000.0
+    },
+    {
+      "name": "largest_search_p95",
+      "pass": true,
+      "observed": 164.734,
+      "threshold": 3000.0
+    },
+    {
+      "name": "largest_broad_search_p95",
+      "pass": true,
+      "observed": 998.661,
+      "threshold": 3000.0
+    },
+    {
+      "name": "largest_read_p95",
+      "pass": true,
+      "observed": 46.69,
+      "threshold": 1000.0
+    },
+    {
+      "name": "largest_checkpoint_latency",
+      "pass": true,
+      "observed": 42.52,
+      "threshold": 2000.0
+    },
+    {
+      "name": "largest_resume_latency",
+      "pass": true,
+      "observed": 44.764,
+      "threshold": 5000.0
+    },
+    {
+      "name": "unknown_path_discovery_does_not_reveal_target_path",
+      "pass": true,
+      "observed": [
+        false,
+        false
+      ],
+      "threshold": false
+    },
+    {
+      "name": "all_broad_searches_return_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_discovery_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_exact_read_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_broad_search_returns_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "service_protocol_overhead_does_not_exceed_evidence",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "source_text_chars": 29108,
+          "source_identity_chars": 15941,
+          "protocol_chars": 18706,
+          "ratio": 0.415237
+        },
+        {
+          "scale": 10000,
+          "source_text_chars": 38862,
+          "source_identity_chars": 16725,
+          "protocol_chars": 18584,
+          "ratio": 0.334323
+        }
+      ],
+      "threshold": "ratio <= 1.0"
+    },
+    {
+      "name": "unrelated_write_commits",
+      "pass": true,
+      "observed": true,
+      "threshold": true
+    },
+    {
+      "name": "retrieval_survives_unrelated_write",
+      "pass": true,
+      "observed": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "concurrent_search_p95",
+      "pass": true,
+      "observed": 68.67,
+      "threshold": 3000.0
+    },
+    {
+      "name": "checkpoint_row_growth_is_bounded",
+      "pass": true,
+      "observed": 12,
+      "threshold": 100
+    },
+    {
+      "name": "checkpoint_storage_growth_is_bounded",
+      "pass": true,
+      "observed": 0,
+      "threshold": 4194304
+    },
+    {
+      "name": "open_latency_growth_is_sublinear",
+      "pass": true,
+      "observed": 1.944,
+      "threshold": 6.0
+    },
+    {
+      "name": "search_latency_growth_is_sublinear",
+      "pass": true,
+      "observed": 4.83,
+      "threshold": 6.0
+    }
+  ],
+  "errors": [],
+  "pass": true
+}

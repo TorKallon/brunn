@@ -1,0 +1,108 @@
+{
+  "schema": "straylight-performance-eval@v2",
+  "created_at": "2026-07-27T10:40:06.912422-07:00",
+  "label": "dd02756-accumulated-3340-timeout",
+  "protocol": "legacy",
+  "api_url": "http://127.0.0.1:55313",
+  "implementation_fingerprint": {
+    "source_revision": "c3a54200f0dbb0cb02d0077730995119178cb31e",
+    "tracked_source_clean": true,
+    "untracked_source_files": [],
+    "api_container": "straylight-dd02756-cert-api-1",
+    "api_image_id": "sha256:8098fdce955f5c3b3f1b008d54cf183a5283e7a34b5e302c129dd6016b79bdb3",
+    "api_image_revision": "dd02756",
+    "reproducible": false
+  },
+  "run_profile": {
+    "mode": "quick",
+    "definitive": false,
+    "samples_per_retrieval": 3,
+    "requested_scales": [
+      3340
+    ],
+    "required_scales": [],
+    "future_soak": {
+      "requested": false,
+      "records": 640000,
+      "status": "not_requested"
+    },
+    "semantic_failure_probe_required": false,
+    "semantic_failure_hooks_configured": false,
+    "import_timeout_seconds": 1800.0
+  },
+  "production_reference_records": 64000,
+  "future_reference_records": 640000,
+  "scales": [],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "broad_search_p95_ms": 3000.0,
+    "concurrent_write_ms": 3000.0,
+    "concurrent_search_p95_ms": 3000.0,
+    "requested_checkpoints_per_minute": 1.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "max_batch_read_ms": 2000.0,
+    "max_checkpoint_sources_ms": 3000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0,
+    "latency_growth_floor_ms": 1000.0,
+    "protocol_to_evidence_ratio": 1.0
+  },
+  "gates": [],
+  "errors": [
+    {
+      "scale": 3340,
+      "type": "NativeApiError",
+      "message": "{'code': 'database_timeout', 'message': 'the database operation exceeded the request deadline'}",
+      "status": 408,
+      "elapsed_ms": 26088.1155829411,
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 3340,
+        "corpus_bytes": 1058528,
+        "materialize_ms": 484.926,
+        "samples": 3,
+        "discovery_query": "terminal-corpus-3340-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          131.393,
+          56.273,
+          51.796
+        ],
+        "discovery_p95_ms": 123.881,
+        "discovery_found": [
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.104,
+          0.024,
+          0.059
+        ],
+        "read_p95_ms": 0.099,
+        "read_found": [
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          85.094,
+          27.321,
+          13.366
+        ],
+        "broad_search_p95_ms": 79.316,
+        "broad_found": [
+          true,
+          true,
+          true
+        ]
+      }
+    }
+  ],
+  "pass": false
+}

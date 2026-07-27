@@ -1,0 +1,865 @@
+{
+  "schema": "straylight-performance-eval@v2",
+  "created_at": "2026-07-27T04:19:36.894202-07:00",
+  "label": "simplified-recent-first-smoke",
+  "protocol": "simple",
+  "api_url": "http://127.0.0.1:55213",
+  "implementation_fingerprint": {
+    "source_revision": "dd0275678821677bd0bdaaf28bd3cecbe1687e96",
+    "tracked_source_clean": false,
+    "untracked_source_files": [
+      "apps/api/migrations/0051_simple_workspace_core.sql",
+      "apps/api/migrations/0052_recent_lexical_candidates.sql",
+      "apps/api/migrations/0053_simple_retrieval_reliability.sql",
+      "apps/api/migrations/0054_recent_first_lexical_retrieval.sql",
+      "apps/api/src/simple_core.rs",
+      "apps/api/src/simple_dream.rs",
+      "apps/api/src/simple_worker.rs",
+      "apps/api/src/usage.rs",
+      "apps/web/src/components/WorkspaceEntryView.tsx",
+      "apps/web/src/lib/workspace.ts",
+      "eval/corpus-recent-work-v0.1/Aether/Automation status failing.md",
+      "eval/corpus-recent-work-v0.1/Aether/Automation status healthy.md",
+      "eval/corpus-recent-work-v0.1/Aether/Gmail forward intake.md",
+      "eval/corpus-recent-work-v0.1/Aether/Gmail run actionable.md",
+      "eval/corpus-recent-work-v0.1/Aether/Gmail run no action.md",
+      "eval/corpus-recent-work-v0.1/Aether/Heartbeat policy.md",
+      "eval/corpus-recent-work-v0.1/Aether/Morning briefing evidence.md",
+      "eval/corpus-recent-work-v0.1/Aether/Morning briefing policy.md",
+      "eval/corpus-recent-work-v0.1/Projects/Straylight current status.md",
+      "eval/corpus-recent-work-v0.1/Projects/Straylight stale checkpoint.md",
+      "eval/corpus-recent-work-v0.1/Trips/Europe 2026/Calendar reconciliation.md",
+      "eval/corpus-recent-work-v0.1/Trips/Europe 2026/Confirmed itinerary.md",
+      "eval/corpus-recent-work-v0.1/Trips/Europe 2026/Consent and baggage decisions.md",
+      "eval/corpus-recent-work-v0.1/Trips/Europe 2026/Flight watch tracker.md",
+      "eval/corpus-recent-work-v0.1/Trips/Europe 2026/Flight watch update.md",
+      "eval/corpus-recent-work-v0.1/Trips/Europe 2026/Planning and authority.md",
+      "eval/corpus-recent-work-v0.1/Trips/Europe 2026/Rail purchase checkpoint.md",
+      "eval/recent_work_cases.json",
+      "performance_eval.py",
+      "tests/live_simple_object_restore_contract.py",
+      "tests/live_simple_workspace_contract.py",
+      "tests/mock_openai_embeddings.py",
+      "tests/test_mock_openai_embeddings.py",
+      "tests/test_performance_eval.py"
+    ],
+    "api_container": "straylight-simplified-contract-api-1",
+    "api_image_id": "sha256:24986d19330c93c2b10a970659b2bd5894eb62826f17816048a476db62e1fc8e",
+    "api_image_revision": "simplified-smoke-v2",
+    "reproducible": false
+  },
+  "run_profile": {
+    "mode": "quick",
+    "definitive": false,
+    "samples_per_retrieval": 3,
+    "requested_scales": [
+      1000
+    ],
+    "required_scales": [],
+    "future_soak": {
+      "requested": false,
+      "records": 640000,
+      "status": "not_requested"
+    },
+    "semantic_failure_probe_required": false,
+    "semantic_failure_hooks_configured": false,
+    "import_timeout_seconds": 1800.0
+  },
+  "production_reference_records": 64000,
+  "future_reference_records": 640000,
+  "scales": [
+    {
+      "scale": 1000,
+      "protocol": "simple",
+      "documents": 1000,
+      "target_path": "Synthetic/records/0000999.md",
+      "marker": "narrow-fact-1000-cobalt",
+      "scale_elapsed_ms": 1695.898,
+      "samples": 3,
+      "discovery_query": "terminal-corpus-1000-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-1000-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 351.882,
+      "open_ms": [
+        19.735,
+        11.726,
+        11.65
+      ],
+      "open_p50_ms": 11.726,
+      "open_p95_ms": 18.934,
+      "search_ms": [
+        9.658,
+        8.842,
+        10.141
+      ],
+      "search_p50_ms": 9.658,
+      "search_p95_ms": 10.093,
+      "broad_search_ms": [
+        22.73,
+        22.709,
+        19.934
+      ],
+      "broad_search_p95_ms": 22.728,
+      "overflow_search_ms": [
+        8.895,
+        7.789,
+        7.974
+      ],
+      "overflow_search_p95_ms": 8.803,
+      "old_source_search_ms": [
+        11.17,
+        11.393,
+        12.359
+      ],
+      "old_source_search_p95_ms": 12.262,
+      "read_ms": [
+        3.414,
+        4.119,
+        4.17
+      ],
+      "read_p50_ms": 4.119,
+      "read_p95_ms": 4.165,
+      "checkpoint_ms": 13.678,
+      "resume_ms": 20.7,
+      "open_found": [
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true
+      ],
+      "overflow_found": [
+        true,
+        true,
+        true
+      ],
+      "old_source_found": [
+        true,
+        true,
+        true
+      ],
+      "old_source_semantic_deferred": [
+        false,
+        false,
+        false
+      ],
+      "read_found": [
+        true,
+        true,
+        true
+      ],
+      "critical_lane_failures": [
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "resume_found": true,
+      "boundary_probe": {
+        "status": "not_applicable"
+      },
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 1000,
+        "corpus_bytes": 316546,
+        "materialize_ms": 71.001,
+        "samples": 3,
+        "discovery_query": "terminal-corpus-1000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          27.564,
+          15.868,
+          14.151
+        ],
+        "discovery_p95_ms": 26.394,
+        "discovery_found": [
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.027,
+          0.021,
+          0.019
+        ],
+        "read_p95_ms": 0.026,
+        "read_found": [
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          6.898,
+          6.637,
+          6.772
+        ],
+        "broad_search_p95_ms": 6.885,
+        "broad_found": [
+          true,
+          true,
+          true
+        ]
+      },
+      "flat_file_control_reused_from": null,
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 0.717,
+        "search_discovery_p95_ratio": 0.382,
+        "exact_read_p95_ratio": 160.179,
+        "broad_search_p95_ratio": 3.301
+      },
+      "response_accounting": {
+        "payload_chars": 35069,
+        "source_text_chars": 15552,
+        "source_identity_chars": 5712,
+        "evidence_chars": 21264,
+        "metadata_chars": 19517,
+        "protocol_chars": 13805,
+        "estimated_payload_tokens": 8768,
+        "estimated_source_tokens": 3888,
+        "estimated_metadata_tokens": 4880,
+        "metadata_to_source_ratio": 1.254951,
+        "protocol_to_evidence_ratio": 0.649219,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 3,
+            "payload_chars": 5175,
+            "source_text_chars": 2316,
+            "source_identity_chars": 315,
+            "evidence_chars": 2631,
+            "metadata_chars": 2859,
+            "protocol_chars": 2544,
+            "metadata_to_source_ratio": 1.234456,
+            "protocol_to_evidence_ratio": 0.966933
+          },
+          "search": {
+            "samples": 3,
+            "payload_chars": 2091,
+            "source_text_chars": 519,
+            "source_identity_chars": 315,
+            "evidence_chars": 834,
+            "metadata_chars": 1572,
+            "protocol_chars": 1257,
+            "metadata_to_source_ratio": 3.028902,
+            "protocol_to_evidence_ratio": 1.507194
+          },
+          "broad_search": {
+            "samples": 3,
+            "payload_chars": 12582,
+            "source_text_chars": 6675,
+            "source_identity_chars": 2904,
+            "evidence_chars": 9579,
+            "metadata_chars": 5907,
+            "protocol_chars": 3003,
+            "metadata_to_source_ratio": 0.884944,
+            "protocol_to_evidence_ratio": 0.313498
+          },
+          "bounded_overflow_search": {
+            "samples": 3,
+            "payload_chars": 2433,
+            "source_text_chars": 840,
+            "source_identity_chars": 354,
+            "evidence_chars": 1194,
+            "metadata_chars": 1593,
+            "protocol_chars": 1239,
+            "metadata_to_source_ratio": 1.896429,
+            "protocol_to_evidence_ratio": 1.037688
+          },
+          "old_source_search": {
+            "samples": 3,
+            "payload_chars": 2220,
+            "source_text_chars": 594,
+            "source_identity_chars": 372,
+            "evidence_chars": 966,
+            "metadata_chars": 1626,
+            "protocol_chars": 1254,
+            "metadata_to_source_ratio": 2.737374,
+            "protocol_to_evidence_ratio": 1.298137
+          },
+          "read": {
+            "samples": 3,
+            "payload_chars": 4182,
+            "source_text_chars": 2316,
+            "source_identity_chars": 495,
+            "evidence_chars": 2811,
+            "metadata_chars": 1866,
+            "protocol_chars": 1371,
+            "metadata_to_source_ratio": 0.805699,
+            "protocol_to_evidence_ratio": 0.487727
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 3041,
+            "source_text_chars": 1427,
+            "source_identity_chars": 432,
+            "evidence_chars": 1859,
+            "metadata_chars": 1614,
+            "protocol_chars": 1182,
+            "metadata_to_source_ratio": 1.131044,
+            "protocol_to_evidence_ratio": 0.635826
+          },
+          "concurrent_search": {
+            "samples": 5,
+            "payload_chars": 3345,
+            "source_text_chars": 865,
+            "source_identity_chars": 525,
+            "evidence_chars": 1390,
+            "metadata_chars": 2480,
+            "protocol_chars": 1955,
+            "metadata_to_source_ratio": 2.867052,
+            "protocol_to_evidence_ratio": 1.406475
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "not_run",
+        "pass": null,
+        "required": false,
+        "reason": "The black-box API cannot force an embedding-provider outage. Run against a disposable stack and supply both external hook commands; the stop hook must restore the provider.",
+        "required_arguments": [
+          "--semantic-failure-start-command",
+          "--semantic-failure-stop-command"
+        ]
+      },
+      "semantic_catchup": {
+        "retrieval_tested_while_pending": true,
+        "start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "end": {
+          "corpus_revision": "generation:719510",
+          "import_id": "simple-import:104e1af1-223a-4ac8-abe3-d9c9e88f3ac1",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 1002
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "status": "indexing"
+        }
+      },
+      "concurrent_probe": {
+        "write_ms": 43.136,
+        "write_committed": true,
+        "search_ms": [
+          43.701,
+          19.047,
+          31.834,
+          71.393,
+          45.804
+        ],
+        "search_p95_ms": 66.275,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "search_lane_failures": [
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          }
+        ]
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 0,
+        "search_chunks_fts_idx": 1
+      },
+      "checkpoint_id": "checkpoint:7b914968-131c-befa-67eb-f7ecf1239fed",
+      "checkpoint_database_growth": {
+        "rows": 12,
+        "bytes": 6040,
+        "tables": {
+          "entries": 1,
+          "jobs": 1,
+          "search_chunks": 8,
+          "entry_versions": 1,
+          "workspace_changes": 1
+        }
+      },
+      "provisioning": {
+        "documents": 1000,
+        "delta_documents": 0,
+        "characters": 316546,
+        "import_http_status": 200,
+        "import_elapsed_ms": 349.796,
+        "import_batch_count": 1,
+        "max_batch_documents": 1000,
+        "ready_elapsed_ms": 349.796,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        }
+      }
+    }
+  ],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "broad_search_p95_ms": 3000.0,
+    "concurrent_write_ms": 3000.0,
+    "concurrent_search_p95_ms": 3000.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "max_batch_read_ms": 2000.0,
+    "max_checkpoint_sources_ms": 3000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0,
+    "latency_growth_floor_ms": 1000.0,
+    "protocol_to_evidence_ratio": 1.0
+  },
+  "gates": [
+    {
+      "name": "all_opens_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_searches_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_resumes_return_target",
+      "pass": true,
+      "observed": [
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_exact_reads_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "every_scale_open_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 18.934
+        }
+      ],
+      "threshold": 5000.0
+    },
+    {
+      "name": "every_scale_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 10.093
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_broad_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 22.728
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_overflow_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 8.803
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_old_source_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 12.262
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_read_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 4.165
+        }
+      ],
+      "threshold": 1000.0
+    },
+    {
+      "name": "every_scale_checkpoint_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 13.678
+        }
+      ],
+      "threshold": 2000.0
+    },
+    {
+      "name": "every_scale_resume_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 20.7
+        }
+      ],
+      "threshold": 5000.0
+    },
+    {
+      "name": "no_exact_or_lexical_lane_failures",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "failures": []
+        }
+      ],
+      "threshold": []
+    },
+    {
+      "name": "retrieval_works_while_semantic_indexing_is_pending",
+      "pass": true,
+      "observed": [
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "unknown_path_discovery_does_not_reveal_target_path",
+      "pass": true,
+      "observed": [
+        false
+      ],
+      "threshold": false
+    },
+    {
+      "name": "all_broad_searches_return_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "bounded_lexical_overflow_returns_late_relevant_source",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "old_relevant_source_survives_many_newer_writes",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "semantic_is_not_deferred_by_unrelated_backlog",
+      "pass": true,
+      "observed": [
+        [
+          false,
+          false,
+          false
+        ]
+      ],
+      "threshold": false
+    },
+    {
+      "name": "flat_file_discovery_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_exact_read_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_broad_search_returns_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "service_protocol_overhead_does_not_exceed_evidence",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "source_text_chars": 15552,
+          "source_identity_chars": 5712,
+          "protocol_chars": 13805,
+          "ratio": 0.649219
+        }
+      ],
+      "threshold": "ratio <= 1.0"
+    },
+    {
+      "name": "unrelated_write_commits",
+      "pass": true,
+      "observed": true,
+      "threshold": true
+    },
+    {
+      "name": "unrelated_write_latency",
+      "pass": true,
+      "observed": 43.136,
+      "threshold": 3000.0
+    },
+    {
+      "name": "retrieval_survives_unrelated_write",
+      "pass": true,
+      "observed": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "concurrent_exact_and_lexical_lanes_remain_healthy",
+      "pass": true,
+      "observed": [
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "threshold": "all false"
+    },
+    {
+      "name": "concurrent_search_p95",
+      "pass": true,
+      "observed": 66.275,
+      "threshold": 3000.0
+    },
+    {
+      "name": "checkpoint_row_growth_is_bounded",
+      "pass": true,
+      "observed": 12,
+      "threshold": 100
+    },
+    {
+      "name": "checkpoint_storage_growth_is_bounded",
+      "pass": true,
+      "observed": 6040,
+      "threshold": 4194304
+    }
+  ],
+  "errors": [],
+  "pass": true
+}

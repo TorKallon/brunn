@@ -1,0 +1,20 @@
+{
+  "checks": {
+    "binary_hash_and_tombstone_restore": true,
+    "changes_continuation": true,
+    "checkpoint_cli_export_import": true,
+    "checkpoint_lineage": true,
+    "checkpoint_portable_identity": true,
+    "continuation_source_priority": true,
+    "markdown_tombstone_restore": true,
+    "natural_language_lexical_fallback": true,
+    "portable_path_collision": true,
+    "read_only_boundary": true,
+    "reserved_namespace": true,
+    "stable_capture_replay": true,
+    "user_isolation": true
+  },
+  "elapsed_ms": 2843.999,
+  "schema": "straylight-simple-workspace-live-contract@v1",
+  "status": "pass"
+}

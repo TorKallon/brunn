@@ -1,0 +1,1210 @@
+{
+  "schema": "straylight-performance-eval@v2",
+  "created_at": "2026-07-27T10:36:47.347635-07:00",
+  "label": "c3a5420-cold-1500-exact",
+  "protocol": "simple",
+  "api_url": "http://127.0.0.1:55413",
+  "implementation_fingerprint": {
+    "source_revision": "c3a54200f0dbb0cb02d0077730995119178cb31e",
+    "tracked_source_clean": true,
+    "untracked_source_files": [],
+    "api_container": "straylight-c3a5420-cert-api-1",
+    "api_image_id": "sha256:5892103ec5afea553b835dff969a6b2a60b60ffbbcfc0e1ce685f447da9fb228",
+    "api_image_revision": "c3a54200f0dbb0cb02d0077730995119178cb31e",
+    "reproducible": true
+  },
+  "run_profile": {
+    "mode": "quick",
+    "definitive": false,
+    "samples_per_retrieval": 5,
+    "requested_scales": [
+      1500
+    ],
+    "required_scales": [],
+    "future_soak": {
+      "requested": false,
+      "records": 640000,
+      "status": "not_requested"
+    },
+    "semantic_failure_probe_required": false,
+    "semantic_failure_hooks_configured": false,
+    "import_timeout_seconds": 1800.0
+  },
+  "production_reference_records": 64000,
+  "future_reference_records": 640000,
+  "scales": [
+    {
+      "scale": 1500,
+      "protocol": "simple",
+      "documents": 1500,
+      "target_path": "Synthetic/records/0001499.md",
+      "marker": "narrow-fact-1500-cobalt",
+      "scale_elapsed_ms": 22470.634,
+      "samples": 5,
+      "discovery_query": "terminal-corpus-1500-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-1500-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 3557.063,
+      "open_ms": [
+        671.761,
+        431.767,
+        360.311,
+        568.51,
+        291.519
+      ],
+      "open_p50_ms": 431.767,
+      "open_p95_ms": 651.111,
+      "search_ms": [
+        533.768,
+        309.708,
+        344.205,
+        295.942,
+        746.209
+      ],
+      "search_p50_ms": 344.205,
+      "search_p95_ms": 703.721,
+      "broad_search_ms": [
+        471.767,
+        699.991,
+        430.475,
+        383.269,
+        844.303
+      ],
+      "broad_search_p95_ms": 815.441,
+      "overflow_search_ms": [
+        395.14,
+        399.838,
+        415.042,
+        214.843,
+        411.144
+      ],
+      "overflow_search_p95_ms": 414.262,
+      "old_source_search_ms": [
+        378.308,
+        330.654,
+        375.446,
+        386.81,
+        310.761
+      ],
+      "old_source_search_p95_ms": 385.11,
+      "read_ms": [
+        257.861,
+        179.713,
+        321.388,
+        179.114,
+        171.156
+      ],
+      "read_p50_ms": 179.713,
+      "read_p95_ms": 308.682,
+      "checkpoint_ms": 261.373,
+      "resume_ms": 303.985,
+      "open_found": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "overflow_found": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "old_source_found": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "old_source_semantic_deferred": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "read_found": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "critical_lane_failures": [
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "resume_found": true,
+      "boundary_probe": {
+        "status": "not_applicable"
+      },
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 1500,
+        "corpus_bytes": 475248,
+        "materialize_ms": 313.737,
+        "samples": 5,
+        "discovery_query": "terminal-corpus-1500-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          37.934,
+          30.072,
+          33.296,
+          33.322,
+          41.37
+        ],
+        "discovery_p95_ms": 40.683,
+        "discovery_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.028,
+          0.051,
+          0.052,
+          0.046,
+          0.04
+        ],
+        "read_p95_ms": 0.052,
+        "read_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          13.905,
+          26.945,
+          18.219,
+          29.779,
+          14.204
+        ],
+        "broad_search_p95_ms": 29.213,
+        "broad_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "flat_file_control_reused_from": "results/2026-07-27-dd02756-cold-1500-timeout.json",
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 16.004,
+        "search_discovery_p95_ratio": 17.298,
+        "exact_read_p95_ratio": 5936.199,
+        "broad_search_p95_ratio": 27.914
+      },
+      "response_accounting": {
+        "payload_chars": 217036,
+        "source_text_chars": 94686,
+        "source_identity_chars": 63090,
+        "evidence_chars": 157776,
+        "metadata_chars": 122350,
+        "protocol_chars": 59260,
+        "estimated_payload_tokens": 54259,
+        "estimated_source_tokens": 23672,
+        "estimated_metadata_tokens": 30588,
+        "metadata_to_source_ratio": 1.292166,
+        "protocol_to_evidence_ratio": 0.375596,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 5,
+            "payload_chars": 46953,
+            "source_text_chars": 15970,
+            "source_identity_chars": 16982,
+            "evidence_chars": 32952,
+            "metadata_chars": 30983,
+            "protocol_chars": 14001,
+            "metadata_to_source_ratio": 1.940075,
+            "protocol_to_evidence_ratio": 0.424891
+          },
+          "search": {
+            "samples": 5,
+            "payload_chars": 18505,
+            "source_text_chars": 9370,
+            "source_identity_chars": 4655,
+            "evidence_chars": 14025,
+            "metadata_chars": 9135,
+            "protocol_chars": 4480,
+            "metadata_to_source_ratio": 0.97492,
+            "protocol_to_evidence_ratio": 0.31943
+          },
+          "broad_search": {
+            "samples": 5,
+            "payload_chars": 20625,
+            "source_text_chars": 11125,
+            "source_identity_chars": 4840,
+            "evidence_chars": 15965,
+            "metadata_chars": 9500,
+            "protocol_chars": 4660,
+            "metadata_to_source_ratio": 0.853933,
+            "protocol_to_evidence_ratio": 0.291889
+          },
+          "bounded_overflow_search": {
+            "samples": 5,
+            "payload_chars": 19075,
+            "source_text_chars": 9905,
+            "source_identity_chars": 4720,
+            "evidence_chars": 14625,
+            "metadata_chars": 9170,
+            "protocol_chars": 4450,
+            "metadata_to_source_ratio": 0.925795,
+            "protocol_to_evidence_ratio": 0.304274
+          },
+          "old_source_search": {
+            "samples": 5,
+            "payload_chars": 18232,
+            "source_text_chars": 9000,
+            "source_identity_chars": 4753,
+            "evidence_chars": 13753,
+            "metadata_chars": 9232,
+            "protocol_chars": 4479,
+            "metadata_to_source_ratio": 1.025778,
+            "protocol_to_evidence_ratio": 0.325674
+          },
+          "read": {
+            "samples": 5,
+            "payload_chars": 6955,
+            "source_text_chars": 3865,
+            "source_identity_chars": 825,
+            "evidence_chars": 4690,
+            "metadata_chars": 3090,
+            "protocol_chars": 2265,
+            "metadata_to_source_ratio": 0.799483,
+            "protocol_to_evidence_ratio": 0.482942
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 8466,
+            "source_text_chars": 1426,
+            "source_identity_chars": 4090,
+            "evidence_chars": 5516,
+            "metadata_chars": 7040,
+            "protocol_chars": 2950,
+            "metadata_to_source_ratio": 4.936886,
+            "protocol_to_evidence_ratio": 0.534808
+          },
+          "concurrent_search": {
+            "samples": 25,
+            "payload_chars": 78225,
+            "source_text_chars": 34025,
+            "source_identity_chars": 22225,
+            "evidence_chars": 56250,
+            "metadata_chars": 44200,
+            "protocol_chars": 21975,
+            "metadata_to_source_ratio": 1.299045,
+            "protocol_to_evidence_ratio": 0.390667
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "not_run",
+        "pass": null,
+        "required": false,
+        "reason": "The black-box API cannot force an embedding-provider outage. Run against a disposable stack and supply both external hook commands; the stop hook must restore the provider.",
+        "required_arguments": [
+          "--semantic-failure-start-command",
+          "--semantic-failure-stop-command"
+        ]
+      },
+      "semantic_catchup": {
+        "retrieval_tested_while_pending": true,
+        "start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "end": {
+          "corpus_revision": "generation:1506",
+          "import_id": "simple-import:ab8218e4-8b14-4597-862f-4aa46053811c",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 1274
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "status": "indexing"
+        }
+      },
+      "concurrent_probe": {
+        "rounds": 5,
+        "searches_per_round": 5,
+        "write_ms": 564.835,
+        "write_samples_ms": [
+          614.735,
+          365.234,
+          226.471,
+          252.972,
+          198.263
+        ],
+        "write_p50_ms": 252.972,
+        "write_p95_ms": 564.835,
+        "write_max_ms": 614.735,
+        "write_committed": true,
+        "write_committed_samples": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "search_ms": [
+          979.276,
+          965.231,
+          1007.218,
+          1007.684,
+          932.965,
+          365.029,
+          383.037,
+          456.596,
+          382.434,
+          366.316,
+          338.81,
+          337.823,
+          337.918,
+          337.821,
+          338.462,
+          428.271,
+          427.991,
+          402.203,
+          426.965,
+          428.118,
+          443.309,
+          294.566,
+          355.35,
+          416.171,
+          416.653
+        ],
+        "search_p95_ms": 1001.63,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "search_lane_failures": [
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          }
+        ]
+      },
+      "checkpoint_pressure": {
+        "elapsed_seconds": 21.243,
+        "requested_checkpoints": 0,
+        "timed_checkpoints": 0,
+        "requested_checkpoints_per_minute": 0.0,
+        "write_time_ms": 0,
+        "sync_time_ms": 0,
+        "buffers_written": 0,
+        "settings": {
+          "max_wal_size": "4GB",
+          "min_wal_size": "1GB",
+          "wal_compression": "pglz"
+        }
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 0,
+        "search_chunks_fts_idx": 22
+      },
+      "checkpoint_id": "checkpoint:c4934c24-cdfc-c797-edfa-a7fdb8a96c5a",
+      "checkpoint_database_growth": {
+        "rows": 11,
+        "bytes": 54984,
+        "tables": {
+          "entries": 1,
+          "entry_versions": 1,
+          "workspace_changes": 1,
+          "search_chunks": 8
+        }
+      },
+      "provisioning": {
+        "documents": 1500,
+        "delta_documents": 0,
+        "characters": 475248,
+        "import_http_status": 200,
+        "import_elapsed_ms": 3549.391,
+        "import_batch_count": 1,
+        "max_batch_documents": 1500,
+        "ready_elapsed_ms": 3549.391,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        }
+      }
+    }
+  ],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "broad_search_p95_ms": 3000.0,
+    "concurrent_write_ms": 3000.0,
+    "concurrent_search_p95_ms": 3000.0,
+    "requested_checkpoints_per_minute": 1.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "max_batch_read_ms": 2000.0,
+    "max_checkpoint_sources_ms": 3000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0,
+    "latency_growth_floor_ms": 1000.0,
+    "protocol_to_evidence_ratio": 1.0
+  },
+  "gates": [
+    {
+      "name": "all_opens_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_searches_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_resumes_return_target",
+      "pass": true,
+      "observed": [
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_exact_reads_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "every_scale_open_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "observed": 651.111
+        }
+      ],
+      "threshold": 5000.0
+    },
+    {
+      "name": "every_scale_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "observed": 703.721
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_broad_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "observed": 815.441
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_overflow_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "observed": 414.262
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_old_source_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "observed": 385.11
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_read_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "observed": 308.682
+        }
+      ],
+      "threshold": 1000.0
+    },
+    {
+      "name": "every_scale_checkpoint_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "observed": 261.373
+        }
+      ],
+      "threshold": 2000.0
+    },
+    {
+      "name": "every_scale_resume_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "observed": 303.985
+        }
+      ],
+      "threshold": 5000.0
+    },
+    {
+      "name": "no_exact_or_lexical_lane_failures",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "failures": []
+        }
+      ],
+      "threshold": []
+    },
+    {
+      "name": "retrieval_works_while_semantic_indexing_is_pending",
+      "pass": true,
+      "observed": [
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "unknown_path_discovery_does_not_reveal_target_path",
+      "pass": true,
+      "observed": [
+        false
+      ],
+      "threshold": false
+    },
+    {
+      "name": "all_broad_searches_return_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "bounded_lexical_overflow_returns_late_relevant_source",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "old_relevant_source_survives_many_newer_writes",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "semantic_is_not_deferred_by_unrelated_backlog",
+      "pass": true,
+      "observed": [
+        [
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      ],
+      "threshold": false
+    },
+    {
+      "name": "flat_file_discovery_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_exact_read_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_broad_search_returns_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "service_protocol_overhead_does_not_exceed_evidence",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1500,
+          "source_text_chars": 94686,
+          "source_identity_chars": 63090,
+          "protocol_chars": 59260,
+          "ratio": 0.375596
+        }
+      ],
+      "threshold": "ratio <= 1.0"
+    },
+    {
+      "name": "unrelated_write_commits",
+      "pass": true,
+      "observed": true,
+      "threshold": true
+    },
+    {
+      "name": "unrelated_write_p95_latency",
+      "pass": true,
+      "observed": 564.835,
+      "threshold": 3000.0
+    },
+    {
+      "name": "retrieval_survives_unrelated_write",
+      "pass": true,
+      "observed": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "concurrent_exact_and_lexical_lanes_remain_healthy",
+      "pass": true,
+      "observed": [
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "threshold": "all false"
+    },
+    {
+      "name": "concurrent_search_p95",
+      "pass": true,
+      "observed": 1001.63,
+      "threshold": 3000.0
+    },
+    {
+      "name": "requested_checkpoint_rate_is_bounded",
+      "pass": true,
+      "observed": {
+        "elapsed_seconds": 21.243,
+        "requested_checkpoints": 0,
+        "timed_checkpoints": 0,
+        "requested_checkpoints_per_minute": 0.0,
+        "write_time_ms": 0,
+        "sync_time_ms": 0,
+        "buffers_written": 0,
+        "settings": {
+          "max_wal_size": "4GB",
+          "min_wal_size": "1GB",
+          "wal_compression": "pglz"
+        }
+      },
+      "threshold": "requested checkpoints <= 1.0 per minute"
+    },
+    {
+      "name": "checkpoint_row_growth_is_bounded",
+      "pass": true,
+      "observed": 11,
+      "threshold": 100
+    },
+    {
+      "name": "checkpoint_storage_growth_is_bounded",
+      "pass": true,
+      "observed": 54984,
+      "threshold": 4194304
+    }
+  ],
+  "errors": [],
+  "pass": true
+}

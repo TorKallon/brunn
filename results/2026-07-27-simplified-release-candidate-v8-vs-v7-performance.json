@@ -1,0 +1,74 @@
+{
+  "before_label": "simplified-release-candidate-v7",
+  "after_label": "simplified-release-candidate-v8",
+  "shared_scales": [
+    1000,
+    10000,
+    64000,
+    640000
+  ],
+  "rows": [
+    {
+      "scale": 1000,
+      "import_delta_pct": -85.286,
+      "open_p95_delta_pct": -90.877,
+      "search_p95_delta_pct": -94.998,
+      "broad_search_p95_delta_pct": -90.414,
+      "concurrent_search_p95_delta_pct": -88.013,
+      "read_p95_delta_pct": -95.193,
+      "checkpoint_delta_pct": -96.327,
+      "resume_delta_pct": -90.795,
+      "checkpoint_rows_before": 11,
+      "checkpoint_rows_after": 11,
+      "checkpoint_bytes_before": 54992,
+      "checkpoint_bytes_after": 54968
+    },
+    {
+      "scale": 10000,
+      "import_delta_pct": -65.989,
+      "open_p95_delta_pct": 129.861,
+      "search_p95_delta_pct": 391.426,
+      "broad_search_p95_delta_pct": -39.614,
+      "concurrent_search_p95_delta_pct": -83.798,
+      "read_p95_delta_pct": -90.843,
+      "checkpoint_delta_pct": -91.19,
+      "resume_delta_pct": -82.331,
+      "checkpoint_rows_before": 11,
+      "checkpoint_rows_after": 11,
+      "checkpoint_bytes_before": 55000,
+      "checkpoint_bytes_after": 55000
+    },
+    {
+      "scale": 64000,
+      "import_delta_pct": -7.428,
+      "open_p95_delta_pct": 34.954,
+      "search_p95_delta_pct": -45.335,
+      "broad_search_p95_delta_pct": -38.683,
+      "concurrent_search_p95_delta_pct": -58.159,
+      "read_p95_delta_pct": 31.638,
+      "checkpoint_delta_pct": -81.078,
+      "resume_delta_pct": 0.948,
+      "checkpoint_rows_before": 11,
+      "checkpoint_rows_after": 11,
+      "checkpoint_bytes_before": 55008,
+      "checkpoint_bytes_after": 55008
+    },
+    {
+      "scale": 640000,
+      "import_delta_pct": 14.674,
+      "open_p95_delta_pct": -70.742,
+      "search_p95_delta_pct": -73.282,
+      "broad_search_p95_delta_pct": -74.876,
+      "concurrent_search_p95_delta_pct": -82.129,
+      "read_p95_delta_pct": 0.521,
+      "checkpoint_delta_pct": -99.131,
+      "resume_delta_pct": -69.066,
+      "checkpoint_rows_before": 11,
+      "checkpoint_rows_after": 11,
+      "checkpoint_bytes_before": 55008,
+      "checkpoint_bytes_after": 55008
+    }
+  ],
+  "before_pass": false,
+  "after_pass": true
+}

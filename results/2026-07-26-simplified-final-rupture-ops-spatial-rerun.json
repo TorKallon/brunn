@@ -1,0 +1,1159 @@
+{
+  "benchmark_version": "rupture-ops-v0.1",
+  "run_at": "2026-07-26T18:38:24-07:00",
+  "run_id": "20260726T195000-0700",
+  "harness_sha256": "3419f0b34b28dc4f2ba23cdd0a9e8bc35d4d28a957e935f0981a0107fbe93349",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "ae2ad51015d4d56c5f1fc228252d598f31383bf56a4a07bc65ab98146277438e",
+  "manifest_sha256": "c920fafbcc79958719eb4cfd8e4d85dec5b037c25b9f28add1721cd633ea189b",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-rupture-ops-v0.1",
+    "sha256": "aa9c33e39777f0899dacecee61a94f5fd11ec1315f7a6e820a41bc217e1a9803",
+    "artifact_tree_sha256": "aa434eb3ffd5f4b6b9c766000d34ec6c30fd14b5ec6f94a4ff625306396b7b50",
+    "documents": 65,
+    "chunks": 587,
+    "characters": 468399
+  },
+  "manifest": {
+    "benchmark_version": "rupture-ops-v0.1",
+    "name": "Straylight Rupture Ops workload evaluation",
+    "report_title": "Straylight Rupture Ops workload evaluation",
+    "report_date": "2026-07-11",
+    "evaluation_model": "subject_plus_product_work",
+    "grading_mode": "concept_tokens_v1",
+    "fixture_domain": "RuptureOps and StarRupture",
+    "generalization": {
+      "purpose": "Evaluate an agent that learns an evolving subject, tracks a concrete instance, advances goals and decisions, builds durable products, and verifies results.",
+      "planes": [
+        "subject",
+        "instance",
+        "work",
+        "product",
+        "validation"
+      ],
+      "fixture_rule": "Game-specific entities and values are concrete test data, not privileged Straylight schema."
+    },
+    "corpus_root": "eval/corpus-rupture-ops-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "future_lanes": [
+      "binary image understanding with source-native reads",
+      "object-store archive inspection and staged promotion",
+      "live web refresh against a snapshot-pinned local corpus",
+      "concurrent multi-agent writes against optimistic revision preconditions"
+    ],
+    "cases": [
+      {
+        "id": "ruptureops-spatial-evidence",
+        "workload": "StarRupture",
+        "scope": "StarRupture",
+        "capability": "multimodal_spatial_and_coordinate_reasoning",
+        "task": "Prepare a landmark-grounded geography checkpoint for Flowworks, Grand Basin, and the first Goethite and Oil satellites. Correct the older Grand Basin match, preserve which pins are only relational, and do not combine screenshot registration with SRDB coordinates without a verified transform.",
+        "claim_slots": {
+          "c1": "Grand Basin correction and landmark relation",
+          "c2": "Flowworks and active-corridor relation",
+          "c3": "coordinate-frame and pin boundary",
+          "c4": "resource satellite directions and rationale"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "east of",
+                  "immediately east"
+                ]
+              },
+              {
+                "any": [
+                  "Mythic Cry"
+                ]
+              },
+              {
+                "any": [
+                  "Red Lake",
+                  "Redleaf"
+                ]
+              },
+              {
+                "any": [
+                  "wrong",
+                  "corrected",
+                  "not the earlier"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md",
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "between Landerworks and Faraday"
+                ]
+              },
+              {
+                "any": [
+                  "selected",
+                  "not a placed Core",
+                  "unbuilt"
+                ]
+              },
+              {
+                "any": [
+                  "Forgotten Engine",
+                  "northeast of Faraday",
+                  "east-central"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "screenshot",
+                  "registration frame"
+                ]
+              },
+              {
+                "any": [
+                  "SRDB",
+                  "map coordinates"
+                ]
+              },
+              {
+                "any": [
+                  "verified transform",
+                  "do not mix"
+                ]
+              },
+              {
+                "any": [
+                  "Sunstone",
+                  "Brimstone",
+                  "exact pin",
+                  "open"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md",
+              "Topics/StarRupture/assets/sites/README.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "northwest",
+                  "Goethite"
+                ]
+              },
+              {
+                "any": [
+                  "1393",
+                  "1464",
+                  "three",
+                  "triple"
+                ]
+              },
+              {
+                "any": [
+                  "west/southwest",
+                  "Oil"
+                ]
+              },
+              {
+                "any": [
+                  "raw",
+                  "Cargo Dispatcher",
+                  "process",
+                  "Grand Basin"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+              "Topics/StarRupture/World geography and named locations.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the screenshot pixels directly equal SRDB coordinates",
+          "Sunstone exact coordinates are known",
+          "the dashed line is the surveyed rail path"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "ruptureops-spatial-evidence": {
+      "authorization_scope": "eval:20260726T195000-0700/ruptureops-spatial-evidence",
+      "requested_authorization_scope": "eval:20260726T195000-0700/ruptureops-spatial-evidence",
+      "display_scope": "StarRupture",
+      "access_mode": "read_write",
+      "import_id": "simple-import:28120927-caa4-4626-b138-407306dc743e",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:2998",
+      "corpus_revision": "generation:2998",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:28120927-caa4-4626-b138-407306dc743e",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 112.208,
+        "ready_elapsed_ms": 8.791,
+        "semantic_waited": true,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:20260726T195000-0700/ruptureops-spatial-evidence",
+          "base_corpus_revision": "generation:2998",
+          "checkpoint_id": null,
+          "corpus_revision": "generation:2998",
+          "credential_id": "credential:267a605a-1b3a-4e5e-98dc-b175bcb81b8e",
+          "delta_documents": 0,
+          "display_scope": "StarRupture",
+          "documents": 65,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:28120927-caa4-4626-b138-407306dc743e",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:20260726T195000-0700/ruptureops-spatial-evidence",
+          "scope_id": "scope:2b029c87-b698-43db-a347-2263c3e0c8be",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:28120927-caa4-4626-b138-407306dc743e",
+          "token_status": "issued_once",
+          "user_id": "user:28120927-caa4-4626-b138-407306dc743e"
+        },
+        "ready_response": {
+          "corpus_revision": "generation:2998",
+          "import_id": "simple-import:28120927-caa4-4626-b138-407306dc743e",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "ready_for_evaluation": true,
+          "status": "ready"
+        }
+      }
+    }
+  },
+  "service_protocol": "simple",
+  "records": [
+    {
+      "case_id": "ruptureops-spatial-evidence",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 102.269,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/20260726T195000-0700/service_api/ruptureops-spatial-evidence/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Landmark-grounded geography checkpoint completed and persisted as checkpoint:1cd738d4-a893-b3ce-4aee-e6805a0e70e5 at corpus revision generation:2999.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Grand Basin is the broad basin immediately east of GRO \u201cMythic Cry,\u201d north of the active production corridor, with a large flat northern/northwestern pad. This supersedes the older provisional Red Lake/Redleaf match. Preserve a combat exclusion strip beside Mythic Cry\u2019s mountain/POI boundary, and keep the Geo Scanner near `3059,2618` outside the first build district.",
+            "source_paths": [
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Flowworks is selected but not confirmed built. It lies between Landerworks and Faraday on a broad field with Titanium and Wolfram nearby and is intended to attach to their through trunk through one storage-yard spur. The dashed Landerworks\u2013Flowworks\u2013Faraday line records a relationship axis, not surveyed track geometry.",
+            "source_paths": [
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Do not combine screenshot registration with SRDB coordinates unless a transform between those coordinate frames is verified. Preserve relational-only geography as relational: the Landerworks\u2013Flowworks\u2013Faraday line is not surveyed geometry, while Sunstone Station and Brimstone Utility have known parent relationships but no registered exact pins. Flowworks and Grand Basin are selected/planned rather than confirmed built.",
+            "source_paths": [
+              "Topics/StarRupture/Player save - sites and freight network.md",
+              "Topics/StarRupture/StarRupture.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The preferred first permanent Goethite source is the safer northwestern triple at approximately `1393\u20131464,1838\u20131891`, northwest of Mythic Cry/Grand Basin. After Engine access and Selenian 9, build all three Laser Drills, merge them into one Goethite-only Cargo Dispatcher, receive 45 raw Ore/min, and place one 1,600-unit Storage Depot v2 after the Receiver; this is preferred over the closer west field around `1252\u20131472,2950\u20133282`, which overlaps scanner/hostile envelopes. The preferred first Oil source is approximately `1234,3760`, west/southwest of Mythic Cry and Grand Basin. After Future Health 11, build one Oil Extractor and one Crude-only Dispatcher/Receiver pair, receive 10 Crude/min into one V2 buffer, and feed one GB-A Refinery. Reserve\u2014but do not initially build\u2014a second Oil pair and Refinery because one Refinery already consumes the full 10 Crude/min source plus large Titanium and Calcium feeds; the Oil marker around `1351,4473` is a separate site, not a same-pad extension. Goethite and Oil may share a receiver yard but must not share a Cargo link, rail lane, or storage unit.",
+            "source_paths": [
+              "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Prepare a landmark-grounded geography handoff for Flowworks, corrected Grand Basin, and the first Goethite and Oil satellites without conflating coordinate frames or relational pins.",
+          "current_state": [
+            "Grand Basin\u2019s current canonical match is the basin immediately east of Mythic Cry; the provisional Red Lake/Redleaf match is superseded.",
+            "Flowworks and Grand Basin remain selected/planned, not confirmed built.",
+            "The first Goethite and Oil sources and their adopted raw-resource Cargo topology are documented.",
+            "Checkpoint checkpoint:1cd738d4-a893-b3ce-4aee-e6805a0e70e5 was committed at generation:2999."
+          ],
+          "decisions": [
+            "Use named landmarks and terrain relations before raw coordinates.",
+            "Keep relational-only placements distinct from surveyed pins.",
+            "Do not overlay screenshot registration and SRDB coordinates without a verified transform.",
+            "Move compact raw Goethite and Crude through separate item-specific Cargo links and process them beside Grand Basin consumers.",
+            "Treat the July 8 remote-resource calculations as historical evidence; rerun exact late-campaign quantities against the canonical RuptureOps snapshot before app publication."
+          ],
+          "open_questions": [
+            "A verified screenshot-to-SRDB coordinate transform is still absent.",
+            "Exact registered pins for relational-only sites remain unresolved.",
+            "Measured campaign recovery has not established a need for fallback extraction."
+          ],
+          "next_actions": [
+            "Survey exact pins and establish a verified transform before producing any cross-frame overlay.",
+            "After Engine access and Selenian 9, establish the preferred three-node Goethite satellite and charge its Receiver buffer before enabling exact-rate processing.",
+            "After Future Health 11, establish the first Oil satellite and its single GB-A Refinery path.",
+            "Add fallback extraction only when measured campaign recovery requires it."
+          ],
+          "artifacts": [
+            ".straylight/checkpoints/1cd738d4-a893-b3ce-4aee-e6805a0e70e5.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Satellite source hash: sha256:c70e5aba981d863a4bc24e8d8202539666dd976702f3414beb5eae03c2c67de2"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8158,
+        "pass": false,
+        "claims_passed": 1,
+        "claims_total": 4,
+        "claim_score": 0.7833,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 5,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.8,
+            "pass": false,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "east of",
+                  "immediately east"
+                ],
+                "matched": "east of"
+              },
+              {
+                "alternatives": [
+                  "Mythic Cry"
+                ],
+                "matched": "Mythic Cry"
+              },
+              {
+                "alternatives": [
+                  "Red Lake",
+                  "Redleaf"
+                ],
+                "matched": "Red Lake"
+              },
+              {
+                "alternatives": [
+                  "wrong",
+                  "corrected",
+                  "not the earlier"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 0.5333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "between Landerworks and Faraday"
+                ],
+                "matched": "between Landerworks and Faraday"
+              },
+              {
+                "alternatives": [
+                  "selected",
+                  "not a placed Core",
+                  "unbuilt"
+                ],
+                "matched": "selected"
+              },
+              {
+                "alternatives": [
+                  "Forgotten Engine",
+                  "northeast of Faraday",
+                  "east-central"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 0.8,
+            "pass": false,
+            "content_fraction": 1.0,
+            "source_hit": false,
+            "checks": [
+              {
+                "alternatives": [
+                  "screenshot",
+                  "registration frame"
+                ],
+                "matched": "screenshot"
+              },
+              {
+                "alternatives": [
+                  "SRDB",
+                  "map coordinates"
+                ],
+                "matched": "SRDB"
+              },
+              {
+                "alternatives": [
+                  "verified transform",
+                  "do not mix"
+                ],
+                "matched": "verified transform"
+              },
+              {
+                "alternatives": [
+                  "Sunstone",
+                  "Brimstone",
+                  "exact pin",
+                  "open"
+                ],
+                "matched": "Sunstone"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Player save - sites and freight network.md",
+              "Topics/StarRupture/StarRupture.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "northwest",
+                  "Goethite"
+                ],
+                "matched": "northwest"
+              },
+              {
+                "alternatives": [
+                  "1393",
+                  "1464",
+                  "three",
+                  "triple"
+                ],
+                "matched": "1393"
+              },
+              {
+                "alternatives": [
+                  "west/southwest",
+                  "Oil"
+                ],
+                "matched": "west/southwest"
+              },
+              {
+                "alternatives": [
+                  "raw",
+                  "Cargo Dispatcher",
+                  "process",
+                  "Grand Basin"
+                ],
+                "matched": "raw"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 19,
+        "commands": 6,
+        "command_output_chars": 107668,
+        "tokens": {
+          "input_tokens": 190471,
+          "cached_input_tokens": 156160,
+          "output_tokens": 3342
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-26T18:36:53.309-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa137c02579e0af1bb128dfd952ca",
+          "elapsed_ms": 36.699,
+          "result_chars": 98758,
+          "source_text_chars": 93775,
+          "metadata_chars": 4983,
+          "evidence_items": 10,
+          "complete_sources": 8,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Player-derived product requirements.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-26T18:37:05.014-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa137ede47083b8ddddcf404debce",
+          "elapsed_ms": 30.775,
+          "result_chars": 1576,
+          "source_text_chars": 0,
+          "metadata_chars": 1576,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Player-derived product requirements.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-26T18:37:13.100-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa1380d7877a0b1f81efed1227fec",
+          "elapsed_ms": 34.158,
+          "result_chars": 1423,
+          "source_text_chars": 0,
+          "metadata_chars": 1423,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/RuptureOps.md",
+            "Topics/StarRupture/Game mechanics - Update 1.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-26T18:37:17.915-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa13820567bc3bf03987585a11207",
+          "elapsed_ms": 15.64,
+          "result_chars": 3501,
+          "source_text_chars": 2925,
+          "metadata_chars": 576,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-26T18:37:50.854-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa138a0ef7d6094bbe912a235dd4b",
+          "elapsed_ms": 36.626,
+          "result_chars": 1471,
+          "source_text_chars": 0,
+          "metadata_chars": 1471,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/1cd738d4-a893-b3ce-4aee-e6805a0e70e5.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/StarRupture.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 5,
+      "service_result_chars": 106729,
+      "service_source_text_chars": 96700,
+      "service_metadata_chars": 10029,
+      "service_replay_weighted_chars": 512836,
+      "service_latency_ms": 153.898,
+      "service_http_calls": 5,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:1cd738d4-a893-b3ce-4aee-e6805a0e70e5",
+        "checkpoint_ref": "checkpoint:1cd738d4-a893-b3ce-4aee-e6805a0e70e5",
+        "path": ".straylight/checkpoints/1cd738d4-a893-b3ce-4aee-e6805a0e70e5.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:871535e40676d6f2567548461ab7a5836f026cfb0a66684a2fbe50af47d621be",
+            "entry_ref": "entry:019fa137-8516-76d2-92dd-abebf23adcb7",
+            "path": "Topics/StarRupture/Player save - sites and freight network.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:c70e5aba981d863a4bc24e8d8202539666dd976702f3414beb5eae03c2c67de2",
+            "entry_ref": "entry:019fa137-8516-76d2-92dd-ac2a4248e261",
+            "path": "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:ab8a1c0544602bacac0dff8a04281d36c1f59ad18b05e6dbd492d04ac556d215",
+            "entry_ref": "entry:019fa137-8516-76d2-92dd-ac4c99ef5752",
+            "path": "Topics/StarRupture/StarRupture.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 2999,
+        "write": {
+          "content_hash": "sha256:9274da6778d35fab58884a4d911456ac7bc447c019599c8784487aa376a487ff",
+          "entry_ref": "entry:1cd738d4-a893-b3ce-4aee-e6805a0e70e5",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/1cd738d4-a893-b3ce-4aee-e6805a0e70e5.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa138-a103-7e71-90e8-1a9cbf4c7c91",
+          "workspace_generation": 2999
+        }
+      },
+      "service_session_id": "session:019fa137-c027-7053-92ef-fd487e6a6f6c",
+      "service_corpus_revision": "generation:2999",
+      "workspace_operations": [
+        {
+          "at": "2026-07-26T18:36:53.309-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa137c02579e0af1bb128dfd952ca",
+          "elapsed_ms": 36.699,
+          "result_chars": 98758,
+          "source_text_chars": 93775,
+          "metadata_chars": 4983,
+          "evidence_items": 10,
+          "complete_sources": 8,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Player-derived product requirements.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-26T18:37:05.014-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa137ede47083b8ddddcf404debce",
+          "elapsed_ms": 30.775,
+          "result_chars": 1576,
+          "source_text_chars": 0,
+          "metadata_chars": 1576,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Player-derived product requirements.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-26T18:37:13.100-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa1380d7877a0b1f81efed1227fec",
+          "elapsed_ms": 34.158,
+          "result_chars": 1423,
+          "source_text_chars": 0,
+          "metadata_chars": 1423,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/RuptureOps.md",
+            "Topics/StarRupture/Game mechanics - Update 1.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-26T18:37:17.915-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa13820567bc3bf03987585a11207",
+          "elapsed_ms": 15.64,
+          "result_chars": 3501,
+          "source_text_chars": 2925,
+          "metadata_chars": 576,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-26T18:37:50.854-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa138a0ef7d6094bbe912a235dd4b",
+          "elapsed_ms": 36.626,
+          "result_chars": 1471,
+          "source_text_chars": 0,
+          "metadata_chars": 1471,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/1cd738d4-a893-b3ce-4aee-e6805a0e70e5.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/StarRupture.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 106729,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:1cd738d4-a893-b3ce-4aee-e6805a0e70e5",
+        "checkpoint_ref": "checkpoint:1cd738d4-a893-b3ce-4aee-e6805a0e70e5",
+        "path": ".straylight/checkpoints/1cd738d4-a893-b3ce-4aee-e6805a0e70e5.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:871535e40676d6f2567548461ab7a5836f026cfb0a66684a2fbe50af47d621be",
+            "entry_ref": "entry:019fa137-8516-76d2-92dd-abebf23adcb7",
+            "path": "Topics/StarRupture/Player save - sites and freight network.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:c70e5aba981d863a4bc24e8d8202539666dd976702f3414beb5eae03c2c67de2",
+            "entry_ref": "entry:019fa137-8516-76d2-92dd-ac2a4248e261",
+            "path": "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:ab8a1c0544602bacac0dff8a04281d36c1f59ad18b05e6dbd492d04ac556d215",
+            "entry_ref": "entry:019fa137-8516-76d2-92dd-ac4c99ef5752",
+            "path": "Topics/StarRupture/StarRupture.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 2999,
+        "write": {
+          "content_hash": "sha256:9274da6778d35fab58884a4d911456ac7bc447c019599c8784487aa376a487ff",
+          "entry_ref": "entry:1cd738d4-a893-b3ce-4aee-e6805a0e70e5",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/1cd738d4-a893-b3ce-4aee-e6805a0e70e5.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa138-a103-7e71-90e8-1a9cbf4c7c91",
+          "workspace_generation": 2999
+        }
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 0,
+        "case_pass_rate": 0.0,
+        "claims_passed": 1,
+        "claims_total": 4,
+        "claim_pass_rate": 0.25,
+        "mean_score": 0.8158,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 102.27,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 106729.0,
+        "persisted_checkpoints": 1,
+        "checkpoint_eligible_runs": 1,
+        "mean_service_calls": 5.0,
+        "mean_service_result_chars": 106729.0,
+        "mean_service_source_text_chars": 96700.0,
+        "mean_service_metadata_chars": 10029.0,
+        "mean_service_replay_weighted_chars": 512836.0,
+        "mean_service_latency_ms": 153.898,
+        "mean_completed_commands": 6.0,
+        "mean_command_output_chars": 107668.0,
+        "mean_tokens": {
+          "input_tokens": 190471.0,
+          "output_tokens": 3342.0,
+          "cached_input_tokens": 156160.0,
+          "uncached_input_tokens": 34311.0
+        }
+      }
+    },
+    "by_workload": {
+      "StarRupture": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 1,
+          "claims_total": 4,
+          "claim_pass_rate": 0.25,
+          "mean_score": 0.8158,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 102.27,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 106729.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 5.0,
+          "mean_service_result_chars": 106729.0,
+          "mean_service_source_text_chars": 96700.0,
+          "mean_service_metadata_chars": 10029.0,
+          "mean_service_replay_weighted_chars": 512836.0,
+          "mean_service_latency_ms": 153.898,
+          "mean_completed_commands": 6.0,
+          "mean_command_output_chars": 107668.0,
+          "mean_tokens": {
+            "input_tokens": 190471.0,
+            "output_tokens": 3342.0,
+            "cached_input_tokens": 156160.0,
+            "uncached_input_tokens": 34311.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "multimodal_spatial_and_coordinate_reasoning": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 1,
+          "claims_total": 4,
+          "claim_pass_rate": 0.25,
+          "mean_score": 0.8158,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 102.27,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 106729.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 5.0,
+          "mean_service_result_chars": 106729.0,
+          "mean_service_source_text_chars": 96700.0,
+          "mean_service_metadata_chars": 10029.0,
+          "mean_service_replay_weighted_chars": 512836.0,
+          "mean_service_latency_ms": 153.898,
+          "mean_completed_commands": 6.0,
+          "mean_command_output_chars": 107668.0,
+          "mean_tokens": {
+            "input_tokens": 190471.0,
+            "output_tokens": 3342.0,
+            "cached_input_tokens": 156160.0,
+            "uncached_input_tokens": 34311.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "ruptureops-spatial-evidence": {
+        "id": "ruptureops-spatial-evidence",
+        "workload": "StarRupture",
+        "scope": "StarRupture",
+        "capability": "multimodal_spatial_and_coordinate_reasoning",
+        "task": "Prepare a landmark-grounded geography checkpoint for Flowworks, Grand Basin, and the first Goethite and Oil satellites. Correct the older Grand Basin match, preserve which pins are only relational, and do not combine screenshot registration with SRDB coordinates without a verified transform.",
+        "claim_slots": {
+          "c1": "Grand Basin correction and landmark relation",
+          "c2": "Flowworks and active-corridor relation",
+          "c3": "coordinate-frame and pin boundary",
+          "c4": "resource satellite directions and rationale"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "east of",
+                  "immediately east"
+                ]
+              },
+              {
+                "any": [
+                  "Mythic Cry"
+                ]
+              },
+              {
+                "any": [
+                  "Red Lake",
+                  "Redleaf"
+                ]
+              },
+              {
+                "any": [
+                  "wrong",
+                  "corrected",
+                  "not the earlier"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md",
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "between Landerworks and Faraday"
+                ]
+              },
+              {
+                "any": [
+                  "selected",
+                  "not a placed Core",
+                  "unbuilt"
+                ]
+              },
+              {
+                "any": [
+                  "Forgotten Engine",
+                  "northeast of Faraday",
+                  "east-central"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "screenshot",
+                  "registration frame"
+                ]
+              },
+              {
+                "any": [
+                  "SRDB",
+                  "map coordinates"
+                ]
+              },
+              {
+                "any": [
+                  "verified transform",
+                  "do not mix"
+                ]
+              },
+              {
+                "any": [
+                  "Sunstone",
+                  "Brimstone",
+                  "exact pin",
+                  "open"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md",
+              "Topics/StarRupture/assets/sites/README.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "northwest",
+                  "Goethite"
+                ]
+              },
+              {
+                "any": [
+                  "1393",
+                  "1464",
+                  "three",
+                  "triple"
+                ]
+              },
+              {
+                "any": [
+                  "west/southwest",
+                  "Oil"
+                ]
+              },
+              {
+                "any": [
+                  "raw",
+                  "Cargo Dispatcher",
+                  "process",
+                  "Grand Basin"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+              "Topics/StarRupture/World geography and named locations.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the screenshot pixels directly equal SRDB coordinates",
+          "Sunstone exact coordinates are known",
+          "the dashed line is the surveyed rail path"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    }
+  }
+}

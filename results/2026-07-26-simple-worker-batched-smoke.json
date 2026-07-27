@@ -1,0 +1,95 @@
+{
+  "schema": "straylight-performance-eval@v2",
+  "created_at": "2026-07-26T15:17:03.552353-07:00",
+  "label": "simple-worker-batched-smoke",
+  "protocol": "simple",
+  "api_url": "http://127.0.0.1:55213",
+  "run_profile": {
+    "mode": "quick",
+    "definitive": false,
+    "samples_per_retrieval": 3,
+    "requested_scales": [
+      1000,
+      10000
+    ],
+    "required_scales": [],
+    "future_soak": {
+      "requested": false,
+      "records": 640000,
+      "status": "not_requested"
+    },
+    "semantic_failure_probe_required": false,
+    "semantic_failure_hooks_configured": true,
+    "import_timeout_seconds": 900.0
+  },
+  "production_reference_records": 64000,
+  "future_reference_records": 640000,
+  "scales": [],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "broad_search_p95_ms": 3000.0,
+    "concurrent_search_p95_ms": 3000.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0,
+    "metadata_to_source_ratio": 1.0
+  },
+  "gates": [],
+  "errors": [
+    {
+      "scale": 1000,
+      "type": "NativeApiError",
+      "message": "{'code': 'internal', 'message': 'an internal error occurred'}",
+      "status": 500,
+      "elapsed_ms": 7.40875001065433,
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 1000,
+        "corpus_bytes": 316064,
+        "materialize_ms": 150.27,
+        "samples": 3,
+        "discovery_query": "terminal-corpus-1000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          20.635,
+          20.484,
+          30.053
+        ],
+        "discovery_p95_ms": 29.111,
+        "discovery_found": [
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.049,
+          0.018,
+          0.198
+        ],
+        "read_p95_ms": 0.183,
+        "read_found": [
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          10.857,
+          14.568,
+          27.374
+        ],
+        "broad_search_p95_ms": 26.093,
+        "broad_found": [
+          true,
+          true,
+          true
+        ]
+      }
+    }
+  ],
+  "pass": false
+}

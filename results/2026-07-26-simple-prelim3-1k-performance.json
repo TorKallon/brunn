@@ -1,0 +1,155 @@
+{
+  "schema": "straylight-performance-eval@v1",
+  "created_at": "2026-07-26T13:22:30.246146-07:00",
+  "label": "simple-1k-prelim3",
+  "protocol": "simple",
+  "api_url": "http://127.0.0.1:55059",
+  "production_reference_records": 64000,
+  "scales": [
+    {
+      "scale": 1000,
+      "documents": 1000,
+      "target_path": "Synthetic/records/0000999.md",
+      "marker": "narrow-fact-1000-cobalt",
+      "import_ms": 4126.199,
+      "open_ms": [
+        164.361,
+        68.021,
+        50.467
+      ],
+      "open_p50_ms": 68.021,
+      "open_p95_ms": 154.727,
+      "search_ms": [
+        33.657,
+        35.574,
+        57.727
+      ],
+      "search_p50_ms": 35.574,
+      "search_p95_ms": 55.512,
+      "read_ms": [
+        12.655,
+        9.485,
+        28.366
+      ],
+      "read_p50_ms": 12.655,
+      "read_p95_ms": 26.794,
+      "checkpoint_ms": 54.067,
+      "resume_ms": 62.059,
+      "open_found": [
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true
+      ],
+      "read_found": [
+        true,
+        true,
+        true
+      ],
+      "resume_found": true,
+      "checkpoint_id": "checkpoint:4a2113bc-8ba7-ea5a-0964-f369a7b07fcb",
+      "checkpoint_database_growth": {
+        "bytes": 106496,
+        "rows": 11,
+        "tables": {
+          "entries": 1,
+          "entry_versions": 1,
+          "search_chunks": 8,
+          "workspace_changes": 1
+        }
+      },
+      "provisioning": {
+        "documents": 1000,
+        "delta_documents": 0,
+        "characters": 316006,
+        "import_http_status": 200,
+        "import_elapsed_ms": 4121.122,
+        "ready_elapsed_ms": 4121.122
+      }
+    }
+  ],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0
+  },
+  "gates": [
+    {
+      "name": "all_searches_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_exact_reads_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "largest_open_p95",
+      "pass": true,
+      "observed": 154.727,
+      "threshold": 5000.0
+    },
+    {
+      "name": "largest_search_p95",
+      "pass": true,
+      "observed": 55.512,
+      "threshold": 3000.0
+    },
+    {
+      "name": "largest_read_p95",
+      "pass": true,
+      "observed": 26.794,
+      "threshold": 1000.0
+    },
+    {
+      "name": "largest_checkpoint_latency",
+      "pass": true,
+      "observed": 54.067,
+      "threshold": 2000.0
+    },
+    {
+      "name": "largest_resume_latency",
+      "pass": true,
+      "observed": 62.059,
+      "threshold": 5000.0
+    },
+    {
+      "name": "checkpoint_row_growth_is_bounded",
+      "pass": true,
+      "observed": 11,
+      "threshold": 100
+    },
+    {
+      "name": "checkpoint_storage_growth_is_bounded",
+      "pass": true,
+      "observed": 106496,
+      "threshold": 4194304
+    }
+  ],
+  "errors": [],
+  "pass": true
+}

@@ -1,0 +1,530 @@
+{
+  "schema": "straylight-performance-eval@v2",
+  "created_at": "2026-07-26T16:36:19.834874-07:00",
+  "label": "simplified-nonblocking-smoke2",
+  "protocol": "simple",
+  "api_url": "http://127.0.0.1:55213",
+  "run_profile": {
+    "mode": "quick",
+    "definitive": false,
+    "samples_per_retrieval": 3,
+    "requested_scales": [
+      1000
+    ],
+    "required_scales": [],
+    "future_soak": {
+      "requested": false,
+      "records": 640000,
+      "status": "not_requested"
+    },
+    "semantic_failure_probe_required": false,
+    "semantic_failure_hooks_configured": false,
+    "import_timeout_seconds": 1800.0
+  },
+  "production_reference_records": 64000,
+  "future_reference_records": 640000,
+  "scales": [
+    {
+      "scale": 1000,
+      "documents": 1000,
+      "target_path": "Synthetic/records/0000999.md",
+      "marker": "narrow-fact-1000-cobalt",
+      "scale_elapsed_ms": 5667.673,
+      "samples": 3,
+      "discovery_query": "terminal-corpus-1000-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-1000-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 797.349,
+      "open_ms": [
+        324.999,
+        109.696,
+        131.732
+      ],
+      "open_p50_ms": 131.732,
+      "open_p95_ms": 305.672,
+      "search_ms": [
+        96.886,
+        72.899,
+        63.803
+      ],
+      "search_p50_ms": 72.899,
+      "search_p95_ms": 94.488,
+      "broad_search_ms": [
+        431.279,
+        212.719,
+        303.644
+      ],
+      "broad_search_p95_ms": 418.515,
+      "read_ms": [
+        93.606,
+        80.456,
+        86.705
+      ],
+      "read_p50_ms": 86.705,
+      "read_p95_ms": 92.916,
+      "checkpoint_ms": 173.435,
+      "resume_ms": 164.076,
+      "open_found": [
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true
+      ],
+      "read_found": [
+        true,
+        true,
+        true
+      ],
+      "resume_found": true,
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 1000,
+        "corpus_bytes": 316064,
+        "materialize_ms": 103.305,
+        "samples": 3,
+        "discovery_query": "terminal-corpus-1000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          43.205,
+          23.069,
+          20.713
+        ],
+        "discovery_p95_ms": 41.191,
+        "discovery_found": [
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.024,
+          0.026,
+          0.026
+        ],
+        "read_p95_ms": 0.026,
+        "read_found": [
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          9.86,
+          10.562,
+          10.405
+        ],
+        "broad_search_p95_ms": 10.546,
+        "broad_found": [
+          true,
+          true,
+          true
+        ]
+      },
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 7.421,
+        "search_discovery_p95_ratio": 2.294,
+        "exact_read_p95_ratio": 3573.693,
+        "broad_search_p95_ratio": 39.685
+      },
+      "response_accounting": {
+        "payload_chars": 57129,
+        "source_text_chars": 26260,
+        "source_identity_chars": 14012,
+        "evidence_chars": 40272,
+        "metadata_chars": 30869,
+        "protocol_chars": 16857,
+        "estimated_payload_tokens": 14283,
+        "estimated_source_tokens": 6565,
+        "estimated_metadata_tokens": 7718,
+        "metadata_to_source_ratio": 1.175514,
+        "protocol_to_evidence_ratio": 0.418579,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 3,
+            "payload_chars": 15469,
+            "source_text_chars": 8381,
+            "source_identity_chars": 2911,
+            "evidence_chars": 11292,
+            "metadata_chars": 7088,
+            "protocol_chars": 4177,
+            "metadata_to_source_ratio": 0.845722,
+            "protocol_to_evidence_ratio": 0.369908
+          },
+          "search": {
+            "samples": 3,
+            "payload_chars": 6729,
+            "source_text_chars": 2700,
+            "source_identity_chars": 1869,
+            "evidence_chars": 4569,
+            "metadata_chars": 4029,
+            "protocol_chars": 2160,
+            "metadata_to_source_ratio": 1.492222,
+            "protocol_to_evidence_ratio": 0.472751
+          },
+          "broad_search": {
+            "samples": 3,
+            "payload_chars": 11295,
+            "source_text_chars": 5832,
+            "source_identity_chars": 2832,
+            "evidence_chars": 8664,
+            "metadata_chars": 5463,
+            "protocol_chars": 2631,
+            "metadata_to_source_ratio": 0.936728,
+            "protocol_to_evidence_ratio": 0.30367
+          },
+          "read": {
+            "samples": 3,
+            "payload_chars": 3249,
+            "source_text_chars": 1470,
+            "source_identity_chars": 495,
+            "evidence_chars": 1965,
+            "metadata_chars": 1779,
+            "protocol_chars": 1284,
+            "metadata_to_source_ratio": 1.210204,
+            "protocol_to_evidence_ratio": 0.653435
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 8507,
+            "source_text_chars": 4602,
+            "source_identity_chars": 1740,
+            "evidence_chars": 6342,
+            "metadata_chars": 3905,
+            "protocol_chars": 2165,
+            "metadata_to_source_ratio": 0.848544,
+            "protocol_to_evidence_ratio": 0.341375
+          },
+          "concurrent_search": {
+            "samples": 5,
+            "payload_chars": 11880,
+            "source_text_chars": 3275,
+            "source_identity_chars": 4165,
+            "evidence_chars": 7440,
+            "metadata_chars": 8605,
+            "protocol_chars": 4440,
+            "metadata_to_source_ratio": 2.627481,
+            "protocol_to_evidence_ratio": 0.596774
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "not_run",
+        "pass": null,
+        "required": false,
+        "reason": "The black-box API cannot force an embedding-provider outage. Run against a disposable stack and supply both external hook commands; the stop hook must restore the provider.",
+        "required_arguments": [
+          "--semantic-failure-start-command",
+          "--semantic-failure-stop-command"
+        ]
+      },
+      "semantic_catchup": {
+        "retrieval_tested_while_pending": true,
+        "start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "end": {
+          "corpus_revision": "generation:1002",
+          "import_id": "simple-import:0f1d3a7a-bde1-44af-939a-35bcca509b3c",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 778
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "status": "indexing"
+        }
+      },
+      "concurrent_probe": {
+        "write_ms": 376.898,
+        "write_committed": true,
+        "search_ms": [
+          329.405,
+          243.86,
+          224.927,
+          392.648,
+          403.71
+        ],
+        "search_p95_ms": 401.498,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 0,
+        "search_chunks_fts_idx": 0
+      },
+      "checkpoint_id": "checkpoint:4cc21434-82df-f150-c6c2-4892c0d571ee",
+      "checkpoint_database_growth": {
+        "bytes": 851968,
+        "rows": -20,
+        "tables": {
+          "entries": 1,
+          "entry_versions": 1,
+          "jobs": -31,
+          "search_chunks": 8,
+          "workspace_changes": 1
+        }
+      },
+      "provisioning": {
+        "documents": 1000,
+        "delta_documents": 0,
+        "characters": 316064,
+        "import_http_status": 200,
+        "import_elapsed_ms": 794.464,
+        "ready_elapsed_ms": 794.464,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        }
+      }
+    }
+  ],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "broad_search_p95_ms": 3000.0,
+    "concurrent_search_p95_ms": 3000.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0,
+    "protocol_to_evidence_ratio": 1.0
+  },
+  "gates": [
+    {
+      "name": "all_opens_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_searches_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_resumes_return_target",
+      "pass": true,
+      "observed": [
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_exact_reads_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "largest_open_p95",
+      "pass": true,
+      "observed": 305.672,
+      "threshold": 5000.0
+    },
+    {
+      "name": "largest_search_p95",
+      "pass": true,
+      "observed": 94.488,
+      "threshold": 3000.0
+    },
+    {
+      "name": "largest_broad_search_p95",
+      "pass": true,
+      "observed": 418.515,
+      "threshold": 3000.0
+    },
+    {
+      "name": "largest_read_p95",
+      "pass": true,
+      "observed": 92.916,
+      "threshold": 1000.0
+    },
+    {
+      "name": "largest_checkpoint_latency",
+      "pass": true,
+      "observed": 173.435,
+      "threshold": 2000.0
+    },
+    {
+      "name": "largest_resume_latency",
+      "pass": true,
+      "observed": 164.076,
+      "threshold": 5000.0
+    },
+    {
+      "name": "retrieval_works_while_semantic_indexing_is_pending",
+      "pass": true,
+      "observed": [
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "unknown_path_discovery_does_not_reveal_target_path",
+      "pass": true,
+      "observed": [
+        false
+      ],
+      "threshold": false
+    },
+    {
+      "name": "all_broad_searches_return_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_discovery_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_exact_read_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_broad_search_returns_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "service_protocol_overhead_does_not_exceed_evidence",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "source_text_chars": 26260,
+          "source_identity_chars": 14012,
+          "protocol_chars": 16857,
+          "ratio": 0.418579
+        }
+      ],
+      "threshold": "ratio <= 1.0"
+    },
+    {
+      "name": "unrelated_write_commits",
+      "pass": true,
+      "observed": true,
+      "threshold": true
+    },
+    {
+      "name": "retrieval_survives_unrelated_write",
+      "pass": true,
+      "observed": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "concurrent_search_p95",
+      "pass": true,
+      "observed": 401.498,
+      "threshold": 3000.0
+    },
+    {
+      "name": "checkpoint_row_growth_is_bounded",
+      "pass": true,
+      "observed": -20,
+      "threshold": 100
+    },
+    {
+      "name": "checkpoint_storage_growth_is_bounded",
+      "pass": true,
+      "observed": 851968,
+      "threshold": 4194304
+    }
+  ],
+  "errors": [],
+  "pass": true
+}

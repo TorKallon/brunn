@@ -1,9 +1,11 @@
-# CarryState Alpha Readiness
+# Straylight Alpha Readiness
 
-Status: **no-go for owner alpha as of 2026-07-25**; core, destructive-safety,
-binary-lifecycle, local recovery qualification, and exact release identity are
-green, but the live embedding dependency and current matched reasoning
-recertification are not
+Status: **ready to prepare a controlled owner-alpha migration as of
+2026-07-27, but not ready for an unrehearsed production cutover**. The
+simplified core has passed its deterministic, reasoning, continuation, and
+large-corpus performance gates. The hosted owner deployment still runs the old
+slow core, and its source-bearing data must be explicitly imported and verified
+in the new workspace tables before traffic moves.
 
 This is the evidence register for release-candidate qualification. A launch
 record must bind all evidence to one exact clean commit. The retained candidate
@@ -16,41 +18,56 @@ contracts.
 
 ## Current Launch Call
 
-The private Nyx/Tailscale owner alpha is close, but it should not be enabled
-yet:
+The simplified architecture should replace the old one:
 
-1. A direct OpenAI embeddings request currently returns
-   `429 insufficient_quota`. New semantic imports, descriptions, semantic
-   retrieval, and learning therefore cannot be qualified or relied on. The
-   service's `/ready` endpoint confirms configuration and local dependencies;
-   it does not prove that the external OpenAI account can accept a billed
-   request.
-2. The current implementation is retained as a clean `main` commit with
-   checksummed binaries, bundles, immutable image archives, SBOMs, and scan
-   reports. The application, repository, PostgreSQL, MCP, web, Caddy, and MinIO
-   client scans pass the high/critical gate. The bundled Community MinIO image
-   is explicitly marked blocked and remains restricted to the temporary
-   private Nyx deployment; hosted deployments use qualified managed S3.
-3. Historical and screening evaluations favor the workspace approach, but a
-   current matched CarryState-versus-filesystem reasoning and token run cannot
-   be certified until embeddings work. The 2026-07-25 Codex/OpenClaw runtime
-   smoke proves both runtimes can execute and use the filesystem tools; it is
-   not publishable parity evidence because it used one repetition, had no
-   matched CarryState cells, and two successfully retried parent requests did
-   not produce complete token receipts.
+1. The old service reproduced the production failure at 3,340 entries, returning
+   HTTP 408 after 26.088 seconds before useful retrieval. The simplified service
+   completed the same open/search/broad-search flow in 1.047, 0.674, and 1.867
+   seconds.
+2. The first strict reasoning draw put simplified Straylight 10 claims behind
+   legacy and 11 behind direct Markdown across 228 claims. The targeted matched
+   repeat narrowed the legacy gap to one claim across 64, and source audit found
+   accepted evidence in 21 of 22 disputed simplified responses. The supported
+   conclusion is no demonstrated material retrieval-driven degradation, not
+   perfect parity.
+3. The new database migrations are additive. They create the simplified
+   workspace tables but do not copy the legacy corpus into them. Cutover
+   therefore requires a lossless source-and-binary export/import with exact
+   path, byte, hash, description, and checkpoint verification.
+4. Automatic and manual dreaming are disabled pending owner review. Local
+   request and worker gates refuse dream work while disabled. On the hosted
+   legacy service, the scheduler is off, all controls are paused, no job is
+   active, and the `dream` capability was removed from all three active
+   credentials with their exact IDs retained in an immutable operator audit
+   event for deliberate restoration.
+5. Reasoning evaluations must use ChatGPT-authenticated Codex and fail closed
+   when the subscription is unavailable. Usage-billed APIs are limited to
+   capabilities Codex cannot provide, such as embeddings.
 
-Once working OpenAI quota is available, the remaining private-owner launch
-sequence is: live semantic smoke, a matched current reasoning regression,
-and explicit go/no-go. A managed-S3 backup/restore drill is required before a
-hosted or invited-user alpha, but not before the temporary owner-only Nyx
-deployment.
+The remaining owner cutover sequence is: preserve an exact release commit and
+images; snapshot hosted PostgreSQL and S3; rehearse the migration against a
+restored copy; deploy matching API and worker images; import and verify the
+owner corpus; run authenticated retrieval, write, checkpoint, export, binary,
+Codex, and OpenClaw canaries; then switch traffic with the old image and backup
+retained for rollback.
+
+The 2026-07-27 Nyx migration rehearsal applied migrations 51 through 55 and
+started a healthy simplified API and worker. It exposed one local checksum
+drift in migration 44: the previously applied file had one additional trailing
+blank line and was otherwise byte-identical. Railway and the repository shared
+the same checksum; Nyx's single checksum row was repaired only after comparing
+all 48 applied migrations and proving this was the sole mismatch. The legacy
+indexes in migrations 49 and 50 took 135 seconds to build locally. Railway has
+already applied those migrations, so its pending simplified schema change is
+the additive 51-through-55 set. The new Nyx workspace tables are empty by
+design; no owner corpus was silently copied.
 
 ## Autonomous Release Gates
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
-| Reasoning contract | Frozen source/evaluation fingerprint and no unreviewed semantic changes | Historical pass; current recertification blocked on embeddings |
-| Deterministic tests | Rust, Python, SPA, MCP, Compose, Caddy, and workflow contracts | Pass: 193 Rust; 182 offline Python plus 5 separately live; 21 MCP; and 18 SPA tests |
+| Reasoning contract | Frozen source/evaluation fingerprint and no unreviewed semantic changes | Current comparison complete; no material retrieval-driven degradation demonstrated, with RuptureOps overfetch retained as a release risk |
+| Deterministic tests | Rust, Python, SPA, MCP, Compose, Caddy, and workflow contracts | Pass: 234 Rust unit and 2 integration tests; 237 Python tests with 5 explicit skips; 26 MCP tests; and 18 SPA tests |
 | Live API safety | Full API smoke, read-only denial, credential boundaries, export, and deletion | Pass |
 | Dependency failure safety | Database/object-store outage and recovery, proxy recovery, request limits | Pass |
 | Database safety | Built-in `C.UTF-8`, page checksums, pgvector 0.8.5, fresh and no-op migrations | Pass |
@@ -59,8 +76,8 @@ deployment.
 | Rollback | Current and saved N-1 API images ready against the current schema | Pass |
 | Supply chain | Pinned bases, SBOMs, repository scan, application image scan, residual inventory | Application pass; Community MinIO restricted to temporary private Nyx use |
 | Browser experience | Desktop and mobile workflow, accessibility, layout, and console checks | Pass |
-| Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Historical pass; current matched recertification pending |
-| Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment dry run | Pass; retained artifact is marked hosted-release-blocked only because it includes Community MinIO |
+| Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Conditional pass: matched repeat is within one claim of legacy, source audit found accepted evidence in 21 of 22 disputed responses, and mean uncached input is 3.6% below direct Markdown; exact parity is not proven |
+| Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment dry run | Blocked for the simplified candidate: the verified local image is explicitly labeled as a worktree build and the simplified and safety changes remain uncommitted |
 
 ## Owner Decisions
 
@@ -69,16 +86,16 @@ on an unsettled provider or public identity.
 
 | Decision | Status | Recorded direction |
 | --- | --- | --- |
-| Public identity | Product name settled | CarryState is the product name. Domain acquisition and logo approval remain, but neither blocks an owner-only Nyx alpha. |
-| Deployment | Initial path settled | Start owner-only on Nyx over Tailscale; Railway is the intended first hosted evaluation. |
-| Object storage | Architecture approved; exact hosted qualification pending | Use local MinIO only for the temporary private Nyx deployment. Production uses a managed, versioned S3-compatible store. |
+| Public identity | Alpha identity settled | Keep Straylight for this alpha at `straylight.rourkem.com`; a permanent public identity and dedicated domain are deferred. |
+| Deployment | Initial path settled | Railway is running the current owner deployment, but it remains on the old slow core until the controlled simplified migration is complete. |
+| Object storage | Architecture approved; simplified migration qualification pending | Use MinIO only for local development. The hosted alpha uses temporary managed S3-compatible storage; the simplified import/export and restore path still requires rehearsal against a copy. |
 | Recovery | Nyx qualified; hosted pending | The exact local database and object set restored successfully. Off-host destination, key custody, RPO/RTO policy, and managed-S3 restoration remain required before hosted or invited use. |
 | Monitoring | Approved in part | Datadog metrics and structured logs are approved. Alert recipients, escalation path, and retention still need exact values. Browser RUM remains outside the alpha. |
 | Source control | Created; plan-limited protections pending | Private `TorKallon/straylight` repository on GitHub with `main`, CI, Dependabot alerts, and automated security fixes. The current GitHub plan does not provide branch protection or secret scanning for a private repository; do not make it public without separate identity and launch approval. |
 | Alpha cohort | Approved | Owner first, then only people the owner explicitly invites. No public signup. Every person receives a separate user account and credential. |
 | Operating visibility | Approved | Begin with the owner's real usage. Keep source-use rankings visible in the Control UI and aggregate model, embedding, storage, and request consumption prominent in Datadog. Set hard spend limits only after observing the initial workload. |
 | Policy and support | Pending | Final retention, privacy wording, and support expectations are not yet selected. |
-| Launch | Pending | Restore OpenAI quota, certify the current reasoning path, then make an explicit go/no-go decision. |
+| Launch | Pending | Commit and retain the simplified candidate, rehearse and verify the owner-data migration on a restored copy, deploy matching API and worker images, run Codex and OpenClaw canaries, then make an explicit go/no-go decision. |
 
 Secrets, private keys, and bearer tokens must be supplied through approved
 files or secret stores, never pasted into chat or committed to the repository.

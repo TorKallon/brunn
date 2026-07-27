@@ -1,0 +1,3986 @@
+{
+  "schema": "straylight-performance-eval@v2",
+  "created_at": "2026-07-27T11:08:42.709274-07:00",
+  "label": "2026-07-27-3340-clean-30-sample",
+  "protocol": "simple",
+  "api_url": "http://127.0.0.1:55213",
+  "implementation_fingerprint": {
+    "source_revision": "c3a54200f0dbb0cb02d0077730995119178cb31e",
+    "tracked_source_clean": true,
+    "untracked_source_files": [],
+    "api_container": "straylight-simplified-contract-api-1",
+    "api_image_id": "sha256:5892103ec5afea553b835dff969a6b2a60b60ffbbcfc0e1ce685f447da9fb228",
+    "api_image_revision": "c3a54200f0dbb0cb02d0077730995119178cb31e",
+    "reproducible": true
+  },
+  "run_profile": {
+    "mode": "quick",
+    "definitive": false,
+    "samples_per_retrieval": 30,
+    "requested_scales": [
+      3340
+    ],
+    "required_scales": [],
+    "future_soak": {
+      "requested": false,
+      "records": 640000,
+      "status": "not_requested"
+    },
+    "semantic_failure_probe_required": false,
+    "semantic_failure_hooks_configured": false,
+    "import_timeout_seconds": 1800.0
+  },
+  "production_reference_records": 64000,
+  "future_reference_records": 640000,
+  "scales": [
+    {
+      "scale": 3340,
+      "protocol": "simple",
+      "documents": 3340,
+      "target_path": "Synthetic/records/0003339.md",
+      "marker": "narrow-fact-3340-cobalt",
+      "scale_elapsed_ms": 7807.129,
+      "samples": 30,
+      "discovery_query": "terminal-corpus-3340-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-3340-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 1388.397,
+      "open_ms": [
+        38.047,
+        18.708,
+        18.094,
+        13.332,
+        24.434,
+        23.439,
+        19.823,
+        15.855,
+        15.434,
+        14.383,
+        14.602,
+        16.088,
+        15.78,
+        16.157,
+        14.985,
+        14.619,
+        15.969,
+        15.366,
+        27.512,
+        20.378,
+        14.704,
+        14.607,
+        15.611,
+        15.299,
+        15.858,
+        21.689,
+        14.506,
+        16.494,
+        24.769,
+        17.62
+      ],
+      "open_p50_ms": 15.914,
+      "open_p95_ms": 26.278,
+      "search_ms": [
+        14.235,
+        13.502,
+        11.144,
+        10.571,
+        17.398,
+        18.506,
+        13.759,
+        11.426,
+        10.825,
+        10.307,
+        10.162,
+        11.947,
+        10.394,
+        10.548,
+        9.533,
+        9.902,
+        10.788,
+        9.553,
+        28.202,
+        12.62,
+        12.214,
+        9.496,
+        13.946,
+        15.197,
+        13.111,
+        19.438,
+        18.036,
+        19.249,
+        12.238,
+        11.964
+      ],
+      "search_p50_ms": 12.089,
+      "search_p95_ms": 19.353,
+      "broad_search_ms": [
+        19.492,
+        24.004,
+        20.94,
+        26.072,
+        40.334,
+        33.897,
+        30.449,
+        24.085,
+        26.657,
+        23.205,
+        21.792,
+        19.836,
+        20.958,
+        19.441,
+        20.371,
+        19.586,
+        19.388,
+        19.844,
+        42.216,
+        27.054,
+        24.682,
+        23.545,
+        27.523,
+        21.922,
+        24.459,
+        20.207,
+        21.25,
+        25.069,
+        19.952,
+        22.324
+      ],
+      "broad_search_p95_ms": 37.437,
+      "overflow_search_ms": [
+        15.052,
+        11.317,
+        8.68,
+        11.196,
+        12.606,
+        14.591,
+        17.237,
+        11.262,
+        10.078,
+        11.129,
+        12.329,
+        15.823,
+        15.877,
+        15.047,
+        10.766,
+        10.581,
+        9.615,
+        10.185,
+        11.487,
+        11.993,
+        9.949,
+        10.553,
+        15.015,
+        11.732,
+        12.803,
+        11.513,
+        12.565,
+        17.912,
+        11.714,
+        12.302
+      ],
+      "overflow_search_p95_ms": 16.625,
+      "old_source_search_ms": [
+        12.584,
+        11.618,
+        10.495,
+        12.794,
+        15.772,
+        13.814,
+        12.965,
+        11.589,
+        10.666,
+        11.954,
+        10.21,
+        11.253,
+        11.477,
+        11.929,
+        14.558,
+        13.582,
+        14.682,
+        24.444,
+        11.821,
+        12.911,
+        10.652,
+        12.174,
+        16.043,
+        11.277,
+        12.46,
+        11.484,
+        11.026,
+        15.749,
+        12.521,
+        18.834
+      ],
+      "old_source_search_p95_ms": 17.578,
+      "read_ms": [
+        9.11,
+        7.414,
+        5.348,
+        14.359,
+        17.341,
+        5.667,
+        4.221,
+        4.466,
+        4.588,
+        3.782,
+        4.092,
+        4.307,
+        6.361,
+        3.497,
+        4.312,
+        5.702,
+        7.116,
+        9.966,
+        5.43,
+        3.682,
+        3.656,
+        4.763,
+        6.825,
+        3.791,
+        4.938,
+        4.733,
+        5.068,
+        6.454,
+        7.005,
+        8.918
+      ],
+      "read_p50_ms": 5.208,
+      "read_p95_ms": 12.382,
+      "checkpoint_ms": 21.807,
+      "resume_ms": 19.709,
+      "open_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "overflow_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "old_source_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "old_source_semantic_deferred": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "read_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "critical_lane_failures": [
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "old_source_search",
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "resume_found": true,
+      "boundary_probe": {
+        "status": "not_applicable"
+      },
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 3340,
+        "corpus_bytes": 1058528,
+        "materialize_ms": 284.975,
+        "samples": 30,
+        "discovery_query": "terminal-corpus-3340-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          47.357,
+          41.22,
+          36.184,
+          34.783,
+          38.638,
+          39.386,
+          37.223,
+          43.037,
+          45.231,
+          51.514,
+          66.622,
+          98.632,
+          78.191,
+          34.829,
+          41.148,
+          35.549,
+          38.44,
+          35.87,
+          34.514,
+          34.798,
+          35.232,
+          32.926,
+          37.051,
+          37.868,
+          37.258,
+          36.857,
+          33.839,
+          37.304,
+          35.161,
+          33.302
+        ],
+        "discovery_p95_ms": 72.985,
+        "discovery_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.07,
+          0.053,
+          0.027,
+          0.041,
+          0.023,
+          0.024,
+          0.048,
+          0.021,
+          0.02,
+          0.043,
+          0.021,
+          0.046,
+          0.022,
+          0.027,
+          0.023,
+          0.042,
+          0.047,
+          0.048,
+          0.024,
+          0.028,
+          0.021,
+          0.037,
+          0.024,
+          0.039,
+          0.064,
+          0.215,
+          0.02,
+          0.02,
+          0.021,
+          0.02
+        ],
+        "read_p95_ms": 0.067,
+        "read_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          15.595,
+          15.222,
+          10.118,
+          20.572,
+          7.456,
+          8.383,
+          14.096,
+          11.244,
+          8.805,
+          75.282,
+          13.419,
+          35.336,
+          14.19,
+          8.803,
+          10.853,
+          11.744,
+          10.675,
+          15.867,
+          7.781,
+          9.92,
+          8.162,
+          9.351,
+          15.262,
+          9.185,
+          8.683,
+          11.426,
+          8.044,
+          8.948,
+          8.419,
+          9.091
+        ],
+        "broad_search_p95_ms": 28.692,
+        "broad_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "flat_file_control_reused_from": null,
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 0.36,
+        "search_discovery_p95_ratio": 0.265,
+        "exact_read_p95_ratio": 184.809,
+        "broad_search_p95_ratio": 1.305
+      },
+      "response_accounting": {
+        "payload_chars": 402954,
+        "source_text_chars": 166038,
+        "source_identity_chars": 67602,
+        "evidence_chars": 233640,
+        "metadata_chars": 236916,
+        "protocol_chars": 169314,
+        "estimated_payload_tokens": 100739,
+        "estimated_source_tokens": 41510,
+        "estimated_metadata_tokens": 59229,
+        "metadata_to_source_ratio": 1.426878,
+        "protocol_to_evidence_ratio": 0.724679,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 30,
+            "payload_chars": 51840,
+            "source_text_chars": 23190,
+            "source_identity_chars": 3150,
+            "evidence_chars": 26340,
+            "metadata_chars": 28650,
+            "protocol_chars": 25500,
+            "metadata_to_source_ratio": 1.235446,
+            "protocol_to_evidence_ratio": 0.968109
+          },
+          "search": {
+            "samples": 30,
+            "payload_chars": 20910,
+            "source_text_chars": 5190,
+            "source_identity_chars": 3150,
+            "evidence_chars": 8340,
+            "metadata_chars": 15720,
+            "protocol_chars": 12570,
+            "metadata_to_source_ratio": 3.028902,
+            "protocol_to_evidence_ratio": 1.507194
+          },
+          "broad_search": {
+            "samples": 30,
+            "payload_chars": 125820,
+            "source_text_chars": 66750,
+            "source_identity_chars": 29040,
+            "evidence_chars": 95790,
+            "metadata_chars": 59070,
+            "protocol_chars": 30030,
+            "metadata_to_source_ratio": 0.884944,
+            "protocol_to_evidence_ratio": 0.313498
+          },
+          "bounded_overflow_search": {
+            "samples": 30,
+            "payload_chars": 24330,
+            "source_text_chars": 8400,
+            "source_identity_chars": 3540,
+            "evidence_chars": 11940,
+            "metadata_chars": 15930,
+            "protocol_chars": 12390,
+            "metadata_to_source_ratio": 1.896429,
+            "protocol_to_evidence_ratio": 1.037688
+          },
+          "old_source_search": {
+            "samples": 30,
+            "payload_chars": 34410,
+            "source_text_chars": 11940,
+            "source_identity_chars": 7590,
+            "evidence_chars": 19530,
+            "metadata_chars": 22470,
+            "protocol_chars": 14880,
+            "metadata_to_source_ratio": 1.88191,
+            "protocol_to_evidence_ratio": 0.761905
+          },
+          "read": {
+            "samples": 30,
+            "payload_chars": 41850,
+            "source_text_chars": 23190,
+            "source_identity_chars": 4950,
+            "evidence_chars": 28140,
+            "metadata_chars": 18660,
+            "protocol_chars": 13710,
+            "metadata_to_source_ratio": 0.804657,
+            "protocol_to_evidence_ratio": 0.487207
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 3044,
+            "source_text_chars": 1428,
+            "source_identity_chars": 432,
+            "evidence_chars": 1860,
+            "metadata_chars": 1616,
+            "protocol_chars": 1184,
+            "metadata_to_source_ratio": 1.131653,
+            "protocol_to_evidence_ratio": 0.636559
+          },
+          "concurrent_search": {
+            "samples": 150,
+            "payload_chars": 100750,
+            "source_text_chars": 25950,
+            "source_identity_chars": 15750,
+            "evidence_chars": 41700,
+            "metadata_chars": 74800,
+            "protocol_chars": 59050,
+            "metadata_to_source_ratio": 2.882466,
+            "protocol_to_evidence_ratio": 1.416067
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "not_run",
+        "pass": null,
+        "required": false,
+        "reason": "The black-box API cannot force an embedding-provider outage. Run against a disposable stack and supply both external hook commands; the stop hook must restore the provider.",
+        "required_arguments": [
+          "--semantic-failure-start-command",
+          "--semantic-failure-stop-command"
+        ]
+      },
+      "semantic_catchup": {
+        "retrieval_tested_while_pending": true,
+        "start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "end": {
+          "corpus_revision": "generation:718416",
+          "import_id": "simple-import:9057be35-9676-4371-84c2-1fe2c3064b9a",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 3371
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "status": "indexing"
+        }
+      },
+      "concurrent_probe": {
+        "rounds": 30,
+        "searches_per_round": 5,
+        "write_ms": 22.983,
+        "write_samples_ms": [
+          34.194,
+          25.619,
+          19.761,
+          12.829,
+          12.708,
+          11.141,
+          10.785,
+          8.053,
+          8.571,
+          7.767,
+          10.925,
+          8.306,
+          8.232,
+          7.131,
+          7.806,
+          12.687,
+          6.8,
+          7.193,
+          9.297,
+          7.578,
+          9.991,
+          7.713,
+          7.483,
+          7.678,
+          12.856,
+          6.764,
+          7.992,
+          7.92,
+          6.908,
+          9.066
+        ],
+        "write_p50_ms": 8.269,
+        "write_p95_ms": 22.983,
+        "write_max_ms": 34.194,
+        "write_committed": true,
+        "write_committed_samples": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "search_ms": [
+          48.277,
+          60.883,
+          37.211,
+          50.75,
+          41.524,
+          35.794,
+          31.656,
+          35.858,
+          34.23,
+          29.96,
+          24.373,
+          33.381,
+          26.206,
+          22.321,
+          22.778,
+          17.465,
+          15.992,
+          18.236,
+          16.506,
+          15.795,
+          25.551,
+          16.007,
+          17.997,
+          17.005,
+          15.941,
+          14.611,
+          14.547,
+          17.954,
+          18.123,
+          14.288,
+          18.495,
+          21.143,
+          18.079,
+          26.438,
+          17.724,
+          17.415,
+          14.387,
+          15.902,
+          16.485,
+          17.019,
+          17.203,
+          18.996,
+          16.646,
+          16.585,
+          16.226,
+          14.345,
+          15.285,
+          16.619,
+          17.819,
+          15.066,
+          17.949,
+          20.301,
+          19.629,
+          18.566,
+          19.719,
+          17.111,
+          14.745,
+          18.782,
+          12.769,
+          16.161,
+          17.512,
+          17.382,
+          15.994,
+          15.531,
+          17.252,
+          14.602,
+          16.804,
+          15.461,
+          15.79,
+          16.42,
+          18.395,
+          15.829,
+          16.072,
+          17.933,
+          17.179,
+          22.776,
+          19.399,
+          21.834,
+          23.967,
+          18.722,
+          15.321,
+          15.525,
+          15.888,
+          15.756,
+          14.837,
+          14.472,
+          16.844,
+          14.457,
+          17.035,
+          15.994,
+          17.15,
+          15.222,
+          17.127,
+          16.368,
+          17.9,
+          16.899,
+          18.639,
+          17.832,
+          17.495,
+          18.125,
+          16.28,
+          15.072,
+          18.674,
+          16.673,
+          16.0,
+          14.355,
+          14.977,
+          17.052,
+          16.056,
+          15.3,
+          14.34,
+          13.872,
+          16.838,
+          17.282,
+          14.833,
+          14.524,
+          15.491,
+          16.346,
+          14.422,
+          14.646,
+          20.751,
+          21.181,
+          19.893,
+          20.34,
+          21.066,
+          12.707,
+          15.176,
+          16.644,
+          16.963,
+          16.577,
+          16.237,
+          15.471,
+          14.911,
+          15.582,
+          17.407,
+          16.276,
+          16.564,
+          18.442,
+          16.579,
+          19.394,
+          15.51,
+          15.482,
+          18.343,
+          16.013,
+          19.144,
+          16.655,
+          17.0,
+          15.724,
+          17.277,
+          15.833
+        ],
+        "search_p95_ms": 33.848,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "search_lane_failures": [
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          },
+          {
+            "exact": false,
+            "lexical": false
+          }
+        ]
+      },
+      "checkpoint_pressure": {
+        "elapsed_seconds": 4.958,
+        "requested_checkpoints": 0,
+        "timed_checkpoints": 0,
+        "requested_checkpoints_per_minute": 0.0,
+        "write_time_ms": 0,
+        "sync_time_ms": 0,
+        "buffers_written": 0,
+        "settings": {
+          "max_wal_size": "4GB",
+          "min_wal_size": "1GB",
+          "wal_compression": "pglz"
+        }
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 0,
+        "search_chunks_fts_idx": 139
+      },
+      "checkpoint_id": "checkpoint:78d581b4-5b1d-6376-770b-3c0d5f176e5c",
+      "checkpoint_database_growth": {
+        "rows": 12,
+        "bytes": 6048,
+        "tables": {
+          "entries": 1,
+          "jobs": 1,
+          "workspace_changes": 1,
+          "entry_versions": 1,
+          "search_chunks": 8
+        }
+      },
+      "provisioning": {
+        "documents": 3340,
+        "delta_documents": 0,
+        "characters": 1058528,
+        "import_http_status": 200,
+        "import_elapsed_ms": 1381.086,
+        "import_batch_count": 1,
+        "max_batch_documents": 3340,
+        "ready_elapsed_ms": 1381.086,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        }
+      }
+    }
+  ],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "broad_search_p95_ms": 3000.0,
+    "concurrent_write_ms": 3000.0,
+    "concurrent_search_p95_ms": 3000.0,
+    "requested_checkpoints_per_minute": 1.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "max_batch_read_ms": 2000.0,
+    "max_checkpoint_sources_ms": 3000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0,
+    "latency_growth_floor_ms": 1000.0,
+    "protocol_to_evidence_ratio": 1.0
+  },
+  "gates": [
+    {
+      "name": "all_opens_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_searches_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_resumes_return_target",
+      "pass": true,
+      "observed": [
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_exact_reads_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "every_scale_open_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "observed": 26.278
+        }
+      ],
+      "threshold": 5000.0
+    },
+    {
+      "name": "every_scale_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "observed": 19.353
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_broad_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "observed": 37.437
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_overflow_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "observed": 16.625
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_old_source_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "observed": 17.578
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_read_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "observed": 12.382
+        }
+      ],
+      "threshold": 1000.0
+    },
+    {
+      "name": "every_scale_checkpoint_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "observed": 21.807
+        }
+      ],
+      "threshold": 2000.0
+    },
+    {
+      "name": "every_scale_resume_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "observed": 19.709
+        }
+      ],
+      "threshold": 5000.0
+    },
+    {
+      "name": "no_exact_or_lexical_lane_failures",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "failures": []
+        }
+      ],
+      "threshold": []
+    },
+    {
+      "name": "retrieval_works_while_semantic_indexing_is_pending",
+      "pass": true,
+      "observed": [
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "unknown_path_discovery_does_not_reveal_target_path",
+      "pass": true,
+      "observed": [
+        false
+      ],
+      "threshold": false
+    },
+    {
+      "name": "all_broad_searches_return_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "bounded_lexical_overflow_returns_late_relevant_source",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "old_relevant_source_survives_many_newer_writes",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "semantic_is_not_deferred_by_unrelated_backlog",
+      "pass": true,
+      "observed": [
+        [
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      ],
+      "threshold": false
+    },
+    {
+      "name": "flat_file_discovery_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_exact_read_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_broad_search_returns_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "service_protocol_overhead_does_not_exceed_evidence",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 3340,
+          "source_text_chars": 166038,
+          "source_identity_chars": 67602,
+          "protocol_chars": 169314,
+          "ratio": 0.724679
+        }
+      ],
+      "threshold": "ratio <= 1.0"
+    },
+    {
+      "name": "unrelated_write_commits",
+      "pass": true,
+      "observed": true,
+      "threshold": true
+    },
+    {
+      "name": "unrelated_write_p95_latency",
+      "pass": true,
+      "observed": 22.983,
+      "threshold": 3000.0
+    },
+    {
+      "name": "retrieval_survives_unrelated_write",
+      "pass": true,
+      "observed": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "concurrent_exact_and_lexical_lanes_remain_healthy",
+      "pass": true,
+      "observed": [
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "threshold": "all false"
+    },
+    {
+      "name": "concurrent_search_p95",
+      "pass": true,
+      "observed": 33.848,
+      "threshold": 3000.0
+    },
+    {
+      "name": "requested_checkpoint_rate_is_bounded",
+      "pass": true,
+      "observed": {
+        "elapsed_seconds": 4.958,
+        "requested_checkpoints": 0,
+        "timed_checkpoints": 0,
+        "requested_checkpoints_per_minute": 0.0,
+        "write_time_ms": 0,
+        "sync_time_ms": 0,
+        "buffers_written": 0,
+        "settings": {
+          "max_wal_size": "4GB",
+          "min_wal_size": "1GB",
+          "wal_compression": "pglz"
+        }
+      },
+      "threshold": "requested checkpoints <= 1.0 per minute"
+    },
+    {
+      "name": "checkpoint_row_growth_is_bounded",
+      "pass": true,
+      "observed": 12,
+      "threshold": 100
+    },
+    {
+      "name": "checkpoint_storage_growth_is_bounded",
+      "pass": true,
+      "observed": 6048,
+      "threshold": 4194304
+    }
+  ],
+  "errors": [],
+  "pass": true
+}

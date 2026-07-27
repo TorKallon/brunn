@@ -1,0 +1,945 @@
+{
+  "benchmark_version": "recent-work-v0.2",
+  "run_at": "2026-07-27T10:05:54-07:00",
+  "run_id": "api-auth-canary-c3-20260727",
+  "harness_sha256": "90159d116b413871fe968b43713175bd1d0775e044a7a056bf66927fd93d3ab5",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "ffbab60f250f0a5eac7341c0b7f25f7416f3b4a437469111086b1fc74b1d3f74",
+  "manifest_sha256": "4b599804f35b62e3d6c4d959b5f58228d660eb9700dab3eb58ea01bbfa7a1830",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-recent-work-v0.1",
+    "sha256": "1e4f1a1da7c87189d20d8ed01b228eee08058bb5c45afffca62d1dd40518528c",
+    "artifact_tree_sha256": "1e4f1a1da7c87189d20d8ed01b228eee08058bb5c45afffca62d1dd40518528c",
+    "documents": 17,
+    "chunks": 20,
+    "characters": 11327
+  },
+  "manifest": {
+    "benchmark_version": "recent-work-v0.2",
+    "name": "Straylight recent work and Aether operations evaluation",
+    "report_title": "Straylight recent work and Aether operations evaluation",
+    "report_date": "2026-07-26",
+    "evaluation_model": "recent_personal_and_agent_operations",
+    "grading_mode": "concept_tokens_v1",
+    "fixture_domain": "Sanitized interaction patterns from recent owner work",
+    "corpus_root": "eval/corpus-recent-work-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 22000,
+    "fixed_pack_chunks": 18,
+    "cases": [
+      {
+        "id": "recent-europe-source-authority",
+        "workload": "Recent Work",
+        "scope": "Recent Work",
+        "capability": "source_authority_and_itinerary_reconciliation",
+        "task": "Reconcile the Europe itinerary. Distinguish the coach sample from booked facts, state the confirmed outbound and return shape, and explain the planning consequence of the return airport.",
+        "claim_slots": {
+          "c1": "authority boundary",
+          "c2": "youth outbound and transfer",
+          "c3": "family outbound and shared return",
+          "c4": "return-airport planning consequence"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "coach sample itinerary"
+                ]
+              },
+              {
+                "any": [
+                  "must never be treated as passenger confirmations",
+                  "not proof of booking",
+                  "not passenger confirmations"
+                ]
+              },
+              {
+                "any": [
+                  "passenger-specific airline confirmations are authoritative"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Europe 2026/Planning and authority.md",
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "Seattle to Amsterdam to Brussels"
+                ]
+              },
+              {
+                "any": [
+                  "August 4-5, 2026"
+                ]
+              },
+              {
+                "any": [
+                  "Brussels to Geneva"
+                ]
+              },
+              {
+                "any": [
+                  "August 10, 2026"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Seattle to London Heathrow to Geneva"
+                ]
+              },
+              {
+                "any": [
+                  "August 9-10, 2026"
+                ]
+              },
+              {
+                "any": [
+                  "all four travelers"
+                ]
+              },
+              {
+                "any": [
+                  "August 25, 2026"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "Milan Linate, not Milan Malpensa",
+                  "Milan Linate rather than Milan Malpensa"
+                ]
+              },
+              {
+                "any": [
+                  "northern Italy finish remains feasible"
+                ]
+              },
+              {
+                "any": [
+                  "final night in Milan",
+                  "use Milan for the final night"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Europe 2026/Planning and authority.md",
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the coach sample proves the booking",
+          "the return departs Malpensa",
+          "the youth traveler returns separately"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "recent-europe-source-authority": {
+      "authorization_scope": "eval:api-auth-canary-c3-20260727/recent-europe-source-authority",
+      "requested_authorization_scope": "eval:api-auth-canary-c3-20260727/recent-europe-source-authority",
+      "display_scope": "Recent Work",
+      "access_mode": "read_write",
+      "import_id": "simple-import:3fc28250-a4c4-4f9e-a24c-254e1010e677",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:521",
+      "corpus_revision": "generation:521",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:3fc28250-a4c4-4f9e-a24c-254e1010e677",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 17,
+        "delta_documents": 0,
+        "characters": 11327,
+        "import_http_status": 200,
+        "import_elapsed_ms": 39.013,
+        "import_batch_count": 1,
+        "max_batch_documents": 17,
+        "ready_elapsed_ms": 39.013,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:api-auth-canary-c3-20260727/recent-europe-source-authority",
+          "base_corpus_revision": "generation:521",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:521",
+          "credential_id": "credential:4dd8480b-d981-4162-a80e-902426e85458",
+          "delta_documents": 0,
+          "display_scope": "Recent Work",
+          "documents": 17,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:3fc28250-a4c4-4f9e-a24c-254e1010e677",
+          "index_counts": {
+            "chunks": 20,
+            "documents": 17,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:api-auth-canary-c3-20260727/recent-europe-source-authority",
+          "scope_id": "scope:dae9d3e8-3021-47e0-89ee-3b9a11cc28cc",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:3fc28250-a4c4-4f9e-a24c-254e1010e677",
+          "token_status": "issued_once",
+          "user_id": "user:3fc28250-a4c4-4f9e-a24c-254e1010e677"
+        },
+        "ready_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:api-auth-canary-c3-20260727/recent-europe-source-authority",
+          "base_corpus_revision": "generation:521",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:521",
+          "credential_id": "credential:4dd8480b-d981-4162-a80e-902426e85458",
+          "delta_documents": 0,
+          "display_scope": "Recent Work",
+          "documents": 17,
+          "embedding_degraded": false,
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "import_id": "simple-import:3fc28250-a4c4-4f9e-a24c-254e1010e677",
+          "index_counts": {
+            "chunks": 20,
+            "documents": 17,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:api-auth-canary-c3-20260727/recent-europe-source-authority",
+          "scope_id": "scope:dae9d3e8-3021-47e0-89ee-3b9a11cc28cc",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:3fc28250-a4c4-4f9e-a24c-254e1010e677",
+          "token_status": "issued_once",
+          "user_id": "user:3fc28250-a4c4-4f9e-a24c-254e1010e677"
+        }
+      }
+    }
+  },
+  "service_protocol": "simple",
+  "records": [
+    {
+      "case_id": "recent-europe-source-authority",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 25.341,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/api-auth-canary-c3-20260727/service_api/recent-europe-source-authority/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "The coach itinerary is only a sample; the passenger-specific airline confirmations control. The confirmed trip converges in Geneva and ends with all four travelers returning from Milan Linate, requiring the Italy finish to preserve a final night in Milan.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The ski-team packet\u2019s coach sample itinerary and example booking references are not passenger bookings. Passenger-specific airline confirmations are authoritative for booked flights.",
+            "source_paths": [
+              "Trips/Europe 2026/Planning and authority.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The youth traveler flies Seattle\u2013Amsterdam\u2013Brussels on August 4-5, 2026, then transfers Brussels\u2013Geneva on August 10, 2026.",
+            "source_paths": [
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The family flies Seattle\u2013London Heathrow\u2013Geneva on August 9-10, 2026. All four travelers, including the youth, return Milan Linate\u2013London Heathrow\u2013Seattle on August 25, 2026.",
+            "source_paths": [
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Because the confirmed return departs Milan Linate rather than Milan Malpensa, the northern Italy finish remains feasible but should preserve a final night in Milan and remain compatible with Linate departure.",
+            "source_paths": [
+              "Trips/Europe 2026/Confirmed itinerary.md",
+              "Trips/Europe 2026/Planning and authority.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Reconcile the Europe itinerary and its source-authority boundary.",
+          "current_state": [
+            "All four requested facets are established by complete authoritative sources.",
+            "Checkpoint persisted at corpus generation 522."
+          ],
+          "decisions": [
+            "Treat coach details as samples, never booked facts.",
+            "Plan the Italy finish around the confirmed Milan Linate return."
+          ],
+          "open_questions": [],
+          "next_actions": [
+            "Use the confirmed routes and Linate constraint in subsequent itinerary planning."
+          ],
+          "artifacts": [
+            "Trips/Europe 2026/Confirmed itinerary.md",
+            "Trips/Europe 2026/Planning and authority.md",
+            ".straylight/checkpoints/a2a9e175-608a-3e1d-e2d4-574a071190df.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 5,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "coach sample itinerary"
+                ],
+                "matched": "coach sample itinerary"
+              },
+              {
+                "alternatives": [
+                  "must never be treated as passenger confirmations",
+                  "not proof of booking",
+                  "not passenger confirmations"
+                ],
+                "matched": "not passenger confirmations"
+              },
+              {
+                "alternatives": [
+                  "passenger-specific airline confirmations are authoritative"
+                ],
+                "matched": "passenger-specific airline confirmations are authoritative"
+              }
+            ],
+            "citations": [
+              "Trips/Europe 2026/Planning and authority.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Seattle to Amsterdam to Brussels"
+                ],
+                "matched": "Seattle to Amsterdam to Brussels"
+              },
+              {
+                "alternatives": [
+                  "August 4-5, 2026"
+                ],
+                "matched": "August 4-5, 2026"
+              },
+              {
+                "alternatives": [
+                  "Brussels to Geneva"
+                ],
+                "matched": "Brussels to Geneva"
+              },
+              {
+                "alternatives": [
+                  "August 10, 2026"
+                ],
+                "matched": "August 10, 2026"
+              }
+            ],
+            "citations": [
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Seattle to London Heathrow to Geneva"
+                ],
+                "matched": "Seattle to London Heathrow to Geneva"
+              },
+              {
+                "alternatives": [
+                  "August 9-10, 2026"
+                ],
+                "matched": "August 9-10, 2026"
+              },
+              {
+                "alternatives": [
+                  "all four travelers"
+                ],
+                "matched": "all four travelers"
+              },
+              {
+                "alternatives": [
+                  "August 25, 2026"
+                ],
+                "matched": "August 25, 2026"
+              }
+            ],
+            "citations": [
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "Milan Linate, not Milan Malpensa",
+                  "Milan Linate rather than Milan Malpensa"
+                ],
+                "matched": "Milan Linate rather than Milan Malpensa"
+              },
+              {
+                "alternatives": [
+                  "northern Italy finish remains feasible"
+                ],
+                "matched": "northern Italy finish remains feasible"
+              },
+              {
+                "alternatives": [
+                  "final night in Milan",
+                  "use Milan for the final night"
+                ],
+                "matched": "final night in Milan"
+              }
+            ],
+            "citations": [
+              "Trips/Europe 2026/Confirmed itinerary.md",
+              "Trips/Europe 2026/Planning and authority.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 12,
+        "commands": 3,
+        "command_output_chars": 12555,
+        "tokens": {
+          "input_tokens": 58811,
+          "cached_input_tokens": 42439,
+          "output_tokens": 1459
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T10:05:34.772-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa489fe127690a58036fae9adf55b",
+          "elapsed_ms": 48.585,
+          "result_chars": 10399,
+          "source_text_chars": 6197,
+          "metadata_chars": 4202,
+          "evidence_items": 8,
+          "complete_sources": 8,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Aether/Automation status failing.md",
+            "Aether/Automation status healthy.md",
+            "Aether/Gmail forward intake.md",
+            "Aether/Gmail run actionable.md",
+            "Aether/Gmail run no action.md",
+            "Aether/Heartbeat policy.md",
+            "Aether/Morning briefing evidence.md",
+            "Aether/Morning briefing policy.md",
+            "Projects/Straylight current status.md",
+            "Projects/Straylight stale checkpoint.md",
+            "Trips/Europe 2026/Calendar reconciliation.md",
+            "Trips/Europe 2026/Confirmed itinerary.md",
+            "Trips/Europe 2026/Consent and baggage decisions.md",
+            "Trips/Europe 2026/Flight watch tracker.md",
+            "Trips/Europe 2026/Flight watch update.md",
+            "Trips/Europe 2026/Planning and authority.md",
+            "Trips/Europe 2026/Rail purchase checkpoint.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-27T10:05:46.739-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa48a2cce7433885403341ffb334f",
+          "elapsed_ms": 54.318,
+          "result_chars": 1220,
+          "source_text_chars": 0,
+          "metadata_chars": 1220,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/a2a9e175-608a-3e1d-e2d4-574a071190df.md",
+            "Trips/Europe 2026/Confirmed itinerary.md",
+            "Trips/Europe 2026/Planning and authority.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 2,
+      "service_result_chars": 11619,
+      "service_source_text_chars": 6197,
+      "service_metadata_chars": 5422,
+      "service_replay_weighted_chars": 22018,
+      "service_latency_ms": 102.903,
+      "service_http_calls": 2,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:a2a9e175-608a-3e1d-e2d4-574a071190df",
+        "checkpoint_ref": "checkpoint:a2a9e175-608a-3e1d-e2d4-574a071190df",
+        "path": ".straylight/checkpoints/a2a9e175-608a-3e1d-e2d4-574a071190df.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:bb0b183a9e3e3e8e59e8604ce2b52b28e208ce020076e5243b246ddce80e6242",
+            "entry_ref": "entry:019fa489-e9bf-7683-ad39-f0c2257c0091",
+            "path": "Trips/Europe 2026/Confirmed itinerary.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:a7d092b946d7b80f5ecebb1e6338cddfaf0d4d8db570e3d5d0fbef194c2b617e",
+            "entry_ref": "entry:019fa489-e9bf-7683-ad39-f14194778328",
+            "path": "Trips/Europe 2026/Planning and authority.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 522,
+        "write": {
+          "content_hash": "sha256:29c216d998e3dbacdda7ecb72786aaa72af2e3611773bdec7fcc919e4566d8e4",
+          "entry_ref": "entry:a2a9e175-608a-3e1d-e2d4-574a071190df",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/a2a9e175-608a-3e1d-e2d4-574a071190df.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa48a-2cea-77c0-bee5-a8b057a9ae90",
+          "workspace_generation": 522
+        }
+      },
+      "service_session_id": "session:019fa489-fe14-7bb3-9f2e-62759ed6dcdf",
+      "service_corpus_revision": "generation:522",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T10:05:34.772-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa489fe127690a58036fae9adf55b",
+          "elapsed_ms": 48.585,
+          "result_chars": 10399,
+          "source_text_chars": 6197,
+          "metadata_chars": 4202,
+          "evidence_items": 8,
+          "complete_sources": 8,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Aether/Automation status failing.md",
+            "Aether/Automation status healthy.md",
+            "Aether/Gmail forward intake.md",
+            "Aether/Gmail run actionable.md",
+            "Aether/Gmail run no action.md",
+            "Aether/Heartbeat policy.md",
+            "Aether/Morning briefing evidence.md",
+            "Aether/Morning briefing policy.md",
+            "Projects/Straylight current status.md",
+            "Projects/Straylight stale checkpoint.md",
+            "Trips/Europe 2026/Calendar reconciliation.md",
+            "Trips/Europe 2026/Confirmed itinerary.md",
+            "Trips/Europe 2026/Consent and baggage decisions.md",
+            "Trips/Europe 2026/Flight watch tracker.md",
+            "Trips/Europe 2026/Flight watch update.md",
+            "Trips/Europe 2026/Planning and authority.md",
+            "Trips/Europe 2026/Rail purchase checkpoint.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-27T10:05:46.739-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa48a2cce7433885403341ffb334f",
+          "elapsed_ms": 54.318,
+          "result_chars": 1220,
+          "source_text_chars": 0,
+          "metadata_chars": 1220,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/a2a9e175-608a-3e1d-e2d4-574a071190df.md",
+            "Trips/Europe 2026/Confirmed itinerary.md",
+            "Trips/Europe 2026/Planning and authority.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 11619,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:a2a9e175-608a-3e1d-e2d4-574a071190df",
+        "checkpoint_ref": "checkpoint:a2a9e175-608a-3e1d-e2d4-574a071190df",
+        "path": ".straylight/checkpoints/a2a9e175-608a-3e1d-e2d4-574a071190df.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:bb0b183a9e3e3e8e59e8604ce2b52b28e208ce020076e5243b246ddce80e6242",
+            "entry_ref": "entry:019fa489-e9bf-7683-ad39-f0c2257c0091",
+            "path": "Trips/Europe 2026/Confirmed itinerary.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:a7d092b946d7b80f5ecebb1e6338cddfaf0d4d8db570e3d5d0fbef194c2b617e",
+            "entry_ref": "entry:019fa489-e9bf-7683-ad39-f14194778328",
+            "path": "Trips/Europe 2026/Planning and authority.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 522,
+        "write": {
+          "content_hash": "sha256:29c216d998e3dbacdda7ecb72786aaa72af2e3611773bdec7fcc919e4566d8e4",
+          "entry_ref": "entry:a2a9e175-608a-3e1d-e2d4-574a071190df",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/a2a9e175-608a-3e1d-e2d4-574a071190df.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019fa48a-2cea-77c0-bee5-a8b057a9ae90",
+          "workspace_generation": 522
+        }
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 1,
+        "successful_runs": 1,
+        "cases_passed": 1,
+        "case_pass_rate": 1.0,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_pass_rate": 1.0,
+        "mean_score": 1.0,
+        "elapsed_samples": 1,
+        "mean_elapsed_seconds": 25.34,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 11619.0,
+        "persisted_checkpoints": 1,
+        "checkpoint_eligible_runs": 1,
+        "mean_service_calls": 2.0,
+        "mean_service_result_chars": 11619.0,
+        "mean_service_source_text_chars": 6197.0,
+        "mean_service_metadata_chars": 5422.0,
+        "mean_service_replay_weighted_chars": 22018.0,
+        "mean_service_latency_ms": 102.903,
+        "mean_completed_commands": 3.0,
+        "mean_command_output_chars": 12555.0,
+        "mean_tokens": {
+          "input_tokens": 58811.0,
+          "output_tokens": 1459.0,
+          "cached_input_tokens": 42439.0,
+          "uncached_input_tokens": 16372.0
+        }
+      }
+    },
+    "by_workload": {
+      "Recent Work": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 25.34,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 11619.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 11619.0,
+          "mean_service_source_text_chars": 6197.0,
+          "mean_service_metadata_chars": 5422.0,
+          "mean_service_replay_weighted_chars": 22018.0,
+          "mean_service_latency_ms": 102.903,
+          "mean_completed_commands": 3.0,
+          "mean_command_output_chars": 12555.0,
+          "mean_tokens": {
+            "input_tokens": 58811.0,
+            "output_tokens": 1459.0,
+            "cached_input_tokens": 42439.0,
+            "uncached_input_tokens": 16372.0
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "source_authority_and_itinerary_reconciliation": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 25.34,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 11619.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 11619.0,
+          "mean_service_source_text_chars": 6197.0,
+          "mean_service_metadata_chars": 5422.0,
+          "mean_service_replay_weighted_chars": 22018.0,
+          "mean_service_latency_ms": 102.903,
+          "mean_completed_commands": 3.0,
+          "mean_command_output_chars": 12555.0,
+          "mean_tokens": {
+            "input_tokens": 58811.0,
+            "output_tokens": 1459.0,
+            "cached_input_tokens": 42439.0,
+            "uncached_input_tokens": 16372.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "recent-europe-source-authority": {
+        "id": "recent-europe-source-authority",
+        "workload": "Recent Work",
+        "scope": "Recent Work",
+        "capability": "source_authority_and_itinerary_reconciliation",
+        "task": "Reconcile the Europe itinerary. Distinguish the coach sample from booked facts, state the confirmed outbound and return shape, and explain the planning consequence of the return airport.",
+        "claim_slots": {
+          "c1": "authority boundary",
+          "c2": "youth outbound and transfer",
+          "c3": "family outbound and shared return",
+          "c4": "return-airport planning consequence"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "coach sample itinerary"
+                ]
+              },
+              {
+                "any": [
+                  "must never be treated as passenger confirmations",
+                  "not proof of booking",
+                  "not passenger confirmations"
+                ]
+              },
+              {
+                "any": [
+                  "passenger-specific airline confirmations are authoritative"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Europe 2026/Planning and authority.md",
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "Seattle to Amsterdam to Brussels"
+                ]
+              },
+              {
+                "any": [
+                  "August 4-5, 2026"
+                ]
+              },
+              {
+                "any": [
+                  "Brussels to Geneva"
+                ]
+              },
+              {
+                "any": [
+                  "August 10, 2026"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "Seattle to London Heathrow to Geneva"
+                ]
+              },
+              {
+                "any": [
+                  "August 9-10, 2026"
+                ]
+              },
+              {
+                "any": [
+                  "all four travelers"
+                ]
+              },
+              {
+                "any": [
+                  "August 25, 2026"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "Milan Linate, not Milan Malpensa",
+                  "Milan Linate rather than Milan Malpensa"
+                ]
+              },
+              {
+                "any": [
+                  "northern Italy finish remains feasible"
+                ]
+              },
+              {
+                "any": [
+                  "final night in Milan",
+                  "use Milan for the final night"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Europe 2026/Planning and authority.md",
+              "Trips/Europe 2026/Confirmed itinerary.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the coach sample proves the booking",
+          "the return departs Malpensa",
+          "the youth traveler returns separately"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    }
+  }
+}

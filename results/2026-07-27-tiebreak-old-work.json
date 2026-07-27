@@ -1,0 +1,3081 @@
+{
+  "benchmark_version": "0.2",
+  "run_at": "2026-07-27T10:26:46-07:00",
+  "run_id": "tiebreak-old-work-20260727",
+  "harness_sha256": "90159d116b413871fe968b43713175bd1d0775e044a7a056bf66927fd93d3ab5",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "ffbab60f250f0a5eac7341c0b7f25f7416f3b4a437469111086b1fc74b1d3f74",
+  "manifest_sha256": "755b94565d28da776a2544ca4808de89e73b8d6b49e8a4deb5db4a29ce26b21b",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/straylight/eval/corpus-v0.2",
+    "sha256": "b08ded20cdc2f1437da8cc0db5b217de0f84e89a33814995307fd81681be0bc2",
+    "artifact_tree_sha256": "4d86f92c619b950b1e9dd1df672bfe37f5784da26e6739cf7255589c89866e41",
+    "documents": 73,
+    "chunks": 1563,
+    "characters": 1280331
+  },
+  "manifest": {
+    "benchmark_version": "0.2",
+    "name": "Straylight agent-work evaluation",
+    "grading_mode": "concept_tokens_v1",
+    "corpus_root": "eval/corpus-v0.2",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "cases": [
+      {
+        "id": "charlemagne-storage-current-state",
+        "workload": "Charlemagne",
+        "capability": "temporal_state_and_planning",
+        "task": "Resume the rhea storage investigation using the May, June 16, and June 24 records. State the current durable growth story, separate it from the transient free-space drop and rebound, explain what is and is not still receiving writes, and propose the next safe actions without treating large legacy tables as disposable.",
+        "claim_slots": {
+          "c1": "current disk and schema state",
+          "c2": "durable versus transient cause",
+          "c3": "legacy versus active writes",
+          "c4": "safe next actions"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "496G",
+                  "496 G"
+                ]
+              },
+              {
+                "any": [
+                  "87%",
+                  "87 percent"
+                ]
+              },
+              {
+                "any": [
+                  "273.95",
+                  "273.9"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "legacy session",
+                  "_legacy"
+                ]
+              },
+              {
+                "any": [
+                  "196 GiB",
+                  "196G",
+                  "196 Gi"
+                ]
+              },
+              {
+                "any": [
+                  "temporary",
+                  "transient",
+                  "GROUP BY",
+                  "skill_rating_match_audits"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "compact replacement",
+                  "replacement tables",
+                  "active writes"
+                ]
+              },
+              {
+                "any": [
+                  "0/s",
+                  "zero writes",
+                  "not current write"
+                ]
+              },
+              {
+                "any": [
+                  "retained",
+                  "durable retained"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "monitor",
+                  "watch",
+                  "df"
+                ]
+              },
+              {
+                "any": [
+                  "replay",
+                  "rollback",
+                  "cutover acceptance"
+                ]
+              },
+              {
+                "any": [
+                  "physical reclaim",
+                  "separate decision",
+                  "maintenance"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "drop the legacy tables immediately",
+          "turn off session tracking"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "switzerland-resume-truth",
+        "workload": "Switzerland",
+        "capability": "planning_state_and_corrections",
+        "task": "Resume the Switzerland family trip planning without mistaking ideas for bookings. Summarize the athlete camp facts, the latest family-meeting correction, the altitude and lodging constraints, and the current status of the family itinerary. Clearly separate confirmed source facts from planning assumptions.",
+        "claim_slots": {
+          "c1": "camp facts",
+          "c2": "latest family-meeting correction",
+          "c3": "altitude and lodging constraints",
+          "c4": "booking and planning status"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "August 5-10",
+                  "Aug 5-10",
+                  "August 5 to 10"
+                ]
+              },
+              {
+                "any": [
+                  "August 10-22",
+                  "Aug 10-22",
+                  "August 10 to 22"
+                ]
+              },
+              {
+                "any": [
+                  "Belgium",
+                  "Saas Fee",
+                  "Saas-Fee"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "after both camps",
+                  "after Saas",
+                  "Aug 21",
+                  "Aug 22"
+                ]
+              },
+              {
+                "any": [
+                  "3 to 4 days",
+                  "3-4 days",
+                  "Italy"
+                ]
+              },
+              {
+                "any": [
+                  "not at the end of Belgium",
+                  "correction"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "serious altitude",
+                  "altitude issues",
+                  "altitude problems"
+                ]
+              },
+              {
+                "any": [
+                  "low altitude",
+                  "relatively low",
+                  "avoid unnecessarily high",
+                  "go down in elevation",
+                  "descend"
+                ]
+              },
+              {
+                "any": [
+                  "pull-out sofa",
+                  "room for Radley",
+                  "enough room"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "active research",
+                  "in progress",
+                  "not booked",
+                  "no booking"
+                ]
+              },
+              {
+                "any": [
+                  "option",
+                  "proposal",
+                  "shortlist"
+                ]
+              },
+              {
+                "any": [
+                  "two weeks",
+                  "14 days"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the family has booked",
+          "meet him after Belgium"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "switzerland-authority-and-next-actions",
+        "workload": "Switzerland",
+        "capability": "authority_and_actionability",
+        "task": "Build a source-aware planning checkpoint for the Switzerland trip. Explain what authority each of the four notes carries, which details must not be promoted into booked facts, and the next concrete research or booking decisions needed to advance the trip safely.",
+        "claim_slots": {
+          "c1": "coach brief authority",
+          "c2": "user constraint authority",
+          "c3": "options and inspiration authority",
+          "c4": "next concrete decisions"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "coach",
+                  "camp brief"
+                ]
+              },
+              {
+                "any": [
+                  "camp dates",
+                  "camp logistics"
+                ]
+              },
+              {
+                "any": [
+                  "example itinerary",
+                  "not a family booking",
+                  "confirmation numbers"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "user-provided",
+                  "family constraints",
+                  "correction"
+                ]
+              },
+              {
+                "any": [
+                  "after both camps",
+                  "altitude",
+                  "two weeks"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "shortlist",
+                  "options",
+                  "recommendation"
+                ]
+              },
+              {
+                "any": [
+                  "inspiration",
+                  "A&K",
+                  "rhythm"
+                ]
+              },
+              {
+                "any": [
+                  "not booked",
+                  "not a reservation",
+                  "proposal"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "arrival",
+                  "departure",
+                  "flight",
+                  "airfare"
+                ]
+              },
+              {
+                "any": [
+                  "lodging",
+                  "room",
+                  "availability"
+                ]
+              },
+              {
+                "any": [
+                  "pickup",
+                  "handoff",
+                  "Malpensa"
+                ]
+              },
+              {
+                "any": [
+                  "verify",
+                  "before booking"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "family flights are booked",
+          "hotel is booked"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "charlemagne-storage-current-state": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:tiebreak-old-work-20260727/charlemagne-storage-current-state",
+      "display_scope": "Charlemagne",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGM0ODFkNmEtNDMyYy00ZDI2LTgxMWMtOWUxYzdjMTY4ZmZkIiwiY3JlZGVudGlhbF9pZCI6IjFkODBiODhhLTE1NzgtNDM2ZS1iZDg5LWRlYjUyOTMxM2Q0MSIsInNjb3BlX2lkIjoiZGI1M2VlYzEtMzIwYy00ZDc4LWE2NmQtNmZjMzg0MGRmZTM0IiwicmVjZWlwdF9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhYjNjMDhlM2IwOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhZDU1YTMxMDBkYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.qLw-MA6p9NYZ_G5PWMWpPTAvW7Pl3Itit4VVyY_9rUI",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019fa49bea1272d383e66ad55a3100db",
+      "corpus_revision": "revision:019fa49bea1272d383e66ad55a3100db",
+      "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGM0ODFkNmEtNDMyYy00ZDI2LTgxMWMtOWUxYzdjMTY4ZmZkIiwiY3JlZGVudGlhbF9pZCI6IjFkODBiODhhLTE1NzgtNDM2ZS1iZDg5LWRlYjUyOTMxM2Q0MSIsInNjb3BlX2lkIjoiZGI1M2VlYzEtMzIwYy00ZDc4LWE2NmQtNmZjMzg0MGRmZTM0IiwicmVjZWlwdF9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhYjNjMDhlM2IwOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhZDU1YTMxMDBkYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.qLw-MA6p9NYZ_G5PWMWpPTAvW7Pl3Itit4VVyY_9rUI",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 15502.046,
+        "import_batch_count": 1,
+        "max_batch_documents": 73,
+        "ready_elapsed_ms": 15502.046,
+        "semantic_waited": true,
+        "semantic_ready_at_start": true,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "ready"
+        },
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGM0ODFkNmEtNDMyYy00ZDI2LTgxMWMtOWUxYzdjMTY4ZmZkIiwiY3JlZGVudGlhbF9pZCI6IjFkODBiODhhLTE1NzgtNDM2ZS1iZDg5LWRlYjUyOTMxM2Q0MSIsInNjb3BlX2lkIjoiZGI1M2VlYzEtMzIwYy00ZDc4LWE2NmQtNmZjMzg0MGRmZTM0IiwicmVjZWlwdF9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhYjNjMDhlM2IwOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhZDU1YTMxMDBkYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.qLw-MA6p9NYZ_G5PWMWpPTAvW7Pl3Itit4VVyY_9rUI",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGM0ODFkNmEtNDMyYy00ZDI2LTgxMWMtOWUxYzdjMTY4ZmZkIiwiY3JlZGVudGlhbF9pZCI6IjFkODBiODhhLTE1NzgtNDM2ZS1iZDg5LWRlYjUyOTMxM2Q0MSIsInNjb3BlX2lkIjoiZGI1M2VlYzEtMzIwYy00ZDc4LWE2NmQtNmZjMzg0MGRmZTM0IiwicmVjZWlwdF9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhYjNjMDhlM2IwOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhZDU1YTMxMDBkYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.qLw-MA6p9NYZ_G5PWMWpPTAvW7Pl3Itit4VVyY_9rUI",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-work-20260727/charlemagne-storage-current-state",
+          "display_scope": "Charlemagne",
+          "access_mode": "read_write",
+          "user_id": "user:0c481d6a432c4d26811c9e1c7c168ffd",
+          "scope_id": "scope:db53eec1320c4d78a66d6fc3840dfe34",
+          "credential_id": "credential:1d80b88a1578436ebd89deb529313d41",
+          "base_corpus_revision": "revision:019fa49bea1272d383e66ad55a3100db",
+          "corpus_revision": "revision:019fa49bea1272d383e66ad55a3100db",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1664,
+            "embeddings": 1664
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGM0ODFkNmEtNDMyYy00ZDI2LTgxMWMtOWUxYzdjMTY4ZmZkIiwiY3JlZGVudGlhbF9pZCI6IjFkODBiODhhLTE1NzgtNDM2ZS1iZDg5LWRlYjUyOTMxM2Q0MSIsInNjb3BlX2lkIjoiZGI1M2VlYzEtMzIwYy00ZDc4LWE2NmQtNmZjMzg0MGRmZTM0IiwicmVjZWlwdF9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhYjNjMDhlM2IwOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhZDU1YTMxMDBkYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.qLw-MA6p9NYZ_G5PWMWpPTAvW7Pl3Itit4VVyY_9rUI",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMGM0ODFkNmEtNDMyYy00ZDI2LTgxMWMtOWUxYzdjMTY4ZmZkIiwiY3JlZGVudGlhbF9pZCI6IjFkODBiODhhLTE1NzgtNDM2ZS1iZDg5LWRlYjUyOTMxM2Q0MSIsInNjb3BlX2lkIjoiZGI1M2VlYzEtMzIwYy00ZDc4LWE2NmQtNmZjMzg0MGRmZTM0IiwicmVjZWlwdF9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhYjNjMDhlM2IwOSIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDliLWVhMTItNzJkMy04M2U2LTZhZDU1YTMxMDBkYiIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.qLw-MA6p9NYZ_G5PWMWpPTAvW7Pl3Itit4VVyY_9rUI",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-work-20260727/charlemagne-storage-current-state",
+          "display_scope": "Charlemagne",
+          "access_mode": "read_write",
+          "user_id": "user:0c481d6a432c4d26811c9e1c7c168ffd",
+          "scope_id": "scope:db53eec1320c4d78a66d6fc3840dfe34",
+          "credential_id": "credential:1d80b88a1578436ebd89deb529313d41",
+          "base_corpus_revision": "revision:019fa49bea1272d383e66ad55a3100db",
+          "corpus_revision": "revision:019fa49bea1272d383e66ad55a3100db",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1664,
+            "embeddings": 1664
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "switzerland-resume-truth": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:tiebreak-old-work-20260727/switzerland-resume-truth",
+      "display_scope": "Switzerland",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTlkNWQ3NzYtMjFjMi00ZDJjLTg2ZTUtY2QwN2M5OTcxM2VhIiwiY3JlZGVudGlhbF9pZCI6ImZhYTdkNGQ5LWQzZDQtNDFiNS1hYzNmLTIyMDI4ZTM2NmE5NSIsInNjb3BlX2lkIjoiZTVmODUxNGQtNGJiNy00ODUzLTg2MjgtM2I1ODA0MDgwODRjIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2ODYwMDBlODMxZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2YWM1YWUwMDE3MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.lb23KKpHM9C-2Jbcy9JyEAOFYLfnaaR_hsEZJtvnhKI",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019fa49c11f17710969786ac5ae00171",
+      "corpus_revision": "revision:019fa49c11f17710969786ac5ae00171",
+      "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTlkNWQ3NzYtMjFjMi00ZDJjLTg2ZTUtY2QwN2M5OTcxM2VhIiwiY3JlZGVudGlhbF9pZCI6ImZhYTdkNGQ5LWQzZDQtNDFiNS1hYzNmLTIyMDI4ZTM2NmE5NSIsInNjb3BlX2lkIjoiZTVmODUxNGQtNGJiNy00ODUzLTg2MjgtM2I1ODA0MDgwODRjIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2ODYwMDBlODMxZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2YWM1YWUwMDE3MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.lb23KKpHM9C-2Jbcy9JyEAOFYLfnaaR_hsEZJtvnhKI",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 10056.842,
+        "import_batch_count": 1,
+        "max_batch_documents": 73,
+        "ready_elapsed_ms": 10056.842,
+        "semantic_waited": true,
+        "semantic_ready_at_start": true,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "ready"
+        },
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTlkNWQ3NzYtMjFjMi00ZDJjLTg2ZTUtY2QwN2M5OTcxM2VhIiwiY3JlZGVudGlhbF9pZCI6ImZhYTdkNGQ5LWQzZDQtNDFiNS1hYzNmLTIyMDI4ZTM2NmE5NSIsInNjb3BlX2lkIjoiZTVmODUxNGQtNGJiNy00ODUzLTg2MjgtM2I1ODA0MDgwODRjIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2ODYwMDBlODMxZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2YWM1YWUwMDE3MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.lb23KKpHM9C-2Jbcy9JyEAOFYLfnaaR_hsEZJtvnhKI",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTlkNWQ3NzYtMjFjMi00ZDJjLTg2ZTUtY2QwN2M5OTcxM2VhIiwiY3JlZGVudGlhbF9pZCI6ImZhYTdkNGQ5LWQzZDQtNDFiNS1hYzNmLTIyMDI4ZTM2NmE5NSIsInNjb3BlX2lkIjoiZTVmODUxNGQtNGJiNy00ODUzLTg2MjgtM2I1ODA0MDgwODRjIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2ODYwMDBlODMxZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2YWM1YWUwMDE3MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.lb23KKpHM9C-2Jbcy9JyEAOFYLfnaaR_hsEZJtvnhKI",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-work-20260727/switzerland-resume-truth",
+          "display_scope": "Switzerland",
+          "access_mode": "read_write",
+          "user_id": "user:59d5d77621c24d2c86e5cd07c99713ea",
+          "scope_id": "scope:e5f8514d4bb7485386283b580408084c",
+          "credential_id": "credential:faa7d4d9d3d441b5ac3f22028e366a95",
+          "base_corpus_revision": "revision:019fa49c11f17710969786ac5ae00171",
+          "corpus_revision": "revision:019fa49c11f17710969786ac5ae00171",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1664,
+            "embeddings": 1664
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTlkNWQ3NzYtMjFjMi00ZDJjLTg2ZTUtY2QwN2M5OTcxM2VhIiwiY3JlZGVudGlhbF9pZCI6ImZhYTdkNGQ5LWQzZDQtNDFiNS1hYzNmLTIyMDI4ZTM2NmE5NSIsInNjb3BlX2lkIjoiZTVmODUxNGQtNGJiNy00ODUzLTg2MjgtM2I1ODA0MDgwODRjIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2ODYwMDBlODMxZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2YWM1YWUwMDE3MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.lb23KKpHM9C-2Jbcy9JyEAOFYLfnaaR_hsEZJtvnhKI",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiNTlkNWQ3NzYtMjFjMi00ZDJjLTg2ZTUtY2QwN2M5OTcxM2VhIiwiY3JlZGVudGlhbF9pZCI6ImZhYTdkNGQ5LWQzZDQtNDFiNS1hYzNmLTIyMDI4ZTM2NmE5NSIsInNjb3BlX2lkIjoiZTVmODUxNGQtNGJiNy00ODUzLTg2MjgtM2I1ODA0MDgwODRjIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2ODYwMDBlODMxZiIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTExZjEtNzcxMC05Njk3LTg2YWM1YWUwMDE3MSIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.lb23KKpHM9C-2Jbcy9JyEAOFYLfnaaR_hsEZJtvnhKI",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-work-20260727/switzerland-resume-truth",
+          "display_scope": "Switzerland",
+          "access_mode": "read_write",
+          "user_id": "user:59d5d77621c24d2c86e5cd07c99713ea",
+          "scope_id": "scope:e5f8514d4bb7485386283b580408084c",
+          "credential_id": "credential:faa7d4d9d3d441b5ac3f22028e366a95",
+          "base_corpus_revision": "revision:019fa49c11f17710969786ac5ae00171",
+          "corpus_revision": "revision:019fa49c11f17710969786ac5ae00171",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1664,
+            "embeddings": 1664
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    },
+    "switzerland-authority-and-next-actions": {
+      "authorization_scope": "scope:root",
+      "requested_authorization_scope": "eval:tiebreak-old-work-20260727/switzerland-authority-and-next-actions",
+      "display_scope": "Switzerland",
+      "access_mode": "read_write",
+      "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTA4ZDU1ZGQtMjBiZS00NDA0LWE5NjQtMmJiYTIyMzM5Y2Q1IiwiY3JlZGVudGlhbF9pZCI6IjMzMjhmOTBjLWQwNTItNGEwMi05MzE3LWNjM2I2NzBiZGQ2NCIsInNjb3BlX2lkIjoiNDExYTI0N2MtZjU5YS00MjIzLWJmYzYtNTA5NTY2ZTU3MGEwIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1Y2E0ZmEzOWNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1ZTEzZWQzNDNmNyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.z41PZnLfZQ8Dv4YMGzhJL8IqWyyzZ9lRBHKe2CdSl6A",
+      "checkpoint_id": null,
+      "base_corpus_revision": "revision:019fa49c3f8b7ea1aae9d5e13ed343f7",
+      "corpus_revision": "revision:019fa49c3f8b7ea1aae9d5e13ed343f7",
+      "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTA4ZDU1ZGQtMjBiZS00NDA0LWE5NjQtMmJiYTIyMzM5Y2Q1IiwiY3JlZGVudGlhbF9pZCI6IjMzMjhmOTBjLWQwNTItNGEwMi05MzE3LWNjM2I2NzBiZGQ2NCIsInNjb3BlX2lkIjoiNDExYTI0N2MtZjU5YS00MjIzLWJmYzYtNTA5NTY2ZTU3MGEwIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1Y2E0ZmEzOWNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1ZTEzZWQzNDNmNyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.z41PZnLfZQ8Dv4YMGzhJL8IqWyyzZ9lRBHKe2CdSl6A",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 73,
+        "delta_documents": 0,
+        "characters": 1280331,
+        "import_http_status": 200,
+        "import_elapsed_ms": 11325.592,
+        "import_batch_count": 1,
+        "max_batch_documents": 73,
+        "ready_elapsed_ms": 11325.592,
+        "semantic_waited": true,
+        "semantic_ready_at_start": true,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "ready"
+        },
+        "import_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTA4ZDU1ZGQtMjBiZS00NDA0LWE5NjQtMmJiYTIyMzM5Y2Q1IiwiY3JlZGVudGlhbF9pZCI6IjMzMjhmOTBjLWQwNTItNGEwMi05MzE3LWNjM2I2NzBiZGQ2NCIsInNjb3BlX2lkIjoiNDExYTI0N2MtZjU5YS00MjIzLWJmYzYtNTA5NTY2ZTU3MGEwIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1Y2E0ZmEzOWNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1ZTEzZWQzNDNmNyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.z41PZnLfZQ8Dv4YMGzhJL8IqWyyzZ9lRBHKe2CdSl6A",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTA4ZDU1ZGQtMjBiZS00NDA0LWE5NjQtMmJiYTIyMzM5Y2Q1IiwiY3JlZGVudGlhbF9pZCI6IjMzMjhmOTBjLWQwNTItNGEwMi05MzE3LWNjM2I2NzBiZGQ2NCIsInNjb3BlX2lkIjoiNDExYTI0N2MtZjU5YS00MjIzLWJmYzYtNTA5NTY2ZTU3MGEwIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1Y2E0ZmEzOWNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1ZTEzZWQzNDNmNyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.z41PZnLfZQ8Dv4YMGzhJL8IqWyyzZ9lRBHKe2CdSl6A",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-work-20260727/switzerland-authority-and-next-actions",
+          "display_scope": "Switzerland",
+          "access_mode": "read_write",
+          "user_id": "user:108d55dd20be4404a9642bba22339cd5",
+          "scope_id": "scope:411a247cf59a4223bfc6509566e570a0",
+          "credential_id": "credential:3328f90cd0524a029317cc3b670bdd64",
+          "base_corpus_revision": "revision:019fa49c3f8b7ea1aae9d5e13ed343f7",
+          "corpus_revision": "revision:019fa49c3f8b7ea1aae9d5e13ed343f7",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1664,
+            "embeddings": 1664
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        },
+        "ready_response": {
+          "status": "ready",
+          "ready_for_evaluation": true,
+          "import_id": "eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTA4ZDU1ZGQtMjBiZS00NDA0LWE5NjQtMmJiYTIyMzM5Y2Q1IiwiY3JlZGVudGlhbF9pZCI6IjMzMjhmOTBjLWQwNTItNGEwMi05MzE3LWNjM2I2NzBiZGQ2NCIsInNjb3BlX2lkIjoiNDExYTI0N2MtZjU5YS00MjIzLWJmYzYtNTA5NTY2ZTU3MGEwIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1Y2E0ZmEzOWNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1ZTEzZWQzNDNmNyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.z41PZnLfZQ8Dv4YMGzhJL8IqWyyzZ9lRBHKe2CdSl6A",
+          "status_url": "/v1/admin/eval/imports/eval_import.eyJ2ZXJzaW9uIjoxLCJ1c2VyX2lkIjoiMTA4ZDU1ZGQtMjBiZS00NDA0LWE5NjQtMmJiYTIyMzM5Y2Q1IiwiY3JlZGVudGlhbF9pZCI6IjMzMjhmOTBjLWQwNTItNGEwMi05MzE3LWNjM2I2NzBiZGQ2NCIsInNjb3BlX2lkIjoiNDExYTI0N2MtZjU5YS00MjIzLWJmYzYtNTA5NTY2ZTU3MGEwIiwicmVjZWlwdF9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1Y2E0ZmEzOWNmOCIsInJlc3VsdF9yZXZpc2lvbl9pZCI6IjAxOWZhNDljLTNmOGItN2VhMS1hYWU5LWQ1ZTEzZWQzNDNmNyIsImFjY2Vzc19tb2RlIjoicmVhZF93cml0ZSJ9.z41PZnLfZQ8Dv4YMGzhJL8IqWyyzZ9lRBHKe2CdSl6A",
+          "authorization_scope": "scope:root",
+          "requested_authorization_scope": "eval:tiebreak-old-work-20260727/switzerland-authority-and-next-actions",
+          "display_scope": "Switzerland",
+          "access_mode": "read_write",
+          "user_id": "user:108d55dd20be4404a9642bba22339cd5",
+          "scope_id": "scope:411a247cf59a4223bfc6509566e570a0",
+          "credential_id": "credential:3328f90cd0524a029317cc3b670bdd64",
+          "base_corpus_revision": "revision:019fa49c3f8b7ea1aae9d5e13ed343f7",
+          "corpus_revision": "revision:019fa49c3f8b7ea1aae9d5e13ed343f7",
+          "checkpoint_id": null,
+          "seed_session_id": null,
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "index_counts": {
+            "documents": 73,
+            "chunks": 1664,
+            "embeddings": 1664
+          },
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_degraded": false,
+          "documents": 73,
+          "delta_documents": 0,
+          "replayed": false,
+          "token_status": "issued_once"
+        }
+      }
+    }
+  },
+  "service_protocol": "legacy",
+  "records": [
+    {
+      "case_id": "charlemagne-storage-current-state",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 75.172,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/tiebreak-old-work-20260727/service_api/charlemagne-storage-current-state/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Rhea\u2019s durable growth is retained Charlemagne session/cutover data; the sharp June 24 free-space fall and rebound was likely temporary MySQL work. Active writes moved to compact replacement tables, while legacy data remains required pending reviewed retirement.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Current June 24 state: `/` stabilized at `3.7T` total, `3.2T` used, `496G` available, `87%` used. At the `2026-06-24 14:55 UTC` snapshot, `nexus` was `1732.74 GiB` and `charlemagne` was `273.95 GiB`. Historically, `charlemagne` grew from `53.99 GiB` on May 22 to `159.76 GiB` on June 16 and then `273.95 GiB` on June 24\u2014about `114.2 GiB` in the final eight days.",
+            "source_paths": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The durable increase is primarily Charlemagne session/cutover storage, including roughly `196 GiB` retained across major `_legacy` tables. This differs from the sharp June 24 free-space drop and rebound: raw one-minute samples rose suddenly from roughly `3.12e11`\u2013`3.19e11` bytes free to about `5.31e11` bytes without corresponding durable table/file growth. The leading observed transient cause was a Season 30 `warmind-skillratings repair-season` duplicate audit broadly grouping the `81.99 GiB` `nexus.skill_rating_match_audits` table. Temporary-table pressure is plausible, but not proven because `/var/lib/mysql`, deleted-open files, and `innodb_temp_table_info` could not be inspected without root/`PROCESS` access.",
+            "source_paths": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "During `2026-06-24 14:56:33 UTC`\u2013`14:58:34 UTC`, compact replacements were active: `session_activity_events` added `5296` rows (`43.8/s`), `play_sessions` added `414` (`3.4/s`), and `session_pgcr_ingest` advanced by `12804` instance IDs (`105.8/s`). Their `_legacy` counterparts all showed zero change, with latest observed rows around the `2026-06-22 19:07:34 UTC` lean cutover. Thus the giant legacy tables are retained durable storage, not current write amplification. They are nevertheless not disposable: `session_pgcr_ingest` preserves idempotency/recovery, raw event data supports replay/refinalization and lookup paths until replacements exist, and `nexus.raw_raids` still feeds live API, Discord, carry/sherpa, low-man, and analytics behavior.",
+            "source_paths": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+              "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Next safe actions: monitor `df -h /` and Datadog while the repair runs; if space falls sharply again, use root/`PROCESS` access to inspect MySQL temporary tables/files and deleted-open files before killing anything. Replace the broad duplicate-audit `GROUP BY instanceId` with a smaller indexed proof if possible. Before session cleanup, capture a fresh baseline/runway, require production `EXPLAIN`, preserve ingest duplicate/replay safety with tombstones or horizon fences, deploy/backfill/dual-write `session_instance_map`, prove replay/rehydration and summary-backed reads, and mutate only in interruptible small batches. Archive or drop `_legacy` tables only in a separate approved maintenance window after cutover acceptance, replay proof, rollback criteria, snapshot, free-space budget, and DDL review; logical deletion and physical EBS reclaim are separate decisions. Keep `raw_raids` as a summary-plus-narrow-facts migration with dual-write, chunked backfill, and shadow-read validation\u2014not quick cleanup. Logs, caches, `/tmp/warmind-cutover-go`, and `dpy_grave.tgz` are secondary cleanup only.",
+            "source_paths": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+              "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Preserve the current rhea durable-growth explanation, distinguish transient pressure, identify active versus retained tables, and hand off safe next actions.",
+          "current_state": [
+            "June 24 supersedes earlier measurements: root was about `496G` free and `87%` used; `charlemagne` was `273.95 GiB`.",
+            "Durable growth is concentrated in session/cutover storage; roughly `196 GiB` is retained `_legacy` data.",
+            "Compact replacements receive writes; sampled `_legacy` tables did not.",
+            "Transient MySQL work is the leading explanation for the sharp drop/rebound, but its physical mechanism remains unverified."
+          ],
+          "decisions": [
+            "Do not treat session `_legacy` tables or `nexus.raw_raids` as disposable.",
+            "Separate logical retention cleanup from physical filesystem/EBS reclamation.",
+            "Require acceptance, replay, lookup, privacy, and rollback safeguards before destructive maintenance."
+          ],
+          "open_questions": [
+            "Exact temporary/deleted-open-file attribution during another sharp drop.",
+            "Raw-stat and ingest retention windows, tombstone design, cold archive need, participant privacy policy, summary compression, partitioning strategy, and physical-reclaim timing."
+          ],
+          "next_actions": [
+            "Monitor disk pressure and inspect MySQL temporary/deleted-open files with sufficient privileges upon recurrence.",
+            "Optimize the Season 30 duplicate audit.",
+            "Implement the gated retention/read-path sequence before considering legacy retirement.",
+            "Plan any physical reclaim as a separately approved operation."
+          ],
+          "artifacts": [
+            "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 10,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "496G",
+                  "496 G"
+                ],
+                "matched": "496G"
+              },
+              {
+                "alternatives": [
+                  "87%",
+                  "87 percent"
+                ],
+                "matched": "87%"
+              },
+              {
+                "alternatives": [
+                  "273.95",
+                  "273.9"
+                ],
+                "matched": "273.95"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "legacy session",
+                  "_legacy"
+                ],
+                "matched": "_legacy"
+              },
+              {
+                "alternatives": [
+                  "196 GiB",
+                  "196G",
+                  "196 Gi"
+                ],
+                "matched": "196 GiB"
+              },
+              {
+                "alternatives": [
+                  "temporary",
+                  "transient",
+                  "GROUP BY",
+                  "skill_rating_match_audits"
+                ],
+                "matched": "temporary"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "compact replacement",
+                  "replacement tables",
+                  "active writes"
+                ],
+                "matched": "compact replacement"
+              },
+              {
+                "alternatives": [
+                  "0/s",
+                  "zero writes",
+                  "not current write"
+                ],
+                "matched": "zero writes"
+              },
+              {
+                "alternatives": [
+                  "retained",
+                  "durable retained"
+                ],
+                "matched": "retained"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+              "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "monitor",
+                  "watch",
+                  "df"
+                ],
+                "matched": "monitor"
+              },
+              {
+                "alternatives": [
+                  "replay",
+                  "rollback",
+                  "cutover acceptance"
+                ],
+                "matched": "replay"
+              },
+              {
+                "alternatives": [
+                  "physical reclaim",
+                  "separate decision",
+                  "maintenance"
+                ],
+                "matched": "physical reclaim"
+              }
+            ],
+            "citations": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+              "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 17,
+        "commands": 5,
+        "command_output_chars": 45984,
+        "tokens": {
+          "input_tokens": 149519,
+          "cached_input_tokens": 118697,
+          "output_tokens": 4139
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T10:25:40.366-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c526473628410263e5200beec",
+          "elapsed_ms": 4408.336,
+          "result_chars": 22202,
+          "source_text_chars": 18951,
+          "metadata_chars": 3251,
+          "evidence_items": 3,
+          "complete_sources": 2,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:25:52.973-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c84177e3194d0d44e312597ca",
+          "elapsed_ms": 4326.506,
+          "result_chars": 8355,
+          "source_text_chars": 4615,
+          "metadata_chars": 3740,
+          "evidence_items": 8,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Metis/Folder structure.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:25:55.234-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c9d867450bb8383bcfb42e885",
+          "elapsed_ms": 42.333,
+          "result_chars": 12460,
+          "source_text_chars": 11281,
+          "metadata_chars": 1179,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:26:22.951-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa49d09a171f1a89f10596e2e917e",
+          "elapsed_ms": 83.02,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 43766,
+      "service_source_text_chars": 34847,
+      "service_metadata_chars": 8919,
+      "service_replay_weighted_chars": 139542,
+      "service_latency_ms": 8860.195,
+      "service_http_calls": 4,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019fa49b-ea12-72d3-83e6-6ad55a3100db",
+        "checkpoint_id": "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+        "corpus_revision": "revision:019fa49d-09b2-7c01-b3eb-565e9db1f098",
+        "created": [
+          {
+            "id": "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "1d80b88a-1578-436e-bd89-deb529313d41",
+        "deduplicated": [],
+        "id": "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+        "idempotency_key": "eval-checkpoint:session:019fa49c52787603bbdc52470262f4e9:1dd8a2c82ac7dd00110cf5504bb47b855203ab0bf5c6bca5c718970893faa96a",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa49d-09b2-7c01-b3eb-565e9db1f098",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa49d-09ad-77c3-8163-f4413675bb5e"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:0e6c131139300d137ecf9f0094796285903754127c0f11ff294689364635ad27",
+        "operation_id": "operation:019fa49d-09ac-7c90-be77-2381e7f76b7f",
+        "policy": {
+          "policy_id": "56a79a16-113c-4b8f-a82c-064a6b103fc3",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa49d-09ac-7c90-be77-2381e7f76b7f",
+        "replayed": false,
+        "request_hash": "sha256:40361776fc36fb6ba18188db3dd8528fc654d787efb83f8028b192be19f172fe",
+        "resulting_corpus_revision": "revision:019fa49d-09b2-7c01-b3eb-565e9db1f098",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa49c52787603bbdc52470262f4e9",
+        "status": "committed",
+        "user_id": "user:0c481d6a432c4d26811c9e1c7c168ffd"
+      },
+      "service_session_id": "session:019fa49c52787603bbdc52470262f4e9",
+      "service_corpus_revision": "revision:019fa49d-09b2-7c01-b3eb-565e9db1f098",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T10:25:40.366-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c526473628410263e5200beec",
+          "elapsed_ms": 4408.336,
+          "result_chars": 22202,
+          "source_text_chars": 18951,
+          "metadata_chars": 3251,
+          "evidence_items": 3,
+          "complete_sources": 2,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:25:52.973-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c84177e3194d0d44e312597ca",
+          "elapsed_ms": 4326.506,
+          "result_chars": 8355,
+          "source_text_chars": 4615,
+          "metadata_chars": 3740,
+          "evidence_items": 8,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md",
+            "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+            "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md",
+            "Projects/Metis/Folder structure.md",
+            "Projects/Straylight/Dreaming Architecture and Plan - Initial Design.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:25:55.234-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c9d867450bb8383bcfb42e885",
+          "elapsed_ms": 42.333,
+          "result_chars": 12460,
+          "source_text_chars": 11281,
+          "metadata_chars": 1179,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne rhea storage and MySQL tuning findings - 2026-05-22.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:26:22.951-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa49d09a171f1a89f10596e2e917e",
+          "elapsed_ms": 83.02,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 43766,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019fa49b-ea12-72d3-83e6-6ad55a3100db",
+        "checkpoint_id": "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+        "corpus_revision": "revision:019fa49d-09b2-7c01-b3eb-565e9db1f098",
+        "created": [
+          {
+            "id": "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "1d80b88a-1578-436e-bd89-deb529313d41",
+        "deduplicated": [],
+        "id": "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+        "idempotency_key": "eval-checkpoint:session:019fa49c52787603bbdc52470262f4e9:1dd8a2c82ac7dd00110cf5504bb47b855203ab0bf5c6bca5c718970893faa96a",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa49d-09b2-7c01-b3eb-565e9db1f098",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa49d-09ad-77c3-8163-f4413675bb5e"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:0e6c131139300d137ecf9f0094796285903754127c0f11ff294689364635ad27",
+        "operation_id": "operation:019fa49d-09ac-7c90-be77-2381e7f76b7f",
+        "policy": {
+          "policy_id": "56a79a16-113c-4b8f-a82c-064a6b103fc3",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa49d-09ac-7c90-be77-2381e7f76b7f",
+        "replayed": false,
+        "request_hash": "sha256:40361776fc36fb6ba18188db3dd8528fc654d787efb83f8028b192be19f172fe",
+        "resulting_corpus_revision": "revision:019fa49d-09b2-7c01-b3eb-565e9db1f098",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa49d-09b2-7c01-b3eb-564625011be3"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa49c52787603bbdc52470262f4e9",
+        "status": "committed",
+        "user_id": "user:0c481d6a432c4d26811c9e1c7c168ffd"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "switzerland-resume-truth",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 57.366,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/tiebreak-old-work-20260727/service_api/switzerland-resume-truth/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Confirmed: Radley\u2019s two camps and the post-camp family meetup are documented. The family itinerary, lodging, handoff, and Italy extension remain unbooked planning ideas.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Snow Valley Indoor Slalom Camp in Peer, Belgium runs August 5-10, with training August 6-9: two 2-hour sessions daily, 8 sessions total. Price is $2,000 excluding airfare; the non-refundable deposit is $500. Athletes fly Brussels\u2013Geneva August 10. Saas Fee Ski Camp runs August 10-22, costs $4,400, and includes Hotel Bristol, training, activities, and Geneva\u2013Saas Fee\u2013Milano Malpensa transport. The schedule travels toward Malpensa August 21, possibly after make-up training, visits Arona on Lake Maggiore, and travels home August 22. These are camp-brief facts, not proof of Radley\u2019s or the family\u2019s bookings.",
+            "source_paths": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The latest correction is that the family will meet Radley only after he finishes both camps, at the end of Saas Fee around Aug 21 or Aug 22\u2014not after Belgium and not during the opening days of Saas Fee. The earlier near-camp concept is superseded planning history.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "Radley has previously had serious altitude problems. Any family lodging should ideally be low enough to permit going farther down if symptoms become severe and should have room for Radley if needed, even via a pull-out sofa. The worst case is considered unlikely but must be accommodated. Vevey / Montreux was proposed as a low-altitude base about 1 hour 50 minutes from Saas-Fee; it is only a candidate, and the later post-camp-meeting correction reduces the relevance of an during-camp base.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The family itinerary is still active research, not an established booking. Current assumptions are a meetup after Saas Fee around Aug 21 or Aug 22, followed by about 3 to 4 days in Italy. Candidate handoffs include the team\u2019s Italy stop or Milan / Malpensa; candidate destinations include Lake Maggiore, Orta San Giulio, and Milan. No retrieved source confirms family flights, lodging, activities, reservations, or bookings; camp confirmation numbers belong to the coach/pacesetter example itinerary and must not be treated as family confirmations.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Resume Switzerland family-trip planning while keeping confirmed facts distinct from proposals and bookings.",
+          "current_state": [
+            "Camp logistics are source-confirmed.",
+            "The end-of-Saas-Fee family meetup supersedes earlier near-camp ideas.",
+            "Altitude and spare-capacity lodging constraints remain relevant.",
+            "Family itinerary and bookings remain incomplete."
+          ],
+          "decisions": [
+            "Treat all family bases, handoffs, and Italy routes as candidates.",
+            "Do not attribute the coach/pacesetter confirmation numbers to the family."
+          ],
+          "open_questions": [
+            "Exact family dates, flights, lodging, handoff point, and Italy route.",
+            "Whether any authoritative booking confirmations exist outside the retrieved sources."
+          ],
+          "next_actions": [
+            "Confirm the post-camp handoff point and family dates.",
+            "Create a booking ledger and promote candidates only when confirmations are available."
+          ],
+          "artifacts": [
+            "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Switzerland trip planning.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.83,
+        "pass": false,
+        "claims_passed": 2,
+        "claims_total": 4,
+        "claim_score": 0.8,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 8,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "August 5-10",
+                  "Aug 5-10",
+                  "August 5 to 10"
+                ],
+                "matched": "August 5-10"
+              },
+              {
+                "alternatives": [
+                  "August 10-22",
+                  "Aug 10-22",
+                  "August 10 to 22"
+                ],
+                "matched": "August 10-22"
+              },
+              {
+                "alternatives": [
+                  "Belgium",
+                  "Saas Fee",
+                  "Saas-Fee"
+                ],
+                "matched": "Belgium"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 0.7333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "after both camps",
+                  "after Saas",
+                  "Aug 21",
+                  "Aug 22"
+                ],
+                "matched": "after both camps"
+              },
+              {
+                "alternatives": [
+                  "3 to 4 days",
+                  "3-4 days",
+                  "Italy"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "not at the end of Belgium",
+                  "correction"
+                ],
+                "matched": "not at the end of Belgium"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "serious altitude",
+                  "altitude issues",
+                  "altitude problems"
+                ],
+                "matched": "serious altitude"
+              },
+              {
+                "alternatives": [
+                  "low altitude",
+                  "relatively low",
+                  "avoid unnecessarily high",
+                  "go down in elevation",
+                  "descend"
+                ],
+                "matched": "low altitude"
+              },
+              {
+                "alternatives": [
+                  "pull-out sofa",
+                  "room for Radley",
+                  "enough room"
+                ],
+                "matched": "pull-out sofa"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 0.4667,
+            "pass": false,
+            "content_fraction": 0.3333,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "active research",
+                  "in progress",
+                  "not booked",
+                  "no booking"
+                ],
+                "matched": "active research"
+              },
+              {
+                "alternatives": [
+                  "option",
+                  "proposal",
+                  "shortlist"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "two weeks",
+                  "14 days"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 15,
+        "commands": 4,
+        "command_output_chars": 48468,
+        "tokens": {
+          "input_tokens": 118677,
+          "cached_input_tokens": 89749,
+          "output_tokens": 2563
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T10:25:41.015-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c54797e21b68402fbe708ca54",
+          "elapsed_ms": 4522.701,
+          "result_chars": 30371,
+          "source_text_chars": 25862,
+          "metadata_chars": 4509,
+          "evidence_items": 7,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Straylight.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:25:51.271-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c7eff7672a72ffb1e5a4af93b",
+          "elapsed_ms": 3893.877,
+          "result_chars": 9461,
+          "source_text_chars": 6147,
+          "metadata_chars": 3314,
+          "evidence_items": 8,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Logbook.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Straylight.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:25:56.630-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49ca2fd7d018398e9cd2158d290",
+          "elapsed_ms": 37.03,
+          "result_chars": 7883,
+          "source_text_chars": 4025,
+          "metadata_chars": 3858,
+          "evidence_items": 21,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:26:14.782-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa49ce9ad7f20a1942f08c85f5f97",
+          "elapsed_ms": 97.06,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 48464,
+      "service_source_text_chars": 36034,
+      "service_metadata_chars": 12430,
+      "service_replay_weighted_chars": 166382,
+      "service_latency_ms": 8550.668,
+      "service_http_calls": 4,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019fa49c-11f1-7710-9697-86ac5ae00171",
+        "checkpoint_id": "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+        "corpus_revision": "revision:019fa49c-e9c8-7c83-beeb-7bba9535a728",
+        "created": [
+          {
+            "id": "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "faa7d4d9-d3d4-41b5-ac3f-22028e366a95",
+        "deduplicated": [],
+        "id": "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+        "idempotency_key": "eval-checkpoint:session:019fa49c54877f218e4d8e409006648d:fc9410a81397635385dbd950bfdffd66f2bf6d365de158aacbe9d419700591e6",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa49c-e9c8-7c83-beeb-7bba9535a728",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa49c-e9c3-7a60-8896-b6d8bc260184"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:2ddfa8ac061e0faa797c74e0f4d4687ce1f68d466b348ada4d45b7d6ab792600",
+        "operation_id": "operation:019fa49c-e9c2-7053-848f-8b99a51bcbfc",
+        "policy": {
+          "policy_id": "6e6fa924-7066-4a3f-ae79-8fae59bdfe67",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa49c-e9c2-7053-848f-8b99a51bcbfc",
+        "replayed": false,
+        "request_hash": "sha256:385e9faa74c227318e4b090997db7ac5849c69718cedfa6664381e1a955f2c33",
+        "resulting_corpus_revision": "revision:019fa49c-e9c8-7c83-beeb-7bba9535a728",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa49c54877f218e4d8e409006648d",
+        "status": "committed",
+        "user_id": "user:59d5d77621c24d2c86e5cd07c99713ea"
+      },
+      "service_session_id": "session:019fa49c54877f218e4d8e409006648d",
+      "service_corpus_revision": "revision:019fa49c-e9c8-7c83-beeb-7bba9535a728",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T10:25:41.015-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c54797e21b68402fbe708ca54",
+          "elapsed_ms": 4522.701,
+          "result_chars": 30371,
+          "source_text_chars": 25862,
+          "metadata_chars": 4509,
+          "evidence_items": 7,
+          "complete_sources": 4,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Straylight.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:25:51.271-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c7eff7672a72ffb1e5a4af93b",
+          "elapsed_ms": 3893.877,
+          "result_chars": 9461,
+          "source_text_chars": 6147,
+          "metadata_chars": 3314,
+          "evidence_items": 8,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Charlemagne/Logbook.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Projects/Straylight/Straylight.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:25:56.630-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49ca2fd7d018398e9cd2158d290",
+          "elapsed_ms": 37.03,
+          "result_chars": 7883,
+          "source_text_chars": 4025,
+          "metadata_chars": 3858,
+          "evidence_items": 21,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:26:14.782-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa49ce9ad7f20a1942f08c85f5f97",
+          "elapsed_ms": 97.06,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 48464,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019fa49c-11f1-7710-9697-86ac5ae00171",
+        "checkpoint_id": "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+        "corpus_revision": "revision:019fa49c-e9c8-7c83-beeb-7bba9535a728",
+        "created": [
+          {
+            "id": "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "faa7d4d9-d3d4-41b5-ac3f-22028e366a95",
+        "deduplicated": [],
+        "id": "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+        "idempotency_key": "eval-checkpoint:session:019fa49c54877f218e4d8e409006648d:fc9410a81397635385dbd950bfdffd66f2bf6d365de158aacbe9d419700591e6",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa49c-e9c8-7c83-beeb-7bba9535a728",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa49c-e9c3-7a60-8896-b6d8bc260184"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:2ddfa8ac061e0faa797c74e0f4d4687ce1f68d466b348ada4d45b7d6ab792600",
+        "operation_id": "operation:019fa49c-e9c2-7053-848f-8b99a51bcbfc",
+        "policy": {
+          "policy_id": "6e6fa924-7066-4a3f-ae79-8fae59bdfe67",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa49c-e9c2-7053-848f-8b99a51bcbfc",
+        "replayed": false,
+        "request_hash": "sha256:385e9faa74c227318e4b090997db7ac5849c69718cedfa6664381e1a955f2c33",
+        "resulting_corpus_revision": "revision:019fa49c-e9c8-7c83-beeb-7bba9535a728",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa49c-e9c8-7c83-beeb-7ba249c47ed1"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa49c54877f218e4d8e409006648d",
+        "status": "committed",
+        "user_id": "user:59d5d77621c24d2c86e5cd07c99713ea"
+      },
+      "workspace_state_error": null
+    },
+    {
+      "case_id": "switzerland-authority-and-next-actions",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 63.734,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/straylight/runs/tiebreak-old-work-20260727/service_api/switzerland-authority-and-next-actions/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "The trip remains in research, not booking, state. The coach brief governs camp logistics; the family note governs current constraints; the options and A&K notes provide proposals and inspiration only. No flights, lodging, handoff, or destination should be treated as booked without confirmations or receipts.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The coach brief is authoritative for the published CMAC plan: Belgium camp August 5-10, Saas Fee camp August 10-22, stated inclusions, prices, payment deadlines, arrival cutoffs, and planned transfers. August 21 may include weather-dependent make-up training before travel to Arona/Malpensa. Its named flights and confirmation numbers are explicitly the coach/pacesetter\u2019s example itinerary; they do not prove Radley\u2019s enrollment, payments, or flights are booked.",
+            "source_paths": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The working trip note is authoritative for user-provided family constraints. The latest correction is to meet Radley only after both camps, around Aug 21 or Aug 22, then consider 3 to 4 days in Italy. The family prefers no more than two weeks, need not spend the whole trip in Switzerland, wants lower-altitude lodging with room for Radley, and must retain an altitude fallback because of his prior serious issues. These are requirements and preferences, not bookings.",
+            "source_paths": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The nearby-options note is a research menu: its drive times, rankings, handoff concepts, Swiss shortlist, Italy shortlist, and Aug 21/Aug 22 timing are estimates or planning assumptions\u2014not reservations or confirmed logistics. The A&K note is inspiration for trip rhythm, scenic transitions, and activities; it explicitly says its hotel list and luxury framing are not the takeaway. Vevey/Montreux, Lausanne, Lake Maggiore, Orta, Milan, scenic rail, boat outings, and similar ideas must remain candidates until independently verified and booked.",
+            "source_paths": [
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Next decisions: (1) verify Radley\u2019s actual camp enrollment, deposits/balances, and booked flights from confirmations or receipts; (2) obtain CMAC\u2019s exact handoff date, time, place, supervision and luggage rules\u2014especially whether pickup can occur Aug 21 at Arona/Lake Maggiore or Malpensa and how make-up training changes it; (3) choose family dates and a Swiss base, initially comparing Vevey/Montreux with Lausanne; (4) choose Stresa/Baveno, Orta, a Lake Maggiore/Milan split, or Milan for the 3-to-4-day tail; and (5) verify transport, departure flights, medical/altitude response, and cancellable low-altitude lodging with space for Radley before booking.",
+            "source_paths": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Advance the Switzerland trip safely while preserving source authority and booked-versus-proposed boundaries.",
+          "current_state": [
+            "Coach logistics and user constraints are established.",
+            "Nearby destinations and A&K experiences remain research or inspiration.",
+            "Actual enrollment, payments, flights, lodging, transport, destinations, and handoff are not established as booked facts."
+          ],
+          "decisions": [
+            "Apply the latest correction: family meets Radley after both camps.",
+            "Never infer Radley\u2019s booking from the coach/pacesetter example itinerary.",
+            "Do not promote estimates, shortlists, or planning assumptions into confirmed arrangements."
+          ],
+          "open_questions": [
+            "What enrollment, payment, and flight confirmations exist for Radley?",
+            "Where and when will CMAC release Radley, and how could Aug 21 make-up training affect it?",
+            "Which Swiss base, Italy finish, transport plan, lodging, altitude fallback, and departure itinerary should be selected?"
+          ],
+          "next_actions": [
+            "Audit confirmations and receipts and record explicit booking status.",
+            "Confirm handoff and contingency details with CMAC.",
+            "Compare the shortlisted bases and Italy finishes against verified transport and lodging.",
+            "Book only after validating cancellability, altitude safety, capacity for Radley, and the departure chain."
+          ],
+          "artifacts": [
+            "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Switzerland trip planning.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 7,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 0.7333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "coach",
+                  "camp brief"
+                ],
+                "matched": "coach"
+              },
+              {
+                "alternatives": [
+                  "camp dates",
+                  "camp logistics"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "example itinerary",
+                  "not a family booking",
+                  "confirmation numbers"
+                ],
+                "matched": "example itinerary"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "user-provided",
+                  "family constraints",
+                  "correction"
+                ],
+                "matched": "user-provided"
+              },
+              {
+                "alternatives": [
+                  "after both camps",
+                  "altitude",
+                  "two weeks"
+                ],
+                "matched": "after both camps"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "shortlist",
+                  "options",
+                  "recommendation"
+                ],
+                "matched": "shortlist"
+              },
+              {
+                "alternatives": [
+                  "inspiration",
+                  "A&K",
+                  "rhythm"
+                ],
+                "matched": "inspiration"
+              },
+              {
+                "alternatives": [
+                  "not booked",
+                  "not a reservation",
+                  "proposal"
+                ],
+                "matched": "not booked"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ],
+            "native_paths": []
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "arrival",
+                  "departure",
+                  "flight",
+                  "airfare"
+                ],
+                "matched": "departure"
+              },
+              {
+                "alternatives": [
+                  "lodging",
+                  "room",
+                  "availability"
+                ],
+                "matched": "lodging"
+              },
+              {
+                "alternatives": [
+                  "pickup",
+                  "handoff",
+                  "Malpensa"
+                ],
+                "matched": "pickup"
+              },
+              {
+                "alternatives": [
+                  "verify",
+                  "before booking"
+                ],
+                "matched": "verify"
+              }
+            ],
+            "citations": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ],
+            "native_paths": []
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 15,
+        "commands": 4,
+        "command_output_chars": 58077,
+        "tokens": {
+          "input_tokens": 125865,
+          "cached_input_tokens": 94630,
+          "output_tokens": 2804
+        }
+      },
+      "service_operations": [
+        {
+          "at": "2026-07-27T10:25:41.804-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c5cf17a02a4599238bcfb1151",
+          "elapsed_ms": 3146.384,
+          "result_chars": 36778,
+          "source_text_chars": 31755,
+          "metadata_chars": 5023,
+          "evidence_items": 5,
+          "complete_sources": 3,
+          "pointer_sources": 1,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:25:52.763-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c867f74f19c3ce1a6d72216fc",
+          "elapsed_ms": 3464.302,
+          "result_chars": 7811,
+          "source_text_chars": 4543,
+          "metadata_chars": 3268,
+          "evidence_items": 8,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Metis/Project status model.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:25:56.799-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49ca3ad7b20b186273b90d65f82",
+          "elapsed_ms": 29.908,
+          "result_chars": 12735,
+          "source_text_chars": 11271,
+          "metadata_chars": 1464,
+          "evidence_items": 2,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:26:15.685-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa49ced4972f3af73b3fc9760b830",
+          "elapsed_ms": 72.244,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "service_calls": 4,
+      "service_result_chars": 58073,
+      "service_source_text_chars": 47569,
+      "service_metadata_chars": 10504,
+      "service_replay_weighted_chars": 196764,
+      "service_latency_ms": 6712.838,
+      "service_http_calls": 4,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "base_corpus_revision": "revision:019fa49c-3f8b-7ea1-aae9-d5e13ed343f7",
+        "checkpoint_id": "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+        "corpus_revision": "revision:019fa49c-ed58-7b70-a10b-91d9d9b04736",
+        "created": [
+          {
+            "id": "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "3328f90c-d052-4a02-9317-cc3b670bdd64",
+        "deduplicated": [],
+        "id": "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+        "idempotency_key": "eval-checkpoint:session:019fa49c5cf67810a877f8e811932bf4:ca1b6690fd981eae2d1879f3b58582a482305ae47af79469db4ba734f28c0d9f",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa49c-ed58-7b70-a10b-91d9d9b04736",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa49c-ed53-7b40-8ddb-e1a454a4ba03"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:1cb63b8e5afc72b9dc815ecf0185ca34a3fd65d37a6856a1e458485294f21dc0",
+        "operation_id": "operation:019fa49c-ed52-7982-8dd5-c4a70735451e",
+        "policy": {
+          "policy_id": "169af9b9-0421-484e-b451-4a0636c46632",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa49c-ed52-7982-8dd5-c4a70735451e",
+        "replayed": false,
+        "request_hash": "sha256:1d7bbe2f7c70c4400186e8a5c650bc6544c098ca73b96380f54167f79c1e974f",
+        "resulting_corpus_revision": "revision:019fa49c-ed58-7b70-a10b-91d9d9b04736",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa49c5cf67810a877f8e811932bf4",
+        "status": "committed",
+        "user_id": "user:108d55dd20be4404a9642bba22339cd5"
+      },
+      "service_session_id": "session:019fa49c5cf67810a877f8e811932bf4",
+      "service_corpus_revision": "revision:019fa49c-ed58-7b70-a10b-91d9d9b04736",
+      "workspace_operations": [
+        {
+          "at": "2026-07-27T10:25:41.804-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c5cf17a02a4599238bcfb1151",
+          "elapsed_ms": 3146.384,
+          "result_chars": 36778,
+          "source_text_chars": 31755,
+          "metadata_chars": 5023,
+          "evidence_items": 5,
+          "complete_sources": 3,
+          "pointer_sources": 1,
+          "source_paths": [
+            "Projects/Charlemagne/Research/Charlemagne RUM APM optimization notes - 2026-06-12.md",
+            "Projects/Home Network Improvements/Home Network Improvements.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Projects/Straylight/Retrieval API - Initial Design.md",
+            "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": "likely_sufficient"
+        },
+        {
+          "at": "2026-07-27T10:25:52.763-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49c867f74f19c3ce1a6d72216fc",
+          "elapsed_ms": 3464.302,
+          "result_chars": 7811,
+          "source_text_chars": 4543,
+          "metadata_chars": 3268,
+          "evidence_items": 8,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/Metis/Project status model.md",
+            "Projects/Straylight/Open questions.md",
+            "Projects/Straylight/Portable Personal Context Layer.md",
+            "Trips/Switzerland/Nearby family options menu.md",
+            "Trips/Switzerland/Switzerland trip planning.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:25:56.799-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019fa49ca3ad7b20b186273b90d65f82",
+          "elapsed_ms": 29.908,
+          "result_chars": 12735,
+          "source_text_chars": 11271,
+          "metadata_chars": 1464,
+          "evidence_items": 2,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md",
+            "Trips/Switzerland/Nearby family options menu.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-27T10:26:15.685-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019fa49ced4972f3af73b3fc9760b830",
+          "elapsed_ms": 72.244,
+          "result_chars": 749,
+          "source_text_chars": 0,
+          "metadata_chars": 749,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 58073,
+      "workspace_checkpoint": {
+        "base_corpus_revision": "revision:019fa49c-3f8b-7ea1-aae9-d5e13ed343f7",
+        "checkpoint_id": "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+        "corpus_revision": "revision:019fa49c-ed58-7b70-a10b-91d9d9b04736",
+        "created": [
+          {
+            "id": "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+            "kind": "checkpoint",
+            "version": null
+          }
+        ],
+        "credential_id": "3328f90c-d052-4a02-9317-cc3b670bdd64",
+        "deduplicated": [],
+        "id": "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+        "idempotency_key": "eval-checkpoint:session:019fa49c5cf67810a877f8e811932bf4:ca1b6690fd981eae2d1879f3b58582a482305ae47af79469db4ba734f28c0d9f",
+        "import_receipt": null,
+        "import_receipts": [],
+        "indexing": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "items": [
+          {
+            "action": "create",
+            "details": {
+              "corpus_revision": "revision:019fa49c-ed58-7b70-a10b-91d9d9b04736",
+              "parent_checkpoint_id": null,
+              "source_refs": [
+                "source:019fa49c-ed53-7b40-8ddb-e1a454a4ba03"
+              ]
+            },
+            "disposition": "created",
+            "kind": "checkpoint",
+            "order": 0,
+            "prior_version": null,
+            "ref": "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1",
+            "resulting_version": null
+          }
+        ],
+        "manifest_hash": "sha256:1cb63b8e5afc72b9dc815ecf0185ca34a3fd65d37a6856a1e458485294f21dc0",
+        "operation_id": "operation:019fa49c-ed52-7982-8dd5-c4a70735451e",
+        "policy": {
+          "policy_id": "169af9b9-0421-484e-b451-4a0636c46632",
+          "policy_version": 1
+        },
+        "receipt": "commit:019fa49c-ed52-7982-8dd5-c4a70735451e",
+        "replayed": false,
+        "request_hash": "sha256:1d7bbe2f7c70c4400186e8a5c650bc6544c098ca73b96380f54167f79c1e974f",
+        "resulting_corpus_revision": "revision:019fa49c-ed58-7b70-a10b-91d9d9b04736",
+        "review_required": [],
+        "revised": [],
+        "saved": [
+          "checkpoint:019fa49c-ed58-7b70-a10b-91c5dd74e1b1"
+        ],
+        "scope": "scope:root",
+        "search_status": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "session_id": "session:019fa49c5cf67810a877f8e811932bf4",
+        "status": "committed",
+        "user_id": "user:108d55dd20be4404a9642bba22339cd5"
+      },
+      "workspace_state_error": null
+    }
+  ],
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 3,
+        "successful_runs": 3,
+        "cases_passed": 1,
+        "case_pass_rate": 0.3333333333333333,
+        "claims_passed": 9,
+        "claims_total": 12,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.9244,
+        "elapsed_samples": 3,
+        "mean_elapsed_seconds": 65.42,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 50101.0,
+        "persisted_checkpoints": 3,
+        "checkpoint_eligible_runs": 3,
+        "mean_service_calls": 4.0,
+        "mean_service_result_chars": 50101.0,
+        "mean_service_source_text_chars": 39483.3,
+        "mean_service_metadata_chars": 10617.7,
+        "mean_service_replay_weighted_chars": 167562.7,
+        "mean_service_latency_ms": 8041.234,
+        "mean_completed_commands": 4.3,
+        "mean_command_output_chars": 50843.0,
+        "mean_tokens": {
+          "input_tokens": 131353.7,
+          "output_tokens": 3168.7,
+          "cached_input_tokens": 101025.3,
+          "uncached_input_tokens": 30328.4
+        }
+      }
+    },
+    "by_workload": {
+      "Charlemagne": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 75.17,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 43766.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 43766.0,
+          "mean_service_source_text_chars": 34847.0,
+          "mean_service_metadata_chars": 8919.0,
+          "mean_service_replay_weighted_chars": 139542.0,
+          "mean_service_latency_ms": 8860.195,
+          "mean_completed_commands": 5.0,
+          "mean_command_output_chars": 45984.0,
+          "mean_tokens": {
+            "input_tokens": 149519.0,
+            "output_tokens": 4139.0,
+            "cached_input_tokens": 118697.0,
+            "uncached_input_tokens": 30822.0
+          }
+        }
+      },
+      "Switzerland": {
+        "service_api": {
+          "runs": 2,
+          "successful_runs": 2,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 5,
+          "claims_total": 8,
+          "claim_pass_rate": 0.625,
+          "mean_score": 0.8866,
+          "elapsed_samples": 2,
+          "mean_elapsed_seconds": 60.55,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 53268.5,
+          "persisted_checkpoints": 2,
+          "checkpoint_eligible_runs": 2,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 53268.5,
+          "mean_service_source_text_chars": 41801.5,
+          "mean_service_metadata_chars": 11467.0,
+          "mean_service_replay_weighted_chars": 181573.0,
+          "mean_service_latency_ms": 7631.753,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 53272.5,
+          "mean_tokens": {
+            "input_tokens": 122271.0,
+            "output_tokens": 2683.5,
+            "cached_input_tokens": 92189.5,
+            "uncached_input_tokens": 30081.5
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "authority_and_actionability": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 63.73,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 58073.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 58073.0,
+          "mean_service_source_text_chars": 47569.0,
+          "mean_service_metadata_chars": 10504.0,
+          "mean_service_replay_weighted_chars": 196764.0,
+          "mean_service_latency_ms": 6712.838,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 58077.0,
+          "mean_tokens": {
+            "input_tokens": 125865.0,
+            "output_tokens": 2804.0,
+            "cached_input_tokens": 94630.0,
+            "uncached_input_tokens": 31235.0
+          }
+        }
+      },
+      "planning_state_and_corrections": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 2,
+          "claims_total": 4,
+          "claim_pass_rate": 0.5,
+          "mean_score": 0.83,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 57.37,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 48464.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 48464.0,
+          "mean_service_source_text_chars": 36034.0,
+          "mean_service_metadata_chars": 12430.0,
+          "mean_service_replay_weighted_chars": 166382.0,
+          "mean_service_latency_ms": 8550.668,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 48468.0,
+          "mean_tokens": {
+            "input_tokens": 118677.0,
+            "output_tokens": 2563.0,
+            "cached_input_tokens": 89749.0,
+            "uncached_input_tokens": 28928.0
+          }
+        }
+      },
+      "temporal_state_and_planning": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 75.17,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 43766.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 43766.0,
+          "mean_service_source_text_chars": 34847.0,
+          "mean_service_metadata_chars": 8919.0,
+          "mean_service_replay_weighted_chars": 139542.0,
+          "mean_service_latency_ms": 8860.195,
+          "mean_completed_commands": 5.0,
+          "mean_command_output_chars": 45984.0,
+          "mean_tokens": {
+            "input_tokens": 149519.0,
+            "output_tokens": 4139.0,
+            "cached_input_tokens": 118697.0,
+            "uncached_input_tokens": 30822.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "charlemagne-storage-current-state": {
+        "id": "charlemagne-storage-current-state",
+        "workload": "Charlemagne",
+        "capability": "temporal_state_and_planning",
+        "task": "Resume the rhea storage investigation using the May, June 16, and June 24 records. State the current durable growth story, separate it from the transient free-space drop and rebound, explain what is and is not still receiving writes, and propose the next safe actions without treating large legacy tables as disposable.",
+        "claim_slots": {
+          "c1": "current disk and schema state",
+          "c2": "durable versus transient cause",
+          "c3": "legacy versus active writes",
+          "c4": "safe next actions"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "496G",
+                  "496 G"
+                ]
+              },
+              {
+                "any": [
+                  "87%",
+                  "87 percent"
+                ]
+              },
+              {
+                "any": [
+                  "273.95",
+                  "273.9"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "legacy session",
+                  "_legacy"
+                ]
+              },
+              {
+                "any": [
+                  "196 GiB",
+                  "196G",
+                  "196 Gi"
+                ]
+              },
+              {
+                "any": [
+                  "temporary",
+                  "transient",
+                  "GROUP BY",
+                  "skill_rating_match_audits"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "compact replacement",
+                  "replacement tables",
+                  "active writes"
+                ]
+              },
+              {
+                "any": [
+                  "0/s",
+                  "zero writes",
+                  "not current write"
+                ]
+              },
+              {
+                "any": [
+                  "retained",
+                  "durable retained"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "monitor",
+                  "watch",
+                  "df"
+                ]
+              },
+              {
+                "any": [
+                  "replay",
+                  "rollback",
+                  "cutover acceptance"
+                ]
+              },
+              {
+                "any": [
+                  "physical reclaim",
+                  "separate decision",
+                  "maintenance"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/Charlemagne/Research/Charlemagne rhea storage bleed triage - 2026-06-24.md",
+              "Projects/Charlemagne/Research/Charlemagne session tracking storage retention plan - 2026-06-16.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "drop the legacy tables immediately",
+          "turn off session tracking"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "switzerland-resume-truth": {
+        "id": "switzerland-resume-truth",
+        "workload": "Switzerland",
+        "capability": "planning_state_and_corrections",
+        "task": "Resume the Switzerland family trip planning without mistaking ideas for bookings. Summarize the athlete camp facts, the latest family-meeting correction, the altitude and lodging constraints, and the current status of the family itinerary. Clearly separate confirmed source facts from planning assumptions.",
+        "claim_slots": {
+          "c1": "camp facts",
+          "c2": "latest family-meeting correction",
+          "c3": "altitude and lodging constraints",
+          "c4": "booking and planning status"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "August 5-10",
+                  "Aug 5-10",
+                  "August 5 to 10"
+                ]
+              },
+              {
+                "any": [
+                  "August 10-22",
+                  "Aug 10-22",
+                  "August 10 to 22"
+                ]
+              },
+              {
+                "any": [
+                  "Belgium",
+                  "Saas Fee",
+                  "Saas-Fee"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "after both camps",
+                  "after Saas",
+                  "Aug 21",
+                  "Aug 22"
+                ]
+              },
+              {
+                "any": [
+                  "3 to 4 days",
+                  "3-4 days",
+                  "Italy"
+                ]
+              },
+              {
+                "any": [
+                  "not at the end of Belgium",
+                  "correction"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "serious altitude",
+                  "altitude issues",
+                  "altitude problems"
+                ]
+              },
+              {
+                "any": [
+                  "low altitude",
+                  "relatively low",
+                  "avoid unnecessarily high",
+                  "go down in elevation",
+                  "descend"
+                ]
+              },
+              {
+                "any": [
+                  "pull-out sofa",
+                  "room for Radley",
+                  "enough room"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "active research",
+                  "in progress",
+                  "not booked",
+                  "no booking"
+                ]
+              },
+              {
+                "any": [
+                  "option",
+                  "proposal",
+                  "shortlist"
+                ]
+              },
+              {
+                "any": [
+                  "two weeks",
+                  "14 days"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the family has booked",
+          "meet him after Belgium"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "switzerland-authority-and-next-actions": {
+        "id": "switzerland-authority-and-next-actions",
+        "workload": "Switzerland",
+        "capability": "authority_and_actionability",
+        "task": "Build a source-aware planning checkpoint for the Switzerland trip. Explain what authority each of the four notes carries, which details must not be promoted into booked facts, and the next concrete research or booking decisions needed to advance the trip safely.",
+        "claim_slots": {
+          "c1": "coach brief authority",
+          "c2": "user constraint authority",
+          "c3": "options and inspiration authority",
+          "c4": "next concrete decisions"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "coach",
+                  "camp brief"
+                ]
+              },
+              {
+                "any": [
+                  "camp dates",
+                  "camp logistics"
+                ]
+              },
+              {
+                "any": [
+                  "example itinerary",
+                  "not a family booking",
+                  "confirmation numbers"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Belgium - Switzerland Summer Ski Camp 2026.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "user-provided",
+                  "family constraints",
+                  "correction"
+                ]
+              },
+              {
+                "any": [
+                  "after both camps",
+                  "altitude",
+                  "two weeks"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "shortlist",
+                  "options",
+                  "recommendation"
+                ]
+              },
+              {
+                "any": [
+                  "inspiration",
+                  "A&K",
+                  "rhythm"
+                ]
+              },
+              {
+                "any": [
+                  "not booked",
+                  "not a reservation",
+                  "proposal"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Nearby family options menu.md",
+              "Trips/Switzerland/A&K - Switzerland Alps to the Italian Lakes inspiration.md"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "arrival",
+                  "departure",
+                  "flight",
+                  "airfare"
+                ]
+              },
+              {
+                "any": [
+                  "lodging",
+                  "room",
+                  "availability"
+                ]
+              },
+              {
+                "any": [
+                  "pickup",
+                  "handoff",
+                  "Malpensa"
+                ]
+              },
+              {
+                "any": [
+                  "verify",
+                  "before booking"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Trips/Switzerland/Switzerland trip planning.md",
+              "Trips/Switzerland/Nearby family options menu.md"
+            ]
+          }
+        ],
+        "forbidden": [
+          "family flights are booked",
+          "hotel is booked"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    }
+  }
+}

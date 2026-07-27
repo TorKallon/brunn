@@ -1,0 +1,7013 @@
+{
+  "schema": "straylight-performance-eval@v2",
+  "created_at": "2026-07-27T02:45:11.261832-07:00",
+  "label": "simplified-release-candidate-final-v4",
+  "protocol": "simple",
+  "api_url": "http://127.0.0.1:55213",
+  "run_profile": {
+    "mode": "definitive",
+    "definitive": true,
+    "samples_per_retrieval": 30,
+    "requested_scales": [
+      1000,
+      10000,
+      64000,
+      640000
+    ],
+    "required_scales": [
+      64000,
+      640000
+    ],
+    "future_soak": {
+      "requested": true,
+      "records": 640000,
+      "status": "completed"
+    },
+    "semantic_failure_probe_required": true,
+    "semantic_failure_hooks_configured": true,
+    "import_timeout_seconds": 7200.0
+  },
+  "production_reference_records": 64000,
+  "future_reference_records": 640000,
+  "scales": [
+    {
+      "scale": 1000,
+      "protocol": "simple",
+      "documents": 1000,
+      "target_path": "Synthetic/records/0000999.md",
+      "marker": "narrow-fact-1000-cobalt",
+      "scale_elapsed_ms": 29062.893,
+      "samples": 30,
+      "discovery_query": "terminal-corpus-1000-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-1000-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 1531.415,
+      "open_ms": [
+        397.212,
+        162.959,
+        102.536,
+        139.712,
+        124.411,
+        105.755,
+        122.491,
+        96.48,
+        131.63,
+        91.474,
+        101.757,
+        62.972,
+        126.615,
+        103.615,
+        131.15,
+        144.51,
+        198.267,
+        136.461,
+        130.711,
+        175.995,
+        179.885,
+        188.95,
+        229.93,
+        171.091,
+        378.008,
+        170.667,
+        252.797,
+        179.043,
+        179.244,
+        173.523
+      ],
+      "open_p50_ms": 142.111,
+      "open_p95_ms": 321.663,
+      "search_ms": [
+        206.425,
+        150.852,
+        168.041,
+        138.416,
+        118.731,
+        97.544,
+        169.51,
+        117.929,
+        135.605,
+        119.482,
+        140.259,
+        138.782,
+        331.709,
+        210.098,
+        342.552,
+        256.114,
+        123.486,
+        193.76,
+        304.395,
+        207.166,
+        230.731,
+        272.821,
+        239.465,
+        193.155,
+        147.8,
+        242.112,
+        220.637,
+        250.481,
+        199.465,
+        184.341
+      ],
+      "search_p50_ms": 193.457,
+      "search_p95_ms": 319.418,
+      "broad_search_ms": [
+        173.188,
+        198.621,
+        211.097,
+        130.007,
+        143.786,
+        130.817,
+        269.354,
+        174.998,
+        150.1,
+        118.475,
+        101.878,
+        148.427,
+        611.732,
+        210.5,
+        486.743,
+        187.462,
+        169.654,
+        147.697,
+        204.963,
+        240.838,
+        262.823,
+        170.88,
+        946.368,
+        305.956,
+        222.27,
+        142.463,
+        192.992,
+        156.357,
+        231.039,
+        179.862
+      ],
+      "broad_search_p95_ms": 555.487,
+      "overflow_search_ms": [
+        104.546,
+        114.581,
+        108.061,
+        92.395,
+        97.313,
+        168.965,
+        113.84,
+        115.943,
+        94.745,
+        87.778,
+        121.642,
+        116.818,
+        109.803,
+        131.626,
+        161.112,
+        99.182,
+        135.886,
+        129.494,
+        141.455,
+        228.096,
+        166.59,
+        217.509,
+        196.05,
+        229.591,
+        146.237,
+        172.618,
+        179.868,
+        219.667,
+        85.89,
+        161.052
+      ],
+      "overflow_search_p95_ms": 224.303,
+      "read_ms": [
+        146.823,
+        114.952,
+        112.051,
+        75.796,
+        87.768,
+        135.056,
+        88.495,
+        76.438,
+        118.619,
+        86.69,
+        62.237,
+        107.653,
+        90.937,
+        171.867,
+        118.276,
+        115.563,
+        133.222,
+        142.14,
+        144.168,
+        92.874,
+        86.566,
+        110.799,
+        78.483,
+        114.549,
+        116.301,
+        135.281,
+        104.743,
+        80.809,
+        107.157,
+        114.755
+      ],
+      "read_p50_ms": 111.425,
+      "read_p95_ms": 145.628,
+      "checkpoint_ms": 114.317,
+      "resume_ms": 265.319,
+      "open_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "overflow_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "read_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "critical_lane_failures": [
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "resume_found": true,
+      "boundary_probe": {
+        "status": "not_applicable"
+      },
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 1000,
+        "corpus_bytes": 316064,
+        "materialize_ms": 66.74,
+        "samples": 30,
+        "discovery_query": "terminal-corpus-1000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          18.37,
+          16.291,
+          17.011,
+          16.242,
+          17.119,
+          29.638,
+          26.251,
+          19.777,
+          17.097,
+          17.268,
+          15.363,
+          16.436,
+          15.829,
+          16.534,
+          14.105,
+          13.912,
+          14.986,
+          17.952,
+          16.905,
+          15.173,
+          13.884,
+          15.538,
+          15.527,
+          14.354,
+          15.441,
+          13.71,
+          13.65,
+          19.256,
+          51.16,
+          28.131
+        ],
+        "discovery_p95_ms": 28.96,
+        "discovery_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.021,
+          0.022,
+          0.021,
+          0.061,
+          0.044,
+          0.637,
+          0.021,
+          0.05,
+          0.019,
+          0.037,
+          0.02,
+          0.043,
+          0.021,
+          0.021,
+          0.019,
+          0.022,
+          0.081,
+          0.023,
+          0.019,
+          0.019,
+          0.018,
+          0.02,
+          0.018,
+          0.018,
+          0.02,
+          0.017,
+          0.018,
+          0.414,
+          0.086,
+          0.026
+        ],
+        "read_p95_ms": 0.266,
+        "read_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          6.898,
+          7.475,
+          8.305,
+          8.892,
+          9.22,
+          18.168,
+          7.52,
+          7.885,
+          8.907,
+          9.534,
+          7.044,
+          7.158,
+          7.408,
+          6.375,
+          6.452,
+          6.216,
+          8.636,
+          6.614,
+          5.97,
+          6.512,
+          6.13,
+          6.934,
+          6.216,
+          6.366,
+          6.281,
+          6.221,
+          6.428,
+          96.404,
+          96.84,
+          8.949
+        ],
+        "broad_search_p95_ms": 61.198,
+        "broad_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "flat_file_control_reused_from": "results/2026-07-27-combined-flat-controls.json",
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 11.107,
+        "search_discovery_p95_ratio": 11.03,
+        "exact_read_p95_ratio": 547.475,
+        "broad_search_p95_ratio": 9.077
+      },
+      "response_accounting": {
+        "payload_chars": 522846,
+        "source_text_chars": 245997,
+        "source_identity_chars": 128715,
+        "evidence_chars": 374712,
+        "metadata_chars": 276849,
+        "protocol_chars": 148134,
+        "estimated_payload_tokens": 130712,
+        "estimated_source_tokens": 61500,
+        "estimated_metadata_tokens": 69213,
+        "metadata_to_source_ratio": 1.125416,
+        "protocol_to_evidence_ratio": 0.395328,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 30,
+            "payload_chars": 140197,
+            "source_text_chars": 47470,
+            "source_identity_chars": 43388,
+            "evidence_chars": 90858,
+            "metadata_chars": 92727,
+            "protocol_chars": 49339,
+            "metadata_to_source_ratio": 1.953381,
+            "protocol_to_evidence_ratio": 0.543034
+          },
+          "search": {
+            "samples": 30,
+            "payload_chars": 131838,
+            "source_text_chars": 71940,
+            "source_identity_chars": 29370,
+            "evidence_chars": 101310,
+            "metadata_chars": 59898,
+            "protocol_chars": 30528,
+            "metadata_to_source_ratio": 0.832611,
+            "protocol_to_evidence_ratio": 0.301333
+          },
+          "broad_search": {
+            "samples": 30,
+            "payload_chars": 124848,
+            "source_text_chars": 66750,
+            "source_identity_chars": 29040,
+            "evidence_chars": 95790,
+            "metadata_chars": 58098,
+            "protocol_chars": 29058,
+            "metadata_to_source_ratio": 0.870382,
+            "protocol_to_evidence_ratio": 0.303351
+          },
+          "bounded_overflow_search": {
+            "samples": 30,
+            "payload_chars": 60234,
+            "source_text_chars": 28812,
+            "source_identity_chars": 13452,
+            "evidence_chars": 42264,
+            "metadata_chars": 31422,
+            "protocol_chars": 17970,
+            "metadata_to_source_ratio": 1.090587,
+            "protocol_to_evidence_ratio": 0.425185
+          },
+          "read": {
+            "samples": 30,
+            "payload_chars": 41700,
+            "source_text_chars": 23160,
+            "source_identity_chars": 4950,
+            "evidence_chars": 28110,
+            "metadata_chars": 18540,
+            "protocol_chars": 13590,
+            "metadata_to_source_ratio": 0.800518,
+            "protocol_to_evidence_ratio": 0.483458
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 8479,
+            "source_text_chars": 1425,
+            "source_identity_chars": 4090,
+            "evidence_chars": 5515,
+            "metadata_chars": 7054,
+            "protocol_chars": 2964,
+            "metadata_to_source_ratio": 4.950175,
+            "protocol_to_evidence_ratio": 0.537443
+          },
+          "concurrent_search": {
+            "samples": 5,
+            "payload_chars": 15550,
+            "source_text_chars": 6440,
+            "source_identity_chars": 4425,
+            "evidence_chars": 10865,
+            "metadata_chars": 9110,
+            "protocol_chars": 4685,
+            "metadata_to_source_ratio": 1.414596,
+            "protocol_to_evidence_ratio": 0.431201
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "not_applicable_at_this_scale",
+        "pass": null,
+        "required": false
+      },
+      "semantic_catchup": {
+        "retrieval_tested_while_pending": true,
+        "start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "end": {
+          "corpus_revision": "generation:1002",
+          "import_id": "simple-import:093a8050-981e-466c-a533-7af3b8c9de3b",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "ready"
+          },
+          "ready_for_evaluation": true,
+          "status": "ready"
+        }
+      },
+      "concurrent_probe": {
+        "write_ms": 160.738,
+        "write_committed": true,
+        "search_ms": [
+          339.947,
+          355.469,
+          355.555,
+          284.191,
+          356.029
+        ],
+        "search_p95_ms": 355.934,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 0,
+        "search_chunks_fts_idx": 0
+      },
+      "checkpoint_id": "checkpoint:5e1334f1-2954-e4c8-a9a1-a1f467148919",
+      "checkpoint_database_growth": {
+        "rows": 11,
+        "bytes": 54984,
+        "tables": {
+          "entries": 1,
+          "entry_versions": 1,
+          "workspace_changes": 1,
+          "search_chunks": 8
+        }
+      },
+      "provisioning": {
+        "documents": 1000,
+        "delta_documents": 0,
+        "characters": 316346,
+        "import_http_status": 200,
+        "import_elapsed_ms": 1529.715,
+        "import_batch_count": 1,
+        "max_batch_documents": 1000,
+        "ready_elapsed_ms": 1529.715,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        }
+      }
+    },
+    {
+      "scale": 10000,
+      "protocol": "simple",
+      "documents": 10000,
+      "target_path": "Synthetic/records/0009999.md",
+      "marker": "narrow-fact-10000-cobalt",
+      "scale_elapsed_ms": 31344.645,
+      "samples": 30,
+      "discovery_query": "terminal-corpus-10000-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-10000-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 6867.789,
+      "open_ms": [
+        170.56,
+        162.503,
+        99.975,
+        183.437,
+        129.726,
+        122.297,
+        142.178,
+        155.001,
+        103.02,
+        117.933,
+        130.984,
+        156.501,
+        168.3,
+        159.882,
+        116.072,
+        123.201,
+        146.035,
+        370.674,
+        360.54,
+        199.237,
+        188.151,
+        149.405,
+        122.564,
+        132.841,
+        146.213,
+        124.35,
+        105.655,
+        131.627,
+        151.701,
+        125.688
+      ],
+      "open_p50_ms": 144.107,
+      "open_p95_ms": 287.954,
+      "search_ms": [
+        194.621,
+        138.336,
+        154.522,
+        117.974,
+        267.316,
+        108.658,
+        384.049,
+        144.828,
+        87.51,
+        142.159,
+        204.984,
+        147.302,
+        119.934,
+        117.101,
+        114.002,
+        201.121,
+        88.508,
+        141.84,
+        342.005,
+        289.69,
+        155.021,
+        118.153,
+        125.222,
+        342.084,
+        103.481,
+        190.317,
+        147.953,
+        183.819,
+        127.774,
+        101.551
+      ],
+      "search_p50_ms": 143.493,
+      "search_p95_ms": 342.049,
+      "broad_search_ms": [
+        393.193,
+        218.578,
+        117.662,
+        197.197,
+        110.909,
+        111.093,
+        133.858,
+        142.848,
+        146.902,
+        291.585,
+        219.39,
+        120.672,
+        232.173,
+        123.531,
+        155.839,
+        114.496,
+        80.134,
+        195.258,
+        174.328,
+        247.726,
+        113.622,
+        173.688,
+        202.099,
+        199.998,
+        125.01,
+        145.521,
+        131.595,
+        215.269,
+        132.719,
+        97.911
+      ],
+      "broad_search_p95_ms": 271.848,
+      "overflow_search_ms": [
+        150.052,
+        93.853,
+        617.607,
+        92.296,
+        121.106,
+        103.866,
+        147.667,
+        92.321,
+        85.54,
+        152.807,
+        106.897,
+        103.834,
+        82.568,
+        124.122,
+        102.721,
+        86.437,
+        101.558,
+        142.04,
+        157.355,
+        79.967,
+        133.602,
+        111.401,
+        103.279,
+        71.332,
+        77.997,
+        110.792,
+        279.168,
+        96.721,
+        106.796,
+        107.347
+      ],
+      "overflow_search_p95_ms": 224.352,
+      "read_ms": [
+        260.757,
+        89.96,
+        260.075,
+        116.521,
+        92.969,
+        105.173,
+        133.678,
+        90.518,
+        113.09,
+        101.102,
+        109.628,
+        65.977,
+        122.103,
+        132.498,
+        104.147,
+        53.366,
+        533.321,
+        138.625,
+        122.203,
+        99.351,
+        94.173,
+        77.909,
+        160.141,
+        130.097,
+        113.834,
+        77.03,
+        75.722,
+        81.354,
+        80.894,
+        404.534
+      ],
+      "read_p50_ms": 107.4,
+      "read_p95_ms": 339.834,
+      "checkpoint_ms": 196.563,
+      "resume_ms": 239.262,
+      "open_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "overflow_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "read_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "critical_lane_failures": [
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "resume_found": true,
+      "boundary_probe": {
+        "status": "not_applicable"
+      },
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 10000,
+        "corpus_bytes": 3169066,
+        "materialize_ms": 765.311,
+        "samples": 30,
+        "discovery_query": "terminal-corpus-10000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          94.815,
+          90.072,
+          92.339,
+          87.691,
+          89.127,
+          89.045,
+          89.751,
+          89.614,
+          89.262,
+          90.034,
+          92.557,
+          90.779,
+          93.74,
+          88.538,
+          89.074,
+          91.356,
+          97.809,
+          90.731,
+          89.493,
+          89.677,
+          87.914,
+          87.609,
+          89.133,
+          89.319,
+          89.651,
+          90.802,
+          89.792,
+          88.358,
+          88.139,
+          86.326
+        ],
+        "discovery_p95_ms": 94.331,
+        "discovery_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.031,
+          0.022,
+          0.019,
+          0.041,
+          0.02,
+          0.02,
+          0.021,
+          0.019,
+          0.021,
+          0.022,
+          0.021,
+          0.023,
+          0.024,
+          0.023,
+          0.021,
+          0.024,
+          0.042,
+          0.02,
+          0.04,
+          0.02,
+          0.023,
+          0.024,
+          0.047,
+          0.025,
+          0.02,
+          0.066,
+          0.048,
+          0.021,
+          0.021,
+          0.018
+        ],
+        "read_p95_ms": 0.048,
+        "read_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          8.602,
+          12.317,
+          7.635,
+          7.62,
+          7.638,
+          7.926,
+          8.396,
+          6.916,
+          8.252,
+          8.633,
+          8.329,
+          11.766,
+          7.817,
+          8.164,
+          9.444,
+          12.407,
+          8.196,
+          7.432,
+          8.171,
+          7.724,
+          7.907,
+          9.03,
+          7.873,
+          12.246,
+          10.751,
+          7.32,
+          8.572,
+          7.26,
+          12.293,
+          8.125
+        ],
+        "broad_search_p95_ms": 12.306,
+        "broad_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "flat_file_control_reused_from": "results/2026-07-27-combined-flat-controls.json",
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 3.053,
+        "search_discovery_p95_ratio": 3.626,
+        "exact_read_p95_ratio": 7079.884,
+        "broad_search_p95_ratio": 22.091
+      },
+      "response_accounting": {
+        "payload_chars": 384762,
+        "source_text_chars": 197511,
+        "source_identity_chars": 71127,
+        "evidence_chars": 268638,
+        "metadata_chars": 187251,
+        "protocol_chars": 116124,
+        "estimated_payload_tokens": 96191,
+        "estimated_source_tokens": 49378,
+        "estimated_metadata_tokens": 46813,
+        "metadata_to_source_ratio": 0.948054,
+        "protocol_to_evidence_ratio": 0.432269,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 30,
+            "payload_chars": 52140,
+            "source_text_chars": 23280,
+            "source_identity_chars": 3150,
+            "evidence_chars": 26430,
+            "metadata_chars": 28860,
+            "protocol_chars": 25710,
+            "metadata_to_source_ratio": 1.239691,
+            "protocol_to_evidence_ratio": 0.972758
+          },
+          "search": {
+            "samples": 30,
+            "payload_chars": 132720,
+            "source_text_chars": 72030,
+            "source_identity_chars": 29370,
+            "evidence_chars": 101400,
+            "metadata_chars": 60690,
+            "protocol_chars": 31320,
+            "metadata_to_source_ratio": 0.842566,
+            "protocol_to_evidence_ratio": 0.308876
+          },
+          "broad_search": {
+            "samples": 30,
+            "payload_chars": 125670,
+            "source_text_chars": 66780,
+            "source_identity_chars": 29040,
+            "evidence_chars": 95820,
+            "metadata_chars": 58890,
+            "protocol_chars": 29850,
+            "metadata_to_source_ratio": 0.881851,
+            "protocol_to_evidence_ratio": 0.311522
+          },
+          "bounded_overflow_search": {
+            "samples": 30,
+            "payload_chars": 24180,
+            "source_text_chars": 8430,
+            "source_identity_chars": 3540,
+            "evidence_chars": 11970,
+            "metadata_chars": 15750,
+            "protocol_chars": 12210,
+            "metadata_to_source_ratio": 1.868327,
+            "protocol_to_evidence_ratio": 1.02005
+          },
+          "read": {
+            "samples": 30,
+            "payload_chars": 41880,
+            "source_text_chars": 23280,
+            "source_identity_chars": 4950,
+            "evidence_chars": 28230,
+            "metadata_chars": 18600,
+            "protocol_chars": 13650,
+            "metadata_to_source_ratio": 0.798969,
+            "protocol_to_evidence_ratio": 0.483528
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 3052,
+            "source_text_chars": 1431,
+            "source_identity_chars": 432,
+            "evidence_chars": 1863,
+            "metadata_chars": 1621,
+            "protocol_chars": 1189,
+            "metadata_to_source_ratio": 1.132774,
+            "protocol_to_evidence_ratio": 0.638218
+          },
+          "concurrent_search": {
+            "samples": 5,
+            "payload_chars": 5120,
+            "source_text_chars": 2280,
+            "source_identity_chars": 645,
+            "evidence_chars": 2925,
+            "metadata_chars": 2840,
+            "protocol_chars": 2195,
+            "metadata_to_source_ratio": 1.245614,
+            "protocol_to_evidence_ratio": 0.750427
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "not_applicable_at_this_scale",
+        "pass": null,
+        "required": false
+      },
+      "semantic_catchup": {
+        "retrieval_tested_while_pending": true,
+        "start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "end": {
+          "corpus_revision": "generation:11004",
+          "import_id": "simple-import:cca6d97c-7bb5-464b-ba63-c2a016449fe3",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 8466
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "status": "indexing"
+        }
+      },
+      "concurrent_probe": {
+        "write_ms": 239.165,
+        "write_committed": true,
+        "search_ms": [
+          135.309,
+          195.881,
+          135.491,
+          187.377,
+          202.983
+        ],
+        "search_p95_ms": 201.563,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 0,
+        "search_chunks_fts_idx": 250
+      },
+      "checkpoint_id": "checkpoint:06bbd584-4f77-5dd1-1d67-b08ab5e7d408",
+      "checkpoint_database_growth": {
+        "rows": 12,
+        "bytes": 6032,
+        "tables": {
+          "entries": 1,
+          "entry_versions": 1,
+          "workspace_changes": 1,
+          "search_chunks": 8,
+          "jobs": 1
+        }
+      },
+      "provisioning": {
+        "documents": 10000,
+        "delta_documents": 0,
+        "characters": 3169349,
+        "import_http_status": 200,
+        "import_elapsed_ms": 6846.153,
+        "import_batch_count": 1,
+        "max_batch_documents": 10000,
+        "ready_elapsed_ms": 6846.153,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        }
+      }
+    },
+    {
+      "scale": 64000,
+      "protocol": "simple",
+      "documents": 64000,
+      "target_path": "Synthetic/records/0063999.md",
+      "marker": "narrow-fact-64000-cobalt",
+      "scale_elapsed_ms": 79407.367,
+      "samples": 30,
+      "discovery_query": "terminal-corpus-64000-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-64000-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 55495.782,
+      "open_ms": [
+        458.5,
+        246.879,
+        255.031,
+        325.949,
+        279.784,
+        736.233,
+        155.611,
+        121.561,
+        207.599,
+        153.428,
+        151.136,
+        101.117,
+        145.695,
+        165.449,
+        147.875,
+        109.062,
+        190.274,
+        281.965,
+        164.637,
+        27.324,
+        38.728,
+        22.22,
+        46.267,
+        23.172,
+        58.108,
+        47.375,
+        46.604,
+        22.122,
+        46.972,
+        33.143
+      ],
+      "open_p50_ms": 146.785,
+      "open_p95_ms": 398.852,
+      "search_ms": [
+        172.296,
+        417.414,
+        530.538,
+        464.405,
+        251.337,
+        292.475,
+        151.962,
+        123.889,
+        177.243,
+        138.719,
+        192.54,
+        132.628,
+        211.391,
+        341.726,
+        166.762,
+        306.892,
+        212.453,
+        178.444,
+        254.973,
+        93.052,
+        95.546,
+        68.724,
+        100.096,
+        67.577,
+        99.891,
+        101.076,
+        108.768,
+        75.983,
+        86.261,
+        76.294
+      ],
+      "search_p50_ms": 159.362,
+      "search_p95_ms": 443.259,
+      "broad_search_ms": [
+        210.8,
+        373.122,
+        453.243,
+        217.678,
+        174.768,
+        175.942,
+        116.315,
+        197.109,
+        144.602,
+        150.067,
+        138.829,
+        148.593,
+        238.042,
+        138.06,
+        117.714,
+        291.645,
+        407.472,
+        239.984,
+        99.168,
+        106.997,
+        88.093,
+        108.169,
+        94.26,
+        84.289,
+        71.724,
+        111.768,
+        102.126,
+        126.129,
+        80.603,
+        110.891
+      ],
+      "broad_search_p95_ms": 392.015,
+      "overflow_search_ms": [
+        201.55,
+        337.737,
+        460.07,
+        460.526,
+        165.01,
+        126.297,
+        136.34,
+        158.768,
+        159.288,
+        120.533,
+        143.061,
+        130.762,
+        249.341,
+        152.463,
+        159.811,
+        156.25,
+        279.554,
+        82.634,
+        42.497,
+        23.996,
+        39.551,
+        35.233,
+        58.212,
+        20.758,
+        40.006,
+        21.529,
+        41.408,
+        25.591,
+        81.568,
+        33.932
+      ],
+      "overflow_search_p95_ms": 405.02,
+      "read_ms": [
+        191.857,
+        275.924,
+        168.718,
+        163.542,
+        117.58,
+        100.687,
+        97.788,
+        77.036,
+        107.683,
+        82.637,
+        103.058,
+        92.888,
+        158.009,
+        109.918,
+        106.323,
+        76.961,
+        620.872,
+        90.062,
+        25.098,
+        20.58,
+        21.52,
+        29.041,
+        64.986,
+        20.355,
+        31.268,
+        25.33,
+        21.253,
+        19.32,
+        28.982,
+        34.184
+      ],
+      "read_p50_ms": 86.35,
+      "read_p95_ms": 238.094,
+      "checkpoint_ms": 51.157,
+      "resume_ms": 31.832,
+      "open_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "overflow_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "read_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "critical_lane_failures": [
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "resume_found": true,
+      "boundary_probe": {
+        "status": "complete",
+        "batch_read_entries": 32,
+        "batch_read_ms": 34.623,
+        "checkpoint_source_entries": 64,
+        "checkpoint_ms": 43.982,
+        "pass": true
+      },
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 64000,
+        "corpus_bytes": 20341066,
+        "materialize_ms": 6063.168,
+        "samples": 30,
+        "discovery_query": "terminal-corpus-64000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          1094.842,
+          1425.758,
+          1639.093,
+          1456.889,
+          1416.591,
+          1459.781,
+          1401.673,
+          1375.293,
+          1380.265,
+          1621.927,
+          1459.774,
+          1414.786,
+          1471.035,
+          1383.14,
+          1409.252,
+          1386.627,
+          1457.912,
+          1464.557,
+          1434.665,
+          1341.139,
+          1392.624,
+          1349.248,
+          1360.363,
+          1451.362,
+          1430.839,
+          1428.845,
+          1427.496,
+          1419.134,
+          1419.752,
+          1421.182
+        ],
+        "discovery_p95_ms": 1554.025,
+        "discovery_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.026,
+          0.023,
+          0.022,
+          0.022,
+          0.024,
+          0.022,
+          0.023,
+          0.022,
+          0.026,
+          0.023,
+          0.024,
+          0.022,
+          0.03,
+          0.025,
+          0.022,
+          0.022,
+          0.022,
+          0.024,
+          0.023,
+          0.024,
+          0.025,
+          0.026,
+          0.028,
+          0.022,
+          0.027,
+          0.022,
+          0.027,
+          0.024,
+          0.025,
+          0.025
+        ],
+        "read_p95_ms": 0.027,
+        "read_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          8.339,
+          7.735,
+          7.461,
+          7.584,
+          8.915,
+          10.116,
+          7.554,
+          7.681,
+          7.035,
+          7.264,
+          8.337,
+          7.107,
+          7.263,
+          7.386,
+          7.318,
+          7.124,
+          7.181,
+          10.436,
+          7.474,
+          7.813,
+          7.148,
+          47.467,
+          9.273,
+          7.562,
+          7.5,
+          7.45,
+          7.86,
+          10.583,
+          7.485,
+          7.961
+        ],
+        "broad_search_p95_ms": 10.517,
+        "broad_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "flat_file_control_reused_from": "results/2026-07-27-combined-flat-controls.json",
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 0.257,
+        "search_discovery_p95_ratio": 0.285,
+        "exact_read_p95_ratio": 8818.279,
+        "broad_search_p95_ratio": 37.274
+      },
+      "response_accounting": {
+        "payload_chars": 420699,
+        "source_text_chars": 207642,
+        "source_identity_chars": 85720,
+        "evidence_chars": 293362,
+        "metadata_chars": 213057,
+        "protocol_chars": 127337,
+        "estimated_payload_tokens": 105175,
+        "estimated_source_tokens": 51911,
+        "estimated_metadata_tokens": 53265,
+        "metadata_to_source_ratio": 1.026079,
+        "protocol_to_evidence_ratio": 0.434061,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 30,
+            "payload_chars": 52170,
+            "source_text_chars": 23310,
+            "source_identity_chars": 3150,
+            "evidence_chars": 26460,
+            "metadata_chars": 28860,
+            "protocol_chars": 25710,
+            "metadata_to_source_ratio": 1.238095,
+            "protocol_to_evidence_ratio": 0.971655
+          },
+          "search": {
+            "samples": 30,
+            "payload_chars": 132720,
+            "source_text_chars": 72030,
+            "source_identity_chars": 29370,
+            "evidence_chars": 101400,
+            "metadata_chars": 60690,
+            "protocol_chars": 31320,
+            "metadata_to_source_ratio": 0.842566,
+            "protocol_to_evidence_ratio": 0.308876
+          },
+          "broad_search": {
+            "samples": 30,
+            "payload_chars": 125670,
+            "source_text_chars": 66780,
+            "source_identity_chars": 29040,
+            "evidence_chars": 95820,
+            "metadata_chars": 58890,
+            "protocol_chars": 29850,
+            "metadata_to_source_ratio": 0.881851,
+            "protocol_to_evidence_ratio": 0.311522
+          },
+          "bounded_overflow_search": {
+            "samples": 30,
+            "payload_chars": 24180,
+            "source_text_chars": 8430,
+            "source_identity_chars": 3540,
+            "evidence_chars": 11970,
+            "metadata_chars": 15750,
+            "protocol_chars": 12210,
+            "metadata_to_source_ratio": 1.868327,
+            "protocol_to_evidence_ratio": 1.02005
+          },
+          "read": {
+            "samples": 30,
+            "payload_chars": 41910,
+            "source_text_chars": 23310,
+            "source_identity_chars": 4950,
+            "evidence_chars": 28260,
+            "metadata_chars": 18600,
+            "protocol_chars": 13650,
+            "metadata_to_source_ratio": 0.797941,
+            "protocol_to_evidence_ratio": 0.483015
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 3053,
+            "source_text_chars": 1432,
+            "source_identity_chars": 432,
+            "evidence_chars": 1864,
+            "metadata_chars": 1621,
+            "protocol_chars": 1189,
+            "metadata_to_source_ratio": 1.131983,
+            "protocol_to_evidence_ratio": 0.637876
+          },
+          "max_batch_read": {
+            "samples": 1,
+            "payload_chars": 22401,
+            "source_text_chars": 10070,
+            "source_identity_chars": 5280,
+            "evidence_chars": 15350,
+            "metadata_chars": 12331,
+            "protocol_chars": 7051,
+            "metadata_to_source_ratio": 1.224528,
+            "protocol_to_evidence_ratio": 0.459349
+          },
+          "max_checkpoint_sources": {
+            "samples": 1,
+            "payload_chars": 13475,
+            "source_text_chars": 0,
+            "source_identity_chars": 9313,
+            "evidence_chars": 9313,
+            "metadata_chars": 13475,
+            "protocol_chars": 4162,
+            "metadata_to_source_ratio": 13475.0,
+            "protocol_to_evidence_ratio": 0.446902
+          },
+          "concurrent_search": {
+            "samples": 5,
+            "payload_chars": 5120,
+            "source_text_chars": 2280,
+            "source_identity_chars": 645,
+            "evidence_chars": 2925,
+            "metadata_chars": 2840,
+            "protocol_chars": 2195,
+            "metadata_to_source_ratio": 1.245614,
+            "protocol_to_evidence_ratio": 0.750427
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "not_applicable_at_this_scale",
+        "pass": null,
+        "required": false
+      },
+      "semantic_catchup": {
+        "retrieval_tested_while_pending": true,
+        "start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "end": {
+          "corpus_revision": "generation:75007",
+          "import_id": "simple-import:ef2b467d-10a3-43ed-aa75-91eea7495af6",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 64003
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "status": "indexing"
+        }
+      },
+      "concurrent_probe": {
+        "write_ms": 279.051,
+        "write_committed": true,
+        "search_ms": [
+          101.26,
+          139.656,
+          126.274,
+          147.147,
+          59.535
+        ],
+        "search_p95_ms": 145.649,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 0,
+        "search_chunks_fts_idx": 159
+      },
+      "checkpoint_id": "checkpoint:06b06902-3a89-da29-efa4-bdd80d030a14",
+      "checkpoint_database_growth": {
+        "rows": 12,
+        "bytes": 6040,
+        "tables": {
+          "entries": 1,
+          "jobs": 1,
+          "search_chunks": 8,
+          "entry_versions": 1,
+          "workspace_changes": 1
+        }
+      },
+      "provisioning": {
+        "documents": 64000,
+        "delta_documents": 0,
+        "characters": 20341349,
+        "import_http_status": 200,
+        "import_elapsed_ms": 55276.405,
+        "import_batch_count": 7,
+        "max_batch_documents": 10000,
+        "ready_elapsed_ms": 3675.935,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        }
+      }
+    },
+    {
+      "scale": 640000,
+      "protocol": "simple",
+      "documents": 640000,
+      "target_path": "Synthetic/records/0639999.md",
+      "marker": "narrow-fact-640000-cobalt",
+      "scale_elapsed_ms": 208321.362,
+      "samples": 30,
+      "discovery_query": "terminal-corpus-640000-current-answer",
+      "discovery_task": "What exact current answer is recorded for the `terminal-corpus-640000-current-answer` discovery clue? Find and return source-backed current evidence without assuming a path.",
+      "discovery_path_was_provided": false,
+      "import_ms": 163412.477,
+      "open_ms": [
+        1584.87,
+        236.956,
+        288.842,
+        202.784,
+        193.81,
+        181.563,
+        1141.471,
+        147.811,
+        182.339,
+        150.698,
+        160.281,
+        151.352,
+        155.842,
+        269.103,
+        178.966,
+        188.744,
+        338.434,
+        1617.634,
+        493.473,
+        156.505,
+        312.142,
+        175.32,
+        162.411,
+        315.793,
+        144.469,
+        470.225,
+        243.155,
+        391.674,
+        258.413,
+        358.434
+      ],
+      "open_p50_ms": 219.87,
+      "open_p95_ms": 1385.34,
+      "search_ms": [
+        378.051,
+        364.555,
+        258.126,
+        205.299,
+        221.023,
+        155.518,
+        689.748,
+        313.005,
+        179.838,
+        146.47,
+        168.073,
+        162.442,
+        154.426,
+        283.855,
+        302.805,
+        163.319,
+        329.385,
+        332.666,
+        398.745,
+        298.152,
+        504.396,
+        167.345,
+        285.871,
+        160.981,
+        312.631,
+        358.189,
+        289.829,
+        396.593,
+        264.556,
+        344.472
+      ],
+      "search_p50_ms": 287.85,
+      "search_p95_ms": 456.853,
+      "broad_search_ms": [
+        323.212,
+        318.675,
+        192.032,
+        188.694,
+        235.306,
+        173.897,
+        181.583,
+        159.004,
+        184.985,
+        175.039,
+        159.903,
+        182.012,
+        157.521,
+        203.652,
+        204.312,
+        276.204,
+        347.881,
+        169.28,
+        346.699,
+        215.02,
+        338.642,
+        276.328,
+        377.305,
+        204.72,
+        264.288,
+        253.793,
+        307.647,
+        315.644,
+        226.181,
+        356.193
+      ],
+      "broad_search_p95_ms": 352.453,
+      "overflow_search_ms": [
+        192.476,
+        253.577,
+        170.238,
+        163.635,
+        211.783,
+        166.61,
+        211.993,
+        244.366,
+        158.481,
+        133.433,
+        141.768,
+        165.831,
+        179.772,
+        358.483,
+        227.597,
+        381.004,
+        229.3,
+        396.841,
+        296.709,
+        153.716,
+        282.266,
+        156.679,
+        341.155,
+        310.93,
+        297.666,
+        1302.368,
+        250.544,
+        246.652,
+        133.686,
+        236.135
+      ],
+      "overflow_search_p95_ms": 389.715,
+      "read_ms": [
+        16.031,
+        15.124,
+        5.073,
+        6.145,
+        4.116,
+        10.076,
+        8.462,
+        10.26,
+        6.144,
+        5.637,
+        4.368,
+        6.725,
+        5.1,
+        6.28,
+        11.253,
+        8.842,
+        70.772,
+        9.914,
+        5.01,
+        5.639,
+        4.794,
+        8.496,
+        10.009,
+        4.511,
+        6.487,
+        18.741,
+        25.238,
+        6.871,
+        6.26,
+        6.295
+      ],
+      "read_p50_ms": 6.606,
+      "read_p95_ms": 22.315,
+      "checkpoint_ms": 25.476,
+      "resume_ms": 290.975,
+      "open_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "search_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "broad_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "overflow_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "read_found": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "critical_lane_failures": [
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "open",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "broad_search",
+          "exact": false,
+          "lexical": false
+        },
+        {
+          "operation": "bounded_overflow_search",
+          "exact": false,
+          "lexical": false
+        }
+      ],
+      "resume_found": true,
+      "boundary_probe": {
+        "status": "complete",
+        "batch_read_entries": 32,
+        "batch_read_ms": 23.511,
+        "checkpoint_source_entries": 64,
+        "checkpoint_ms": 32.0,
+        "pass": true
+      },
+      "flat_file_control": {
+        "engine": "ripgrep",
+        "files": 640000,
+        "corpus_bytes": 204049068,
+        "materialize_ms": 73364.674,
+        "samples": 30,
+        "discovery_query": "terminal-corpus-640000-current-answer",
+        "discovery_path_was_provided": false,
+        "discovery_ms": [
+          24199.443,
+          22056.967,
+          15802.339,
+          15571.012,
+          15729.145,
+          15990.879,
+          15079.178,
+          15638.139,
+          15674.297,
+          15716.409,
+          15249.611,
+          15597.25,
+          15984.011,
+          15476.988,
+          15137.503,
+          15579.695,
+          15507.989,
+          15397.097,
+          15631.484,
+          15513.529,
+          15970.617,
+          16216.871,
+          15627.872,
+          15558.382,
+          15570.299,
+          18710.555,
+          15914.673,
+          16891.407,
+          15900.445,
+          15606.061
+        ],
+        "discovery_p95_ms": 20551.082,
+        "discovery_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "read_ms": [
+          0.025,
+          0.027,
+          0.022,
+          0.036,
+          0.037,
+          0.026,
+          0.027,
+          0.064,
+          0.026,
+          0.029,
+          0.042,
+          0.03,
+          0.031,
+          0.022,
+          0.045,
+          0.042,
+          0.056,
+          0.025,
+          0.04,
+          0.033,
+          0.04,
+          0.088,
+          0.033,
+          0.033,
+          0.022,
+          0.051,
+          0.038,
+          0.056,
+          0.035,
+          0.023
+        ],
+        "read_p95_ms": 0.061,
+        "read_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "broad_query": "deterministic performance-fixture material",
+        "broad_search_ms": [
+          12.181,
+          13.559,
+          12.059,
+          13.908,
+          12.349,
+          12.619,
+          11.619,
+          14.033,
+          11.802,
+          12.997,
+          13.657,
+          12.66,
+          12.7,
+          13.511,
+          12.096,
+          13.973,
+          13.319,
+          14.857,
+          11.993,
+          11.988,
+          16.341,
+          15.778,
+          10.707,
+          14.342,
+          12.474,
+          16.088,
+          13.184,
+          16.532,
+          15.588,
+          12.608
+        ],
+        "broad_search_p95_ms": 16.227,
+        "broad_found": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "flat_file_control_reused_from": "results/2026-07-27-combined-flat-controls.json",
+      "service_to_flat_file_latency": {
+        "open_discovery_p95_ratio": 0.067,
+        "search_discovery_p95_ratio": 0.022,
+        "exact_read_p95_ratio": 365.813,
+        "broad_search_p95_ratio": 21.72
+      },
+      "response_accounting": {
+        "payload_chars": 421491,
+        "source_text_chars": 208053,
+        "source_identity_chars": 85720,
+        "evidence_chars": 293773,
+        "metadata_chars": 213438,
+        "protocol_chars": 127718,
+        "estimated_payload_tokens": 105373,
+        "estimated_source_tokens": 52014,
+        "estimated_metadata_tokens": 53360,
+        "metadata_to_source_ratio": 1.025883,
+        "protocol_to_evidence_ratio": 0.434751,
+        "source_text_keys": [
+          "content",
+          "excerpt",
+          "source_text",
+          "text"
+        ],
+        "source_identity_keys": [
+          "content_hash",
+          "entry_ref",
+          "heading",
+          "path",
+          "reference",
+          "title",
+          "version_ref"
+        ],
+        "token_estimate": "ceil(characters / 4); use character gates for pass/fail",
+        "by_operation": {
+          "open": {
+            "samples": 30,
+            "payload_chars": 52410,
+            "source_text_chars": 23430,
+            "source_identity_chars": 3150,
+            "evidence_chars": 26580,
+            "metadata_chars": 28980,
+            "protocol_chars": 25830,
+            "metadata_to_source_ratio": 1.236876,
+            "protocol_to_evidence_ratio": 0.971783
+          },
+          "search": {
+            "samples": 30,
+            "payload_chars": 132870,
+            "source_text_chars": 72120,
+            "source_identity_chars": 29370,
+            "evidence_chars": 101490,
+            "metadata_chars": 60750,
+            "protocol_chars": 31380,
+            "metadata_to_source_ratio": 0.842346,
+            "protocol_to_evidence_ratio": 0.309193
+          },
+          "broad_search": {
+            "samples": 30,
+            "payload_chars": 125760,
+            "source_text_chars": 66810,
+            "source_identity_chars": 29040,
+            "evidence_chars": 95850,
+            "metadata_chars": 58950,
+            "protocol_chars": 29910,
+            "metadata_to_source_ratio": 0.882353,
+            "protocol_to_evidence_ratio": 0.31205
+          },
+          "bounded_overflow_search": {
+            "samples": 30,
+            "payload_chars": 24270,
+            "source_text_chars": 8460,
+            "source_identity_chars": 3540,
+            "evidence_chars": 12000,
+            "metadata_chars": 15810,
+            "protocol_chars": 12270,
+            "metadata_to_source_ratio": 1.868794,
+            "protocol_to_evidence_ratio": 1.0225
+          },
+          "read": {
+            "samples": 30,
+            "payload_chars": 42090,
+            "source_text_chars": 23430,
+            "source_identity_chars": 4950,
+            "evidence_chars": 28380,
+            "metadata_chars": 18660,
+            "protocol_chars": 13710,
+            "metadata_to_source_ratio": 0.796415,
+            "protocol_to_evidence_ratio": 0.483087
+          },
+          "resume": {
+            "samples": 1,
+            "payload_chars": 3065,
+            "source_text_chars": 1438,
+            "source_identity_chars": 432,
+            "evidence_chars": 1870,
+            "metadata_chars": 1627,
+            "protocol_chars": 1195,
+            "metadata_to_source_ratio": 1.131433,
+            "protocol_to_evidence_ratio": 0.639037
+          },
+          "max_batch_read": {
+            "samples": 1,
+            "payload_chars": 22403,
+            "source_text_chars": 10070,
+            "source_identity_chars": 5280,
+            "evidence_chars": 15350,
+            "metadata_chars": 12333,
+            "protocol_chars": 7053,
+            "metadata_to_source_ratio": 1.224727,
+            "protocol_to_evidence_ratio": 0.459479
+          },
+          "max_checkpoint_sources": {
+            "samples": 1,
+            "payload_chars": 13478,
+            "source_text_chars": 0,
+            "source_identity_chars": 9313,
+            "evidence_chars": 9313,
+            "metadata_chars": 13478,
+            "protocol_chars": 4165,
+            "metadata_to_source_ratio": 13478.0,
+            "protocol_to_evidence_ratio": 0.447224
+          },
+          "concurrent_search": {
+            "samples": 5,
+            "payload_chars": 5145,
+            "source_text_chars": 2295,
+            "source_identity_chars": 645,
+            "evidence_chars": 2940,
+            "metadata_chars": 2850,
+            "protocol_chars": 2205,
+            "metadata_to_source_ratio": 1.24183,
+            "protocol_to_evidence_ratio": 0.75
+          }
+        }
+      },
+      "semantic_failure_probe": {
+        "status": "passed",
+        "pass": true,
+        "required": true,
+        "baseline_semantic_lane_healthy": true,
+        "semantic_failure_observed": true,
+        "semantic_failure_http_status": null,
+        "exact_lexical_found_during_failure": true,
+        "mixed_lane_found_during_failure": true,
+        "semantic_lane_healthy_after_restore": true,
+        "start_hook": {
+          "command": "python3",
+          "exit_code": 0,
+          "elapsed_ms": 445.09,
+          "pass": true
+        },
+        "restore_hook": {
+          "command": "python3",
+          "exit_code": 0,
+          "elapsed_ms": 661.034,
+          "pass": true
+        },
+        "error": null
+      },
+      "semantic_catchup": {
+        "retrieval_tested_while_pending": true,
+        "start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "end": {
+          "corpus_revision": "generation:715010",
+          "import_id": "simple-import:5d0c7db9-62fe-4b8d-b9b1-48644de00ef0",
+          "index_counts": {
+            "failed_jobs": 0,
+            "pending_jobs": 640003
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "status": "indexing"
+        }
+      },
+      "concurrent_probe": {
+        "write_ms": 2638.198,
+        "write_committed": true,
+        "search_ms": [
+          1102.741,
+          1404.55,
+          1471.584,
+          1407.277,
+          1219.801
+        ],
+        "search_p95_ms": 1458.722,
+        "search_found": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "index_scan_growth": {
+        "search_chunks_embedding_hnsw_idx": 2,
+        "search_chunks_fts_idx": 138
+      },
+      "checkpoint_id": "checkpoint:4b509525-40c8-5870-c3b5-b4ec5543a79e",
+      "checkpoint_database_growth": {
+        "rows": 12,
+        "bytes": 6048,
+        "tables": {
+          "entries": 1,
+          "workspace_changes": 1,
+          "search_chunks": 8,
+          "entry_versions": 1,
+          "jobs": 1
+        }
+      },
+      "provisioning": {
+        "documents": 640000,
+        "delta_documents": 0,
+        "characters": 204049352,
+        "import_http_status": 200,
+        "import_elapsed_ms": 162040.346,
+        "import_batch_count": 64,
+        "max_batch_documents": 10000,
+        "ready_elapsed_ms": 2277.627,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        }
+      }
+    }
+  ],
+  "thresholds": {
+    "open_p95_ms": 5000.0,
+    "search_p95_ms": 3000.0,
+    "broad_search_p95_ms": 3000.0,
+    "concurrent_search_p95_ms": 3000.0,
+    "read_p95_ms": 1000.0,
+    "checkpoint_ms": 2000.0,
+    "resume_ms": 5000.0,
+    "max_batch_read_ms": 2000.0,
+    "max_checkpoint_sources_ms": 3000.0,
+    "checkpoint_row_growth": 100,
+    "checkpoint_bytes_growth": 4194304,
+    "ten_x_latency_growth": 6.0,
+    "latency_growth_floor_ms": 1000.0,
+    "protocol_to_evidence_ratio": 1.0
+  },
+  "gates": [
+    {
+      "name": "all_opens_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_searches_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_resumes_return_target",
+      "pass": true,
+      "observed": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "all_exact_reads_return_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "every_scale_open_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 321.663
+        },
+        {
+          "scale": 10000,
+          "observed": 287.954
+        },
+        {
+          "scale": 64000,
+          "observed": 398.852
+        },
+        {
+          "scale": 640000,
+          "observed": 1385.34
+        }
+      ],
+      "threshold": 5000.0
+    },
+    {
+      "name": "every_scale_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 319.418
+        },
+        {
+          "scale": 10000,
+          "observed": 342.049
+        },
+        {
+          "scale": 64000,
+          "observed": 443.259
+        },
+        {
+          "scale": 640000,
+          "observed": 456.853
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_broad_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 555.487
+        },
+        {
+          "scale": 10000,
+          "observed": 271.848
+        },
+        {
+          "scale": 64000,
+          "observed": 392.015
+        },
+        {
+          "scale": 640000,
+          "observed": 352.453
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_overflow_search_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 224.303
+        },
+        {
+          "scale": 10000,
+          "observed": 224.352
+        },
+        {
+          "scale": 64000,
+          "observed": 405.02
+        },
+        {
+          "scale": 640000,
+          "observed": 389.715
+        }
+      ],
+      "threshold": 3000.0
+    },
+    {
+      "name": "every_scale_read_p95_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 145.628
+        },
+        {
+          "scale": 10000,
+          "observed": 339.834
+        },
+        {
+          "scale": 64000,
+          "observed": 238.094
+        },
+        {
+          "scale": 640000,
+          "observed": 22.315
+        }
+      ],
+      "threshold": 1000.0
+    },
+    {
+      "name": "every_scale_checkpoint_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 114.317
+        },
+        {
+          "scale": 10000,
+          "observed": 196.563
+        },
+        {
+          "scale": 64000,
+          "observed": 51.157
+        },
+        {
+          "scale": 640000,
+          "observed": 25.476
+        }
+      ],
+      "threshold": 2000.0
+    },
+    {
+      "name": "every_scale_resume_ms",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "observed": 265.319
+        },
+        {
+          "scale": 10000,
+          "observed": 239.262
+        },
+        {
+          "scale": 64000,
+          "observed": 31.832
+        },
+        {
+          "scale": 640000,
+          "observed": 290.975
+        }
+      ],
+      "threshold": 5000.0
+    },
+    {
+      "name": "no_exact_or_lexical_lane_failures",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "failures": []
+        },
+        {
+          "scale": 10000,
+          "failures": []
+        },
+        {
+          "scale": 64000,
+          "failures": []
+        },
+        {
+          "scale": 640000,
+          "failures": []
+        }
+      ],
+      "threshold": []
+    },
+    {
+      "name": "every_scale_max_batch_read_contract",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 64000,
+          "status": "complete",
+          "batch_read_entries": 32,
+          "batch_read_ms": 34.623,
+          "checkpoint_source_entries": 64,
+          "checkpoint_ms": 43.982,
+          "pass": true
+        },
+        {
+          "scale": 640000,
+          "status": "complete",
+          "batch_read_entries": 32,
+          "batch_read_ms": 23.511,
+          "checkpoint_source_entries": 64,
+          "checkpoint_ms": 32.0,
+          "pass": true
+        }
+      ],
+      "threshold": {
+        "entries": 32,
+        "latency_ms": 2000.0
+      }
+    },
+    {
+      "name": "every_scale_max_checkpoint_source_contract",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 64000,
+          "status": "complete",
+          "batch_read_entries": 32,
+          "batch_read_ms": 34.623,
+          "checkpoint_source_entries": 64,
+          "checkpoint_ms": 43.982,
+          "pass": true
+        },
+        {
+          "scale": 640000,
+          "status": "complete",
+          "batch_read_entries": 32,
+          "batch_read_ms": 23.511,
+          "checkpoint_source_entries": 64,
+          "checkpoint_ms": 32.0,
+          "pass": true
+        }
+      ],
+      "threshold": {
+        "source_entries": 64,
+        "latency_ms": 3000.0
+      }
+    },
+    {
+      "name": "retrieval_works_while_semantic_indexing_is_pending",
+      "pass": true,
+      "observed": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "unknown_path_discovery_does_not_reveal_target_path",
+      "pass": true,
+      "observed": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "threshold": false
+    },
+    {
+      "name": "all_required_scales_completed",
+      "pass": true,
+      "observed": [
+        1000,
+        10000,
+        64000,
+        640000
+      ],
+      "threshold": [
+        64000,
+        640000
+      ]
+    },
+    {
+      "name": "retrieval_sample_count_is_definitive",
+      "pass": true,
+      "observed": [
+        30,
+        30,
+        30,
+        30
+      ],
+      "threshold": ">= 30 per scale"
+    },
+    {
+      "name": "all_broad_searches_return_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "bounded_lexical_overflow_returns_late_relevant_source",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_discovery_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_exact_read_returns_target",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "flat_file_broad_search_returns_sources",
+      "pass": true,
+      "observed": [
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      ],
+      "threshold": true
+    },
+    {
+      "name": "service_protocol_overhead_does_not_exceed_evidence",
+      "pass": true,
+      "observed": [
+        {
+          "scale": 1000,
+          "source_text_chars": 245997,
+          "source_identity_chars": 128715,
+          "protocol_chars": 148134,
+          "ratio": 0.395328
+        },
+        {
+          "scale": 10000,
+          "source_text_chars": 197511,
+          "source_identity_chars": 71127,
+          "protocol_chars": 116124,
+          "ratio": 0.432269
+        },
+        {
+          "scale": 64000,
+          "source_text_chars": 207642,
+          "source_identity_chars": 85720,
+          "protocol_chars": 127337,
+          "ratio": 0.434061
+        },
+        {
+          "scale": 640000,
+          "source_text_chars": 208053,
+          "source_identity_chars": 85720,
+          "protocol_chars": 127718,
+          "ratio": 0.434751
+        }
+      ],
+      "threshold": "ratio <= 1.0"
+    },
+    {
+      "name": "semantic_provider_failure_falls_back_to_exact_and_lexical",
+      "pass": true,
+      "observed": {
+        "status": "passed",
+        "semantic_failure_observed": true,
+        "exact_lexical_found": true,
+        "mixed_lane_found": true,
+        "semantic_lane_healthy_after_restore": true
+      },
+      "threshold": true
+    },
+    {
+      "name": "unrelated_write_commits",
+      "pass": true,
+      "observed": true,
+      "threshold": true
+    },
+    {
+      "name": "retrieval_survives_unrelated_write",
+      "pass": true,
+      "observed": [
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "threshold": true
+    },
+    {
+      "name": "concurrent_search_p95",
+      "pass": true,
+      "observed": 1458.722,
+      "threshold": 3000.0
+    },
+    {
+      "name": "lexical_search_uses_gin_index",
+      "pass": true,
+      "observed": 138,
+      "threshold": "> 0"
+    },
+    {
+      "name": "checkpoint_row_growth_is_bounded",
+      "pass": true,
+      "observed": 12,
+      "threshold": 100
+    },
+    {
+      "name": "checkpoint_storage_growth_is_bounded",
+      "pass": true,
+      "observed": 6048,
+      "threshold": 4194304
+    },
+    {
+      "name": "open_latency_growth_is_materially_bounded",
+      "pass": true,
+      "observed": {
+        "ratio": 4.307,
+        "largest_p95_ms": 1385.34
+      },
+      "threshold": {
+        "ratio": 6.0,
+        "applies_above_ms": 1000.0
+      }
+    },
+    {
+      "name": "search_latency_growth_is_materially_bounded",
+      "pass": true,
+      "observed": {
+        "ratio": 1.43,
+        "largest_p95_ms": 456.853
+      },
+      "threshold": {
+        "ratio": 6.0,
+        "applies_above_ms": 1000.0
+      }
+    }
+  ],
+  "errors": [],
+  "pass": true
+}
