@@ -36,7 +36,8 @@ Never rebuild a candidate on the production host.
 ## Secrets And Configuration
 
 Create local files containing the OpenAI and Datadog API keys without putting
-either value in shell history. Generate the remaining secrets atomically:
+either value in shell history. Generate the remaining secrets in one local
+command:
 
 ```bash
 make production-secrets \
@@ -145,7 +146,7 @@ docker compose \
 This lost-token mode leaves any other owner credentials active. Store the
 replacement and remove the output file.
 
-If any owner credential may be compromised, atomically create the replacement
+If any owner credential may be compromised, create the replacement
 and revoke every other active owner credential:
 
 ```bash

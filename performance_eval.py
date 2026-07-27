@@ -57,6 +57,7 @@ DEFAULT_THRESHOLDS = {
     "broad_search_p95_ms": 3_000.0,
     "concurrent_write_ms": 3_000.0,
     "concurrent_search_p95_ms": 3_000.0,
+    "requested_checkpoints_per_minute": 1.0,
     "read_p95_ms": 1_000.0,
     "checkpoint_ms": 2_000.0,
     "resume_ms": 5_000.0,
@@ -783,6 +784,26 @@ WHERE schemaname='straylight'
     }
 
 
+def checkpointer_snapshot(container: str) -> dict[str, Any]:
+    payload = run_psql(
+        container,
+        r"""
+SELECT json_build_object(
+  'num_timed',num_timed,
+  'num_requested',num_requested,
+  'write_time_ms',write_time,
+  'sync_time_ms',sync_time,
+  'buffers_written',buffers_written,
+  'max_wal_size',current_setting('max_wal_size'),
+  'min_wal_size',current_setting('min_wal_size'),
+  'wal_compression',current_setting('wal_compression')
+)
+FROM pg_stat_checkpointer;
+""",
+    )
+    return json.loads(payload.splitlines()[-1])
+
+
 def counter_growth(before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
     return {
         key: after.get(key, 0) - before.get(key, 0)
@@ -1110,113 +1131,137 @@ def concurrent_write_search_probe(
     marker: str,
     run_id: str,
     searches: int = 5,
+    rounds: int = 1,
     response_samples: list[tuple[str, dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    barrier = threading.Barrier(searches + 1)
+    if searches < 1 or rounds < 1:
+        raise ValueError("concurrent probe requires at least one search and round")
     operation_prefix = "/v1/workspace" if protocol == "simple" else "/v1/memory"
-    write_marker = f"unrelated-write-{uuid.uuid4().hex}"
-    path = f"Synthetic/concurrent/{write_marker}.md"
-    content = (
-        "# Concurrent write probe\n\n"
-        f"This unrelated file contains `{write_marker}`.\n"
-    )
+    write_times: list[float] = []
+    write_committed_samples: list[bool] = []
+    search_times: list[float] = []
+    search_found: list[bool] = []
+    search_lane_failures: list[dict[str, bool]] = []
 
-    def write() -> tuple[dict[str, Any], float]:
-        barrier.wait()
-        if protocol == "simple":
+    for round_index in range(rounds):
+        barrier = threading.Barrier(searches + 1)
+        write_marker = f"unrelated-write-{uuid.uuid4().hex}"
+        path = f"Synthetic/concurrent/{write_marker}.md"
+        content = (
+            "# Concurrent write probe\n\n"
+            f"This unrelated file contains `{write_marker}`.\n"
+        )
+
+        def write() -> tuple[dict[str, Any], float]:
+            barrier.wait()
+            if protocol == "simple":
+                return request_with_result(
+                    client,
+                    f"{operation_prefix}/write",
+                    {
+                        "path": path,
+                        "content": content,
+                        "media_type": "text/markdown",
+                        "metadata": {"kind": "performance_probe"},
+                    },
+                )
             return request_with_result(
                 client,
-                f"{operation_prefix}/write",
+                f"{operation_prefix}/save",
                 {
-                    "path": path,
-                    "content": content,
-                    "media_type": "text/markdown",
-                    "metadata": {"kind": "performance_probe"},
+                    "intent": "measure retrieval during an unrelated write",
+                    "scope": authorization_scope,
+                    "root_refs": [],
+                    "source_refs": [],
+                    "idempotency_key": f"{run_id}:{write_marker}",
+                    "items": [{
+                        "action": "create",
+                        "kind": "source",
+                        "ref": f"performance-probe:{write_marker}",
+                        "payload": {
+                            "path": path,
+                            "source_ref": f"performance-probe:{write_marker}",
+                            "source_kind": "performance_probe",
+                            "source_version": (
+                                "sha256:"
+                                + hashlib.sha256(content.encode("utf-8")).hexdigest()
+                            ),
+                            "title": "Concurrent write probe",
+                            "media_type": "text/markdown",
+                            "content": content,
+                        },
+                    }],
                 },
             )
-        return request_with_result(
-            client,
-            f"{operation_prefix}/save",
-            {
-                "intent": "measure retrieval during an unrelated write",
-                "scope": authorization_scope,
-                "root_refs": [],
-                "source_refs": [],
-                "idempotency_key": f"{run_id}:{write_marker}",
-                "items": [{
-                    "action": "create",
-                    "kind": "source",
-                    "ref": f"performance-probe:{write_marker}",
-                    "payload": {
-                        "path": path,
-                        "source_ref": f"performance-probe:{write_marker}",
-                        "source_kind": "performance_probe",
-                        "source_version": (
-                            "sha256:"
-                            + hashlib.sha256(content.encode("utf-8")).hexdigest()
-                        ),
-                        "title": "Concurrent write probe",
-                        "media_type": "text/markdown",
-                        "content": content,
-                    },
-                }],
-            },
-        )
 
-    def search(index: int) -> tuple[dict[str, Any], float]:
-        barrier.wait()
-        return request_with_result(
-            client,
-            (
-                f"{operation_prefix}/search"
-                if protocol == "simple"
-                else f"{operation_prefix}/query"
-            ),
-            {
-                "session_id": session_id,
-                "queries": [{
-                    "id": f"concurrent-{index}",
-                    "goal": "find the existing exact marker",
-                    "query": marker,
-                    "scope": authorization_scope,
-                    "modes": ["exact", "lexical", "semantic"],
-                    "limit": 8,
-                }],
-            },
-        )
+        def search(index: int) -> tuple[dict[str, Any], float]:
+            barrier.wait()
+            return request_with_result(
+                client,
+                (
+                    f"{operation_prefix}/search"
+                    if protocol == "simple"
+                    else f"{operation_prefix}/query"
+                ),
+                {
+                    "session_id": session_id,
+                    "queries": [{
+                        "id": f"concurrent-{round_index}-{index}",
+                        "goal": "find the existing exact marker",
+                        "query": marker,
+                        "scope": authorization_scope,
+                        "modes": ["exact", "lexical", "semantic"],
+                        "limit": 8,
+                    }],
+                },
+            )
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=searches + 1,
-    ) as executor:
-        write_future = executor.submit(write)
-        search_futures = [
-            executor.submit(search, index)
-            for index in range(searches)
-        ]
-        write_body, write_ms = write_future.result()
-        search_results = [future.result() for future in search_futures]
-    if response_samples is not None:
-        response_samples.extend(
-            ("concurrent_search", body)
-            for body, _ in search_results
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=searches + 1,
+        ) as executor:
+            write_future = executor.submit(write)
+            search_futures = [
+                executor.submit(search, index)
+                for index in range(searches)
+            ]
+            write_body, write_ms = write_future.result()
+            search_results = [future.result() for future in search_futures]
+        if response_samples is not None:
+            response_samples.extend(
+                ("concurrent_search", body)
+                for body, _ in search_results
+            )
+        write_times.append(write_ms)
+        write_committed_samples.append(
+            rendered_contains(write_body, write_marker)
         )
-    search_ms = [elapsed for _, elapsed in search_results]
-    search_lane_failures = [
-        {
-            "exact": response_reports_lane_failure(body, "exact"),
-            "lexical": response_reports_lane_failure(body, "lexical"),
-        }
-        for body, _ in search_results
-    ]
-    return {
-        "write_ms": round(write_ms, 3),
-        "write_committed": rendered_contains(write_body, write_marker),
-        "search_ms": [round(value, 3) for value in search_ms],
-        "search_p95_ms": round(percentile(search_ms, 0.95), 3),
-        "search_found": [
+        search_times.extend(elapsed for _, elapsed in search_results)
+        search_found.extend(
             rendered_contains(body, marker)
             for body, _ in search_results
-        ],
+        )
+        search_lane_failures.extend(
+            {
+                "exact": response_reports_lane_failure(body, "exact"),
+                "lexical": response_reports_lane_failure(body, "lexical"),
+            }
+            for body, _ in search_results
+        )
+
+    write_p95_ms = percentile(write_times, 0.95)
+    return {
+        "rounds": rounds,
+        "searches_per_round": searches,
+        "write_ms": round(write_p95_ms, 3),
+        "write_samples_ms": [round(value, 3) for value in write_times],
+        "write_p50_ms": round(percentile(write_times, 0.50), 3),
+        "write_p95_ms": round(write_p95_ms, 3),
+        "write_max_ms": round(max(write_times), 3),
+        "write_committed": all(write_committed_samples),
+        "write_committed_samples": write_committed_samples,
+        "search_ms": [round(value, 3) for value in search_times],
+        "search_p95_ms": round(percentile(search_times, 0.95), 3),
+        "search_found": search_found,
         "search_lane_failures": search_lane_failures,
     }
 
@@ -1232,6 +1277,7 @@ def benchmark_scale(
     db_container: str | None,
     protocol: str,
     run_semantic_failure: bool,
+    concurrent_rounds: int,
     semantic_failure_required: bool,
     semantic_failure_start_command: str | None,
     semantic_failure_stop_command: str | None,
@@ -1257,6 +1303,12 @@ def benchmark_scale(
     )
     if flat_result_callback is not None:
         flat_result_callback(flat_file_control)
+    checkpointer_before = (
+        checkpointer_snapshot(db_container)
+        if db_container and protocol == "simple"
+        else None
+    )
+    checkpointer_started = time.monotonic()
     case_id = f"scale-{scale}"
     run_id = f"perf-{label}-{int(time.time())}-{scale}"
     started = time.monotonic()
@@ -1590,6 +1642,7 @@ def benchmark_scale(
         session_id=latest_session_id,
         marker=marker,
         run_id=run_id,
+        rounds=concurrent_rounds,
         response_samples=response_samples,
     )
     failure_probe = (
@@ -1618,6 +1671,47 @@ def benchmark_scale(
         if index_before is not None and db_container is not None
         else None
     )
+    checkpointer_after = (
+        checkpointer_snapshot(db_container)
+        if checkpointer_before is not None and db_container is not None
+        else None
+    )
+    checkpointer_elapsed_seconds = time.monotonic() - checkpointer_started
+    checkpoint_pressure = None
+    if checkpointer_before is not None and checkpointer_after is not None:
+        requested = (
+            int(checkpointer_after["num_requested"])
+            - int(checkpointer_before["num_requested"])
+        )
+        timed = (
+            int(checkpointer_after["num_timed"])
+            - int(checkpointer_before["num_timed"])
+        )
+        checkpoint_pressure = {
+            "elapsed_seconds": round(checkpointer_elapsed_seconds, 3),
+            "requested_checkpoints": requested,
+            "timed_checkpoints": timed,
+            "requested_checkpoints_per_minute": round(
+                requested / max(checkpointer_elapsed_seconds, 0.001) * 60.0,
+                3,
+            ),
+            "write_time_ms": (
+                int(checkpointer_after["write_time_ms"])
+                - int(checkpointer_before["write_time_ms"])
+            ),
+            "sync_time_ms": (
+                int(checkpointer_after["sync_time_ms"])
+                - int(checkpointer_before["sync_time_ms"])
+            ),
+            "buffers_written": (
+                int(checkpointer_after["buffers_written"])
+                - int(checkpointer_before["buffers_written"])
+            ),
+            "settings": {
+                key: checkpointer_after[key]
+                for key in ("max_wal_size", "min_wal_size", "wal_compression")
+            },
+        }
     status_url = provisioning.get("status_url")
     semantic_status_end: dict[str, Any] = {}
     if protocol == "simple" and isinstance(status_url, str) and status_url:
@@ -1731,6 +1825,7 @@ def benchmark_scale(
             "end": recursively_redact_secrets(semantic_status_end),
         },
         "concurrent_probe": concurrent_probe,
+        "checkpoint_pressure": checkpoint_pressure,
         "index_scan_growth": (
             counter_growth(index_before, index_after)
             if index_before is not None and index_after is not None
@@ -2049,7 +2144,7 @@ def evaluate_gates(
                 True,
             ),
             (
-                "unrelated_write_latency",
+                "unrelated_write_p95_latency",
                 concurrent_probe["write_ms"]
                 <= thresholds.get(
                     "concurrent_write_ms",
@@ -2093,6 +2188,25 @@ def evaluate_gates(
                 ),
             ),
         ])
+        if minimum_samples is not None:
+            gates.append((
+                "foreground_write_sample_count_is_definitive",
+                int(concurrent_probe.get("rounds", 0)) >= minimum_samples,
+                concurrent_probe.get("rounds", 0),
+                f">= {minimum_samples}",
+            ))
+    checkpoint_pressure = largest.get("checkpoint_pressure")
+    if checkpoint_pressure is not None:
+        gates.append((
+            "requested_checkpoint_rate_is_bounded",
+            checkpoint_pressure["requested_checkpoints_per_minute"]
+            <= thresholds["requested_checkpoints_per_minute"],
+            checkpoint_pressure,
+            (
+                f"requested checkpoints <= "
+                f"{thresholds['requested_checkpoints_per_minute']} per minute"
+            ),
+        ))
     index_growth = largest.get("index_scan_growth")
     if index_growth is not None and require_gin_index:
         gates.append((
@@ -2346,6 +2460,11 @@ def command_run(args: argparse.Namespace) -> int:
                 db_container=args.db_container,
                 protocol=args.protocol,
                 run_semantic_failure=scale == largest_requested_scale,
+                concurrent_rounds=(
+                    profile.samples
+                    if scale == largest_requested_scale
+                    else min(profile.samples, QUICK_SAMPLES)
+                ),
                 semantic_failure_required=profile.semantic_failure_required,
                 semantic_failure_start_command=(
                     args.semantic_failure_start_command

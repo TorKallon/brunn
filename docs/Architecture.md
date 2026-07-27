@@ -101,6 +101,12 @@ lexical retrieval remains complete, and a retry skips chunks that already
 have vectors. Straylight never holds a document-sized transaction merely to
 make derived embeddings appear together.
 
+Self-hosted PostgreSQL keeps enough write-ahead-log headroom to spread
+checkpoints across sustained imports and semantic catch-up. Derived work may
+take longer; it must not create rapid checkpoint churn that stalls foreground
+reads or writes. Managed PostgreSQL deployments must apply the equivalent
+provider setting and expose checkpoint frequency in operations telemetry.
+
 Normal binary write:
 
 1. Upload immutable bytes to S3 first.
@@ -280,6 +286,7 @@ Metrics and structured logs cover:
 - entry versions and changed paths per write
 - import/export progress and failure
 - jobs queued, age, attempts, and outcome
+- checkpoint frequency and write-ahead-log pressure
 - binary bytes, description state, and cleanup outcome
 - database pool pressure and statement timeouts
 

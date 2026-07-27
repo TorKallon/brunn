@@ -3879,9 +3879,8 @@ async fn fetch_locked_markdown_entry(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     path: &str,
-    normalized_path: bool,
 ) -> ApiResult<Option<PgRow>> {
-    let mut statement = QueryBuilder::<Postgres>::new(
+    Ok(sqlx::query(
         r#"
         SELECT entry.id,entry.kind,entry.current_version,entry.deleted_at,
                version.id AS version_id,version.content_sha256,version.metadata
@@ -3890,21 +3889,15 @@ async fn fetch_locked_markdown_entry(
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
-        WHERE entry.user_id=
+        WHERE entry.user_id=$1
+          AND lower(normalize(entry.path, NFC))=$2
+        FOR UPDATE OF entry
         "#,
-    );
-    statement.push_bind(user_id);
-    if normalized_path {
-        statement
-            .push(" AND lower(normalize(entry.path, NFC))=")
-            .push_bind(portable_path_key(path));
-    } else {
-        statement
-            .push(" AND entry.path=")
-            .push_bind(path.to_owned());
-    }
-    statement.push(" FOR UPDATE OF entry");
-    Ok(statement.build().fetch_optional(&mut **tx).await?)
+    )
+    .bind(user_id)
+    .bind(portable_path_key(path))
+    .fetch_optional(&mut **tx)
+    .await?)
 }
 
 async fn upsert_markdown_in_tx(
@@ -3914,12 +3907,7 @@ async fn upsert_markdown_in_tx(
     prepared: PreparedMarkdown,
 ) -> ApiResult<MarkdownUpsertResult> {
     let checkpoint_import = is_portable_checkpoint_import(&prepared.path, &prepared.metadata);
-    let existing = fetch_locked_markdown_entry(tx, user_id, &prepared.path, false).await?;
-    let existing = if existing.is_none() && !prepared.path.starts_with(".straylight/") {
-        fetch_locked_markdown_entry(tx, user_id, &prepared.path, true).await?
-    } else {
-        existing
-    };
+    let existing = fetch_locked_markdown_entry(tx, user_id, &prepared.path).await?;
     if existing
         .as_ref()
         .is_some_and(|row| row.get::<String, _>("kind") != "markdown")

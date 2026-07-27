@@ -69,6 +69,16 @@ services:
       args:
         STRAYLIGHT_BUILD_REVISION: ${STRAYLIGHT_BUILD_REVISION:-local}
     image: ${STRAYLIGHT_DATABASE_IMAGE:-straylight-postgres:local}
+    command:
+      - postgres
+      - -c
+      - max_wal_size=${STRAYLIGHT_POSTGRES_MAX_WAL_SIZE:-4GB}
+      - -c
+      - min_wal_size=${STRAYLIGHT_POSTGRES_MIN_WAL_SIZE:-1GB}
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - wal_compression=on
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-straylight}
       POSTGRES_USER: admin

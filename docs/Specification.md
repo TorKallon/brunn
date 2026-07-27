@@ -583,6 +583,10 @@ A production-shaped test must also prove:
 - no normal open computes a whole-workspace count or map
 - one failed lane still returns another lane's evidence
 - concurrent unrelated writes do not serialize globally
+- foreground write p95 stays below 3 seconds across at least 30 samples while
+  semantic indexing has a large pending backlog
+- a large import does not force PostgreSQL checkpoints more often than once per
+  minute after the configured write-ahead-log budget is applied
 
 ### Fidelity
 

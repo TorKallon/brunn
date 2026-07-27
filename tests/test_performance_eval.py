@@ -679,6 +679,52 @@ class PerformanceEvalTests(unittest.TestCase):
             gates["flat_file_broad_search_returns_sources"]["pass"]
         )
 
+    def test_checkpoint_pressure_and_foreground_write_samples_are_gated(self):
+        scale = {
+            "scale": PRODUCTION_RECORDS,
+            "samples": DEFINITIVE_SAMPLES,
+            "open_found": [True] * DEFINITIVE_SAMPLES,
+            "open_p95_ms": 100.0,
+            "search_p95_ms": 80.0,
+            "read_p95_ms": 20.0,
+            "checkpoint_ms": 50.0,
+            "resume_ms": 100.0,
+            "search_found": [True] * DEFINITIVE_SAMPLES,
+            "read_found": [True] * DEFINITIVE_SAMPLES,
+            "resume_found": True,
+            "concurrent_probe": {
+                "rounds": DEFINITIVE_SAMPLES - 1,
+                "write_ms": 100.0,
+                "write_committed": True,
+                "search_p95_ms": 100.0,
+                "search_found": [True],
+                "search_lane_failures": [],
+            },
+            "checkpoint_pressure": {
+                "requested_checkpoints_per_minute": 2.0,
+            },
+            "checkpoint_database_growth": {
+                "rows": 1,
+                "bytes": None,
+                "tables": {},
+            },
+        }
+
+        gates = {
+            gate["name"]: gate
+            for gate in evaluate_gates(
+                [scale],
+                DEFAULT_THRESHOLDS,
+                minimum_samples=DEFINITIVE_SAMPLES,
+                require_gin_index=False,
+            )
+        }
+
+        self.assertFalse(
+            gates["foreground_write_sample_count_is_definitive"]["pass"]
+        )
+        self.assertFalse(gates["requested_checkpoint_rate_is_bounded"]["pass"])
+
     def test_compare_reports_before_and_after_amplification(self):
         def result(label, checkpoint_rows):
             scale = {
