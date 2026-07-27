@@ -88,10 +88,12 @@ progress and report exactly what succeeded.
 Normal Markdown write:
 
 1. Prepare lexical chunks in memory.
-2. In one brief local database commit, append one entry version, move the
+2. Under a path-local publication guard, try a new-path insert directly.
+   Inspect and lock an existing entry only when the path already exists.
+3. In one brief local database commit, append one entry version, move the
    current pointer, replace that entry's current chunks, and append one change.
-3. Return immediately with exact and lexical search ready.
-4. Generate semantic embeddings later through bounded background jobs.
+4. Return immediately with exact and lexical search ready.
+5. Generate semantic embeddings later through bounded background jobs.
 
 Semantic publication is intentionally finer grained than a document or job
 batch. At most 128 chunk vectors become visible through one short statement,

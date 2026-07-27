@@ -3907,7 +3907,28 @@ async fn upsert_markdown_in_tx(
     prepared: PreparedMarkdown,
 ) -> ApiResult<MarkdownUpsertResult> {
     let checkpoint_import = is_portable_checkpoint_import(&prepared.path, &prepared.metadata);
-    let existing = fetch_locked_markdown_entry(tx, user_id, &prepared.path).await?;
+    let proposed_entry_id = prepared.entry_id_hint.unwrap_or_else(Uuid::now_v7);
+    let inserted_entry_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        INSERT INTO straylight.entries (
+          id,user_id,path,title,kind,media_type,current_version
+        ) VALUES ($1,$2,$3,$4,'markdown',$5,0)
+        ON CONFLICT (user_id,(lower(normalize(path, NFC)))) DO NOTHING
+        RETURNING id
+        "#,
+    )
+    .bind(proposed_entry_id)
+    .bind(user_id)
+    .bind(&prepared.path)
+    .bind(&prepared.title)
+    .bind(&prepared.media_type)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let existing = if inserted_entry_id.is_some() {
+        None
+    } else {
+        fetch_locked_markdown_entry(tx, user_id, &prepared.path).await?
+    };
     if existing
         .as_ref()
         .is_some_and(|row| row.get::<String, _>("kind") != "markdown")
@@ -4078,28 +4099,8 @@ async fn upsert_markdown_in_tx(
             row.get::<i64, _>("current_version") + 1,
             "update",
         ),
-        None => (
-            prepared.entry_id_hint.unwrap_or_else(Uuid::now_v7),
-            1,
-            "create",
-        ),
+        None => (proposed_entry_id, 1, "create"),
     };
-    if operation == "create" {
-        sqlx::query(
-            r#"
-            INSERT INTO straylight.entries (
-              id,user_id,path,title,kind,media_type,current_version
-            ) VALUES ($1,$2,$3,$4,'markdown',$5,0)
-            "#,
-        )
-        .bind(entry_id)
-        .bind(user_id)
-        .bind(&prepared.path)
-        .bind(&prepared.title)
-        .bind(&prepared.media_type)
-        .execute(&mut **tx)
-        .await?;
-    }
     let version_id = Uuid::now_v7();
     sqlx::query(
         r#"

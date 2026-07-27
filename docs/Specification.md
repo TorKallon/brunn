@@ -107,6 +107,11 @@ partial progress, record what completed, and retry the remainder. They must not
 hold a corpus-sized transaction, roll back unrelated successful work, or make
 ordinary reads wait for repair.
 
+For a new Markdown path, the implementation tries the insert directly under a
+path-local guard. It performs the existing-entry read and row lock only after a
+path collision. Updates retain their version and stale-write checks without
+making every create pay for duplicate coordination.
+
 ## Search Index
 
 Only current Markdown versions have current `search_chunks`.
