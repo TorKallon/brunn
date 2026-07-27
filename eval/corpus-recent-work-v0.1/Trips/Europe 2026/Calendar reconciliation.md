@@ -1,3 +1,8 @@
+---
+supersedes:
+  - Trips/Europe 2026/Calendar request provisional.md
+---
+
 # Family calendar reconciliation
 
 Calendar window searched: August 1 through August 27, 2026.

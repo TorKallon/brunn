@@ -1583,6 +1583,20 @@ def select_conditions(manifest: dict, args: argparse.Namespace) -> list[str]:
     return requested
 
 
+def expected_feature_flags(values: Sequence[str] | None) -> dict[str, bool]:
+    parsed = {}
+    allowed = {"supersession_demotion", "intention_ledger"}
+    for value in values or []:
+        name, separator, state = value.partition("=")
+        if not separator or name not in allowed or state not in {"on", "off"}:
+            raise ValueError(
+                "--expect-feature-flag requires supersession_demotion=on|off "
+                "or intention_ledger=on|off"
+            )
+        parsed[name] = state == "on"
+    return parsed
+
+
 def select_cases(
     manifest: dict,
     requested: Sequence[str] | None,
@@ -1623,6 +1637,7 @@ async def run_all(args: argparse.Namespace) -> dict:
         include_retired=args.include_retired,
     )
     selected_conditions = select_conditions(manifest, args)
+    expected_flags = expected_feature_flags(args.expect_feature_flag)
     native_metadata: dict[str, dict[str, Any]] = {}
     if "service_api" in selected_conditions:
         native_state_path = run_root / NATIVE_PROVISIONING_STATE
@@ -1657,6 +1672,25 @@ async def run_all(args: argparse.Namespace) -> dict:
                 wait_for_semantic=args.service_protocol != "simple",
             )
             write_native_provisioning_state(native_state_path, run_id, native_metadata)
+        if expected_flags and native_metadata:
+            metadata = next(iter(native_metadata.values()))
+            status_client = NativeApiClient(
+                base_url=os.environ["STRAYLIGHT_API_URL"],
+                token=metadata["token"],
+                run_id=run_id,
+                case_id="feature-flag-preflight",
+            )
+            status = status_client.get("/v1/status").data
+            actual_flags = status.get("feature_flags")
+            if not isinstance(actual_flags, dict):
+                raise ValueError("service status omitted the required feature_flags snapshot")
+            mismatches = {
+                name: {"expected": expected, "actual": actual_flags.get(name)}
+                for name, expected in expected_flags.items()
+                if actual_flags.get(name) is not expected
+            }
+            if mismatches:
+                raise ValueError(f"service feature flag mismatch: {mismatches}")
     semaphore = asyncio.Semaphore(args.concurrency)
     tasks = []
     records = []
@@ -1749,6 +1783,7 @@ async def run_all(args: argparse.Namespace) -> dict:
         },
         "service_protocol": args.service_protocol,
         "reasoning_billing": reasoning_billing,
+        "expected_feature_flags": expected_flags,
         "records": records,
     }
     run["run_ledger"] = build_run_ledger(
@@ -1763,6 +1798,82 @@ async def run_all(args: argparse.Namespace) -> dict:
     )
     run["summary"] = summarize(selected_manifest, records)
     return run
+
+
+def measure_adoption(run: dict[str, Any]) -> dict[str, Any]:
+    cases = {
+        case["id"]: case
+        for case in run.get("manifest", {}).get("cases", [])
+        if isinstance(case, dict) and isinstance(case.get("id"), str)
+    }
+    sessions = []
+    for record in run.get("records", []):
+        if not isinstance(record, dict) or record.get("condition") != "service_api":
+            continue
+        case = cases.get(record.get("case_id"))
+        eligibility = case.get("adoption_eligibility") if case else None
+        if not isinstance(eligibility, dict):
+            continue
+        feature = eligibility.get("feature")
+        authored = [
+            {
+                "write_path": operation.get("write_path"),
+                "frontmatter": operation["authored_frontmatter"],
+            }
+            for operation in record.get("service_operations", [])
+            if isinstance(operation, dict)
+            and isinstance(operation.get("authored_frontmatter"), dict)
+        ]
+        if feature == "supersession":
+            expected_path = eligibility.get("supersedes_path")
+            emitted = any(
+                expected_path in block["frontmatter"].get("supersedes", [])
+                for block in authored
+            )
+        elif feature == "intention":
+            emitted = any(
+                block["frontmatter"].get("kind") == "intention"
+                and block["frontmatter"].get("status") == "pending"
+                and bool(block["frontmatter"].get("trigger"))
+                for block in authored
+            )
+        else:
+            emitted = False
+        sessions.append({
+            "case_id": record.get("case_id"),
+            "feature": feature,
+            "eligible": True,
+            "emitted_valid_frontmatter": emitted,
+            "frontmatter_blocks": authored,
+        })
+
+    by_feature = {}
+    for feature in ("supersession", "intention"):
+        feature_sessions = [
+            session for session in sessions if session["feature"] == feature
+        ]
+        emitted = sum(
+            bool(session["emitted_valid_frontmatter"])
+            for session in feature_sessions
+        )
+        by_feature[feature] = {
+            "eligible_sessions": len(feature_sessions),
+            "emitted_sessions": emitted,
+            "adoption_rate": (
+                emitted / len(feature_sessions) if feature_sessions else None
+            ),
+        }
+    emitted = sum(bool(session["emitted_valid_frontmatter"]) for session in sessions)
+    return {
+        "schema": "straylight-frontmatter-adoption@v1",
+        "run_id": run.get("run_id"),
+        "benchmark_version": run.get("benchmark_version"),
+        "eligible_sessions": len(sessions),
+        "emitted_sessions": emitted,
+        "adoption_rate": emitted / len(sessions) if sessions else None,
+        "by_feature": by_feature,
+        "sessions": sessions,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1794,6 +1905,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--native-index-timeout", type=float, default=300.0)
     run_parser.add_argument(
+        "--expect-feature-flag",
+        action="append",
+        help=(
+            "fail closed unless /v1/status matches NAME=on|off; supported names are "
+            "supersession_demotion and intention_ledger"
+        ),
+    )
+    run_parser.add_argument(
         "--service-protocol",
         choices=("legacy", "simple"),
         default="simple",
@@ -1805,6 +1924,9 @@ def build_parser() -> argparse.ArgumentParser:
     regrade_parser.add_argument("--input", type=Path, required=True)
     regrade_parser.add_argument("--out", type=Path, required=True)
     regrade_parser.add_argument("--report", type=Path)
+    adoption_parser = subparsers.add_parser("measure-adoption")
+    adoption_parser.add_argument("--input", type=Path, required=True)
+    adoption_parser.add_argument("--out", type=Path, required=True)
     return parser
 
 
@@ -1884,6 +2006,19 @@ def main() -> None:
             "out": str(args.out),
             "report": str(args.report) if args.report else None,
             "summary": run["summary"]["by_condition"],
+        }, indent=2))
+        return
+
+    if args.command == "measure-adoption":
+        measurement = measure_adoption(load_json(args.input))
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(measurement, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({
+            "status": "ok",
+            "out": str(args.out),
+            "eligible_sessions": measurement["eligible_sessions"],
+            "emitted_sessions": measurement["emitted_sessions"],
+            "adoption_rate": measurement["adoption_rate"],
         }, indent=2))
         return
 

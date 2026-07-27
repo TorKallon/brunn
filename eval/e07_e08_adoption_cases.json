@@ -1,0 +1,148 @@
+{
+  "benchmark_version": "frontmatter-adoption-v0.1",
+  "name": "D04 and D05 unprompted frontmatter adoption sessions",
+  "report_title": "D04 and D05 unprompted frontmatter adoption sessions",
+  "report_date": "2026-07-27",
+  "evaluation_model": "frontmatter_adoption",
+  "grading_mode": "concept_tokens_v1",
+  "fixture_domain": "Sanitized correction and prospective-note authoring tasks",
+  "corpus_root": "eval/corpus-recent-work-v0.1",
+  "model": "gpt-5.6-sol",
+  "conditions": ["service_api"],
+  "fixed_pack_chars": 12000,
+  "fixed_pack_chunks": 12,
+  "cases": [
+    {
+      "id": "adopt-correction-calendar",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "correction_authoring",
+      "task": "Write a durable note recording that the bounded calendar search found all seven flight events already present, correcting the earlier provisional assumption that the calendar was empty.",
+      "adoption_eligibility": {"feature": "supersession", "supersedes_path": "Trips/Europe 2026/Calendar request provisional.md"},
+      "claim_slots": {"c1": "written correction"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["seven", "already present"]}], "sources_any": ["Trips/Europe 2026/Calendar reconciliation.md"]}],
+      "forbidden": ["created seven events"]
+    },
+    {
+      "id": "adopt-correction-consent",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "correction_authoring",
+      "task": "Write a durable note recording the owner's final decision to close the standing minor-consent task, correcting the earlier provisional notarization plan.",
+      "adoption_eligibility": {"feature": "supersession", "supersedes_path": "Trips/Europe 2026/Consent provisional.md"},
+      "claim_slots": {"c1": "written correction"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["close", "closed"]}], "sources_any": ["Trips/Europe 2026/Consent and baggage decisions.md"]}],
+      "forbidden": ["notarization is required"]
+    },
+    {
+      "id": "adopt-correction-straylight",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "correction_authoring",
+      "task": "Write a durable owner-readiness note that replaces the earlier green checkpoint with the production-sized timeout and write-amplification findings.",
+      "adoption_eligibility": {"feature": "supersession", "supersedes_path": "Projects/Straylight stale checkpoint.md"},
+      "claim_slots": {"c1": "written correction"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["not ready", "timeout"]}], "sources_any": ["Projects/Straylight current status.md"]}],
+      "forbidden": ["open the owner alpha immediately"]
+    },
+    {
+      "id": "adopt-correction-flight-watch",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "correction_authoring",
+      "task": "Write a durable flight-watch note replacing the prior no-change baseline with the 85-minute earlier Brussels-Geneva departure.",
+      "adoption_eligibility": {"feature": "supersession", "supersedes_path": "Trips/Europe 2026/Flight watch tracker.md"},
+      "claim_slots": {"c1": "written correction"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["85 minutes earlier"]}], "sources_any": ["Trips/Europe 2026/Flight watch update.md"]}],
+      "forbidden": ["no material change"]
+    },
+    {
+      "id": "adopt-correction-briefing",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "correction_authoring",
+      "task": "Write a durable note correcting the previously delivered Orion 3 launch item with the fresh Orion 3.1 release and preserving the delivery-receipt failure.",
+      "adoption_eligibility": {"feature": "supersession", "supersedes_path": "Aether/Morning briefing evidence.md"},
+      "claim_slots": {"c1": "written correction"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["Orion 3.1"]}], "sources_any": ["Aether/Morning briefing evidence.md"]}],
+      "forbidden": ["Orion 3 is the fresh item"]
+    },
+    {
+      "id": "adopt-correction-heartbeat",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "correction_authoring",
+      "task": "Write a durable note recording the later unhealthy automation-chief result in place of the earlier healthy snapshot, without rerunning managed jobs.",
+      "adoption_eligibility": {"feature": "supersession", "supersedes_path": "Aether/Automation status healthy.md"},
+      "claim_slots": {"c1": "written correction"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["delivery receipt missing"]}], "sources_any": ["Aether/Automation status failing.md"]}],
+      "forbidden": ["HEARTBEAT_OK"]
+    },
+    {
+      "id": "adopt-intention-gmail-scopes",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "intention_authoring",
+      "task": "Write a durable note so a future agent reviewing Gmail access on August 3 remembers to compare requested OAuth scopes with the least-privilege list.",
+      "adoption_eligibility": {"feature": "intention"},
+      "claim_slots": {"c1": "written obligation"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["August 3", "2026-08-03"]}], "sources_any": ["Intentions/OAuth scope review.md"]}],
+      "forbidden": ["scope change is authorized"]
+    },
+    {
+      "id": "adopt-intention-payment",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "intention_authoring",
+      "task": "Write a durable note so the next Gmail payment pass remembers to get owner authorization for the USD 480 payment method before acting.",
+      "adoption_eligibility": {"feature": "intention"},
+      "claim_slots": {"c1": "written obligation"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["USD 480"]}], "sources_any": ["Intentions/Gmail ambiguous payment.md"]}],
+      "forbidden": ["pay USD 480"]
+    },
+    {
+      "id": "adopt-intention-receipt",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "intention_authoring",
+      "task": "Write a durable note so the next morning-briefing agent remembers to verify the missing delivery receipt before claiming delivery.",
+      "adoption_eligibility": {"feature": "intention"},
+      "claim_slots": {"c1": "written obligation"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["delivery receipt"]}], "sources_any": ["Intentions/Morning briefing delivery receipt.md"]}],
+      "forbidden": ["delivery is verified"]
+    },
+    {
+      "id": "adopt-intention-inspection",
+      "workload": "Adoption",
+      "scope": "Personal Coordination",
+      "capability": "intention_authoring",
+      "task": "Write a durable note so a future Field Lab renewal review remembers that the equipment inspection still needs source-bearing completion evidence.",
+      "adoption_eligibility": {"feature": "intention"},
+      "claim_slots": {"c1": "written obligation"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["equipment inspection"]}], "sources_any": ["Intentions/Overdue renewal inspection.md"]}],
+      "forbidden": ["inspection is complete"]
+    },
+    {
+      "id": "adopt-intention-rail",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "intention_authoring",
+      "task": "Write a durable note so the next Swiss rail session remembers to compare August 15 fares before any consequential purchase.",
+      "adoption_eligibility": {"feature": "intention"},
+      "claim_slots": {"c1": "written obligation"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["August 15"]}], "sources_any": ["Trips/Europe 2026/Rail purchase checkpoint.md"]}],
+      "forbidden": ["purchase is complete"]
+    },
+    {
+      "id": "adopt-intention-winter",
+      "workload": "Adoption",
+      "scope": "Recent Work",
+      "capability": "intention_authoring",
+      "task": "Write a durable note so the winter briefing agent remembers to revisit Crystal Mountain snow reporting after Thanksgiving weekend.",
+      "adoption_eligibility": {"feature": "intention"},
+      "claim_slots": {"c1": "written obligation"},
+      "rubric": [{"id": "c1", "checks": [{"any": ["Thanksgiving", "winter"]}], "sources_any": ["Intentions/Crystal snow probe.md"]}],
+      "forbidden": ["include a ski report now"]
+    }
+  ]
+}

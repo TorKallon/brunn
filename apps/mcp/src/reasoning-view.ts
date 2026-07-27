@@ -70,6 +70,7 @@ function compactOpenData(data: JsonObject): JsonObject {
           "content_hash",
           "heading",
           "why_selected",
+          "superseded_by",
         ]),
         content: typeof item.text === "string" ? item.text : "",
         content_scope: item.representation === "complete_source"
@@ -96,6 +97,9 @@ function compactOpenData(data: JsonObject): JsonObject {
     }
     const sufficiency = asObject(data.retrieval_sufficiency);
     if (sufficiency) compact.retrieval_sufficiency = sufficiency;
+    if (Array.isArray(data.pending_intentions)) {
+      compact.pending_intentions = data.pending_intentions;
+    }
     return compact;
   }
   const resolvedScope = compactResolvedScope(data.resolved_scope);
@@ -266,6 +270,9 @@ function compactReadItem(item: JsonObject): JsonObject {
       "status",
       "text",
       "metadata",
+      "supersession_chain",
+      "supersession_warning",
+      "current_truth_notice",
     ]);
   }
   const compact = pick(item, ["reference", "view", "status"]);
@@ -382,6 +389,7 @@ function compactSimpleCandidate(candidate: JsonObject): JsonObject {
     "text",
     "additional_sections",
     "verbatim_matches",
+    "superseded_by",
   ]);
   const reference = typeof candidate.reference === "string"
     ? candidate.reference

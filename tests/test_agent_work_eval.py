@@ -19,6 +19,7 @@ from agent_work_eval import (  # noqa: E402
     build_codex_command,
     candidate_matches,
     forbidden_is_asserted,
+    expected_feature_flags,
     grade_answer,
     normalize,
     parse_event_metrics,
@@ -31,11 +32,13 @@ from agent_work_eval import (  # noqa: E402
     summarize,
     subscription_reasoning_environment,
     load_native_provisioning_state,
+    measure_adoption,
     validate,
     write_native_provisioning_state,
 )
 from straylight_eval import BM25Index  # noqa: E402
 from workspace_cli import corpus_hash, load_corpus, safe_compute  # noqa: E402
+from native_memory import authored_frontmatter  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,6 +88,71 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertNotIn("CODEX_BASE_URL", env)
         self.assertNotIn("CODEX_API_KEY", env)
         self.assertNotIn("CARRYSTATE_EVAL_DIRECT_OPENAI", env)
+
+    def test_adoption_measurement_uses_bounded_authored_frontmatter_receipts(self):
+        frontmatter = authored_frontmatter({
+            "content": (
+                "---\nsupersedes:\n"
+                "  - Projects/Old.md\n"
+                "kind: intention\n"
+                "trigger: [gmail, oauth-scopes]\n"
+                "status: pending\n---\n# Correction"
+            )
+        })
+        self.assertEqual(frontmatter["supersedes"], ["Projects/Old.md"])
+        self.assertEqual(frontmatter["trigger"], ["gmail", "oauth-scopes"])
+        self.assertEqual(authored_frontmatter({"content": "---\nkind: intention\n"}), {})
+
+        measurement = measure_adoption({
+            "run_id": "adoption-draw-1",
+            "benchmark_version": "frontmatter-adoption-v0.1",
+            "manifest": {
+                "cases": [{
+                    "id": "correction",
+                    "adoption_eligibility": {
+                        "feature": "supersession",
+                        "supersedes_path": "Projects/Old.md",
+                    },
+                }, {
+                    "id": "intention",
+                    "adoption_eligibility": {"feature": "intention"},
+                }],
+            },
+            "records": [{
+                "case_id": "correction",
+                "condition": "service_api",
+                "service_operations": [{
+                    "operation": "save",
+                    "write_path": "Projects/New.md",
+                    "authored_frontmatter": frontmatter,
+                }],
+            }, {
+                "case_id": "intention",
+                "condition": "service_api",
+                "service_operations": [],
+            }],
+        })
+        self.assertEqual(measurement["eligible_sessions"], 2)
+        self.assertEqual(measurement["emitted_sessions"], 1)
+        self.assertEqual(measurement["adoption_rate"], 0.5)
+        self.assertEqual(
+            measurement["by_feature"]["supersession"]["adoption_rate"],
+            1.0,
+        )
+
+    def test_feature_flag_preflight_is_explicit_and_fail_closed(self):
+        self.assertEqual(
+            expected_feature_flags([
+                "supersession_demotion=on",
+                "intention_ledger=off",
+            ]),
+            {
+                "supersession_demotion": True,
+                "intention_ledger": False,
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "expect-feature-flag"):
+            expected_feature_flags(["unknown=on"])
 
     def test_reasoning_preflight_requires_chatgpt_authentication(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -595,17 +663,17 @@ class AgentWorkEvalTests(unittest.TestCase):
         manifest = validated["manifest"]
 
         self.assertEqual(validated["errors"], [])
-        self.assertEqual(manifest["benchmark_version"], "recent-work-v0.2")
-        self.assertEqual(len(manifest["cases"]), 12)
+        self.assertEqual(manifest["benchmark_version"], "recent-work-v0.3")
+        self.assertEqual(len(manifest["cases"]), 14)
         self.assertEqual(
             sum(len(case["rubric"]) for case in manifest["cases"]),
-            48,
+            56,
         )
-        self.assertEqual(len(validated["documents"]), 17)
-        self.assertEqual(len(validated["chunks"]), 20)
+        self.assertEqual(len(validated["documents"]), 28)
+        self.assertEqual(len(validated["chunks"]), 41)
         self.assertEqual(
             validated["corpus_sha256"],
-            "1e4f1a1da7c87189d20d8ed01b228eee08058bb5c45afffca62d1dd40518528c",
+            "6bc83dbf4366fc3a716799ba300c32f841f9f644dfcc497b2aea0e138ddcb10b",
         )
         self.assertTrue(
             {

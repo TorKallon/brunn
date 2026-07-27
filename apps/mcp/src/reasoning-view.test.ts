@@ -118,6 +118,10 @@ test("simple query keeps exact entry identity and retrieval lanes without score 
             version: 3,
             content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
           }],
+          superseded_by: {
+            path: "Trips/Switzerland/Rail Plan current.md",
+            head_entry: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bf",
+          },
           score: 9.81,
           lanes: ["exact", "lexical", "lexical"],
         }],
@@ -148,6 +152,10 @@ test("simple query keeps exact entry identity and retrieval lanes without score 
       version: 3,
       content_hash: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     }],
+    superseded_by: {
+      path: "Trips/Switzerland/Rail Plan current.md",
+      head_entry: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bf",
+    },
     lanes: ["exact", "lexical"],
   });
   assert.equal(JSON.stringify(candidate).includes("score"), false);
@@ -247,17 +255,32 @@ test("simple open preserves pointer leads and continuation pagination", () => {
         version: 4,
         representation: "complete_source",
         text: "Current source.",
+        superseded_by: {
+          path: "Work/Newer.md",
+          head_entry: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bf",
+        },
       }],
       evidence_leads: [{
         reference: "entry:019f8530-e5f6-77d3-a373-052ee8cd24be",
         path: "Work/Related.md",
         title: "Related",
         version: 2,
+        superseded_by: {
+          path: "Work/Newest.md",
+          head_entry: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bf",
+        },
       }],
       changes_since_checkpoint: [{ generation: 201, path: "Work/Current.md" }],
       changes_truncated: true,
       next_changes_generation: 201,
       checkpoint_text_truncated: false,
+      pending_intentions: [{
+        path: "Intentions/Follow up.md",
+        title_line: "Follow up",
+        due: "2026-08-03",
+        status_note: "pending",
+        matched_terms: ["gmail"],
+      }],
     },
   });
 
@@ -267,6 +290,17 @@ test("simple open preserves pointer leads and continuation pagination", () => {
     path: "Work/Related.md",
     title: "Related",
     version: 2,
+    superseded_by: {
+      path: "Work/Newest.md",
+      head_entry: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bf",
+    },
+  }]);
+  assert.deepEqual(data.pending_intentions, [{
+    path: "Intentions/Follow up.md",
+    title_line: "Follow up",
+    due: "2026-08-03",
+    status_note: "pending",
+    matched_terms: ["gmail"],
   }]);
   assert.equal(data.changes_truncated, true);
   assert.equal(data.next_changes_generation, 201);
@@ -338,6 +372,46 @@ test("read keeps exact source text and continuation without audit-only duplicati
   });
   assert.equal(JSON.stringify(item).includes("content_hash"), false);
   assert.equal(JSON.stringify(item).includes("start_byte"), false);
+});
+
+test("simple current-truth reads preserve chain and warning metadata", () => {
+  const compact = compactReasoningResponse("memory.read", {
+    status: "complete",
+    data: {
+      items: [{
+        reference: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bd",
+        path: "Work/Current.md",
+        title: "Current",
+        version: 3,
+        media_type: "text/markdown",
+        view: "current_truth",
+        text: "Current text.",
+        supersession_chain: [
+          {
+            path: "Work/Old.md",
+            entry_ref: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bc",
+          },
+          {
+            path: "Work/Current.md",
+            entry_ref: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bd",
+          },
+        ],
+        supersession_warning: {
+          kind: "supersession_cycle",
+          path: "Work/Old.md",
+          message: "cycle",
+        },
+      }],
+    },
+  });
+  const item = ((compact.data as Record<string, unknown>).items as Array<Record<string, unknown>>)[0];
+  assert.equal(item?.view, "current_truth");
+  assert.equal((item?.supersession_chain as unknown[]).length, 2);
+  assert.deepEqual(item?.supersession_warning, {
+    kind: "supersession_cycle",
+    path: "Work/Old.md",
+    message: "cycle",
+  });
 });
 
 test("checkpoint receipts keep lineage but drop duplicated write machinery", () => {

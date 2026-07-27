@@ -1,3 +1,8 @@
+---
+supersedes:
+  - Projects/Straylight stale checkpoint.md
+---
+
 # Straylight current status
 
 Updated: 2026-07-26T12:00:00-07:00.

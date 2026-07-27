@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -32,6 +33,10 @@ use crate::{
     ingest::{DocumentChunk, normalize_document},
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId},
     usage::UsageOperation,
+    workspace_features::{
+        DerivedFrontmatter, SupersessionAnnotation, WorkspaceFeatureDocument,
+        WorkspaceFeatureSnapshot, parse_frontmatter, supersession_warnings,
+    },
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -304,6 +309,7 @@ struct Candidate {
     lanes: Vec<String>,
     sections: Vec<CandidateSection>,
     verbatim_matches: Vec<VerbatimMatch>,
+    superseded_by: Option<SupersessionAnnotation>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -404,6 +410,7 @@ struct PreparedMarkdown {
     chunks: Vec<DocumentChunk>,
     embeddings: Vec<Option<Vector>>,
     expected_version: Option<i64>,
+    frontmatter: DerivedFrontmatter,
 }
 
 #[derive(Clone, Debug)]
@@ -428,6 +435,7 @@ struct BulkMarkdown {
     metadata: Value,
     chunks: Vec<DocumentChunk>,
     embeddings: Vec<Option<Vector>>,
+    frontmatter: DerivedFrontmatter,
 }
 
 fn markdown_media_type() -> String {
@@ -452,6 +460,9 @@ pub async fn open(
     let generation_started = Instant::now();
     let generation = current_generation(&state, &auth).await?;
     let generation_ms = elapsed_ms(generation_started);
+    let features_started = Instant::now();
+    let features = feature_snapshot(&state, &auth, generation).await?;
+    let features_ms = elapsed_ms(features_started);
     let checkpoint_started = Instant::now();
     let mut checkpoint = match request.resume_checkpoint_ref.as_deref() {
         Some(reference) => Some(read_checkpoint(&state, &auth, reference).await?),
@@ -477,7 +488,14 @@ pub async fn open(
         apply_checkpoint_budget(&mut checkpoint, budget);
     let retrieval_started = Instant::now();
     let (search, hinted) = tokio::join!(
-        search_one(&state, &auth, &request.task, OPEN_CANDIDATE_LIMIT, &[]),
+        search_one(
+            &state,
+            &auth,
+            &request.task,
+            OPEN_CANDIDATE_LIMIT,
+            &[],
+            features.as_deref(),
+        ),
         open_hint_candidates(&state, &auth, &request.hints)
     );
     let retrieval_wall_ms = elapsed_ms(retrieval_started);
@@ -528,6 +546,11 @@ pub async fn open(
         merge_candidate(&mut merged, candidate);
     }
     let mut candidates = merged.into_values().collect::<Vec<_>>();
+    annotate_candidates(
+        &mut candidates,
+        features.as_deref(),
+        state.config.supersession_demotion,
+    );
     sort_candidates(&mut candidates);
     candidates.truncate(OPEN_CANDIDATE_LIMIT);
     let continuation_evidence = candidates
@@ -561,7 +584,7 @@ pub async fn open(
         .collect::<Vec<_>>();
     record_candidate_usage(&state, &auth, &candidates);
 
-    let mut envelope = WorkspaceEnvelope::complete(json!({
+    let mut response_data = json!({
         "workspace_generation": generation,
         "authorization_scope": request.hints.authorization_scope,
         "evidence": evidence,
@@ -579,7 +602,16 @@ pub async fn open(
             "selected_source_count": evidence.len(),
             "pointer_source_count": evidence_leads.len()
         }
-    }));
+    });
+    if state.config.intention_ledger {
+        response_data["pending_intentions"] = json!(
+            features
+                .as_deref()
+                .map(|snapshot| snapshot.pending_intentions(&request.task))
+                .unwrap_or_default()
+        );
+    }
+    let mut envelope = WorkspaceEnvelope::complete(response_data);
     envelope.session_id = Some(session_id);
     envelope.corpus_revision = Some(format!("generation:{generation}"));
     if checkpoint_text_truncated {
@@ -615,10 +647,15 @@ pub async fn open(
     }
     let total_ms = elapsed_ms(total_started);
     if state.config.observability_timings_ms {
-        let attributed_ms =
-            generation_ms + checkpoint_read_ms + changes_ms + retrieval_wall_ms + hydrate_ms;
+        let attributed_ms = generation_ms
+            + features_ms
+            + checkpoint_read_ms
+            + changes_ms
+            + retrieval_wall_ms
+            + hydrate_ms;
         envelope.timings_ms = Some(json!({
             "generation": round_ms(generation_ms),
+            "features": round_ms(features_ms),
             "checkpoint_read": round_ms(checkpoint_read_ms),
             "changes": round_ms(changes_ms),
             "retrieval_wall": round_ms(retrieval_wall_ms),
@@ -642,6 +679,12 @@ pub async fn search(
     auth.require(Capability::Query)?;
     let started = Instant::now();
     let budget_options = SearchBudgetOptions::from_request(&state.config, request.token_budget);
+    let generation_started = Instant::now();
+    let generation = current_generation(&state, &auth).await?;
+    let generation_ms = elapsed_ms(generation_started);
+    let features_started = Instant::now();
+    let features = feature_snapshot(&state, &auth, generation).await?;
+    let features_ms = elapsed_ms(features_started);
     let queries = if request.queries.is_empty() {
         vec![SearchQuery {
             id: Some("q0".to_owned()),
@@ -663,9 +706,18 @@ pub async fn search(
         futures::stream::iter(queries.into_iter().enumerate().map(|(index, query)| {
             let state = state.clone();
             let auth = auth.clone();
+            let features = features.clone();
             async move {
                 let limit = query.limit.unwrap_or(8).clamp(1, MAX_SEARCH_LIMIT);
-                let result = search_one(&state, &auth, &query.query, limit, &query.modes).await?;
+                let result = search_one(
+                    &state,
+                    &auth,
+                    &query.query,
+                    limit,
+                    &query.modes,
+                    features.as_deref(),
+                )
+                .await?;
                 Ok::<_, ApiError>((index, query, result))
             }
         }))
@@ -773,9 +825,6 @@ pub async fn search(
     }
     let budget_ms = elapsed_ms(budget_started);
     record_candidate_usage(&state, &auth, &all_candidates);
-    let generation_started = Instant::now();
-    let generation = current_generation(&state, &auth).await?;
-    let generation_ms = elapsed_ms(generation_started);
     let mut response_data = serde_json::Map::from_iter([
         ("workspace_generation".to_owned(), json!(generation)),
         ("results".to_owned(), Value::Array(result_sets)),
@@ -795,12 +844,14 @@ pub async fn search(
     }
     let total_ms = elapsed_ms(started);
     if state.config.observability_timings_ms {
-        let attributed_ms = query_execution_ms + budget_ms + generation_ms;
+        let attributed_ms =
+            query_execution_ms + budget_ms + generation_ms + features_ms;
         envelope.timings_ms = Some(json!({
             "queries": query_timings,
             "retrieval_wall": round_ms(query_execution_ms),
             "budget": round_ms(budget_ms),
             "generation": round_ms(generation_ms),
+            "features": round_ms(features_ms),
             "unattributed": round_ms((total_ms - attributed_ms).max(0.0)),
             "total": round_ms(total_ms),
         }));
@@ -823,6 +874,8 @@ pub async fn read(
         ));
     }
     let requested_count = request.requests.len();
+    let generation = current_generation(&state, &auth).await?;
+    let features = feature_snapshot(&state, &auth, generation).await?;
     let mut items = Vec::with_capacity(requested_count);
     let mut used_entries = Vec::new();
     let mut remaining_chars = MAX_READ_RESPONSE_CHARS;
@@ -832,8 +885,9 @@ pub async fn read(
         |(index, item)| {
             let state = state.clone();
             let auth = auth.clone();
+            let features = features.clone();
             async move {
-                let entry = resolve_entry_version(
+                let mut entry = resolve_entry_version(
                     &state,
                     &auth,
                     item.path.as_deref(),
@@ -841,15 +895,39 @@ pub async fn read(
                     item.version,
                 )
                 .await;
-                (index, item, entry)
+                let mut current_truth = None;
+                let mut disabled_notice = false;
+                if item.view.as_deref() == Some("current_truth") {
+                    if state.config.supersession_demotion {
+                        if let (Ok(requested), Some(snapshot)) = (&entry, features.as_deref()) {
+                            let resolution = snapshot.resolve_current_truth(&requested.path);
+                            if resolution.warning.is_none()
+                                && resolution.head_path != requested.path
+                            {
+                                entry = resolve_entry_version(
+                                    &state,
+                                    &auth,
+                                    Some(&resolution.head_path),
+                                    None,
+                                    None,
+                                )
+                                .await;
+                            }
+                            current_truth = Some(resolution);
+                        }
+                    } else {
+                        disabled_notice = true;
+                    }
+                }
+                (index, item, entry, current_truth, disabled_notice)
             }
         },
     ))
     .buffer_unordered(8)
     .collect::<Vec<_>>()
     .await;
-    resolved.sort_by_key(|(index, _, _)| *index);
-    for (_, item, resolved_entry) in resolved {
+    resolved.sort_by_key(|(index, _, _, _, _)| *index);
+    for (_, item, resolved_entry, current_truth, disabled_notice) in resolved {
         if remaining_chars == 0 {
             skipped_requests += 1;
             continue;
@@ -883,7 +961,18 @@ pub async fn read(
             .unwrap_or(256_000)
             .clamp(1, MAX_EXACT_READ_CHARS)
             .min(remaining_chars);
-        let rendered = render_read(&entry, &item, max_chars)?;
+        let mut rendered = render_read(&entry, &item, max_chars)?;
+        if let Some(resolution) = current_truth {
+            rendered["supersession_chain"] = json!(resolution.chain);
+            if let Some(warning) = resolution.warning {
+                rendered["supersession_warning"] = json!(warning);
+            }
+        } else if disabled_notice {
+            rendered["current_truth_notice"] = Value::String(
+                "supersession_demotion is disabled; the requested document was returned unchanged"
+                    .to_owned(),
+            );
+        }
         remaining_chars = remaining_chars.saturating_sub(
             rendered
                 .get("text")
@@ -895,7 +984,6 @@ pub async fn read(
     }
     record_entry_usage(&state, &auth, &used_entries, UsageOperation::Read);
     let returned_entries = used_entries.len();
-    let generation = current_generation(&state, &auth).await?;
     let mut envelope = WorkspaceEnvelope::complete(json!({
         "workspace_generation": generation,
         "items": items,
@@ -1286,6 +1374,7 @@ pub async fn delete_entry(
         }
     }
     tx.commit().await?;
+    state.workspace_features.invalidate(auth.user_id.0).await;
     let mut envelope = WorkspaceEnvelope::complete(json!({
         "entry_ref": format!("entry:{entry_id}"),
         "path": path,
@@ -2802,6 +2891,17 @@ pub async fn import_evaluation(
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
+    state.workspace_features.invalidate(user_id).await;
+    metrics::histogram!("simple.import.feature_declarations").record(
+        prepared
+            .iter()
+            .chain(&deltas)
+            .filter(|document| {
+                !document.frontmatter.supersedes.is_empty()
+                    || document.frontmatter.kind.as_deref() == Some("intention")
+            })
+            .count() as f64,
+    );
     let chunk_count = prepared
         .iter()
         .chain(&deltas)
@@ -2927,12 +3027,67 @@ async fn current_generation(state: &AppState, auth: &AuthContext) -> ApiResult<i
     Ok(generation)
 }
 
+async fn feature_snapshot(
+    state: &AppState,
+    auth: &AuthContext,
+    generation: i64,
+) -> ApiResult<Option<Arc<WorkspaceFeatureSnapshot>>> {
+    if !state.config.supersession_demotion && !state.config.intention_ledger {
+        return Ok(None);
+    }
+    if let Some(snapshot) = state
+        .workspace_features
+        .get(auth.user_id.0, generation)
+        .await
+    {
+        return Ok(Some(snapshot));
+    }
+    let mut tx = state.begin_read(auth).await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT entry.id,entry.path,entry.title,coalesce(version.content,'') AS content
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND entry.deleted_at IS NULL
+          AND entry.kind='markdown'
+        ORDER BY entry.path
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let documents = rows
+        .into_iter()
+        .map(|row| WorkspaceFeatureDocument {
+            entry_id: row.get("id"),
+            path: row.get("path"),
+            title: row.get("title"),
+            content: row.get("content"),
+        })
+        .collect();
+    Ok(Some(
+        state
+            .workspace_features
+            .put(
+                auth.user_id.0,
+                WorkspaceFeatureSnapshot::build(generation, documents),
+            )
+            .await,
+    ))
+}
+
 async fn search_one(
     state: &AppState,
     auth: &AuthContext,
     query: &str,
     limit: usize,
     requested_modes: &[String],
+    features: Option<&WorkspaceFeatureSnapshot>,
 ) -> ApiResult<(Vec<Candidate>, Vec<&'static str>, RetrievalTimings)> {
     let total_started = Instant::now();
     let mut timings = RetrievalTimings::default();
@@ -2967,7 +3122,11 @@ async fn search_one(
         let started = Instant::now();
         if lexical_enabled {
             (
-                bounded_retrieval_lane("lexical", lexical_candidates(state, auth, query)).await,
+                bounded_retrieval_lane(
+                    "lexical",
+                    lexical_candidates(state, auth, query, features),
+                )
+                .await,
                 elapsed_ms(started),
             )
         } else {
@@ -3013,7 +3172,11 @@ async fn search_one(
     timings.semantic_ready = elapsed_ms(semantic_ready_started);
     if semantic_enabled && semantic_ready {
         let semantic_started = Instant::now();
-        match bounded_semantic_lane(semantic_candidates(state, auth, query)).await {
+        match bounded_semantic_lane(
+            semantic_candidates(state, auth, query, features),
+        )
+        .await
+        {
             Ok(result) => {
                 timings.embed = result.embed_ms;
                 timings.semantic_db = result.database_ms;
@@ -3033,6 +3196,11 @@ async fn search_one(
         failures.push("semantic_unavailable");
     }
     let mut candidates = merged.into_values().collect::<Vec<_>>();
+    annotate_candidates(
+        &mut candidates,
+        features,
+        state.config.supersession_demotion,
+    );
     sort_candidates(&mut candidates);
     candidates.truncate(limit);
     timings.total = elapsed_ms(total_started);
@@ -3238,6 +3406,7 @@ async fn exact_candidates(
                     score: 10.0,
                 }],
                 verbatim_matches,
+                superseded_by: None,
             }
         })
         .collect())
@@ -3247,19 +3416,38 @@ async fn lexical_candidates(
     state: &AppState,
     auth: &AuthContext,
     query: &str,
+    features: Option<&WorkspaceFeatureSnapshot>,
 ) -> ApiResult<Vec<Candidate>> {
     let mut tx = state.begin_read(auth).await?;
     let anchors = search_anchors(query);
     let mut candidates = Vec::new();
     let mut anchor_hit = false;
     for anchor in &anchors {
-        let anchor_candidates = fetch_lexical_candidates(&mut tx, anchor, query).await?;
+        let anchor_candidates = fetch_lexical_candidates(
+            &mut tx,
+            anchor,
+            query,
+            features,
+            state.config.supersession_demotion,
+            state.config.supersession_demotion_weight,
+        )
+        .await?;
         anchor_hit |= !anchor_candidates.is_empty();
         candidates.extend(anchor_candidates);
     }
     if !anchor_hit {
         let focused = focused_lexical_query(query).unwrap_or_else(|| query.trim().to_owned());
-        candidates.extend(fetch_lexical_candidates(&mut tx, &focused, query).await?);
+        candidates.extend(
+            fetch_lexical_candidates(
+                &mut tx,
+                &focused,
+                query,
+                features,
+                state.config.supersession_demotion,
+                state.config.supersession_demotion_weight,
+            )
+            .await?,
+        );
     }
     tx.commit().await?;
     let mut merged = HashMap::new();
@@ -3273,6 +3461,9 @@ async fn fetch_lexical_candidates(
     tx: &mut Transaction<'_, Postgres>,
     retrieval_query: &str,
     scoring_query: &str,
+    features: Option<&WorkspaceFeatureSnapshot>,
+    supersession_enabled: bool,
+    supersession_weight: f64,
 ) -> ApiResult<Vec<Candidate>> {
     let rows = sqlx::query(
         r#"
@@ -3293,7 +3484,8 @@ async fn fetch_lexical_candidates(
             let score = 3.0
                 + row.get::<f64, _>("score")
                 + lexical_candidate_bonus(scoring_query, &path, &title, &heading, &excerpt)
-                - derived_penalty(&path);
+                - derived_penalty(&path)
+                - supersession_penalty(&path, features, supersession_enabled, supersession_weight);
             Candidate {
                 entry_id: row.get("entry_id"),
                 score,
@@ -3310,6 +3502,7 @@ async fn fetch_lexical_candidates(
                     score,
                 }],
                 verbatim_matches: vec![],
+                superseded_by: None,
             }
         })
         .collect())
@@ -3319,6 +3512,7 @@ async fn semantic_candidates(
     state: &AppState,
     auth: &AuthContext,
     query: &str,
+    features: Option<&WorkspaceFeatureSnapshot>,
 ) -> ApiResult<SemanticCandidates> {
     let embed_started = Instant::now();
     let vectors = state.embedder.embed(&[query.to_owned()]).await?;
@@ -3350,7 +3544,13 @@ async fn semantic_candidates(
             let score = 2.0
                 + (1.0 - distance).max(0.0)
                 + lexical_candidate_bonus(query, &path, &title, &heading, &excerpt)
-                - derived_penalty(&path);
+                - derived_penalty(&path)
+                - supersession_penalty(
+                    &path,
+                    features,
+                    state.config.supersession_demotion,
+                    state.config.supersession_demotion_weight,
+                );
             Candidate {
                 entry_id: row.get("entry_id"),
                 score,
@@ -3367,6 +3567,7 @@ async fn semantic_candidates(
                     score,
                 }],
                 verbatim_matches: vec![],
+                superseded_by: None,
             }
         })
         .collect();
@@ -3384,6 +3585,35 @@ fn derived_penalty(path: &str) -> f64 {
         1.0
     } else {
         0.0
+    }
+}
+
+fn supersession_penalty(
+    path: &str,
+    features: Option<&WorkspaceFeatureSnapshot>,
+    enabled: bool,
+    weight: f64,
+) -> f64 {
+    if enabled && features.is_some_and(|snapshot| snapshot.superseded_by(path).is_some()) {
+        weight
+    } else {
+        0.0
+    }
+}
+
+fn annotate_candidates(
+    candidates: &mut [Candidate],
+    features: Option<&WorkspaceFeatureSnapshot>,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+    let Some(features) = features else {
+        return;
+    };
+    for candidate in candidates {
+        candidate.superseded_by = features.superseded_by(&candidate.path);
     }
 }
 
@@ -3797,6 +4027,9 @@ fn render_budgeted_search_candidate(
             Value::Array(verbatim_matches),
         );
     }
+    if let Some(superseded_by) = &candidate.superseded_by {
+        rendered.insert("superseded_by".to_owned(), json!(superseded_by));
+    }
     Value::Object(rendered)
 }
 
@@ -3913,6 +4146,9 @@ fn render_search_candidate(candidate: &Candidate, remaining_verbatim_chars: &mut
             Value::Array(verbatim_matches),
         );
     }
+    if let Some(superseded_by) = &candidate.superseded_by {
+        rendered.insert("superseded_by".to_owned(), json!(superseded_by));
+    }
     Value::Object(rendered)
 }
 
@@ -3931,6 +4167,9 @@ fn render_evidence_lead(candidate: &Candidate) -> Value {
             "heading".to_owned(),
             Value::String(candidate.heading.clone()),
         );
+    }
+    if let Some(superseded_by) = &candidate.superseded_by {
+        rendered.insert("superseded_by".to_owned(), json!(superseded_by));
     }
     Value::Object(rendered)
 }
@@ -4011,6 +4250,7 @@ async fn open_hint_candidates(
                 lanes: vec!["hint".to_owned()],
                 sections: vec![],
                 verbatim_matches: vec![],
+                superseded_by: None,
             }),
             Err(ApiError::Public {
                 status: StatusCode::NOT_FOUND,
@@ -4076,6 +4316,12 @@ async fn hydrate_candidates(
     let mut selections = Vec::new();
     let mut complete_ids = Vec::new();
     for (index, candidate) in candidates.iter().take(HYDRATED_DOCUMENT_LIMIT).enumerate() {
+        if let Some(annotation) = &candidate.superseded_by {
+            let annotation_chars = serde_json::to_string(annotation)
+                .map(|value| value.chars().count())
+                .unwrap_or(0);
+            remaining_chars = remaining_chars.saturating_sub(annotation_chars);
+        }
         if remaining_chars == 0 {
             break;
         }
@@ -4164,12 +4410,21 @@ async fn hydrate_candidates(
                 Value::String(candidate.heading.clone()),
             );
         }
+        if let Some(superseded_by) = &candidate.superseded_by {
+            item.insert("superseded_by".to_owned(), json!(superseded_by));
+        }
         evidence.push(Value::Object(item));
     }
     Ok(evidence)
 }
 
 fn truncate_candidate_evidence(candidate: &mut Candidate, remaining_chars: &mut usize) -> bool {
+    if let Some(annotation) = &candidate.superseded_by {
+        let annotation_chars = serde_json::to_string(annotation)
+            .map(|value| value.chars().count())
+            .unwrap_or(0);
+        *remaining_chars = remaining_chars.saturating_sub(annotation_chars);
+    }
     let original_excerpt_chars = candidate.excerpt.chars().count();
     let retained_excerpt = truncate_chars(&candidate.excerpt, (*remaining_chars).min(2_400));
     *remaining_chars = remaining_chars.saturating_sub(retained_excerpt.chars().count());
@@ -4423,7 +4678,7 @@ fn render_read(entry: &EntryRow, request: &ReadItem, max_chars: usize) -> ApiRes
     let content = entry.content.as_deref().unwrap_or("");
     let view = request.view.as_deref().unwrap_or("full");
     let selected = match view {
-        "full" | "current_state" => content.to_owned(),
+        "full" | "current_state" | "current_truth" => content.to_owned(),
         "range" => {
             let start = request.start.unwrap_or(1).max(1);
             let end = request.end.unwrap_or(start + 199).max(start);
@@ -4478,7 +4733,7 @@ fn render_read(entry: &EntryRow, request: &ReadItem, max_chars: usize) -> ApiRes
     Ok(Value::Object(rendered))
 }
 
-async fn prepare_markdown(_state: &AppState, request: WriteRequest) -> ApiResult<PreparedMarkdown> {
+async fn prepare_markdown(state: &AppState, request: WriteRequest) -> ApiResult<PreparedMarkdown> {
     validate_path(&request.path)?;
     if request.content.len() > MAX_WRITE_BYTES {
         return Err(ApiError::public(
@@ -4493,6 +4748,11 @@ async fn prepare_markdown(_state: &AppState, request: WriteRequest) -> ApiResult
         ));
     }
     let normalized = normalize_document(&request.path, &request.content);
+    let frontmatter = if state.config.supersession_demotion || state.config.intention_ledger {
+        parse_frontmatter(&request.content)
+    } else {
+        DerivedFrontmatter::default()
+    };
     let embeddings = vec![None; normalized.chunks.len()];
     let mut metadata = match request.metadata {
         Value::Object(values) => values,
@@ -4520,6 +4780,7 @@ async fn prepare_markdown(_state: &AppState, request: WriteRequest) -> ApiResult
         chunks: normalized.chunks,
         embeddings,
         expected_version: request.expected_version,
+        frontmatter,
     })
 }
 
@@ -4531,6 +4792,20 @@ async fn commit_markdown(
     let started = Instant::now();
     let path = prepared.path.clone();
     let content_sha256 = prepared.content_sha256.clone();
+    let frontmatter = if state.config.supersession_demotion {
+        prepared.frontmatter.clone()
+    } else {
+        DerivedFrontmatter::default()
+    };
+    let warnings = if frontmatter.supersedes.is_empty() {
+        Vec::new()
+    } else {
+        let generation = current_generation(state, auth).await?;
+        match feature_snapshot(state, auth, generation).await? {
+            Some(snapshot) => supersession_warnings(&frontmatter, &snapshot),
+            None => Vec::new(),
+        }
+    };
     let mut tx = state.begin_write(auth).await?;
     require_local_publish_lock(
         &mut tx,
@@ -4553,6 +4828,7 @@ async fn commit_markdown(
         None => max_generation_in_tx(&mut tx, auth.user_id.0).await?,
     };
     tx.commit().await?;
+    state.workspace_features.invalidate(auth.user_id.0).await;
     metrics::histogram!("simple.write.duration_ms")
         .record(started.elapsed().as_secs_f64() * 1_000.0);
     metrics::histogram!("simple.write.changed_entries").record(if result.no_op {
@@ -4560,7 +4836,7 @@ async fn commit_markdown(
     } else {
         1.0
     });
-    Ok(json!({
+    let mut receipt = json!({
         "entry_ref": format!("entry:{}", result.entry_id),
         "version_ref": result.version_id.map(|id| format!("entry-version:{id}")),
         "path": path,
@@ -4576,7 +4852,11 @@ async fn commit_markdown(
         },
         "metadata_only": result.metadata_only,
         "no_op": result.no_op
-    }))
+    });
+    if !warnings.is_empty() {
+        receipt["supersession_warnings"] = json!(warnings);
+    }
+    Ok(receipt)
 }
 
 pub(crate) async fn write_markdown_as_worker(
@@ -4640,6 +4920,7 @@ pub(crate) async fn write_markdown_as_worker(
         None => max_generation_in_tx(&mut tx, user_id).await?,
     };
     tx.commit().await?;
+    state.workspace_features.invalidate(user_id).await;
     Ok(Some(json!({
         "entry_ref": format!("entry:{}", result.entry_id),
         "version_ref": result.version_id.map(|id| format!("entry-version:{id}")),
@@ -5938,7 +6219,7 @@ fn derive_eval_token(secret: &str, external_ref: &str, idempotency_key: &str) ->
 }
 
 async fn prepare_bulk_documents(
-    _state: &AppState,
+    state: &AppState,
     documents: &[crate::eval_service::EvalDocument],
 ) -> ApiResult<Vec<BulkMarkdown>> {
     let normalized = documents
@@ -5964,6 +6245,11 @@ async fn prepare_bulk_documents(
             metadata: json!({"kind": "evaluation_import"}),
             chunks: document.chunks,
             embeddings,
+            frontmatter: if state.config.supersession_demotion || state.config.intention_ledger {
+                parse_frontmatter(&source.content)
+            } else {
+                DerivedFrontmatter::default()
+            },
         });
     }
     Ok(prepared)
@@ -6271,6 +6557,8 @@ mod tests {
             score: 10.0,
             lanes: vec!["lexical".to_owned()],
             sections,
+            verbatim_matches: vec![],
+            superseded_by: None,
         }
     }
 
@@ -6595,6 +6883,7 @@ mod tests {
                 content_hash: format!("sha256:{}", "a".repeat(64)),
                 truncated: false,
             }],
+            superseded_by: None,
         };
         let mut remaining = 5;
 
@@ -6649,6 +6938,7 @@ mod tests {
                 },
             ],
             verbatim_matches: vec![],
+            superseded_by: None,
         };
         let mut remaining_verbatim_chars = MAX_VERBATIM_RESPONSE_CHARS;
         let rendered = render_search_candidate(&candidate, &mut remaining_verbatim_chars);
@@ -6718,6 +7008,7 @@ mod tests {
                 },
             ],
             verbatim_matches: vec![],
+            superseded_by: None,
         };
         let mut remaining = 5;
         assert!(truncate_candidate_evidence(&mut candidate, &mut remaining));

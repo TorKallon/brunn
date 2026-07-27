@@ -20,6 +20,7 @@ use crate::{
     object_store::ObjectStore,
     quota::{PreauthRateLimiter, RequestRateLimiter},
     usage::UsageTracker,
+    workspace_features::WorkspaceFeatureCache,
 };
 
 #[derive(Clone)]
@@ -35,6 +36,7 @@ pub struct AppState {
     pub preauth_rate_limiter: PreauthRateLimiter,
     pub request_rate_limiter: RequestRateLimiter,
     pub usage_tracker: UsageTracker,
+    pub workspace_features: WorkspaceFeatureCache,
 }
 
 impl AppState {
@@ -69,6 +71,7 @@ impl AppState {
         let request_rate_limiter = RequestRateLimiter::new(config.requests_per_minute);
         let transfer_limiter = Arc::new(Semaphore::new(config.max_concurrent_transfers));
         let usage_tracker = UsageTracker::start(admin_pool.clone());
+        let workspace_features = WorkspaceFeatureCache::default();
         Ok(Self {
             config,
             auth_pool,
@@ -81,6 +84,7 @@ impl AppState {
             preauth_rate_limiter,
             request_rate_limiter,
             usage_tracker,
+            workspace_features,
         })
     }
 

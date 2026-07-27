@@ -1,3 +1,8 @@
+---
+supersedes:
+  - Trips/Europe 2026/Consent provisional.md
+---
+
 # Consent, baggage, and payment decisions
 
 ## Minor-consent correction

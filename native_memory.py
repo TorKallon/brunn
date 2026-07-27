@@ -155,7 +155,67 @@ def response_payload_metrics(rendered: str) -> dict[str, Any]:
             "asset_content_hash": asset.get("content_hash"),
             "asset_size_bytes": asset.get("size_bytes"),
         })
+    data = body.get("data") if isinstance(body, dict) else None
+    pending = data.get("pending_intentions") if isinstance(data, dict) else None
+    if isinstance(pending, list):
+        result["pending_intentions"] = [
+            item for item in pending if isinstance(item, dict)
+        ]
+        result["pending_intention_chars"] = len(
+            json.dumps(pending, separators=(",", ":"), ensure_ascii=False)
+        )
     return result
+
+
+def authored_frontmatter(payload: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(payload, dict) or not isinstance(payload.get("content"), str):
+        return {}
+    bounded = payload["content"].encode("utf-8")[: 4 * 1024].decode(
+        "utf-8",
+        errors="ignore",
+    )
+    lines = bounded.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    values: dict[str, Any] = {}
+    active_list: str | None = None
+    closed = False
+    for raw in lines[1:]:
+        if raw.strip() == "---":
+            closed = True
+            break
+        if raw[:1].isspace():
+            item = raw.strip()
+            if active_list and item.startswith("- "):
+                values.setdefault(active_list, []).append(
+                    item[2:].strip().strip("\"'")
+                )
+            continue
+        if ":" not in raw:
+            active_list = None
+            continue
+        key, value = (part.strip() for part in raw.split(":", 1))
+        if key not in {"supersedes", "kind", "trigger", "due", "status"}:
+            active_list = None
+            continue
+        active_list = key if key in {"supersedes", "trigger"} and not value else None
+        if key in {"supersedes", "trigger"}:
+            if value:
+                inline = value.removeprefix("[").removesuffix("]")
+                values[key] = [
+                    item.strip().strip("\"'")
+                    for item in inline.split(",")
+                    if item.strip()
+                ][:32]
+        elif value:
+            values[key] = value.strip("\"'")[:80]
+    if not closed:
+        return {}
+    return {
+        key: value
+        for key, value in values.items()
+        if value not in (None, "", [])
+    }
 
 
 def initialization_marker(path: Path) -> Path:
@@ -359,6 +419,7 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
                         "content_hash",
                         "heading",
                         "why_selected",
+                        "superseded_by",
                     )
                     if item.get(key) not in (None, "", [], {})
                 },
@@ -390,6 +451,8 @@ def compact_open_data(data: dict[str, Any]) -> dict[str, Any]:
                 compact[key] = data[key]
         if isinstance(data.get("retrieval_sufficiency"), dict):
             compact["retrieval_sufficiency"] = data["retrieval_sufficiency"]
+        if isinstance(data.get("pending_intentions"), list):
+            compact["pending_intentions"] = data["pending_intentions"]
         if data.get("workspace_generation") is not None:
             compact["workspace_generation"] = data["workspace_generation"]
         return compact
@@ -578,6 +641,9 @@ def compact_read_item(item: dict[str, Any]) -> dict[str, Any]:
                 "status",
                 "text",
                 "metadata",
+                "supersession_chain",
+                "supersession_warning",
+                "current_truth_notice",
             )
             if item.get(key) not in (None, "", [], {})
         }
@@ -743,6 +809,7 @@ def compact_simple_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
             "heading",
             "excerpt",
             "additional_sections",
+            "superseded_by",
             "content_hash",
         )
         if key in candidate and candidate[key] not in (None, [], {})
@@ -1223,7 +1290,7 @@ def build_parser() -> argparse.ArgumentParser:
     read.add_argument("--path", action="append")
     read.add_argument(
         "--view",
-        choices=["full", "range", "outline", "neighbors", "structured"],
+        choices=["full", "current_truth", "range", "outline", "neighbors", "structured"],
     )
     read.add_argument("--start", type=int)
     read.add_argument("--end", type=int)
@@ -1370,6 +1437,14 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
         client = NativeApiClient(run_id=args.run_id, case_id=args.case_id)
         response = client.request(method, path, payload)
         rendered = render_native_response(args.command, response, pretty=args.pretty)
+        result_metrics = response_payload_metrics(rendered)
+        if args.command == "save" and args.protocol == "simple":
+            result_metrics["write_path"] = (
+                payload.get("path") if isinstance(payload, dict) else None
+            )
+            frontmatter = authored_frontmatter(payload)
+            if frontmatter:
+                result_metrics["authored_frontmatter"] = frontmatter
         record_state(
             args.state,
             state,
@@ -1380,7 +1455,7 @@ def execute_with_state(args: argparse.Namespace, state: dict[str, Any]) -> tuple
             request_id=str(response.body.get("request_id") or response.headers.get("x-request-id") or "") or None,
             service_status=str(response.body.get("status") or "") or None,
             response=response,
-            result_metrics=response_payload_metrics(rendered),
+            result_metrics=result_metrics,
         )
         return rendered, 0
     except NativeApiError as exc:

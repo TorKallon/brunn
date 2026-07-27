@@ -1,3 +1,8 @@
+---
+supersedes:
+  - Trips/Europe 2026/Flight watch tracker.md
+---
+
 # Europe flight watch update
 
 Checked: 2026-07-26 06:20 PDT.

@@ -153,6 +153,11 @@ pub async fn status(
         "corpus_revision": revision.as_ref().map(|value| format!("revision:{}", value.0)),
         "revision_sequence": revision.map(|value| value.1),
         "read_only": auth.read_only,
+        "feature_flags": {
+            "supersession_demotion": state.config.supersession_demotion,
+            "supersession_demotion_weight": state.config.supersession_demotion_weight,
+            "intention_ledger": state.config.intention_ledger
+        },
         "embeddings": {
             "provider": state.embedder.provider(),
             "model": state.embedder.model(),

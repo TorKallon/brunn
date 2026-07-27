@@ -7,6 +7,9 @@ pub struct Config {
     pub deployment_environment: String,
     pub legacy_api_enabled: bool,
     pub evaluation_api_enabled: bool,
+    pub supersession_demotion: bool,
+    pub supersession_demotion_weight: f64,
+    pub intention_ledger: bool,
     pub bind: SocketAddr,
     pub database_url_admin: Option<String>,
     pub database_url_rw: String,
@@ -115,6 +118,12 @@ impl Config {
                 "STRAYLIGHT_EVALUATION_API_ENABLED",
                 non_production_default,
             )?,
+            supersession_demotion: env_parse("STRAYLIGHT_SUPERSESSION_DEMOTION", "false")?,
+            supersession_demotion_weight: env_parse(
+                "STRAYLIGHT_SUPERSESSION_DEMOTION_WEIGHT",
+                "1.5",
+            )?,
+            intention_ledger: env_parse("STRAYLIGHT_INTENTION_LEDGER", "false")?,
             bind,
             database_url_admin: first_env_or_file(&[
                 "DATABASE_URL_ADMIN",
@@ -240,6 +249,13 @@ impl Config {
         if config.search_section_demotion_top_n == Some(0) {
             return Err(ApiError::configuration(
                 "STRAYLIGHT_SEARCH_SECTION_DEMOTION_TOP_N must be greater than zero when set",
+            ));
+        }
+        if !config.supersession_demotion_weight.is_finite()
+            || config.supersession_demotion_weight < 0.0
+        {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_SUPERSESSION_DEMOTION_WEIGHT must be a finite nonnegative number",
             ));
         }
         config.validate_production()?;
@@ -589,6 +605,9 @@ mod tests {
                 assert!(!config.legacy_api_enabled);
                 assert!(!config.evaluation_api_enabled);
                 assert!(!config.verbatim_spans);
+                assert!(!config.supersession_demotion);
+                assert!(!config.intention_ledger);
+                assert_eq!(config.supersession_demotion_weight, 1.5);
             }
             "minio_aliases" => {
                 let config = Config::from_env().unwrap();
@@ -605,6 +624,8 @@ mod tests {
                 assert!(config.legacy_api_enabled);
                 assert!(config.evaluation_api_enabled);
                 assert!(!config.verbatim_spans);
+                assert!(!config.supersession_demotion);
+                assert!(!config.intention_ledger);
             }
             "explicit_overrides" => {
                 let config = Config::from_env().unwrap();

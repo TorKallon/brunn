@@ -46,6 +46,7 @@ pub mod usage;
 pub mod usage_service;
 pub mod vault_service;
 pub mod worker;
+pub mod workspace_features;
 pub mod write_service;
 
 pub use api::router;

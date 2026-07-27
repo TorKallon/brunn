@@ -1,0 +1,98 @@
+{
+  "benchmark_version": "e08-prospective-v0.1",
+  "name": "Straylight E08 prospective-memory subset",
+  "report_title": "Straylight E08 prospective-memory subset",
+  "report_date": "2026-07-27",
+  "evaluation_model": "prospective_memory",
+  "grading_mode": "concept_tokens_v1",
+  "fixture_domain": "Sanitized prospective-memory and coordination fixtures",
+  "corpus_root": "eval/corpus-recent-work-v0.1",
+  "model": "gpt-5.6-sol",
+  "conditions": ["filesystem", "service_api"],
+  "intention_oracle": {
+    "recent-aether-gmail-actions": ["Intentions/Gmail ambiguous payment.md"],
+    "recent-aether-morning-brief": ["Intentions/Morning briefing delivery receipt.md"],
+    "coord-deadline-readiness": ["Intentions/Overdue renewal inspection.md"],
+    "recent-cross-agent-intention": ["Intentions/OAuth scope review.md"],
+    "recent-intention-expiry-negative": ["Intentions/Overdue renewal inspection.md"]
+  },
+  "fixed_pack_chars": 22000,
+  "fixed_pack_chunks": 18,
+  "cases": [
+    {
+      "id": "recent-aether-gmail-actions",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "action_boundary_dedup_and_attachment_preservation",
+      "task": "Plan the two actionable Gmail items. Decide what to do with the calendar request, its attachment, and the ambiguous payment, including final mailbox state for each message.",
+      "claim_slots": {"c1": "calendar duplicate decision", "c2": "attachment preservation", "c3": "successful-message mailbox state", "c4": "ambiguous payment boundary"},
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["existing Team practice event", "already contains Team practice"]}, {"any": ["do not create", "avoid duplicate"]}], "sources_any": ["Aether/Gmail run actionable.md", "Aether/Gmail forward intake.md"]},
+        {"id": "c2", "checks": [{"any": ["unique per-message folder"]}, {"any": ["leave originals in place"]}, {"any": ["practice-map.pdf"]}], "sources_any": ["Aether/Gmail forward intake.md", "Aether/Gmail run actionable.md"]},
+        {"id": "c3", "checks": [{"any": ["mark the message read and archive it"]}], "sources_any": ["Aether/Gmail forward intake.md"]},
+        {"id": "c4", "checks": [{"any": ["does not specify authorization or the intended payment method"]}, {"any": ["leave it unread in the inbox"]}, {"any": ["USD 480"]}], "sources_any": ["Aether/Gmail forward intake.md", "Aether/Gmail run actionable.md", "Intentions/Gmail ambiguous payment.md"]}
+      ],
+      "forbidden": ["create a duplicate Team practice event", "pay USD 480", "archive the ambiguous payment message"]
+    },
+    {
+      "id": "recent-aether-morning-brief",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "freshness_aware_briefing_and_delivery_gate",
+      "task": "Select the July 26 morning briefing content from the evidence. Identify what is genuinely new, what must be omitted, and the required delivery order.",
+      "claim_slots": {"c1": "fresh included items", "c2": "stale and empty omissions", "c3": "seasonal and source omissions", "c4": "delivery order and receipt obligation"},
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["Orion 3.1"]}, {"any": ["morning-briefing delivery receipts are missing"]}, {"any": ["85 minutes earlier"]}], "sources_any": ["Aether/Morning briefing evidence.md"]},
+        {"id": "c2", "checks": [{"any": ["Orion 3 model launch on July 24"]}, {"any": ["version 2.1 game patch"]}, {"any": ["omit", "do not repeat"]}], "sources_any": ["Aether/Morning briefing evidence.md", "Aether/Morning briefing policy.md"]},
+        {"id": "c3", "checks": [{"any": ["No fresh health data"]}, {"any": ["no material game update"]}, {"any": ["Crystal Mountain reporting remains paused"]}], "sources_any": ["Aether/Morning briefing evidence.md", "Aether/Morning briefing policy.md"]},
+        {"id": "c4", "checks": [{"any": ["note first"]}, {"any": ["home-page pointer"]}, {"any": ["sync"]}, {"any": ["verify the missing delivery receipt"]}], "sources_any": ["Aether/Morning briefing policy.md", "Intentions/Morning briefing delivery receipt.md"]}
+      ],
+      "forbidden": ["include the unchanged flight-watch baseline", "include a ski report", "delivery is already verified"]
+    },
+    {
+      "id": "coord-deadline-readiness",
+      "workload": "Personal Coordination",
+      "scope": "Personal Coordination",
+      "capability": "obligation_and_readiness_gates",
+      "task": "Assess the Field Lab readiness packet. Identify the responsible person and zoned due time, enumerate prerequisites, evaluate the readiness gate, and distinguish completed evidence from the still-pending inspection and packet.",
+      "claim_slots": {"c1": "responsibility and due time", "c2": "prerequisite states", "c3": "readiness gate", "c4": "completion evidence boundary"},
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["work-item:readiness-601"]}, {"any": ["person:p-601"]}, {"any": ["2026-08-14T17:00:00-07:00"]}, {"any": ["America/Los_Angeles"]}], "sources_any": ["Work/readiness-plan.md"]},
+        {"id": "c2", "checks": [{"any": ["work-item:guardian-consent-602"]}, {"any": ["work-item:equipment-inspection-603"]}, {"any": ["work-item:registration-604"]}, {"any": ["official schedule revision r2"]}], "sources_any": ["Work/readiness-plan.md"]},
+        {"id": "c3", "checks": [{"any": ["gate:field-lab-ready"]}, {"any": ["blocked"]}, {"any": ["equipment inspection is pending"]}], "sources_any": ["Work/readiness-plan.md", "Work/completion-evidence.json"]},
+        {"id": "c4", "checks": [{"any": ["artifact:guardian-consent-602"]}, {"any": ["artifact:registration-ledger-604"]}, {"any": ["inspection remains pending", "inspection is pending"]}, {"any": ["packet itself is not complete", "packet remains incomplete"]}], "sources_any": ["Work/readiness-plan.md", "Work/completion-evidence.json", "Intentions/Overdue renewal inspection.md"]}
+      ],
+      "forbidden": ["the readiness gate is open", "payment proves readiness", "the packet is complete"]
+    },
+    {
+      "id": "recent-cross-agent-intention",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "cross_agent_prospective_memory",
+      "task": "Review the current Gmail access and OAuth scope posture. State the outstanding obligation, its source and due date, and the authorization boundary.",
+      "claim_slots": {"c1": "cross-agent obligation", "c2": "exact intention source", "c3": "due date", "c4": "authorization boundary"},
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["compare the requested scopes"]}, {"any": ["least-privilege list"]}, {"any": ["record any excess"]}], "sources_any": ["Intentions/OAuth scope review.md"]},
+        {"id": "c2", "checks": [{"any": ["Intentions/OAuth scope review.md"]}, {"any": ["Agent Rowan", "different agent"]}], "sources_any": ["Intentions/OAuth scope review.md"]},
+        {"id": "c3", "checks": [{"any": ["2026-08-03"]}], "sources_any": ["Intentions/OAuth scope review.md"]},
+        {"id": "c4", "checks": [{"any": ["No scope change is authorized", "does not authorize a scope change"]}], "sources_any": ["Intentions/OAuth scope review.md"]}
+      ],
+      "forbidden": ["the scopes were already changed", "OAuth access is approved"]
+    },
+    {
+      "id": "recent-intention-expiry-negative",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "prospective_expiry_and_completion_boundary",
+      "task": "Assess the Field Lab renewal and equipment-inspection state. Distinguish the base readiness result, the overdue obligation, and completed work without treating stale work as pending.",
+      "claim_slots": {"c1": "base readiness result", "c2": "overdue obligation", "c3": "completed intention exclusion", "c4": "temporal and completion boundary"},
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["gate:field-lab-ready"]}, {"any": ["blocked"]}, {"any": ["equipment inspection is pending"]}], "sources_any": ["Work/readiness-plan.md", "Work/completion-evidence.json"]},
+        {"id": "c2", "checks": [{"any": ["overdue"]}, {"any": ["2026-07-20"]}, {"any": ["source-bearing evidence"]}], "sources_any": ["Intentions/Overdue renewal inspection.md"]},
+        {"id": "c3", "checks": [{"any": ["renewal invoice check was completed", "completed renewal invoice"]}, {"any": ["must never be presented as a pending intention", "must not be presented as pending", "not pending"]}], "sources_any": ["Intentions/Completed renewal invoice.md"]},
+        {"id": "c4", "checks": [{"any": ["not a future-dated obligation", "already overdue", "It is overdue"]}, {"any": ["packet itself is not complete", "packet remains incomplete"]}], "sources_any": ["Intentions/Overdue renewal inspection.md", "Work/readiness-plan.md"]}
+      ],
+      "forbidden": ["the renewal invoice check is pending", "the inspection is due in the future", "the readiness gate is open"]
+    }
+  ]
+}

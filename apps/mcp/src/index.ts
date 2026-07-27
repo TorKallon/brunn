@@ -41,6 +41,7 @@ const readItem = z.object({
   ),
   view: z.enum([
     "current_state",
+    "current_truth",
     "outline",
     "full",
     "range",

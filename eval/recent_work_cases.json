@@ -1,5 +1,5 @@
 {
-  "benchmark_version": "recent-work-v0.2",
+  "benchmark_version": "recent-work-v0.3",
   "name": "Straylight recent work and Aether operations evaluation",
   "report_title": "Straylight recent work and Aether operations evaluation",
   "report_date": "2026-07-26",
@@ -9,6 +9,35 @@
   "corpus_root": "eval/corpus-recent-work-v0.1",
   "model": "gpt-5.6-sol",
   "conditions": ["fixed_pack", "filesystem", "workspace"],
+  "feature_families": {
+    "supersession_dedup": [
+      "recent-europe-calendar-dedup",
+      "recent-europe-corrections",
+      "recent-tracker-material-delta",
+      "recent-current-over-history"
+    ],
+    "prospective": [
+      "recent-aether-gmail-actions",
+      "recent-aether-morning-brief",
+      "recent-cross-agent-intention",
+      "recent-intention-expiry-negative"
+    ]
+  },
+  "seeded_intentions": [
+    "Intentions/Gmail ambiguous payment.md",
+    "Intentions/Morning briefing delivery receipt.md",
+    "Intentions/OAuth scope review.md",
+    "Intentions/Overdue renewal inspection.md",
+    "Intentions/Crystal snow probe.md",
+    "Intentions/Completed renewal invoice.md"
+  ],
+  "intention_oracle": {
+    "recent-aether-gmail-actions": ["Intentions/Gmail ambiguous payment.md"],
+    "recent-aether-morning-brief": ["Intentions/Morning briefing delivery receipt.md"],
+    "recent-cross-agent-intention": ["Intentions/OAuth scope review.md"],
+    "recent-intention-expiry-negative": ["Intentions/Overdue renewal inspection.md"],
+    "coord-deadline-readiness": ["Intentions/Overdue renewal inspection.md"]
+  },
   "fixed_pack_chars": 22000,
   "fixed_pack_chunks": 18,
   "cases": [
@@ -251,6 +280,46 @@
         {"id": "c4", "checks": [{"any": ["current Markdown files the workspace truth"]}, {"any": ["version only changed files"]}, {"any": ["indexes and derived views rebuildable"]}, {"any": ["checkpoint with exact path, version, and hash references"]}, {"any": ["retain coherent source hydration"]}], "sources_any": ["Projects/Straylight current status.md"]}
       ],
       "forbidden": ["open the owner alpha immediately", "current retrieval is healthy", "the ready endpoint proves owner readiness"]
+    },
+    {
+      "id": "recent-cross-agent-intention",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "cross_agent_prospective_memory",
+      "task": "Review the current Gmail access and OAuth scope posture. State the outstanding obligation, its source and due date, and the authorization boundary.",
+      "claim_slots": {
+        "c1": "cross-agent obligation",
+        "c2": "exact intention source",
+        "c3": "due date",
+        "c4": "authorization boundary"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["compare the requested scopes"]}, {"any": ["least-privilege list"]}, {"any": ["record any excess"]}], "sources_any": ["Intentions/OAuth scope review.md"]},
+        {"id": "c2", "checks": [{"any": ["Intentions/OAuth scope review.md"]}, {"any": ["Agent Rowan", "different agent"]}], "sources_any": ["Intentions/OAuth scope review.md"]},
+        {"id": "c3", "checks": [{"any": ["2026-08-03"]}], "sources_any": ["Intentions/OAuth scope review.md"]},
+        {"id": "c4", "checks": [{"any": ["No scope change is authorized", "does not authorize a scope change"]}], "sources_any": ["Intentions/OAuth scope review.md"]}
+      ],
+      "forbidden": ["the scopes were already changed", "OAuth access is approved"]
+    },
+    {
+      "id": "recent-intention-expiry-negative",
+      "workload": "Recent Work",
+      "scope": "Recent Work",
+      "capability": "prospective_expiry_and_completion_boundary",
+      "task": "Assess the Field Lab renewal and equipment-inspection state. Distinguish the base readiness result, the overdue obligation, and completed work without treating stale work as pending.",
+      "claim_slots": {
+        "c1": "base readiness result",
+        "c2": "overdue obligation",
+        "c3": "completed intention exclusion",
+        "c4": "temporal and completion boundary"
+      },
+      "rubric": [
+        {"id": "c1", "checks": [{"any": ["gate:field-lab-ready"]}, {"any": ["blocked"]}, {"any": ["equipment inspection is pending"]}], "sources_any": ["Work/readiness-plan.md", "Work/completion-evidence.json"]},
+        {"id": "c2", "checks": [{"any": ["overdue"]}, {"any": ["2026-07-20"]}, {"any": ["source-bearing evidence"]}], "sources_any": ["Intentions/Overdue renewal inspection.md"]},
+        {"id": "c3", "checks": [{"any": ["renewal invoice check was completed", "completed renewal invoice"]}, {"any": ["must never be presented as a pending intention", "must not be presented as pending", "not pending"]}], "sources_any": ["Intentions/Completed renewal invoice.md"]},
+        {"id": "c4", "checks": [{"any": ["not a future-dated obligation", "already overdue", "It is overdue"]}, {"any": ["packet itself is not complete", "packet remains incomplete"]}], "sources_any": ["Intentions/Overdue renewal inspection.md", "Work/readiness-plan.md"]}
+      ],
+      "forbidden": ["the renewal invoice check is pending", "the inspection is due in the future", "the readiness gate is open"]
     }
   ]
 }
