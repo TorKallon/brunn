@@ -46,6 +46,16 @@ pub async fn process_next(state: &AppState) -> ApiResult<bool> {
         mark_exhausted(pool).await?;
         return Ok(false);
     };
+    if job.kind == "dream_workspace" && !state.config.dream_scheduler_enabled {
+        fail_permanently(pool, &job, "dreaming disabled by the operator").await?;
+        metrics::counter!(
+            "simple.jobs.processed",
+            "kind" => "dream_workspace",
+            "result" => "disabled"
+        )
+        .increment(1);
+        return Ok(true);
+    }
     if job.kind == "embed_entry" {
         let mut jobs = vec![job];
         jobs.extend(claim_more_embeddings(pool, MAX_EMBED_BATCH_JOBS - 1).await?);

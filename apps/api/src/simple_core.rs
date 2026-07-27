@@ -1085,6 +1085,13 @@ pub async fn queue_dream(
     Extension(auth): Extension<AuthContext>,
     Json(request): Json<DreamRequest>,
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    if !state.config.dream_scheduler_enabled {
+        return Err(ApiError::public(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "dreaming_disabled",
+            "dreaming is disabled by the operator",
+        ));
+    }
     auth.require(Capability::Dream)?;
     let mut tx = state.begin_write(&auth).await?;
     let current_generation = sqlx::query_scalar::<_, Option<i64>>(

@@ -149,7 +149,7 @@ impl Config {
             ])
             .unwrap_or_else(|| "high".to_owned()),
             dream_model: env_default("STRAYLIGHT_DREAM_MODEL", "gpt-5.6"),
-            dream_scheduler_enabled: env_parse("STRAYLIGHT_DREAM_SCHEDULER_ENABLED", "true")?,
+            dream_scheduler_enabled: env_parse("STRAYLIGHT_DREAM_SCHEDULER_ENABLED", "false")?,
             dream_scheduler_poll_interval: Duration::from_secs(env_parse(
                 "STRAYLIGHT_DREAM_SCHEDULER_POLL_SECONDS",
                 "15",
