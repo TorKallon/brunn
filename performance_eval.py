@@ -120,6 +120,66 @@ def recursive_find(value: Any, key: str) -> Any:
     return None
 
 
+def response_timings(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    timings = value.get("timings_ms")
+    return dict(timings) if isinstance(timings, dict) else {}
+
+
+def flatten_numeric_timings(
+    value: Any,
+    *,
+    prefix: str = "",
+) -> dict[str, float]:
+    flattened: dict[str, float] = {}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            child = f"{prefix}.{key}" if prefix else str(key)
+            flattened.update(flatten_numeric_timings(item, prefix=child))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            child = f"{prefix}.{index}" if prefix else str(index)
+            flattened.update(flatten_numeric_timings(item, prefix=child))
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        flattened[prefix] = float(value)
+    return flattened
+
+
+def summarize_timing_samples(
+    samples: Sequence[dict[str, Any]],
+) -> dict[str, dict[str, float]]:
+    by_phase: dict[str, list[float]] = {}
+    for sample in samples:
+        for phase, value in flatten_numeric_timings(sample).items():
+            by_phase.setdefault(phase, []).append(value)
+    return {
+        phase: {
+            "samples": len(values),
+            "p50": round(percentile(values, 0.50), 3),
+            "p95": round(percentile(values, 0.95), 3),
+            "p99": round(percentile(values, 0.99), 3),
+        }
+        for phase, values in sorted(by_phase.items())
+    }
+
+
+def timing_phase_sum_sane(sample: dict[str, Any]) -> bool:
+    total = sample.get("total")
+    if not isinstance(total, (int, float)) or total < 0:
+        return False
+    direct_phases = [
+        float(value)
+        for key, value in sample.items()
+        if key not in {"total", "lanes", "queries"}
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+    ]
+    if any(value < 0 for value in direct_phases):
+        return False
+    return abs(sum(direct_phases) - float(total)) <= max(1.0, float(total) * 0.05)
+
+
 def rendered_contains(value: Any, needle: str) -> bool:
     return needle.casefold() in json.dumps(
         value,
@@ -1425,6 +1485,8 @@ def benchmark_scale(
     semantic_failure_start_command: str | None,
     semantic_failure_stop_command: str | None,
     semantic_failure_settle_seconds: float,
+    wait_for_semantic: bool,
+    unique_queries: bool,
     flat_result_callback: Callable[[dict[str, Any]], None] | None = None,
     flat_file_control_override: dict[str, Any] | None = None,
     flat_file_control_source: str | None = None,
@@ -1473,7 +1535,7 @@ def benchmark_scale(
             if protocol == "simple"
             else "/v1/admin/eval/import"
         ),
-        wait_for_semantic=protocol != "simple",
+        wait_for_semantic=wait_for_semantic or protocol != "simple",
         batch_size=10_000 if protocol == "simple" else None,
     )
     import_ms = (time.monotonic() - started) * 1000
@@ -1507,9 +1569,17 @@ def benchmark_scale(
     read_found: list[bool] = []
     critical_lane_failures: list[dict[str, Any]] = []
     response_samples: list[tuple[str, dict[str, Any]]] = []
+    open_timing_samples: list[dict[str, Any]] = []
+    search_timing_samples: list[dict[str, Any]] = []
+    broad_timing_samples: list[dict[str, Any]] = []
     latest_session_id = ""
 
-    for _ in range(samples):
+    for sample_index in range(samples):
+        query_suffix = (
+            f" e03-query-{sample_index:04d}-{uuid.uuid4().hex[:8]}"
+            if unique_queries
+            else ""
+        )
         opened, elapsed = request_with_result(
             client,
             f"{operation_prefix}/open",
@@ -1533,6 +1603,7 @@ def benchmark_scale(
             "lexical": response_reports_lane_failure(opened, "lexical"),
         })
         response_samples.append(("open", opened))
+        open_timing_samples.append(response_timings(opened))
         latest_session_id = str(recursive_find(opened, "session_id") or "")
         if not latest_session_id:
             raise RuntimeError(f"open omitted session_id at scale {scale}")
@@ -1549,7 +1620,7 @@ def benchmark_scale(
                 "queries": [{
                     "id": "unknown-path-discovery",
                     "goal": "locate the terminal corpus answer without a path",
-                    "query": discovery_key,
+                    "query": discovery_key + query_suffix,
                     "scope": authorization_scope,
                     "modes": ["exact", "lexical", "semantic"],
                     "limit": 8,
@@ -1564,6 +1635,7 @@ def benchmark_scale(
             "lexical": response_reports_lane_failure(searched, "lexical"),
         })
         response_samples.append(("search", searched))
+        search_timing_samples.append(response_timings(searched))
 
         broad, elapsed = request_with_result(
             client,
@@ -1577,7 +1649,7 @@ def benchmark_scale(
                 "queries": [{
                     "id": "broad",
                     "goal": "find representative performance fixture sources",
-                    "query": BROAD_QUERY,
+                    "query": BROAD_QUERY + query_suffix,
                     "scope": authorization_scope,
                     "modes": ["lexical", "semantic"],
                     "limit": 8,
@@ -1592,6 +1664,7 @@ def benchmark_scale(
             "lexical": response_reports_lane_failure(broad, "lexical"),
         })
         response_samples.append(("broad_search", broad))
+        broad_timing_samples.append(response_timings(broad))
 
         overflow_marker = lexical_overflow_marker(scale)
         overflow, elapsed = request_with_result(
@@ -1726,12 +1799,21 @@ def benchmark_scale(
     }
     if checkpoint_id:
         resume_payload["resume_checkpoint_ref"] = checkpoint_id
-    resumed, resume_ms = request_with_result(
-        client,
-        f"{operation_prefix}/open",
-        resume_payload,
-    )
-    response_samples.append(("resume", resumed))
+    resume_times: list[float] = []
+    resume_found_samples: list[bool] = []
+    resume_timing_samples: list[dict[str, Any]] = []
+    resumed: dict[str, Any] = {}
+    for _ in range(samples):
+        resumed, resume_elapsed = request_with_result(
+            client,
+            f"{operation_prefix}/open",
+            resume_payload,
+        )
+        resume_times.append(resume_elapsed)
+        resume_found_samples.append(rendered_contains(resumed, marker))
+        resume_timing_samples.append(response_timings(resumed))
+        response_samples.append(("resume", resumed))
+    resume_ms = percentile(resume_times, 0.95)
     boundary_probe: dict[str, Any] = {"status": "not_applicable"}
     if protocol == "simple" and scale >= PRODUCTION_RECORDS:
         batch_paths = [str(document["path"]) for document in documents[:32]]
@@ -1935,6 +2017,7 @@ def benchmark_scale(
         "read_p50_ms": round(percentile(read_times, 0.50), 3),
         "read_p95_ms": round(percentile(read_times, 0.95), 3),
         "checkpoint_ms": round(checkpoint_ms, 3),
+        "resume_samples_ms": [round(value, 3) for value in resume_times],
         "resume_ms": round(resume_ms, 3),
         "open_found": open_found,
         "search_found": search_found,
@@ -1944,7 +2027,23 @@ def benchmark_scale(
         "old_source_semantic_deferred": old_source_semantic_deferred,
         "read_found": read_found,
         "critical_lane_failures": critical_lane_failures,
-        "resume_found": rendered_contains(resumed, marker),
+        "resume_found": all(resume_found_samples),
+        "resume_found_samples": resume_found_samples,
+        "timings_ms": {
+            "open": summarize_timing_samples(open_timing_samples),
+            "search": summarize_timing_samples(search_timing_samples),
+            "broad_search": summarize_timing_samples(broad_timing_samples),
+            "resume": summarize_timing_samples(resume_timing_samples),
+        },
+        "timings_phase_sum_sane": all(
+            timing_phase_sum_sane(sample)
+            for sample in (
+                open_timing_samples
+                + search_timing_samples
+                + broad_timing_samples
+                + resume_timing_samples
+            )
+        ),
         "boundary_probe": boundary_probe,
         "flat_file_control": flat_file_control,
         "flat_file_control_reused_from": flat_file_control_source,
@@ -1981,6 +2080,45 @@ def benchmark_scale(
                 {},
             ),
             "end": recursively_redact_secrets(semantic_status_end),
+            "wait_for_semantic": wait_for_semantic,
+            "semantic_ready_responses": all(
+                not response_reports_lane_failure(body, "semantic")
+                and not response_reports_gap_kind(
+                    body,
+                    "retrieval_lane_unavailable",
+                )
+                and not response_reports_gap_kind(
+                    body,
+                    "retrieval_lane_deferred",
+                )
+                for _, body in response_samples
+                if isinstance(body, dict)
+            ),
+        },
+        "embedding_spend_estimate": {
+            "model": "text-embedding-3-small",
+            "estimated_input_tokens": (
+                sum(len(str(document["content"])) for document in documents) + 3
+            ) // 4,
+            "usd_per_million_tokens": 0.02,
+            "estimated_usd": round(
+                (
+                    (
+                        sum(
+                            len(str(document["content"]))
+                            for document in documents
+                        )
+                        + 3
+                    )
+                    // 4
+                )
+                / 1_000_000
+                * 0.02,
+                6,
+            )
+            if wait_for_semantic
+            else 0.0,
+            "basis": "ceil(source characters / 4); provider receipt unavailable",
         },
         "concurrent_probe": concurrent_probe,
         "checkpoint_pressure": checkpoint_pressure,
@@ -2061,6 +2199,48 @@ def evaluate_gates(
             True,
         ),
     ]
+    if any("timings_ms" in item for item in scales):
+        gates.extend([
+            (
+                "timings_ms_are_reported",
+                all(
+                    bool(item.get("timings_ms", {}).get("open"))
+                    and bool(item.get("timings_ms", {}).get("search"))
+                    for item in scales
+                ),
+                [item.get("timings_ms", {}) for item in scales],
+                "per-phase p50/p95/p99 for open and search",
+            ),
+            (
+                "timings_ms_phase_sum_is_sane",
+                all(item.get("timings_phase_sum_sane") is True for item in scales),
+                [item.get("timings_phase_sum_sane") for item in scales],
+                True,
+            ),
+        ])
+    semantic_ready_scales = [
+        item
+        for item in scales
+        if item.get("semantic_catchup", {}).get("wait_for_semantic")
+    ]
+    if semantic_ready_scales:
+        gates.append((
+            "semantic_ready_runs_have_no_deferred_or_unavailable_lane",
+            all(
+                item["semantic_catchup"].get("semantic_ready_responses") is True
+                for item in semantic_ready_scales
+            ),
+            [
+                {
+                    "scale": item["scale"],
+                    "ready": item["semantic_catchup"].get(
+                        "semantic_ready_responses"
+                    ),
+                }
+                for item in semantic_ready_scales
+            ],
+            True,
+        ))
     gates.extend(
         (
             f"every_scale_{metric}",
@@ -2654,6 +2834,8 @@ def command_run(args: argparse.Namespace) -> int:
                 semantic_failure_settle_seconds=(
                     args.semantic_failure_settle_seconds
                 ),
+                wait_for_semantic=args.wait_semantic,
+                unique_queries=args.unique_queries,
                 flat_result_callback=lambda result, current=scale: (
                     partial_flat_controls.__setitem__(current, result)
                 ),
@@ -2744,6 +2926,8 @@ def command_run(args: argparse.Namespace) -> int:
                 args.semantic_failure_start_command
                 and args.semantic_failure_stop_command
             ),
+            "wait_for_semantic": bool(args.wait_semantic),
+            "unique_queries": bool(args.unique_queries),
             "import_timeout_seconds": profile.import_timeout_seconds,
         },
         "production_reference_records": PRODUCTION_RECORDS,
@@ -2853,6 +3037,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--semantic-failure-settle-seconds",
         type=float,
         default=2.0,
+    )
+    run.add_argument(
+        "--wait-semantic",
+        action="store_true",
+        help=(
+            "block evaluation provisioning until every imported simple-core "
+            "chunk has an embedding, then require semantic-ready responses"
+        ),
+    )
+    run.add_argument(
+        "--unique-queries",
+        action="store_true",
+        help=(
+            "append a fresh nonce to measured query strings to profile "
+            "query-embedding cache misses"
+        ),
     )
     run.add_argument(
         "--reuse-flat-controls-from",

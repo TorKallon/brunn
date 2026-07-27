@@ -1,6 +1,6 @@
 # D09 — Latency Contract and Gates
 
-Status: Proposed — not started
+Status: Partially implemented — part (a) is ready; parts (b)-(d) remain
 Date: 2026-07-27
 Depends on: none
 Gated by: none (not context-shaping; all gates here are deterministic, no paired-draw experiment required)
@@ -23,7 +23,24 @@ Every `/v1/workspace/*` response gains an optional top-level `timings_ms` object
 - Open: `checkpoint_read`, `changes`, `lanes` (with per-lane children), `hydrate`, `generation`, `total`.
 - Search: per-lane `embed`, `exact`, `lexical`, `semantic`, `merge`, `budget`, `total`.
 
-Phases must sum to within 5% of `total` (unattributed time is itself a signal). The field is excluded from checkpoint text, excerpts, and anything an agent can quote back into context; MCP clients pass it through untouched. `performance_eval.py` records `timings_ms` per sample so p50/p95/p99 per phase becomes reportable.
+The mutually exclusive top-level wall phases must sum to within 5% of `total`
+(`unattributed` is itself a signal). Retrieval-lane child timings are
+diagnostics: exact and lexical execute concurrently, so their durations must
+not be added to each other or to `retrieval_wall`. The field is excluded from
+checkpoint text, excerpts, and anything an agent can quote back into context;
+MCP clients pass it through untouched. `performance_eval.py` records
+`timings_ms` per sample so p50/p95/p99 per phase becomes reportable.
+
+Implementation note (2026-07-27): part (a) now emits open/search phase timing
+metadata behind `STRAYLIGHT_OBSERVABILITY_TIMINGS_MS` (default on), records
+phase percentiles in `performance_eval.py`, and gates top-level phase-sum
+sanity. E03's `--wait-semantic` and `--unique-queries` harness modes, its
+semantic-ready no-deferred-lane assertion, repeated resume sampling, and an
+explicit estimated embedding-spend field are also implemented. Parts (b)-(d)
+remain blocked on measured regression baselines, request-scoped SQL statement
+counting plus `eval/query_budgets.json`, and the production-GUC EXPLAIN
+assertions respectively. The optional `query_count` envelope field is reserved
+but is not emitted until part (c) lands.
 
 ### (b) Regression-tier gates at 64K and 640K
 

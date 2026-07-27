@@ -28,6 +28,9 @@ from performance_eval import (  # noqa: E402
     response_reports_gap_kind,
     semantic_failure_probe,
     source_text_contains,
+    response_timings,
+    summarize_timing_samples,
+    timing_phase_sum_sane,
     lexical_overflow_marker,
     simple_checkpoint_footprint,
     summarize_response_accounting,
@@ -344,6 +347,38 @@ class PerformanceEvalTests(unittest.TestCase):
         )
         self.assertEqual(summary["by_operation"]["open"]["samples"], 1)
         self.assertIn("estimated_payload_tokens", summary)
+
+    def test_timing_samples_are_flattened_and_summarized(self):
+        body = {
+            "timings_ms": {
+                "generation": 1.0,
+                "retrieval_wall": 4.0,
+                "unattributed": 1.0,
+                "total": 6.0,
+                "lanes": {"exact": 2.0, "lexical": 3.0},
+            }
+        }
+        timings = response_timings(body)
+        summary = summarize_timing_samples([timings, timings])
+
+        self.assertEqual(summary["generation"]["samples"], 2)
+        self.assertEqual(summary["lanes.exact"]["p95"], 2.0)
+        self.assertTrue(timing_phase_sum_sane(timings))
+        self.assertFalse(timing_phase_sum_sane({"total": 4.0, "exact": 9.0}))
+
+    def test_e03_parser_exposes_semantic_ready_and_unique_query_modes(self):
+        args = build_parser().parse_args([
+            "run",
+            "--label",
+            "e03",
+            "--wait-semantic",
+            "--unique-queries",
+            "--out",
+            "result.json",
+        ])
+
+        self.assertTrue(args.wait_semantic)
+        self.assertTrue(args.unique_queries)
 
     def test_lane_failure_detection_handles_query_and_gap_shapes(self):
         self.assertTrue(response_reports_lane_failure(

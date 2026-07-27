@@ -37,6 +37,7 @@ pub struct Config {
     pub embedding_dimensions: usize,
     pub embedding_provider: String,
     pub allow_degraded_embeddings: bool,
+    pub observability_timings_ms: bool,
     pub continuation_secret: String,
     pub materialize_token_budget: usize,
     pub request_timeout: Duration,
@@ -171,6 +172,7 @@ impl Config {
             embedding_dimensions: env_parse("STRAYLIGHT_EMBEDDING_DIMENSIONS", "1536")?,
             embedding_provider: env_default("STRAYLIGHT_EMBEDDING_PROVIDER", "openai"),
             allow_degraded_embeddings: env_parse("STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS", "false")?,
+            observability_timings_ms: env_parse("STRAYLIGHT_OBSERVABILITY_TIMINGS_MS", "true")?,
             continuation_secret,
             materialize_token_budget: env_parse("STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET", "24000")?,
             request_timeout: Duration::from_secs(env_parse(

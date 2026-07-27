@@ -48,6 +48,10 @@ pub struct WorkspaceEnvelope<T> {
     pub data: T,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub gaps: Vec<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timings_ms: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query_count: Option<usize>,
 }
 
 impl<T> WorkspaceEnvelope<T> {
@@ -59,8 +63,52 @@ impl<T> WorkspaceEnvelope<T> {
             status: ResponseStatus::Complete,
             data,
             gaps: Vec::new(),
+            timings_ms: None,
+            query_count: None,
         }
     }
+}
+
+#[derive(Clone, Debug, Default)]
+struct RetrievalTimings {
+    exact: f64,
+    lexical: f64,
+    semantic_ready: f64,
+    semantic: f64,
+    embed: f64,
+    semantic_db: f64,
+    merge: f64,
+    total: f64,
+}
+
+impl RetrievalTimings {
+    fn as_value(&self) -> Value {
+        json!({
+            "exact": round_ms(self.exact),
+            "lexical": round_ms(self.lexical),
+            "semantic_ready": round_ms(self.semantic_ready),
+            "semantic": round_ms(self.semantic),
+            "embed": round_ms(self.embed),
+            "semantic_db": round_ms(self.semantic_db),
+            "merge": round_ms(self.merge),
+            "total": round_ms(self.total),
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SemanticCandidates {
+    candidates: Vec<Candidate>,
+    embed_ms: f64,
+    database_ms: f64,
+}
+
+fn elapsed_ms(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1_000.0
+}
+
+fn round_ms(value: f64) -> f64 {
+    (value * 1_000.0).round() / 1_000.0
 }
 
 const DEFAULT_TOKEN_BUDGET: usize = 12_000;
@@ -312,6 +360,7 @@ pub async fn open(
     Extension(auth): Extension<AuthContext>,
     Json(request): Json<OpenRequest>,
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    let total_started = Instant::now();
     auth.require(Capability::Open)?;
     if request.task.trim().is_empty() {
         return Err(ApiError::invalid("task is required"));
@@ -321,16 +370,20 @@ pub async fn open(
         .unwrap_or(DEFAULT_TOKEN_BUDGET)
         .clamp(1_000, MAX_TOKEN_BUDGET);
     let session_id = format!("session:{}", Uuid::now_v7());
+    let generation_started = Instant::now();
     let generation = current_generation(&state, &auth).await?;
-    let started = Instant::now();
+    let generation_ms = elapsed_ms(generation_started);
+    let checkpoint_started = Instant::now();
     let mut checkpoint = match request.resume_checkpoint_ref.as_deref() {
         Some(reference) => Some(read_checkpoint(&state, &auth, reference).await?),
         None => None,
     };
+    let checkpoint_read_ms = elapsed_ms(checkpoint_started);
     let checkpoint_generation = checkpoint
         .as_ref()
         .and_then(|value| value.get("workspace_generation"))
         .and_then(Value::as_i64);
+    let changes_started = Instant::now();
     let change_page = match checkpoint_generation {
         Some(since) => changes_since(&state, &auth, since, 200).await?,
         None => ChangePage {
@@ -339,18 +392,21 @@ pub async fn open(
             next_generation: None,
         },
     };
+    let changes_ms = elapsed_ms(changes_started);
 
     let (checkpoint_text_truncated, evidence_budget) =
         apply_checkpoint_budget(&mut checkpoint, budget);
+    let retrieval_started = Instant::now();
     let (search, hinted) = tokio::join!(
         search_one(&state, &auth, &request.task, OPEN_CANDIDATE_LIMIT, &[]),
         open_hint_candidates(&state, &auth, &request.hints)
     );
-    let (search_candidates, mut lane_failures) = match search {
+    let retrieval_wall_ms = elapsed_ms(retrieval_started);
+    let (search_candidates, mut lane_failures, search_timings) = match search {
         Ok(result) => result,
         Err(error) => {
             tracing::warn!(?error, "simple workspace initial search failed");
-            (vec![], vec!["search"])
+            (vec![], vec!["search"], RetrievalTimings::default())
         }
     };
     let (hint_candidates, hint_gaps) = hinted?;
@@ -410,7 +466,9 @@ pub async fn open(
     } else {
         &continuation_evidence
     };
+    let hydrate_started = Instant::now();
     let evidence = hydrate_candidates(&state, &auth, evidence_candidates, evidence_budget).await?;
+    let hydrate_ms = elapsed_ms(hydrate_started);
     let hydrated_refs = evidence
         .iter()
         .filter_map(|item| item.get("reference").and_then(Value::as_str))
@@ -476,8 +534,22 @@ pub async fn open(
     } else if !envelope.gaps.is_empty() {
         envelope.status = ResponseStatus::Partial;
     }
-    metrics::histogram!("simple.open.duration_ms")
-        .record(started.elapsed().as_secs_f64() * 1_000.0);
+    let total_ms = elapsed_ms(total_started);
+    if state.config.observability_timings_ms {
+        let attributed_ms =
+            generation_ms + checkpoint_read_ms + changes_ms + retrieval_wall_ms + hydrate_ms;
+        envelope.timings_ms = Some(json!({
+            "generation": round_ms(generation_ms),
+            "checkpoint_read": round_ms(checkpoint_read_ms),
+            "changes": round_ms(changes_ms),
+            "retrieval_wall": round_ms(retrieval_wall_ms),
+            "lanes": search_timings.as_value(),
+            "hydrate": round_ms(hydrate_ms),
+            "unattributed": round_ms((total_ms - attributed_ms).max(0.0)),
+            "total": round_ms(total_ms),
+        }));
+    }
+    metrics::histogram!("simple.open.duration_ms").record(total_ms);
     metrics::histogram!("simple.open.evidence_sources").record(evidence.len() as f64);
     metrics::histogram!("simple.open.evidence_leads").record(evidence_leads.len() as f64);
     Ok(Json(envelope))
@@ -506,6 +578,7 @@ pub async fn search(
     if queries.len() > 16 {
         return Err(ApiError::invalid("at most 16 queries may be batched"));
     }
+    let query_execution_started = Instant::now();
     let mut completed =
         futures::stream::iter(queries.into_iter().enumerate().map(|(index, query)| {
             let state = state.clone();
@@ -521,16 +594,23 @@ pub async fn search(
         .await
         .into_iter()
         .collect::<ApiResult<Vec<_>>>()?;
+    let query_execution_ms = elapsed_ms(query_execution_started);
     completed.sort_by_key(|(index, _, _)| *index);
 
+    let budget_started = Instant::now();
     let mut result_sets = Vec::with_capacity(completed.len());
+    let mut query_timings = Vec::with_capacity(completed.len());
     let mut any_candidates = false;
     let mut any_failures = false;
     let mut all_candidates = Vec::new();
     let mut remaining_candidates = MAX_SEARCH_RESPONSE_CANDIDATES;
     let mut remaining_excerpt_chars = MAX_SEARCH_RESPONSE_CHARS;
     let mut response_truncated = false;
-    for (index, query, (mut candidates, failures)) in completed {
+    for (index, query, (mut candidates, failures, timings)) in completed {
+        query_timings.push(json!({
+            "id": query.id.clone().unwrap_or_else(|| format!("q{index}")),
+            "phases": timings.as_value(),
+        }));
         if candidates.len() > remaining_candidates {
             candidates.truncate(remaining_candidates);
             response_truncated = true;
@@ -567,8 +647,11 @@ pub async fn search(
         }
         result_sets.push(Value::Object(result));
     }
+    let budget_ms = elapsed_ms(budget_started);
     record_candidate_usage(&state, &auth, &all_candidates);
+    let generation_started = Instant::now();
     let generation = current_generation(&state, &auth).await?;
+    let generation_ms = elapsed_ms(generation_started);
     let mut response_data = serde_json::Map::from_iter([
         ("workspace_generation".to_owned(), json!(generation)),
         ("results".to_owned(), Value::Array(result_sets)),
@@ -586,8 +669,19 @@ pub async fn search(
             ResponseStatus::Degraded
         };
     }
-    metrics::histogram!("simple.search.duration_ms")
-        .record(started.elapsed().as_secs_f64() * 1_000.0);
+    let total_ms = elapsed_ms(started);
+    if state.config.observability_timings_ms {
+        let attributed_ms = query_execution_ms + budget_ms + generation_ms;
+        envelope.timings_ms = Some(json!({
+            "queries": query_timings,
+            "retrieval_wall": round_ms(query_execution_ms),
+            "budget": round_ms(budget_ms),
+            "generation": round_ms(generation_ms),
+            "unattributed": round_ms((total_ms - attributed_ms).max(0.0)),
+            "total": round_ms(total_ms),
+        }));
+    }
+    metrics::histogram!("simple.search.duration_ms").record(total_ms);
     metrics::histogram!("simple.search.candidates").record(all_candidates.len() as f64);
     Ok(Json(envelope))
 }
@@ -2715,7 +2809,9 @@ async fn search_one(
     query: &str,
     limit: usize,
     requested_modes: &[String],
-) -> ApiResult<(Vec<Candidate>, Vec<&'static str>)> {
+) -> ApiResult<(Vec<Candidate>, Vec<&'static str>, RetrievalTimings)> {
+    let total_started = Instant::now();
+    let mut timings = RetrievalTimings::default();
     if query.trim().is_empty() {
         return Err(ApiError::invalid("search query is required"));
     }
@@ -2729,22 +2825,33 @@ async fn search_one(
         vec![]
     };
     let exact_future = async {
+        let started = Instant::now();
         if exact_enabled && !exact_paths.is_empty() {
-            bounded_retrieval_lane("exact", exact_candidates(state, auth, &exact_paths)).await
+            (
+                bounded_retrieval_lane("exact", exact_candidates(state, auth, &exact_paths)).await,
+                elapsed_ms(started),
+            )
         } else {
-            Ok(vec![])
+            (Ok(vec![]), elapsed_ms(started))
         }
     };
     let lexical_future = async {
+        let started = Instant::now();
         if lexical_enabled {
-            bounded_retrieval_lane("lexical", lexical_candidates(state, auth, query)).await
+            (
+                bounded_retrieval_lane("lexical", lexical_candidates(state, auth, query)).await,
+                elapsed_ms(started),
+            )
         } else {
-            Ok(vec![])
+            (Ok(vec![]), elapsed_ms(started))
         }
     };
-    let (exact, lexical) = tokio::join!(exact_future, lexical_future);
+    let ((exact, exact_ms), (lexical, lexical_ms)) = tokio::join!(exact_future, lexical_future);
+    timings.exact = exact_ms;
+    timings.lexical = lexical_ms;
     let mut failures = Vec::new();
     let mut merged: HashMap<Uuid, Candidate> = HashMap::new();
+    let merge_started = Instant::now();
     for (lane, result) in [("exact", exact), ("lexical", lexical)] {
         match result {
             Ok(candidates) => {
@@ -2758,7 +2865,9 @@ async fn search_one(
             }
         }
     }
+    timings.merge += elapsed_ms(merge_started);
     let semantic_forced = modes.len() == 1 && modes.contains("semantic");
+    let semantic_ready_started = Instant::now();
     let semantic_ready = if semantic_enabled && !semantic_forced {
         match semantic_search_allowed(state, auth).await {
             Ok(ready) => ready,
@@ -2773,25 +2882,33 @@ async fn search_one(
     } else {
         semantic_forced
     };
+    timings.semantic_ready = elapsed_ms(semantic_ready_started);
     if semantic_enabled && semantic_ready {
-        match bounded_retrieval_lane("semantic", semantic_candidates(state, auth, query)).await {
-            Ok(candidates) => {
-                for candidate in candidates {
+        let semantic_started = Instant::now();
+        match bounded_semantic_lane(semantic_candidates(state, auth, query)).await {
+            Ok(result) => {
+                timings.embed = result.embed_ms;
+                timings.semantic_db = result.database_ms;
+                let merge_started = Instant::now();
+                for candidate in result.candidates {
                     merge_candidate(&mut merged, candidate);
                 }
+                timings.merge += elapsed_ms(merge_started);
             }
             Err(error) => {
                 tracing::warn!(lane = "semantic", ?error, "simple retrieval lane failed");
                 failures.push("semantic");
             }
         }
+        timings.semantic = elapsed_ms(semantic_started);
     } else if semantic_enabled {
         failures.push("semantic_unavailable");
     }
     let mut candidates = merged.into_values().collect::<Vec<_>>();
     sort_candidates(&mut candidates);
     candidates.truncate(limit);
-    Ok((candidates, failures))
+    timings.total = elapsed_ms(total_started);
+    Ok((candidates, failures, timings))
 }
 
 async fn semantic_search_allowed(state: &AppState, auth: &AuthContext) -> ApiResult<bool> {
@@ -2869,6 +2986,61 @@ where
                 StatusCode::SERVICE_UNAVAILABLE,
                 "retrieval_lane_timeout",
                 format!("{lane} retrieval exceeded its bounded time budget"),
+            ))
+        }
+    }
+}
+
+async fn bounded_semantic_lane<F>(future: F) -> ApiResult<SemanticCandidates>
+where
+    F: std::future::Future<Output = ApiResult<SemanticCandidates>>,
+{
+    let started = Instant::now();
+    match tokio::time::timeout(RETRIEVAL_LANE_TIMEOUT, future).await {
+        Ok(Ok(result)) => {
+            metrics::histogram!(
+                "simple.retrieval.lane_duration_ms",
+                "lane" => "semantic",
+                "result" => "success"
+            )
+            .record(elapsed_ms(started));
+            metrics::histogram!(
+                "simple.retrieval.lane_candidates",
+                "lane" => "semantic"
+            )
+            .record(result.candidates.len() as f64);
+            Ok(result)
+        }
+        Ok(Err(error)) => {
+            metrics::histogram!(
+                "simple.retrieval.lane_duration_ms",
+                "lane" => "semantic",
+                "result" => "failure"
+            )
+            .record(elapsed_ms(started));
+            metrics::counter!(
+                "simple.retrieval.lane_failure",
+                "lane" => "semantic"
+            )
+            .increment(1);
+            Err(error)
+        }
+        Err(_) => {
+            metrics::histogram!(
+                "simple.retrieval.lane_duration_ms",
+                "lane" => "semantic",
+                "result" => "timeout"
+            )
+            .record(elapsed_ms(started));
+            metrics::counter!(
+                "simple.retrieval.lane_timeout",
+                "lane" => "semantic"
+            )
+            .increment(1);
+            Err(ApiError::public(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "retrieval_lane_timeout",
+                "semantic retrieval exceeded its bounded time budget",
             ))
         }
     }
@@ -3001,11 +3173,14 @@ async fn semantic_candidates(
     state: &AppState,
     auth: &AuthContext,
     query: &str,
-) -> ApiResult<Vec<Candidate>> {
+) -> ApiResult<SemanticCandidates> {
+    let embed_started = Instant::now();
     let vectors = state.embedder.embed(&[query.to_owned()]).await?;
+    let embed_ms = elapsed_ms(embed_started);
     let vector = vectors.into_iter().next().ok_or_else(|| {
         ApiError::Internal("embedding provider returned no query vector".to_owned())
     })?;
+    let database_started = Instant::now();
     let mut tx = state.begin_read(auth).await?;
     let rows = sqlx::query(
         r#"
@@ -3017,7 +3192,8 @@ async fn semantic_candidates(
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
-    Ok(rows
+    let database_ms = elapsed_ms(database_started);
+    let candidates = rows
         .into_iter()
         .map(|row| {
             let distance = row.get::<f64, _>("distance");
@@ -3046,7 +3222,12 @@ async fn semantic_candidates(
                 }],
             }
         })
-        .collect())
+        .collect();
+    Ok(SemanticCandidates {
+        candidates,
+        embed_ms,
+        database_ms,
+    })
 }
 
 fn derived_penalty(path: &str) -> f64 {

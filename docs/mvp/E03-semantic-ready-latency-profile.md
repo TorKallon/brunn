@@ -1,6 +1,6 @@
 # E03 — Semantic-Ready Latency Profile
 
-Status: Specified — not run
+Status: Harness prerequisites partially implemented — not run
 Date: 2026-07-27
 Gates: none directly — measurement baseline and the primary decision input to E09 (E09-semantic-existence-experiment.md, the semantic existence experiment; the lane policy itself is D11-semantic-lane-policy.md); requires D09(a) (D09-latency-contract-and-gates.md) as a measurement enabler
 Phase: 0 (measurement; no product code — D09(a) instrumentation is a measurement enabler, not a behavior change)
@@ -17,6 +17,14 @@ Every latency number we cite — the entire v8 640K soak (results/2026-07-27-sim
 4. **Semantic-lane gate thresholds** (Small; performance_eval.py gate config) — the semantic phase gets its own reported percentile row so it can be gated separately from lexical.
 5. **Mock embedder** — exists: tests/mock_openai_embeddings.py, a deterministic OpenAI-compatible server, already usable as the semantic-failure probe hooks.
 6. **Eval-corpus backfill for E09** (Small; scope addition) — embed the quality-suite eval corpora (the fixtures behind eval/work_cases.json, eval/rupture_ops_cases.json, eval/recent_work_cases.json) through the same rate-limited backfill path, verified by zero `semantic_unavailable` notices on a warm probe query. This is the deliverable E09's precondition 1 depends on; without it no E03 mode touches the quality-suite corpus (modes 1-3 cover only synthetic/owner performance fixtures). Spend is inside the embeddings ceiling below.
+
+Implementation note (2026-07-27): items 1-4 are implemented and covered by
+API/harness unit tests. The run record now includes top-level and nested
+phase-percentile tables, semantic-ready validity, repeated resume samples,
+unique-query mode, and an explicitly estimated embedding-spend field. Mode 2
+orchestration, the failure-probe command wiring, and item 6's quality-corpus
+backfill still require clean isolated run configuration before any definitive
+sample set is valid.
 
 ## Arms
 
