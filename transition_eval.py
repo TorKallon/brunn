@@ -21,7 +21,9 @@ from agent_work_eval import (
     load_native_provisioning_state,
     parse_event_metrics,
     parse_json_answer,
+    require_codex_subscription,
     sha256_file,
+    subscription_reasoning_environment,
     write_native_provisioning_state,
 )
 from native_eval import (
@@ -403,11 +405,12 @@ async def run_one(
             run_dir=run_dir,
             condition=condition,
         )
-        env = os.environ.copy()
+        env = subscription_reasoning_environment()
         for key in ["CODEX_THREAD_ID", "CODEX_INTERNAL_ORIGINATOR_OVERRIDE"]:
             env.pop(key, None)
         if env_overrides:
             env.update(env_overrides)
+        env = subscription_reasoning_environment(env)
         started = time.monotonic()
         process = await asyncio.create_subprocess_exec(
             *command,
@@ -1017,6 +1020,7 @@ def select_transition_conditions(manifest: dict[str, Any], args: argparse.Namesp
 
 
 async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[str, Any]:
+    reasoning_billing = require_codex_subscription(args.codex)
     manifest = dict(validated["manifest"])
     manifest["model"] = args.model or manifest["model"]
     run_id = args.resume_run_id or args.run_id or datetime.now().astimezone().strftime("transition-%Y%m%dT%H%M%S%z")
@@ -1123,6 +1127,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         },
         "records": records,
         "service_protocol": args.service_protocol,
+        "reasoning_billing": reasoning_billing,
     }
     run["summary"] = summarize(records, manifest["conditions"])
     return run

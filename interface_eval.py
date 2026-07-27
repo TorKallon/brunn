@@ -39,6 +39,7 @@ from agent_work_eval import (
     parse_event_metrics,
     parse_json_answer,
     recompute_grade,
+    require_codex_subscription,
     sha256_file,
     validate as validate_work_manifest,
 )
@@ -1017,12 +1018,16 @@ class ServiceBroker:
 
 def parent_model_credentials(*, direct_openai: bool) -> dict[str, str]:
     if direct_openai:
-        token = os.environ.get("OPENAI_API_KEY")
-        if not token:
-            raise ValueError("OPENAI_API_KEY is required for direct OpenAI evaluation")
-        return {"authorization": f"Bearer {token}"}
+        raise ValueError(
+            "Direct OpenAI reasoning is forbidden for Straylight evaluations. "
+            "Use the Codex plan, switch ChatGPT accounts, or wait for its reset."
+        )
     auth_path = Path.home() / ".codex" / "auth.json"
     auth = load_json(auth_path)
+    if auth.get("auth_mode") != "chatgpt":
+        raise ValueError(
+            "Straylight reasoning evaluations require ChatGPT-authenticated Codex."
+        )
     tokens = auth.get("tokens")
     if not isinstance(tokens, dict):
         raise ValueError("Codex subscription auth file has no token object")
@@ -1670,6 +1675,10 @@ def build_run_manifest(
         "model": {
             "id": model,
             "reasoning_effort": "xhigh",
+        },
+        "reasoning_billing": {
+            "route": "chatgpt_subscription",
+            "api_fallback": "forbidden",
         },
         "runtime": {
             "execution_root": str(EXECUTION_ROOT),
@@ -3051,9 +3060,7 @@ def openclaw_config(
     service_api_url: str | None = None,
     service_token: str | None = None,
 ) -> dict[str, Any]:
-    direct_openai = os.environ.get(
-        "CARRYSTATE_EVAL_DIRECT_OPENAI",
-    ) == "1"
+    direct_openai = False
     provider_name = "evaluation_gateway" if model_base_url else "openai"
     model_ref = f"{provider_name}/{model}"
     provider: dict[str, Any] = {
@@ -3224,29 +3231,6 @@ def prepare_openclaw(
         encoding="utf-8",
     )
     config_path.chmod(0o600)
-    if os.environ.get("CARRYSTATE_EVAL_DIRECT_OPENAI") == "1":
-        agent_dir = state_dir / "agents" / "main" / "agent"
-        agent_dir.mkdir(parents=True, exist_ok=True)
-        agent_dir.chmod(0o700)
-        auth_path = agent_dir / "auth-profiles.json"
-        auth_path.write_text(
-            json.dumps({
-                "version": 1,
-                "profiles": {
-                    "openai:eval": {
-                        "type": "api_key",
-                        "provider": "openai",
-                        "keyRef": {
-                            "source": "env",
-                            "provider": "default",
-                            "id": "OPENAI_API_KEY",
-                        },
-                    },
-                },
-            }, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        auth_path.chmod(0o600)
     return state_dir, config_path
 
 
@@ -3308,8 +3292,6 @@ def agent_environment(
     env["TMPDIR"] = str(agent_tmp)
     env["NO_PROXY"] = "127.0.0.1,localhost"
     env["no_proxy"] = env["NO_PROXY"]
-    if os.environ.get("CARRYSTATE_EVAL_DIRECT_OPENAI") == "1":
-        env["OPENAI_API_KEY"] = "parent-gateway-injected"
     if job.interface != FILESYSTEM_INTERFACE:
         if not service_api_url or not service_token:
             raise ValueError("service evaluation requires a trusted broker")
@@ -4592,7 +4574,7 @@ async def run_job(
                 else None
             ),
         )
-        direct_openai = os.environ.get("CARRYSTATE_EVAL_DIRECT_OPENAI") == "1"
+        direct_openai = False
         model_gateway = LocalModelGateway(
             direct_openai=direct_openai,
             expected_model=model,
@@ -5697,6 +5679,7 @@ def validate_environment() -> dict[str, Any]:
 
 
 async def run_all(args: argparse.Namespace) -> dict[str, Any]:
+    require_codex_subscription(args.codex)
     all_cases, validation = load_cases()
     if validation["errors"]:
         raise ValueError("\n".join(validation["errors"]))
@@ -5748,9 +5731,7 @@ async def run_all(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("STRAYLIGHT_API_URL is required for CarryState interfaces")
     if service_jobs and not os.environ.get("STRAYLIGHT_EVAL_TOKEN"):
         raise ValueError("STRAYLIGHT_EVAL_TOKEN is required for CarryState interfaces")
-    direct_openai = os.environ.get("CARRYSTATE_EVAL_DIRECT_OPENAI") == "1"
-    if direct_openai and not os.environ.get("OPENAI_API_KEY"):
-        raise ValueError("OPENAI_API_KEY is required for direct OpenAI evaluation")
+    direct_openai = False
     service_api_url = os.environ.get("STRAYLIGHT_API_URL", "")
     run_manifest = build_run_manifest(
         run_id,

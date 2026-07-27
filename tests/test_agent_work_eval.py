@@ -1,11 +1,13 @@
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 import sys
 
@@ -18,10 +20,12 @@ from agent_work_eval import (  # noqa: E402
     grade_answer,
     normalize,
     parse_event_metrics,
+    require_codex_subscription,
     render_fixed_context,
     render_prompt,
     resolve_codex_path,
     select_cases,
+    subscription_reasoning_environment,
     load_native_provisioning_state,
     validate,
     write_native_provisioning_state,
@@ -57,6 +61,57 @@ class AgentWorkEvalTests(unittest.TestCase):
                 resolve_codex_path([root / "missing-codex", fallback]),
                 fallback,
             )
+
+    def test_reasoning_environment_never_forwards_paid_api_credentials(self):
+        env = subscription_reasoning_environment({
+            "PATH": "/usr/bin:/bin",
+            "OPENAI_API_KEY": "embedding-key",
+            "OPENAI_BASE_URL": "https://paid-api.example.test/v1",
+            "AZURE_OPENAI_API_KEY": "alternate-paid-key",
+            "CODEX_API_KEY": "paid-reasoning-key",
+            "CARRYSTATE_EVAL_DIRECT_OPENAI": "1",
+        })
+        self.assertEqual(env["PATH"], "/usr/bin:/bin")
+        self.assertNotIn("OPENAI_API_KEY", env)
+        self.assertNotIn("OPENAI_BASE_URL", env)
+        self.assertNotIn("AZURE_OPENAI_API_KEY", env)
+        self.assertNotIn("CODEX_API_KEY", env)
+        self.assertNotIn("CARRYSTATE_EVAL_DIRECT_OPENAI", env)
+
+    def test_reasoning_preflight_requires_chatgpt_authentication(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            chatgpt = root / "chatgpt-codex"
+            chatgpt.write_text(
+                "#!/bin/sh\necho 'Logged in using ChatGPT'\n",
+                encoding="utf-8",
+            )
+            chatgpt.chmod(0o755)
+            api_key = root / "api-key-codex"
+            api_key.write_text(
+                "#!/bin/sh\necho 'Logged in using an API key'\n",
+                encoding="utf-8",
+            )
+            api_key.chmod(0o755)
+
+            self.assertEqual(
+                require_codex_subscription(chatgpt),
+                {
+                    "route": "chatgpt_subscription",
+                    "api_fallback": "forbidden",
+                },
+            )
+            with self.assertRaisesRegex(ValueError, "require Codex logged in"):
+                require_codex_subscription(api_key)
+
+    def test_reasoning_preflight_rejects_direct_api_override(self):
+        with patch.dict(
+            os.environ,
+            {"CARRYSTATE_EVAL_DIRECT_OPENAI": "1"},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(ValueError, "Direct OpenAI reasoning is forbidden"):
+                require_codex_subscription(Path("/unused/codex"))
 
     def test_native_provisioning_state_is_private_resumable_and_run_scoped(self):
         with tempfile.TemporaryDirectory() as temporary:

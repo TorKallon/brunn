@@ -9,6 +9,7 @@ import json
 import os
 import re
 import statistics
+import subprocess
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -46,6 +47,67 @@ def resolve_codex_path(candidates: Sequence[Path] | None = None) -> Path:
 
 DEFAULT_CODEX = resolve_codex_path()
 NATIVE_PROVISIONING_STATE = ".native-provisioning.json"
+REASONING_BILLING_POLICY = {
+    "route": "chatgpt_subscription",
+    "api_fallback": "forbidden",
+}
+
+
+def subscription_reasoning_environment(
+    source: dict[str, str] | None = None,
+) -> dict[str, str]:
+    env = dict(os.environ if source is None else source)
+    for key in (
+        "OPENAI_API_KEY",
+        "OPENAI_API_BASE",
+        "OPENAI_BASE_URL",
+        "OPENAI_ORGANIZATION",
+        "OPENAI_ORG_ID",
+        "OPENAI_PROJECT",
+        "OPENAI_PROJECT_ID",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_ENDPOINT",
+        "CODEX_API_KEY",
+        "CARRYSTATE_EVAL_DIRECT_OPENAI",
+    ):
+        env.pop(key, None)
+    return env
+
+
+def require_codex_subscription(codex: Path) -> dict[str, str]:
+    if os.environ.get("CODEX_API_KEY"):
+        raise ValueError(
+            "Paid Codex API-key reasoning is forbidden. Remove CODEX_API_KEY and "
+            "use a ChatGPT-authenticated Codex account."
+        )
+    if os.environ.get("CARRYSTATE_EVAL_DIRECT_OPENAI", "").strip().lower() not in {
+        "",
+        "0",
+        "false",
+    }:
+        raise ValueError(
+            "Direct OpenAI reasoning is forbidden for Straylight evaluations. "
+            "Use the Codex plan, switch ChatGPT accounts, or wait for its reset."
+        )
+    try:
+        status = subprocess.run(
+            [str(codex), "login", "status"],
+            env=subscription_reasoning_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"Could not verify Codex subscription authentication: {exc}") from exc
+    rendered = "\n".join((status.stdout, status.stderr)).strip()
+    if status.returncode != 0 or "Logged in using ChatGPT" not in rendered:
+        raise ValueError(
+            "Straylight reasoning evaluations require Codex logged in through "
+            "ChatGPT. API-key billing is forbidden; switch accounts or wait for "
+            "the subscription reset."
+        )
+    return dict(REASONING_BILLING_POLICY)
 
 
 def load_native_provisioning_state(path: Path, run_id: str) -> dict[str, dict[str, Any]]:
@@ -769,11 +831,12 @@ async def run_one(
             condition=condition,
         )
         started = time.monotonic()
-        env = os.environ.copy()
+        env = subscription_reasoning_environment()
         for key in ["CODEX_THREAD_ID", "CODEX_INTERNAL_ORIGINATOR_OVERRIDE"]:
             env.pop(key, None)
         if env_overrides:
             env.update(env_overrides)
+        env = subscription_reasoning_environment(env)
         process = await asyncio.create_subprocess_exec(
             *command,
             stdin=asyncio.subprocess.PIPE,
@@ -1256,6 +1319,7 @@ def select_cases(
 
 
 async def run_all(args: argparse.Namespace) -> dict:
+    reasoning_billing = require_codex_subscription(args.codex)
     validated = validate(args.manifest, args.schema)
     if validated["errors"]:
         raise ValueError("\n".join(validated["errors"]))
@@ -1403,6 +1467,7 @@ async def run_all(args: argparse.Namespace) -> dict:
             for case_id, metadata in native_metadata.items()
         },
         "service_protocol": args.service_protocol,
+        "reasoning_billing": reasoning_billing,
         "records": records,
     }
     run["summary"] = summarize(selected_manifest, records)

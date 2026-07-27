@@ -41,6 +41,7 @@ from interface_eval import (  # noqa: E402
     normalize_mcp_trace,
     openclaw_config,
     paired_comparisons,
+    parent_model_credentials,
     prepare_openclaw,
     prepare_run_dir,
     render_prompt,
@@ -1120,7 +1121,7 @@ class InterfaceEvalTests(unittest.TestCase):
             command,
         )
 
-    def test_openclaw_direct_api_mode_uses_native_openai_pi_runtime(self):
+    def test_openclaw_direct_api_override_cannot_change_codex_runtime(self):
         eval_case = self.cases[0]
         job = Job(eval_case, "openclaw", "cli")
         metadata = {
@@ -1133,7 +1134,7 @@ class InterfaceEvalTests(unittest.TestCase):
                 "os.environ",
                 {"CARRYSTATE_EVAL_DIRECT_OPENAI": "1"},
             ):
-                direct = openclaw_config(
+                config = openclaw_config(
                     job,
                     metadata,
                     root,
@@ -1141,32 +1142,18 @@ class InterfaceEvalTests(unittest.TestCase):
                     "direct-api-test",
                     model="gpt-5.6-terra",
                 )
-            with patch.dict(
-                "os.environ",
-                {},
-                clear=False,
-            ):
-                default = openclaw_config(
-                    job,
-                    metadata,
-                    root,
-                    root,
-                    "subscription-test",
-                )
         self.assertEqual(
-            direct["models"]["providers"]["openai"]["agentRuntime"]["id"],
-            "pi",
-        )
-        self.assertEqual(
-            direct["agents"]["defaults"]["models"][
-                "openai/gpt-5.6-terra"
-            ]["agentRuntime"]["id"],
-            "pi",
-        )
-        self.assertEqual(
-            default["models"]["providers"]["openai"]["agentRuntime"]["id"],
+            config["models"]["providers"]["openai"]["agentRuntime"]["id"],
             "codex",
         )
+        self.assertEqual(
+            config["agents"]["defaults"]["models"][
+                "openai/gpt-5.6-terra"
+            ]["agentRuntime"]["id"],
+            "codex",
+        )
+        with self.assertRaisesRegex(ValueError, "Direct OpenAI reasoning is forbidden"):
+            parent_model_credentials(direct_openai=True)
 
     def test_openclaw_parent_gateway_has_a_non_openai_provider_identity(self):
         eval_case = self.cases[0]
@@ -1203,7 +1190,7 @@ class InterfaceEvalTests(unittest.TestCase):
             "ephemeral-model-capability",
         )
 
-    def test_prepare_openclaw_direct_api_uses_environment_secret_reference(self):
+    def test_prepare_openclaw_never_persists_direct_api_credentials(self):
         eval_case = self.cases[0]
         job = Job(eval_case, "openclaw", "cli")
         metadata = {
@@ -1227,29 +1214,21 @@ class InterfaceEvalTests(unittest.TestCase):
                     run_dir,
                     "direct-api-test",
                 )
-            auth_path = (
+            forbidden_auth_path = (
                 state_dir
                 / "agents"
                 / "main"
                 / "agent"
                 / "auth-profiles.json"
             )
-            auth = json.loads(auth_path.read_text(encoding="utf-8"))
-            rendered = (
-                config_path.read_text(encoding="utf-8")
-                + auth_path.read_text(encoding="utf-8")
-            )
-            auth_mode = auth_path.stat().st_mode & 0o777
-        self.assertEqual(
-            auth["profiles"]["openai:eval"]["keyRef"],
-            {
-                "source": "env",
-                "provider": "default",
-                "id": "OPENAI_API_KEY",
-            },
-        )
+            rendered = config_path.read_text(encoding="utf-8")
+            config = json.loads(rendered)
+        self.assertFalse(forbidden_auth_path.exists())
         self.assertNotIn("must-not-be-persisted", rendered)
-        self.assertEqual(auth_mode, 0o600)
+        self.assertEqual(
+            config["models"]["providers"]["openai"]["agentRuntime"]["id"],
+            "codex",
+        )
 
     def test_person_resolution_grader_accepts_equivalent_matching_language(self):
         eval_case = next(

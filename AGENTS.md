@@ -29,6 +29,19 @@ The shared implementation and runbook live at:
 /Users/Shared/projects/metis/docs/nyx-code-intel.md
 ```
 
+## Model billing
+
+All agent reasoning, evaluation, grading, and benchmark runs must use the
+owner's ChatGPT-authenticated Codex plan. Never switch or fall back to OpenAI
+API-key billing when Codex limits are reached. Stop the run so the owner can
+switch ChatGPT accounts or wait for the plan reset.
+
+OpenAI API billing is allowed only for explicitly approved product capabilities
+that the Codex plan cannot provide as an API, such as text embeddings. The
+reasoning harness must remove API credentials and routing overrides from child
+processes and fail closed unless `codex login status` reports `Logged in using
+ChatGPT`.
+
 ## Verification
 
 Run the narrowest checks that cover the change. Common gates are:
