@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://straylight.local/schemas/owner-link-candidates-v1.json",
+  "title": "Straylight owner link-case candidate selection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "created_at",
+    "source_inventory_sha256",
+    "selection_policy",
+    "counts",
+    "candidates",
+    "next_human_gate"
+  ],
+  "properties": {
+    "schema": {"const": "straylight-owner-link-candidates@v1"},
+    "created_at": {"type": "string"},
+    "source_inventory_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "selection_policy": {
+      "type": "object",
+      "required": [
+        "minimum_unique_resolved_outgoing_wiki_links",
+        "resolution_order",
+        "content_or_excerpts_in_artifact",
+        "questions_or_rubric_answers_in_artifact"
+      ],
+      "properties": {
+        "minimum_unique_resolved_outgoing_wiki_links": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resolution_order": {"type": "string"},
+        "content_or_excerpts_in_artifact": {"const": false},
+        "questions_or_rubric_answers_in_artifact": {"const": false}
+      }
+    },
+    "counts": {"type": "object"},
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "resolved_link_count",
+          "resolved_paths",
+          "raw_wiki_link_count",
+          "unresolved_target_hashes",
+          "ambiguous_target_hashes"
+        ],
+        "properties": {
+          "path": {"type": "string"},
+          "resolved_link_count": {"type": "integer", "minimum": 1},
+          "resolved_paths": {
+            "type": "array",
+            "items": {"type": "string"},
+            "uniqueItems": true
+          },
+          "raw_wiki_link_count": {"type": "integer", "minimum": 0},
+          "unresolved_target_hashes": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "uniqueItems": true
+          },
+          "ambiguous_target_hashes": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "next_human_gate": {"type": "string"}
+  }
+}

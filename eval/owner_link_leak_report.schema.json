@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://straylight.local/schemas/owner-link-leak-report-v1.json",
+  "title": "Straylight owner link-case leak report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "created_at",
+    "source_inventory_sha256",
+    "comparison",
+    "claims_echoed",
+    "checks",
+    "summary"
+  ],
+  "properties": {
+    "schema": {"const": "straylight-owner-link-leak-report@v1"},
+    "created_at": {"type": "string"},
+    "source_inventory_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "comparison": {"const": "case-sensitive exact Unicode substring"},
+    "claims_echoed": {"const": false},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "claim_id",
+          "claim_sha256",
+          "verbatim_match",
+          "matching_paths"
+        ],
+        "properties": {
+          "case_id": {"type": "string"},
+          "claim_id": {"type": "string"},
+          "claim_sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "verbatim_match": {"type": "boolean"},
+          "matching_paths": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checks", "leaks", "pass"],
+      "properties": {
+        "checks": {"type": "integer", "minimum": 0},
+        "leaks": {"type": "integer", "minimum": 0},
+        "pass": {"type": "boolean"}
+      }
+    }
+  }
+}

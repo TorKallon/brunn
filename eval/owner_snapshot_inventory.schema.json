@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://straylight.local/schemas/owner-snapshot-inventory-v1.json",
+  "title": "Straylight owner snapshot inventory v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "created_at",
+    "snapshot",
+    "boundaries",
+    "entries",
+    "checkpoint_lineage",
+    "totals",
+    "inventory_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "straylight-owner-snapshot-inventory@v1"},
+    "created_at": {"type": "string"},
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "kind", "authority", "symlinks_followed"],
+      "properties": {
+        "root": {"type": "string"},
+        "kind": {"const": "current_filesystem_snapshot"},
+        "authority": {"const": "owner_obsidian_vault"},
+        "symlinks_followed": {"const": false}
+      }
+    },
+    "boundaries": {"$ref": "#/$defs/boundaries"},
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/entry"}
+    },
+    "checkpoint_lineage": {"$ref": "#/$defs/lineage"},
+    "totals": {
+      "type": "object",
+      "required": ["entries", "regular_files", "bytes", "by_classification"],
+      "properties": {
+        "entries": {"type": "integer", "minimum": 0},
+        "regular_files": {"type": "integer", "minimum": 0},
+        "bytes": {"type": "integer", "minimum": 0},
+        "by_classification": {"type": "object"}
+      }
+    },
+    "inventory_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "classification",
+        "reason",
+        "size_bytes",
+        "sha256",
+        "media_type"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "classification": {
+          "enum": [
+            "supported_text",
+            "unsupported_binary",
+            "unsupported_collision",
+            "unsupported_special",
+            "ignored_symlink"
+          ]
+        },
+        "reason": {"type": "string"},
+        "size_bytes": {
+          "oneOf": [
+            {"type": "integer", "minimum": 0},
+            {"type": "null"}
+          ]
+        },
+        "sha256": {
+          "oneOf": [
+            {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            {"type": "null"}
+          ]
+        },
+        "media_type": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "boundaries": {
+      "type": "object",
+      "required": ["supported_text", "binary", "history", "evaluation_import"],
+      "properties": {
+        "supported_text": {"type": "string"},
+        "binary": {"type": "string"},
+        "history": {
+          "type": "object",
+          "required": ["included", "version_lineage", "deletion_history"],
+          "properties": {
+            "included": {"const": false},
+            "version_lineage": {"type": "string"},
+            "deletion_history": {"type": "string"}
+          }
+        },
+        "evaluation_import": {
+          "type": "object",
+          "required": ["access_mode", "entry_kind", "binary_transport"],
+          "properties": {
+            "access_mode": {"const": "read_only"},
+            "entry_kind": {"const": "markdown"},
+            "binary_transport": {"const": false}
+          }
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "required": [
+        "extraction",
+        "service_representation",
+        "definitions",
+        "duplicate_definitions",
+        "references",
+        "counts",
+        "source_resolution_pass"
+      ],
+      "properties": {
+        "extraction": {"type": "string"},
+        "service_representation": {"type": "string"},
+        "definitions": {"type": "integer", "minimum": 0},
+        "duplicate_definitions": {"type": "array"},
+        "references": {"type": "array"},
+        "counts": {"type": "object"},
+        "source_resolution_pass": {"type": "boolean"}
+      }
+    }
+  }
+}

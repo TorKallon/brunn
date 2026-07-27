@@ -21,6 +21,13 @@ Does pointer-only `linked_leads` (D06-wiki-link-leads.md) improve paired claim o
 6. Reindex-churn hook for the soak: run link-parse worker jobs continuously during performance_eval write probes — Small (performance_eval.py).
 7. Treatment-arm activation plumbing — Small. D06 attaches leads only on request `expand_links: true` or the relational heuristic (an open OWNER DECISION), and agent_work_eval.py has no per-request flag plumbing; without this item the treatment arm returns zero leads and the experiment is vacuous. Use D06's evaluation-only runtime config `link_leads.force_attach=true` (D06-wiki-link-leads.md, Activation) for the treatment arm; verify with a pre-draw smoke search that a `linked_leads` array is actually present.
 
+The deterministic current-snapshot inventory, scoped text-fidelity audit,
+link-candidate selection, and non-echoing leak-check commands are in
+[Tier-A-owner-snapshot-tooling.md](Tier-A-owner-snapshot-tooling.md). Live
+inventory/candidate/leak artifacts stay under ignored `operator-output/`; no
+owner content or rubric answer is committed by the scaffold. Its supported-text
+pass is not a substitute for D14's full history/binary/checkpoint fidelity gate.
+
 ## Arms
 
 1. **service_api, link_leads OFF** (control).

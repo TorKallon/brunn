@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://straylight.local/schemas/owner-snapshot-audit-v1.json",
+  "title": "Straylight owner snapshot scoped fidelity audit v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "created_at",
+    "source_inventory_sha256",
+    "target",
+    "supported_text_fidelity",
+    "checkpoint_lineage",
+    "boundaries",
+    "tier_a_assessment",
+    "import"
+  ],
+  "properties": {
+    "schema": {"const": "straylight-owner-snapshot-audit@v1"},
+    "created_at": {"type": "string"},
+    "source_inventory_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "target": {
+      "type": "object",
+      "required": ["kind", "api_url", "access_mode"],
+      "properties": {
+        "kind": {"const": "disposable_simplified_core_evaluation_user"},
+        "api_url": {"type": "string"},
+        "access_mode": {"const": "read_only"}
+      }
+    },
+    "supported_text_fidelity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_entries",
+        "actual_entries",
+        "matched_entries",
+        "missing_paths",
+        "unexpected_paths",
+        "duplicate_actual_paths",
+        "mismatches",
+        "pass"
+      ],
+      "properties": {
+        "expected_entries": {"type": "integer", "minimum": 0},
+        "actual_entries": {"type": "integer", "minimum": 0},
+        "matched_entries": {"type": "integer", "minimum": 0},
+        "missing_paths": {"type": "array", "items": {"type": "string"}},
+        "unexpected_paths": {"type": "array", "items": {"type": "string"}},
+        "duplicate_actual_paths": {"type": "array", "items": {"type": "string"}},
+        "mismatches": {"type": "array"},
+        "pass": {"type": "boolean"}
+      }
+    },
+    "checkpoint_lineage": {"type": "object"},
+    "boundaries": {"type": "object"},
+    "tier_a_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported_text_scope", "full_d14_zero_diff_gate", "blockers"],
+      "properties": {
+        "supported_text_scope": {"enum": ["pass", "fail"]},
+        "full_d14_zero_diff_gate": {"enum": ["pass", "blocked"]},
+        "blockers": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "import": {"type": "object"}
+  }
+}

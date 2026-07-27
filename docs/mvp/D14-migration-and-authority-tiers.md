@@ -33,6 +33,13 @@ Fidelity audit spec (zero diffs = pass; any diff = fail, no judgment calls):
 - Every parent_checkpoint_id resolves.
 - Counts match the manifest, including version lineage (history=true).
 
+The read-only current-snapshot bridge and its machine-readable scoped audit are
+documented in [Tier-A-owner-snapshot-tooling.md](Tier-A-owner-snapshot-tooling.md).
+That bridge can prove exact supported-text import for a disposable evaluation
+user and select E11 candidates, but it explicitly cannot satisfy this full gate:
+binary publication, `history=true` lineage, and checkpoint-table parent
+resolution remain required.
+
 ### Tier B — read/write daily driver (+3-4 days)
 
 Entry requires Tier A complete. Contents:
@@ -86,4 +93,5 @@ The kill switch is the tier structure itself: at any tier, abort returns authori
 
 - results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json; results/2026-07-27-3340-clean-30-sample.json; v5/v7 future-soak JSONs in results/.
 - D13-client-integration-and-canaries.md; E01-paired-draw-machinery-and-baseline.md (aggregator machinery); E04-result-budget-experiment.md (result-budget experiment); E10-combined-preflight.md (final combined pre-launch gate).
+- Tier-A-owner-snapshot-tooling.md (read-only current-snapshot preflight, scoped audit, and honest gate boundary).
 - Decisions.md (cost rules); Operations.md (credential storage); vault notes on the 07-10, 07-22 dedup, 07-26, and v6 recent-first incidents.
