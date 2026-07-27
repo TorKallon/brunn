@@ -28,6 +28,7 @@ from agent_work_eval import (  # noqa: E402
     render_fixed_context,
     render_prompt,
     read_sidecar_checkpoint,
+    response_reports_semantic_gap,
     resolve_codex_path,
     select_cases,
     summarize,
@@ -46,6 +47,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AgentWorkEvalTests(unittest.TestCase):
+    def test_e09_semantic_coverage_probe_rejects_all_gap_shapes(self):
+        self.assertTrue(response_reports_semantic_gap({
+            "data": {
+                "results": [{
+                    "lane_failures": ["semantic_deferred"],
+                }],
+            },
+        }))
+        self.assertTrue(response_reports_semantic_gap({
+            "gaps": [{
+                "kind": "retrieval_lane_unavailable",
+                "lane": "semantic",
+            }],
+        }))
+        self.assertFalse(response_reports_semantic_gap({
+            "data": {"results": [{"candidates": []}]},
+        }))
+
     @classmethod
     def setUpClass(cls):
         cls.manifest = json.loads((ROOT / "eval" / "work_cases.json").read_text())

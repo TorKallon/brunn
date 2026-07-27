@@ -45,6 +45,14 @@ pub struct Config {
     pub allow_degraded_embeddings: bool,
     pub observability_timings_ms: bool,
     pub verbatim_spans: bool,
+    pub semantic_lane: bool,
+    pub embed_cache: bool,
+    pub semantic_deadline: Option<Duration>,
+    pub embedding_backfill_guard: bool,
+    pub embedding_backfill_batch_chunks: usize,
+    pub embedding_backfill_inter_batch_delay: Duration,
+    pub embedding_backfill_open_p95_limit_ms: f64,
+    pub embedding_backfill_search_p95_limit_ms: f64,
     pub continuation_secret: String,
     pub materialize_token_budget: usize,
     pub search_fair_share: bool,
@@ -194,6 +202,29 @@ impl Config {
             allow_degraded_embeddings: env_parse("STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS", "false")?,
             observability_timings_ms: env_parse("STRAYLIGHT_OBSERVABILITY_TIMINGS_MS", "true")?,
             verbatim_spans: env_parse("STRAYLIGHT_VERBATIM_SPANS", "false")?,
+            semantic_lane: env_parse("STRAYLIGHT_SEMANTIC_LANE", "false")?,
+            embed_cache: env_parse("STRAYLIGHT_EMBED_CACHE", "true")?,
+            semantic_deadline: match env_parse::<u64>("STRAYLIGHT_SEMANTIC_DEADLINE_MS", "300")? {
+                0 => None,
+                milliseconds => Some(Duration::from_millis(milliseconds)),
+            },
+            embedding_backfill_guard: env_parse("STRAYLIGHT_EMBEDDING_BACKFILL_GUARD", "true")?,
+            embedding_backfill_batch_chunks: env_parse(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS",
+                "64",
+            )?,
+            embedding_backfill_inter_batch_delay: Duration::from_millis(env_parse(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS",
+                "250",
+            )?),
+            embedding_backfill_open_p95_limit_ms: env_parse(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_OPEN_P95_LIMIT_MS",
+                "120",
+            )?,
+            embedding_backfill_search_p95_limit_ms: env_parse(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_SEARCH_P95_LIMIT_MS",
+                "107",
+            )?,
             continuation_secret,
             materialize_token_budget: env_parse("STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET", "24000")?,
             search_fair_share: env_parse("STRAYLIGHT_SEARCH_FAIR_SHARE", "false")?,
@@ -262,6 +293,25 @@ impl Config {
         {
             return Err(ApiError::configuration(
                 "STRAYLIGHT_SUPERSESSION_DEMOTION_WEIGHT must be a finite nonnegative number",
+            ));
+        }
+        if !(1..=64).contains(&config.embedding_backfill_batch_chunks) {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS must be between 1 and 64",
+            ));
+        }
+        if config.embedding_backfill_inter_batch_delay < Duration::from_millis(250) {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS must be at least 250",
+            ));
+        }
+        if !config.embedding_backfill_open_p95_limit_ms.is_finite()
+            || !config.embedding_backfill_search_p95_limit_ms.is_finite()
+            || config.embedding_backfill_open_p95_limit_ms <= 0.0
+            || config.embedding_backfill_search_p95_limit_ms <= 0.0
+        {
+            return Err(ApiError::configuration(
+                "embedding backfill foreground p95 limits must be greater than zero",
             ));
         }
         config.validate_production()?;
@@ -515,6 +565,11 @@ mod tests {
     }
 
     #[test]
+    fn semantic_policy_flags_are_explicit_and_zero_deadline_is_unbounded() {
+        run_config_env_probe("semantic_policy_flags");
+    }
+
+    #[test]
     fn partial_static_object_store_credentials_are_rejected() {
         run_config_env_probe("partial_credentials");
     }
@@ -588,6 +643,15 @@ mod tests {
             }
             "resume_delta_flag" => {
                 command.env("STRAYLIGHT_RESUME_DELTAS", "true");
+            }
+            "semantic_policy_flags" => {
+                command
+                    .env("STRAYLIGHT_SEMANTIC_LANE", "true")
+                    .env("STRAYLIGHT_EMBED_CACHE", "false")
+                    .env("STRAYLIGHT_SEMANTIC_DEADLINE_MS", "0")
+                    .env("STRAYLIGHT_EMBEDDING_BACKFILL_GUARD", "false")
+                    .env("STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS", "32")
+                    .env("STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS", "500");
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
@@ -680,6 +744,18 @@ mod tests {
             "resume_delta_flag" => {
                 let config = Config::from_env().unwrap();
                 assert!(config.resume_deltas);
+            }
+            "semantic_policy_flags" => {
+                let config = Config::from_env().unwrap();
+                assert!(config.semantic_lane);
+                assert!(!config.embed_cache);
+                assert_eq!(config.semantic_deadline, None);
+                assert!(!config.embedding_backfill_guard);
+                assert_eq!(config.embedding_backfill_batch_chunks, 32);
+                assert_eq!(
+                    config.embedding_backfill_inter_batch_delay,
+                    Duration::from_millis(500)
+                );
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }

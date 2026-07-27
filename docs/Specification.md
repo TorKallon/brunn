@@ -195,7 +195,8 @@ Behavior:
 - Clamp token budget to 1,000 through 64,000.
 - Return a new opaque session reference for client correlation only.
 - Return current workspace generation.
-- Run bounded exact, lexical, and semantic candidate lanes.
+- Run bounded exact and lexical candidate lanes, plus semantic only when the
+  default-off runtime policy enables it.
 - Preserve results from successful lanes when another fails.
 - Group chunks by entry.
 - Hydrate at most 12 coherent entries under the requested budget.
@@ -228,7 +229,7 @@ limit from 1 through 50, and modes selected from:
 - `lexical`
 - `semantic`
 
-Default mode uses all available lanes. Candidate work is bounded before entry
+Default mode uses all policy-enabled lanes. Candidate work is bounded before entry
 hydration. Results are merged by entry and include enough exact identity to
 read the source. Lane failure produces a partial or degraded response, not loss
 of successful candidates.

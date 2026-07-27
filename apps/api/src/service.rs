@@ -68,6 +68,7 @@ pub async fn ready(State(state): State<AppState>) -> Response {
             },
             "embedding_provider": state.embedder.provider(),
             "embedding_model": state.embedder.model(),
+            "runtime_features": runtime_features(&state),
             "build_revision": build_revision()
         })),
     )
@@ -165,8 +166,29 @@ pub async fn status(
             "model": state.embedder.model(),
             "dimensions": state.embedder.dimensions(),
             "status": if state.embedder.is_degraded() { "degraded" } else { "ready" }
-        }
+        },
+        "runtime_features": runtime_features(&state),
+        "semantic_runtime": state.semantic_runtime.snapshot()
     })))
+}
+
+fn runtime_features(state: &AppState) -> Value {
+    json!({
+        "semantic_lane": state.config.semantic_lane,
+        "embed_cache": state.config.embed_cache,
+        "semantic_deadline_ms": state.config.semantic_deadline.map(|value| {
+            u64::try_from(value.as_millis()).unwrap_or(u64::MAX)
+        }),
+        "embedding_backfill_guard": state.config.embedding_backfill_guard,
+        "embedding_backfill_batch_chunks": state.config.embedding_backfill_batch_chunks,
+        "embedding_backfill_inter_batch_ms": u64::try_from(
+            state.config.embedding_backfill_inter_batch_delay.as_millis()
+        ).unwrap_or(u64::MAX),
+        "embedding_backfill_open_p95_limit_ms":
+            state.config.embedding_backfill_open_p95_limit_ms,
+        "embedding_backfill_search_p95_limit_ms":
+            state.config.embedding_backfill_search_p95_limit_ms
+    })
 }
 
 fn build_revision() -> &'static str {

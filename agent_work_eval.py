@@ -24,6 +24,13 @@ from native_eval import (
     text_documents,
     write_native_memory_wrapper,
 )
+from semantic_eval_policy import (
+    enforced_retrieval_modes,
+    response_has_candidates,
+    semantic_counter_delta,
+    semantic_rates,
+    validate_e09_runtime,
+)
 from straylight_eval import BM25Index
 from workspace_cli import corpus_hash, diverse_results, load_corpus
 
@@ -59,6 +66,117 @@ SERVICE_BOOLEAN_FEATURE_FLAGS = frozenset({
     "read_path_roundtrip_v1",
     "lexical_single_scan",
 })
+
+
+def evaluation_source_fingerprint() -> dict[str, Any]:
+    def command_output(command: list[str]) -> str | None:
+        completed = subprocess.run(
+            command,
+            cwd=PROJECT_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            return None
+        value = completed.stdout.strip()
+        return value or None
+
+    revision = command_output(["git", "rev-parse", "HEAD"])
+    tracked_clean = subprocess.run(
+        ["git", "diff", "--quiet", "HEAD", "--"],
+        cwd=PROJECT_ROOT,
+        check=False,
+    ).returncode == 0
+    untracked = command_output([
+        "git",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+    ])
+    untracked_source = [
+        path
+        for path in (untracked or "").splitlines()
+        if not path.startswith(("results/", "runs/"))
+    ]
+    return {
+        "source_revision": revision,
+        "tracked_source_clean": tracked_clean,
+        "untracked_source_files": untracked_source,
+        "reproducible_source": bool(
+            revision and tracked_clean and not untracked_source
+        ),
+    }
+
+
+def e09_status_snapshot(
+    metadata: dict[str, Any],
+    *,
+    run_id: str,
+) -> dict[str, Any]:
+    client = NativeApiClient(
+        token=str(metadata["token"]),
+        run_id=run_id,
+        case_id="e09-runtime-provenance",
+    )
+    return client.get("/v1/status").data
+
+
+def response_reports_semantic_gap(value: Any) -> bool:
+    if isinstance(value, dict):
+        failures = value.get("lane_failures")
+        if isinstance(failures, list) and any(
+            str(item).startswith("semantic")
+            for item in failures
+        ):
+            return True
+        if (
+            value.get("lane") == "semantic"
+            and str(value.get("kind", "")).startswith("retrieval_lane_")
+        ):
+            return True
+        return any(
+            response_reports_semantic_gap(item)
+            for item in value.values()
+        )
+    if isinstance(value, list):
+        return any(response_reports_semantic_gap(item) for item in value)
+    return False
+
+
+def e09_coverage_probe(
+    metadata: dict[str, Any],
+    *,
+    run_id: str,
+    case_id: str,
+) -> None:
+    client = NativeApiClient(
+        token=str(metadata["token"]),
+        run_id=run_id,
+        case_id=case_id,
+    )
+    response = client.post(
+        "/v1/workspace/search",
+        {
+            "queries": [{
+                "id": "e09-semantic-coverage",
+                "query": (
+                    "E09 semantic coverage sentinel for fully indexed "
+                    f"evaluation case {case_id}"
+                ),
+                "modes": ["semantic"],
+                "limit": 1,
+            }],
+        },
+    )
+    if (
+        response_reports_semantic_gap(response.body)
+        or not response_has_candidates(response.body)
+    ):
+        raise ValueError(
+            f"E09 semantic coverage probe failed for {case_id}: "
+            "semantic lane was unavailable, empty, failed, or deferred"
+        )
 
 
 def subscription_reasoning_environment(
@@ -1685,6 +1803,39 @@ async def run_all(args: argparse.Namespace) -> dict:
         raise ValueError(
             "feature-state assertions require the service_api condition"
         )
+    source_fingerprint = evaluation_source_fingerprint()
+    if args.e09_arm:
+        if args.service_protocol != "simple":
+            raise ValueError("E09 arms require --service-protocol simple")
+        if selected_conditions != ["service_api"]:
+            raise ValueError(
+                "E09 arms require exactly --condition service_api"
+            )
+        if not selected_cases:
+            raise ValueError("E09 requires at least one selected case")
+        if not source_fingerprint["reproducible_source"]:
+            raise ValueError(
+                f"E09 requires a clean source fingerprint: {source_fingerprint}"
+            )
+        public_status = NativeApiClient(
+            token="public-status",
+            timeout=15,
+        ).get("/ready").data
+        public_provenance = validate_e09_runtime(
+            public_status,
+            args.e09_arm,
+        )
+        if (
+            public_provenance["build_revision"]
+            != source_fingerprint["source_revision"]
+        ):
+            raise ValueError(
+                "E09 API build revision does not match the clean source "
+                f"revision: {public_provenance['build_revision']} != "
+                f"{source_fingerprint['source_revision']}"
+            )
+    else:
+        public_provenance = None
     native_metadata: dict[str, dict[str, Any]] = {}
     if "service_api" in selected_conditions:
         native_state_path = run_root / NATIVE_PROVISIONING_STATE
@@ -1716,7 +1867,13 @@ async def run_all(args: argparse.Namespace) -> dict:
                     if args.service_protocol == "simple"
                     else "/v1/admin/eval/import"
                 ),
-                wait_for_semantic=args.service_protocol != "simple",
+                wait_for_semantic=(
+                    args.service_protocol != "simple"
+                    or args.e09_arm in {
+                        "unbounded_semantic",
+                        "deadline_cache",
+                    }
+                ),
             )
             write_native_provisioning_state(native_state_path, run_id, native_metadata)
         if expected_flags and native_metadata:
@@ -1738,6 +1895,32 @@ async def run_all(args: argparse.Namespace) -> dict:
             }
             if mismatches:
                 raise ValueError(f"service feature flag mismatch: {mismatches}")
+    e09_runtime_before: dict[str, Any] | None = None
+    e09_provenance: dict[str, Any] | None = None
+    if args.e09_arm:
+        if args.e09_arm != "no_semantic":
+            for case in selected_cases:
+                e09_coverage_probe(
+                    native_metadata[case["id"]],
+                    run_id=run_id,
+                    case_id=case["id"],
+                )
+        first_case = selected_cases[0]["id"]
+        e09_runtime_before = e09_status_snapshot(
+            native_metadata[first_case],
+            run_id=run_id,
+        )
+        e09_provenance = validate_e09_runtime(
+            e09_runtime_before,
+            args.e09_arm,
+        )
+        if (
+            e09_provenance["build_revision"]
+            != source_fingerprint["source_revision"]
+        ):
+            raise ValueError(
+                "E09 authenticated status build revision drifted from source"
+            )
     semaphore = asyncio.Semaphore(args.concurrency)
     tasks = []
     records = []
@@ -1774,6 +1957,11 @@ async def run_all(args: argparse.Namespace) -> dict:
                     "STRAYLIGHT_API_URL": os.environ["STRAYLIGHT_API_URL"],
                     "STRAYLIGHT_EVAL_TOKEN": metadata["token"],
                 }
+                enforced_modes = enforced_retrieval_modes(args.e09_arm)
+                if enforced_modes:
+                    environment["STRAYLIGHT_EVAL_RETRIEVAL_MODES"] = ",".join(
+                        enforced_modes
+                    )
             tasks.append(run_one(
                 semaphore,
                 codex=args.codex,
@@ -1806,6 +1994,34 @@ async def run_all(args: argparse.Namespace) -> dict:
     selected_manifest["model"] = args.model or manifest["model"]
     selected_manifest["cases"] = selected_cases
     selected_manifest["conditions"] = selected_conditions
+    e09_runtime: dict[str, Any] | None = None
+    if args.e09_arm:
+        first_case = selected_cases[0]["id"]
+        e09_runtime_after = e09_status_snapshot(
+            native_metadata[first_case],
+            run_id=run_id,
+        )
+        final_provenance = validate_e09_runtime(
+            e09_runtime_after,
+            args.e09_arm,
+        )
+        if final_provenance != e09_provenance:
+            raise ValueError(
+                "E09 runtime flags or build revision drifted during the run"
+            )
+        before_counters = e09_runtime_before.get("semantic_runtime", {})
+        after_counters = e09_runtime_after.get("semantic_runtime", {})
+        counter_delta = semantic_counter_delta(
+            before_counters,
+            after_counters,
+        )
+        e09_runtime = {
+            "provenance": final_provenance,
+            "counters_before": before_counters,
+            "counters_after": after_counters,
+            "counter_delta": counter_delta,
+            "rates": semantic_rates(counter_delta),
+        }
     run = {
         "benchmark_version": manifest["benchmark_version"],
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -1833,6 +2049,8 @@ async def run_all(args: argparse.Namespace) -> dict:
         "run_tags": sorted(set(args.run_tag)),
         "reasoning_billing": reasoning_billing,
         "expected_feature_flags": expected_flags,
+        "implementation_fingerprint": source_fingerprint,
+        "e09_runtime": e09_runtime,
         "records": records,
     }
     run["run_ledger"] = build_run_ledger(
@@ -1978,6 +2196,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--service-protocol",
         choices=("legacy", "simple"),
         default="simple",
+    )
+    run_parser.add_argument(
+        "--e09-arm",
+        choices=("no_semantic", "unbounded_semantic", "deadline_cache"),
+        help=(
+            "fail-closed E09 arm selection; verifies API flags/build provenance "
+            "and enforces exact+lexical requests for no_semantic"
+        ),
     )
     run_parser.add_argument("--out", type=Path, required=True)
     run_parser.add_argument("--report", type=Path)

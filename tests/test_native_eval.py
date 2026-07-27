@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterator
+from unittest.mock import patch
 
 from agent_work_eval import select_conditions
 from native_eval import (
@@ -354,6 +355,41 @@ def fake_server(
 
 
 class NativeEvaluationTests(unittest.TestCase):
+    def test_e09_no_semantic_modes_are_enforced_for_open_and_search(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            task = Path(temporary) / "task.txt"
+            task.write_text("Find the current plan.", encoding="utf-8")
+            common = [
+                "--state", str(Path(temporary) / "state.json"),
+                "--task-file", str(task),
+                "--scope", "Alpha",
+                "--authorization-scope", "eval:run/case",
+                "--protocol", "simple",
+            ]
+            open_args = build_parser().parse_args([*common, "open"])
+            query_args = build_parser().parse_args([
+                *common,
+                "query",
+                "current plan",
+                "--mode",
+                "semantic",
+            ])
+            with patch.dict(
+                os.environ,
+                {"STRAYLIGHT_EVAL_RETRIEVAL_MODES": "exact,lexical"},
+            ):
+                _, _, open_payload = operation_request(open_args, {})
+                _, _, query_payload = operation_request(
+                    query_args,
+                    {"session_id": "session:s1"},
+                )
+
+        self.assertEqual(open_payload["modes"], ["exact", "lexical"])
+        self.assertEqual(
+            query_payload["queries"][0]["modes"],
+            ["exact", "lexical"],
+        )
+
     def test_open_passes_project_scope_into_retrieval_task(self):
         with tempfile.TemporaryDirectory() as temporary:
             task = Path(temporary) / "task.txt"

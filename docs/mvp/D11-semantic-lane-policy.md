@@ -1,10 +1,28 @@
 # D11 — Semantic Lane Policy: Existence First, Then Bounded Acceleration
 
-Status: Proposed — not started
+Status: Implemented behind default-off flags — E09 not run
 Date: 2026-07-27
 Depends on: D14 (D14-migration-and-authority-tiers.md)
 Gated by: E09 (E09-semantic-existence-experiment.md)
 Runtime flag: semantic_lane, embed_cache, semantic_deadline_ms; backfill throttle under embedding_backfill_guard (canonical name shared with D12-operational-simplification.md)
+
+Implementation note (2026-07-27): the simple workspace now applies
+`semantic_lane` to both `open` and `search`, including semantic-only requests;
+the default is off. `embed_cache` fronts query embeddings with the specified
+model/dimension/query key, 4,096-entry LRU, seven-day positive TTL, and
+60-second negative TTL. A positive `semantic_deadline_ms` bounds embed plus
+vector lookup; `0` selects the E09 unbounded arm while retaining the outer
+2.5-second lane timeout. Timed-out cached calls continue only long enough to
+populate the query cache. `/ready` and authenticated `/v1/status` expose the
+flag state, build revision, and process counters used by the fail-closed E09
+harness.
+
+The canonical backfill guard now stops embedding-job claims when off and, when
+on, caps publications at 64 chunks with at least 250ms between full batches.
+The configured foreground open/search p95 limits are exported as runtime
+policy. Cross-process rolling-p95 sampling and automatic pause remain a D12
+worker/telemetry integration item; neither this implementation nor E09 may
+claim acceptance gate 5 until that sampler exists.
 
 ## Problem and evidence
 
@@ -36,10 +54,13 @@ If the lane survives E09, the synchronous uncached call at simple_core.rs:3005 i
 
 Lanes already run concurrently under RETRIEVAL_LANE_TIMEOUT (~2.5s). Inside that, the semantic lane gets its own budget, semantic_deadline_ms (initial value 300ms), covering embed + HNSW probe end to end. On a cache hit the embed cost is ~0 and 300ms is ample for HNSW at owner scale. On expiry:
 
-- The response returns immediately with exact+lexical results plus the existing semantic_unavailable gap notice — the identical shape agents already handle today while embeddings are pending, and the shape under which every strong eval result was scored.
+- The response returns immediately with exact+lexical results plus an explicit
+  `retrieval_lane_deferred` semantic gap. This extends the existing lane-gap
+  shape so evaluation can distinguish a deadline deferral from missing
+  coverage while preserving successful-lane results.
 - The embedding call completes asynchronously and lands in the cache, so a repeated or refined query is warm.
 
-This makes "accelerator, never a gate" mechanical rather than aspirational: no code path exists in which a response waits past the deadline for OpenAI. The 300ms number is a starting point only — E09 tunes it (300→600→1,000ms stepping) rather than us guessing. Response contract delta: none; the gap notice already exists. Per-lane metrics gain a semantic_deferred counter and cache hit/miss counters (in-process, exported with existing lane metrics).
+This makes "accelerator, never a gate" mechanical rather than aspirational: no code path exists in which a response waits past the deadline for OpenAI. The 300ms number is a starting point only — E09 tunes it (300→600→1,000ms stepping) rather than us guessing. The response contract extends the existing lane-gap vocabulary without changing successful candidate shapes. Per-lane metrics gain a semantic_deferred counter and cache hit/miss counters (in-process, exported with existing lane metrics).
 
 ### (d) Backfill rate limit and foreground-latency guard
 
@@ -54,7 +75,9 @@ Per D14 (D14-migration-and-authority-tiers.md), semantic stays OFF the Tier B cr
 - No schema expansion: the cache is process memory; backfill uses existing search_chunks rows.
 - Scoring formulas, caps, and budgets are untouched (semantic 2.0+(1−distance)+bonus−penalty; 128 candidates / 96,000 excerpt chars / 2,400 per excerpt; open ≤32/≤8/24,000).
 - Markdown-authority round-trip: nothing durable is added; a rebuild-from-vault reproduces all state.
-- MCP contract (apps/mcp, /v1/workspace/*) is unchanged; clients already tolerate the gap notice.
+- Existing MCP operations and workspace routes are unchanged. `memory.open`
+  gains the same optional retrieval-mode restriction already supported by
+  search, and clients already tolerate lane-gap notices.
 - No validity intervals, no graph database, no synchronous global consistency; dreaming stays paused.
 
 ## Failure-mode analysis
@@ -72,10 +95,10 @@ Per D14 (D14-migration-and-authority-tiers.md), semantic stays OFF the Tier B cr
 Deterministic (pre-experiment):
 
 1. Unit tests: key normalization (whitespace/trim), LRU eviction at 4,096, TTL expiry, negative-cache window, model-id self-invalidation.
-2. Deadline test against tests/mock_openai_embeddings.py with injected latency > semantic_deadline_ms: response returns under RETRIEVAL_LANE_TIMEOUT with semantic_unavailable, and the cache is populated asynchronously afterward.
+2. Deterministic mock-embedder deadline test with injected latency greater than `semantic_deadline_ms`: the bounded future defers, and the cache is populated asynchronously afterward. The full HTTP/mock-server acceptance probe remains part of E09 stack qualification.
 3. Round-trip budget assertion: a search performs ≤1 embed call, exactly 0 on cache hit (per the constraint that query-count budgets accompany latency gates).
 4. performance_eval.py semantic-failure probe passes using the mock server as --semantic-failure-start/stop-command hooks; 64K 30-sample p95s within hard gates with the lane on.
-5. Backfill guard test: synthetic foreground load above threshold pauses backfill within one batch.
+5. Backfill guard test: synthetic foreground load above threshold pauses backfill within one batch. **Pending D12 cross-process foreground sampler; the existing code proves kill-switch, batch-cap, and pacing behavior only.**
 
 Experimental: E09 acceptance criteria. Ship the lane on the hot path only if E09 says so; otherwise remove it from the default search path (flag stays for research).
 

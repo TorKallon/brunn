@@ -589,6 +589,10 @@ class PerformanceEvalTests(unittest.TestCase):
             "semantic",
         ))
         self.assertTrue(response_reports_lane_failure(
+            {"lane_failures": ["semantic_unavailable"]},
+            "semantic",
+        ))
+        self.assertTrue(response_reports_lane_failure(
             {"gaps": [{"kind": "retrieval_lane_failed", "lane": "semantic"}]},
             "semantic",
         ))

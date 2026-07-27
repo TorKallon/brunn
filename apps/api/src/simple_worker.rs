@@ -18,7 +18,7 @@ use crate::{
 const MAX_ATTEMPTS: i32 = 5;
 const LEASE_MINUTES: i32 = 5;
 const MAX_EMBED_BATCH_JOBS: i64 = 8;
-const MAX_EMBED_CHUNKS_PER_PUBLICATION: i64 = 128;
+const MAX_EMBED_CHUNKS_PER_PUBLICATION: usize = 64;
 
 #[derive(Debug)]
 struct Job {
@@ -38,6 +38,9 @@ pub async fn process_next(state: &AppState) -> ApiResult<bool> {
         job
     } else if let Some(job) = claim_stale_priority(pool).await? {
         job
+    } else if !state.config.embedding_backfill_guard {
+        mark_exhausted(pool).await?;
+        return Ok(false);
     } else if let Some(job) = claim_embedding(pool).await? {
         job
     } else if let Some(job) = claim_stale_embedding(pool).await? {
@@ -543,6 +546,10 @@ async fn embed_entries(state: &AppState, jobs: &[Job]) -> ApiResult<()> {
         entry_ids.push(payload_uuid(&job.payload, "entry_id")?);
         versions.push(payload_i64(&job.payload, "version")?);
     }
+    let batch_chunks = state
+        .config
+        .embedding_backfill_batch_chunks
+        .min(MAX_EMBED_CHUNKS_PER_PUBLICATION);
     loop {
         let rows = sqlx::query(
             r#"
@@ -576,7 +583,9 @@ async fn embed_entries(state: &AppState, jobs: &[Job]) -> ApiResult<()> {
         .bind(&user_ids)
         .bind(&entry_ids)
         .bind(&versions)
-        .bind(MAX_EMBED_CHUNKS_PER_PUBLICATION)
+        .bind(i64::try_from(batch_chunks).map_err(|_| {
+            ApiError::configuration("embedding backfill batch size is out of range")
+        })?)
         .fetch_all(pool)
         .await?;
         if rows.is_empty() {
@@ -643,7 +652,11 @@ async fn embed_entries(state: &AppState, jobs: &[Job]) -> ApiResult<()> {
             "#,
         );
         statement.build().execute(pool).await?;
-        tokio::task::yield_now().await;
+        if rows.len() == batch_chunks {
+            tokio::time::sleep(state.config.embedding_backfill_inter_batch_delay).await;
+        } else {
+            tokio::task::yield_now().await;
+        }
     }
     Ok(())
 }
@@ -831,7 +844,7 @@ mod tests {
     #[test]
     fn embedding_batches_remain_bounded() {
         assert_eq!(MAX_EMBED_BATCH_JOBS, 8);
-        assert_eq!(MAX_EMBED_CHUNKS_PER_PUBLICATION, 128);
+        assert_eq!(MAX_EMBED_CHUNKS_PER_PUBLICATION, 64);
     }
 
     #[tokio::test]

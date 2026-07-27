@@ -54,6 +54,10 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   } | undefined;
   assert.match(resumeCheckpointRef?.description ?? "", /Omit this field/);
   assert.match(resumeCheckpointRef?.description ?? "", /never invent/);
+  const openModes = open.inputSchema.properties?.modes as {
+    description?: string;
+  } | undefined;
+  assert.match(openModes?.description ?? "", /exact and lexical/);
   const query = response.tools.find((tool) => tool.name === "memory.query");
   assert.ok(query);
   assert.match(query.description ?? "", /current workspace files/);

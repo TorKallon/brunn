@@ -80,6 +80,11 @@ registerJsonTool(
       "checkpoint reference was supplied; never invent one or use placeholders such as latest.",
     ),
     token_budget: z.number().int().min(1).optional(),
+    modes: z.array(
+      z.enum(["exact", "lexical", "semantic"]),
+    ).optional().describe(
+      "Omit for the server policy. Evaluation arms may explicitly restrict open to exact and lexical retrieval.",
+    ),
   },
   (input) => client.request("/v1/workspace/open", input),
 );

@@ -27,6 +27,12 @@ from native_eval import (
     provision_evaluation,
     recursively_redact_secrets,
 )
+from semantic_eval_policy import (
+    response_has_candidates,
+    semantic_counter_delta,
+    semantic_rates,
+    validate_e09_runtime,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -485,7 +491,12 @@ def response_reports_lane_failure(value: Any, lane: str) -> bool:
         for key in ("lane_failures", "failed_lanes"):
             failures = value.get(key)
             if isinstance(failures, list) and any(
-                str(item).casefold() == lane.casefold()
+                (
+                    str(item).casefold() == lane.casefold()
+                    or str(item).casefold().startswith(
+                        f"{lane.casefold()}_"
+                    )
+                )
                 for item in failures
             ):
                 return True
@@ -1999,6 +2010,7 @@ def benchmark_scale(
     semantic_failure_settle_seconds: float,
     wait_for_semantic: bool,
     unique_queries: bool,
+    e09_arm: str | None,
     flat_result_callback: Callable[[dict[str, Any]], None] | None = None,
     flat_file_control_override: dict[str, Any] | None = None,
     flat_file_control_source: str | None = None,
@@ -2047,7 +2059,11 @@ def benchmark_scale(
             if protocol == "simple"
             else "/v1/admin/eval/import"
         ),
-        wait_for_semantic=wait_for_semantic or protocol != "simple",
+        wait_for_semantic=(
+            wait_for_semantic
+            or protocol != "simple"
+            or e09_arm in {"unbounded_semantic", "deadline_cache"}
+        ),
         batch_size=10_000 if protocol == "simple" else None,
     )
     import_ms = (time.monotonic() - started) * 1000
@@ -2059,6 +2075,41 @@ def benchmark_scale(
         timeout=timeout_seconds,
     )
     authorization_scope = provisioning["authorization_scope"]
+    semantic_coverage_probe: dict[str, Any] | None = None
+    if e09_arm in {"unbounded_semantic", "deadline_cache"}:
+        semantic_coverage_probe = client.post(
+            "/v1/workspace/search",
+            {
+                "queries": [{
+                    "id": "e09-semantic-coverage",
+                    "query": (
+                        "E09 semantic coverage sentinel for the fully indexed "
+                        f"{scale}-document performance fixture"
+                    ),
+                    "modes": ["semantic"],
+                    "limit": 1,
+                }],
+            },
+        ).body
+        if (
+            response_reports_lane_failure(
+                semantic_coverage_probe,
+                "semantic",
+            )
+            or response_reports_gap_kind(
+                semantic_coverage_probe,
+                "retrieval_lane_unavailable",
+            )
+            or response_reports_gap_kind(
+                semantic_coverage_probe,
+                "retrieval_lane_deferred",
+            )
+            or not response_has_candidates(semantic_coverage_probe)
+        ):
+            raise RuntimeError(
+                "E09 semantic coverage probe was unavailable, empty, failed, "
+                "or deferred"
+            )
     task = synthetic_discovery_task(scale)
     operation_prefix = "/v1/workspace" if protocol == "simple" else "/v1/memory"
     index_before = (
@@ -2610,6 +2661,9 @@ def benchmark_scale(
         },
         "response_accounting": summarize_response_accounting(response_samples),
         "semantic_failure_probe": failure_probe,
+        "e09_semantic_coverage_probe": recursively_redact_secrets(
+            semantic_coverage_probe
+        ),
         "semantic_catchup": {
             "retrieval_tested_while_pending": not bool(
                 provisioning["provisioning"].get("semantic_ready_at_start")
@@ -3476,20 +3530,7 @@ def command_run(args: argparse.Namespace) -> int:
             profile,
         )
     except ValueError as error:
-        result = {
-            "schema": "straylight-performance-eval@v2",
-            "created_at": datetime.now().astimezone().isoformat(),
-            "label": args.label,
-            "pass": False,
-            "errors": [{
-                "type": "ConfigurationError",
-                "message": str(error),
-            }],
-        }
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps(result, indent=2))
-        return 2
+        return write_configuration_error(args, error)
 
     admin = NativeApiClient(timeout=profile.import_timeout_seconds)
     try:
@@ -3513,6 +3554,32 @@ def command_run(args: argparse.Namespace) -> int:
         args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(result, indent=2))
         return 2
+    e09_runtime_before: dict[str, Any] | None = None
+    e09_provenance: dict[str, Any] | None = None
+    if args.e09_arm:
+        try:
+            if args.protocol != "simple":
+                raise ValueError("E09 arms require --protocol simple")
+            fingerprint_before = implementation_fingerprint(args.api_container)
+            if not fingerprint_before["reproducible"]:
+                raise ValueError(
+                    f"E09 requires a reproducible implementation: {fingerprint_before}"
+                )
+            e09_runtime_before = admin.get("/v1/status").data
+            e09_provenance = validate_e09_runtime(
+                e09_runtime_before,
+                args.e09_arm,
+            )
+            if (
+                e09_provenance["build_revision"]
+                != fingerprint_before["source_revision"]
+            ):
+                raise ValueError(
+                    "E09 API build revision does not match the clean source "
+                    "revision"
+                )
+        except (NativeApiError, ValueError) as error:
+            return write_configuration_error(args, error)
     scales = []
     errors = []
     partial_flat_controls: dict[int, dict[str, Any]] = {}
@@ -3545,6 +3612,7 @@ def command_run(args: argparse.Namespace) -> int:
                 ),
                 wait_for_semantic=args.wait_semantic,
                 unique_queries=args.unique_queries,
+                e09_arm=args.e09_arm,
                 flat_result_callback=lambda result, current=scale: (
                     partial_flat_controls.__setitem__(current, result)
                 ),
@@ -3596,6 +3664,41 @@ def command_run(args: argparse.Namespace) -> int:
     else:
         gates = []
     fingerprint = implementation_fingerprint(args.api_container)
+    e09_runtime: dict[str, Any] | None = None
+    if args.e09_arm and e09_runtime_before is not None:
+        try:
+            e09_runtime_after = admin.get("/v1/status").data
+            final_provenance = validate_e09_runtime(
+                e09_runtime_after,
+                args.e09_arm,
+            )
+            if final_provenance != e09_provenance:
+                raise ValueError(
+                    "E09 runtime flags or build revision drifted during the run"
+                )
+            delta = semantic_counter_delta(
+                e09_runtime_before.get("semantic_runtime", {}),
+                e09_runtime_after.get("semantic_runtime", {}),
+            )
+            e09_runtime = {
+                "provenance": final_provenance,
+                "counters_before": e09_runtime_before.get(
+                    "semantic_runtime",
+                    {},
+                ),
+                "counters_after": e09_runtime_after.get(
+                    "semantic_runtime",
+                    {},
+                ),
+                "counter_delta": delta,
+                "rates": semantic_rates(delta),
+            }
+        except (NativeApiError, ValueError) as error:
+            errors.append({
+                "type": type(error).__name__,
+                "message": str(error),
+                "stage": "e09_runtime_provenance",
+            })
     if profile.definitive:
         gates.append({
             "name": "implementation_fingerprint_is_reproducible",
@@ -3627,6 +3730,7 @@ def command_run(args: argparse.Namespace) -> int:
         "run_tags": sorted(set(args.run_tag)),
         "api_url": admin.base_url,
         "implementation_fingerprint": fingerprint,
+        "e09_runtime": e09_runtime,
         "run_profile": {
             "mode": "definitive" if profile.definitive else "quick",
             "definitive": profile.definitive,
@@ -3677,6 +3781,26 @@ def command_run(args: argparse.Namespace) -> int:
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))
     return 0 if result["pass"] else 2
+
+
+def write_configuration_error(
+    args: argparse.Namespace,
+    error: Exception,
+) -> int:
+    result = {
+        "schema": "straylight-performance-eval@v2",
+        "created_at": datetime.now().astimezone().isoformat(),
+        "label": args.label,
+        "pass": False,
+        "errors": [{
+            "type": "ConfigurationError",
+            "message": str(error),
+        }],
+    }
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(result, indent=2))
+    return 2
 
 
 def command_compare(args: argparse.Namespace) -> int:
@@ -3778,6 +3902,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--protocol",
         choices=("legacy", "simple"),
         default="legacy",
+    )
+    run.add_argument(
+        "--e09-arm",
+        choices=("no_semantic", "unbounded_semantic", "deadline_cache"),
+        help=(
+            "fail-closed E09 arm selection; verifies clean source, API image "
+            "revision, runtime flags, and semantic cache/deferral counters"
+        ),
     )
     run.add_argument(
         "--semantic-failure-start-command",

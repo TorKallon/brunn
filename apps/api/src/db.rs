@@ -19,6 +19,7 @@ use crate::{
     error::{ApiError, ApiResult},
     object_store::ObjectStore,
     quota::{PreauthRateLimiter, RequestRateLimiter},
+    semantic_policy::SemanticRuntime,
     usage::UsageTracker,
     workspace_features::WorkspaceFeatureCache,
 };
@@ -37,6 +38,7 @@ pub struct AppState {
     pub request_rate_limiter: RequestRateLimiter,
     pub usage_tracker: UsageTracker,
     pub workspace_features: WorkspaceFeatureCache,
+    pub semantic_runtime: SemanticRuntime,
 }
 
 impl AppState {
@@ -72,6 +74,7 @@ impl AppState {
         let transfer_limiter = Arc::new(Semaphore::new(config.max_concurrent_transfers));
         let usage_tracker = UsageTracker::start(admin_pool.clone());
         let workspace_features = WorkspaceFeatureCache::default();
+        let semantic_runtime = SemanticRuntime::default();
         Ok(Self {
             config,
             auth_pool,
@@ -85,6 +88,7 @@ impl AppState {
             request_rate_limiter,
             usage_tracker,
             workspace_features,
+            semantic_runtime,
         })
     }
 

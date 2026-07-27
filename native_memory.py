@@ -318,6 +318,24 @@ def query_scope(args: argparse.Namespace) -> str | dict[str, Any]:
     return requested
 
 
+def enforced_evaluation_retrieval_modes() -> tuple[str, ...]:
+    raw = os.environ.get("STRAYLIGHT_EVAL_RETRIEVAL_MODES", "")
+    modes = tuple(
+        mode.strip().casefold()
+        for mode in raw.split(",")
+        if mode.strip()
+    )
+    if len(set(modes)) != len(modes) or any(
+        mode not in {"exact", "lexical", "semantic"}
+        for mode in modes
+    ):
+        raise ValueError(
+            "STRAYLIGHT_EVAL_RETRIEVAL_MODES must be a unique comma-separated "
+            "subset of exact,lexical,semantic"
+        )
+    return modes
+
+
 REASONING_COMMANDS = {
     "open",
     "resume",
@@ -1031,6 +1049,13 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
         }
         if checkpoint_id:
             payload["resume_checkpoint_ref"] = checkpoint_id
+        enforced_modes = enforced_evaluation_retrieval_modes()
+        if enforced_modes:
+            if args.protocol != "simple":
+                raise ValueError(
+                    "evaluation retrieval-mode enforcement requires the simple protocol"
+                )
+            payload["modes"] = list(enforced_modes)
         return "POST", f"{operation_root}/open", payload
 
     if args.command == "changes":
@@ -1102,6 +1127,22 @@ def operation_request(args: argparse.Namespace, state: dict[str, Any]) -> tuple[
             if args.mode:
                 spec["modes"] = args.mode
             payload = {"queries": [spec]}
+        enforced_modes = enforced_evaluation_retrieval_modes()
+        if enforced_modes:
+            if args.protocol != "simple":
+                raise ValueError(
+                    "evaluation retrieval-mode enforcement requires the simple protocol"
+                )
+            queries = payload.get("queries")
+            if not isinstance(queries, list) or any(
+                not isinstance(query, dict)
+                for query in queries
+            ):
+                raise ValueError(
+                    "enforced evaluation retrieval modes require a queries list"
+                )
+            for query in queries:
+                query["modes"] = list(enforced_modes)
         payload["session_id"] = session_id
         return "POST", (
             f"{operation_root}/search"

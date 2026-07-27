@@ -57,6 +57,24 @@ JSON without a second `structuredContent` copy by default; set
 `STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT=1` only for a client that explicitly
 requires it.
 
+Semantic retrieval remains an experimental, default-off accelerator:
+
+```bash
+STRAYLIGHT_SEMANTIC_LANE=false
+STRAYLIGHT_EMBED_CACHE=true
+STRAYLIGHT_SEMANTIC_DEADLINE_MS=300
+STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=true
+```
+
+`STRAYLIGHT_SEMANTIC_DEADLINE_MS=0` removes the semantic-specific deadline but
+does not remove the outer 2.5-second retrieval-lane timeout. Turning
+`STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=false` stops the worker from claiming
+embedding jobs. With the guard on, each publication is capped at 64 chunks and
+full batches are separated by at least 250ms. `/ready` reports the active
+flags; authenticated `/v1/status` additionally reports semantic cache and
+deferral counters. The E09 harness validates these values and the immutable
+build revision before any reasoning draw.
+
 ## Health
 
 ```bash
