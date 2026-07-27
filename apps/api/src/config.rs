@@ -40,6 +40,10 @@ pub struct Config {
     pub observability_timings_ms: bool,
     pub continuation_secret: String,
     pub materialize_token_budget: usize,
+    pub search_fair_share: bool,
+    pub search_top1_hydration: bool,
+    pub search_char_cap: bool,
+    pub search_section_demotion_top_n: Option<usize>,
     pub request_timeout: Duration,
     pub transfer_timeout: Duration,
     pub max_concurrent_transfers: usize,
@@ -175,6 +179,12 @@ impl Config {
             observability_timings_ms: env_parse("STRAYLIGHT_OBSERVABILITY_TIMINGS_MS", "true")?,
             continuation_secret,
             materialize_token_budget: env_parse("STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET", "24000")?,
+            search_fair_share: env_parse("STRAYLIGHT_SEARCH_FAIR_SHARE", "false")?,
+            search_top1_hydration: env_parse("STRAYLIGHT_SEARCH_TOP1_HYDRATION", "false")?,
+            search_char_cap: env_parse("STRAYLIGHT_SEARCH_CHAR_CAP", "false")?,
+            search_section_demotion_top_n: first_env_parse(&[
+                "STRAYLIGHT_SEARCH_SECTION_DEMOTION_TOP_N",
+            ])?,
             request_timeout: Duration::from_secs(env_parse(
                 "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS",
                 "30",
@@ -223,6 +233,11 @@ impl Config {
         if config.max_concurrent_transfers == 0 {
             return Err(ApiError::configuration(
                 "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS must be greater than zero",
+            ));
+        }
+        if config.search_section_demotion_top_n == Some(0) {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_SEARCH_SECTION_DEMOTION_TOP_N must be greater than zero when set",
             ));
         }
         config.validate_production()?;
@@ -480,6 +495,16 @@ mod tests {
         run_config_env_probe("partial_credentials");
     }
 
+    #[test]
+    fn search_contract_flags_are_off_by_default() {
+        run_config_env_probe("search_contract_defaults");
+    }
+
+    #[test]
+    fn search_contract_flags_and_knob_are_configurable() {
+        run_config_env_probe("search_contract_flags");
+    }
+
     fn run_config_env_probe(scenario: &str) {
         let mut command = Command::new(std::env::current_exe().unwrap());
         command
@@ -522,6 +547,14 @@ mod tests {
             }
             "partial_credentials" => {
                 command.env("STRAYLIGHT_S3_ACCESS_KEY", "access-without-secret");
+            }
+            "search_contract_defaults" => {}
+            "search_contract_flags" => {
+                command
+                    .env("STRAYLIGHT_SEARCH_FAIR_SHARE", "true")
+                    .env("STRAYLIGHT_SEARCH_TOP1_HYDRATION", "true")
+                    .env("STRAYLIGHT_SEARCH_CHAR_CAP", "true")
+                    .env("STRAYLIGHT_SEARCH_SECTION_DEMOTION_TOP_N", "8");
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
@@ -586,6 +619,20 @@ mod tests {
                         .to_string()
                         .contains("access and secret keys must be configured together")
                 );
+            }
+            "search_contract_defaults" => {
+                let config = Config::from_env().unwrap();
+                assert!(!config.search_fair_share);
+                assert!(!config.search_top1_hydration);
+                assert!(!config.search_char_cap);
+                assert_eq!(config.search_section_demotion_top_n, None);
+            }
+            "search_contract_flags" => {
+                let config = Config::from_env().unwrap();
+                assert!(config.search_fair_share);
+                assert!(config.search_top1_hydration);
+                assert!(config.search_char_cap);
+                assert_eq!(config.search_section_demotion_top_n, Some(8));
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }

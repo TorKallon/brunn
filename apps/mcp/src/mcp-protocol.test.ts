@@ -69,6 +69,10 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   assert.equal(queries?.maxItems, 16);
   assert.equal(queries?.items?.properties?.limit?.default, 8);
   assert.match(queries?.items?.properties?.modes?.description ?? "", /hybrid search/);
+  const queryTokenBudget = query.inputSchema.properties?.token_budget as {
+    description?: string;
+  } | undefined;
+  assert.match(queryTokenBudget?.description ?? "", /response budget/);
   const read = response.tools.find((tool) => tool.name === "memory.read");
   assert.ok(read);
   assert.match(read.description ?? "", /exact reads/);

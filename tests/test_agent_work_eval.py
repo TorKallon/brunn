@@ -325,6 +325,108 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertIn("Build a facet checklist", service_prompt)
         self.assertIn("repeat a fact when it is needed in more than one slot", service_prompt)
 
+    def test_e04_chronic_manifests_are_exact_case_subsets(self):
+        specifications = [
+            (
+                "e04_chronic_rupture_cases.json",
+                "rupture_ops_cases.json",
+                {
+                    "ruptureops-archive-import-reconciliation",
+                    "ruptureops-flowworks-campaign-revision",
+                    "ruptureops-spatial-evidence",
+                    "ruptureops-forked-agent-idempotency",
+                },
+            ),
+            (
+                "e04_chronic_guard_cases.json",
+                "work_cases.json",
+                {
+                    "star-rupture-plan-revision",
+                    "warmind-parser-learning",
+                },
+            ),
+        ]
+        for chronic_name, base_name, expected_ids in specifications:
+            with self.subTest(manifest=chronic_name):
+                chronic_path = ROOT / "eval" / chronic_name
+                validated = validate(
+                    chronic_path,
+                    ROOT / "eval" / "work_answer_schema.json",
+                )
+                self.assertEqual(validated["errors"], [])
+                chronic = json.loads(chronic_path.read_text())
+                base = json.loads((ROOT / "eval" / base_name).read_text())
+                chronic_by_id = {case["id"]: case for case in chronic["cases"]}
+                base_by_id = {case["id"]: case for case in base["cases"]}
+                self.assertEqual(set(chronic_by_id), expected_ids)
+                self.assertEqual(
+                    chronic_by_id,
+                    {
+                        case_id: base_by_id[case_id]
+                        for case_id in chronic_by_id
+                    },
+                )
+
+    def test_exact_value_slots_are_validated_and_carried_into_grades(self):
+        manifest_path = ROOT / "eval" / "rupture_ops_cases.json"
+        validated = validate(
+            manifest_path,
+            ROOT / "eval" / "work_answer_schema.json",
+        )
+        self.assertEqual(validated["errors"], [])
+        case = next(
+            case
+            for case in validated["manifest"]["cases"]
+            if case["id"] == "ruptureops-archive-import-reconciliation"
+        )
+        claims = [
+            {
+                "id": rubric["id"],
+                "value": " ".join(check["any"][0] for check in rubric["checks"]),
+                "source_paths": [rubric["sources_any"][0]],
+                "confidence": "high",
+            }
+            for rubric in case["rubric"]
+        ]
+        answer = {
+            "answer": "Audit result.",
+            "claims": claims,
+            "checkpoint": {
+                "objective": "Preserve the audit.",
+                "current_state": ["Complete"],
+                "decisions": ["Keep one canonical import"],
+                "open_questions": [],
+                "next_actions": ["Recheck live state"],
+                "artifacts": ["receipt"],
+            },
+        }
+        grade = grade_answer(
+            case,
+            answer,
+            {document.path for document in validated["documents"]},
+        )
+        self.assertTrue(all(claim["exact_value"] for claim in grade["claims"]))
+        self.assertTrue(
+            all("exact_value" in claim["tags"] for claim in grade["claims"])
+        )
+
+    def test_exact_value_slot_validation_rejects_unknown_claims(self):
+        manifest = json.loads((ROOT / "eval" / "work_cases.json").read_text())
+        manifest["exact_value_claim_slots"] = {
+            "warmind-parser-learning": ["not-a-claim"],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            validated = validate(
+                path,
+                ROOT / "eval" / "work_answer_schema.json",
+            )
+        self.assertIn(
+            "warmind-parser-learning: unknown exact-value claim ID not-a-claim",
+            validated["errors"],
+        )
+
     def test_retired_cases_are_excluded_by_default_but_remain_reproducible(self):
         active = select_cases(self.manifest, None, include_retired=False)
         all_cases = select_cases(self.manifest, None, include_retired=True)
@@ -436,7 +538,7 @@ class AgentWorkEvalTests(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
-            "ad3a20cd4019d9ba574241b78924b51fcf69261d3cab802037ed9dff09abb7a2",
+            "7a19466c810be3b2e4fda49c6c2b8316a3e92d7d4c1449f5cfe3d250189cf878",
         )
 
     def test_personal_coordination_rubrics_are_satisfiable_and_fixed_packs_are_fair(self):

@@ -792,6 +792,7 @@ def grade_answer(case: dict, answer: dict, corpus_paths: set[str]) -> dict:
             )
         content_fraction = sum(1 for check in checks if check["matched"]) / max(1, len(checks))
         score = 0.8 * content_fraction + 0.2 * int(source_hit)
+        tags = list(rubric.get("tags", []))
         claim_results.append({
             "id": rubric["id"],
             "score": round(score, 4),
@@ -801,6 +802,8 @@ def grade_answer(case: dict, answer: dict, corpus_paths: set[str]) -> dict:
             "checks": checks,
             "citations": citations,
             "native_paths": list(rubric.get("native_paths", [])),
+            "tags": tags,
+            "exact_value": "exact_value" in tags,
         })
 
     checkpoint = answer.get("checkpoint", {})
@@ -1491,16 +1494,49 @@ def render_report(run: dict) -> str:
 
 def validate(manifest_path: Path, schema_path: Path) -> dict:
     manifest = load_json(manifest_path)
+    errors = []
     for case in manifest["cases"]:
         case.setdefault(
             "grading_mode",
             manifest.get("grading_mode", "exact_substring_v1"),
         )
+    exact_value_claim_slots = manifest.get("exact_value_claim_slots", {})
+    if not isinstance(exact_value_claim_slots, dict):
+        errors.append("exact_value_claim_slots must be an object keyed by case ID")
+        exact_value_claim_slots = {}
+    cases_by_id = {case["id"]: case for case in manifest["cases"]}
+    for case_id, claim_ids in exact_value_claim_slots.items():
+        case = cases_by_id.get(case_id)
+        if case is None:
+            errors.append(f"exact_value_claim_slots names unknown case {case_id}")
+            continue
+        if (
+            not isinstance(claim_ids, list)
+            or not all(isinstance(claim_id, str) for claim_id in claim_ids)
+        ):
+            errors.append(f"{case_id}: exact-value claim IDs must be a string list")
+            continue
+        if len(claim_ids) != len(set(claim_ids)):
+            errors.append(f"{case_id}: duplicate exact-value claim IDs")
+        rubrics_by_id = {rubric["id"]: rubric for rubric in case["rubric"]}
+        for claim_id in claim_ids:
+            rubric = rubrics_by_id.get(claim_id)
+            if rubric is None:
+                errors.append(f"{case_id}: unknown exact-value claim ID {claim_id}")
+                continue
+            tags = rubric.setdefault("tags", [])
+            if (
+                not isinstance(tags, list)
+                or not all(isinstance(tag, str) for tag in tags)
+            ):
+                errors.append(f"{case_id}:{claim_id}: tags must be a string list")
+                continue
+            if "exact_value" not in tags:
+                tags.append("exact_value")
     schema = load_json(schema_path)
     corpus = (PROJECT_ROOT / manifest["corpus_root"]).resolve()
     documents, chunks = load_corpus(corpus)
     paths = {document.path for document in documents}
-    errors = []
     ids = [case["id"] for case in manifest["cases"]]
     if len(ids) != len(set(ids)):
         errors.append("Duplicate case IDs")
@@ -1511,6 +1547,12 @@ def validate(manifest_path: Path, schema_path: Path) -> dict:
         if rubric_ids != set(case["claim_slots"]):
             errors.append(f"{case['id']}: claim slots and rubric IDs differ")
         for rubric in case["rubric"]:
+            tags = rubric.get("tags", [])
+            if (
+                not isinstance(tags, list)
+                or not all(isinstance(tag, str) for tag in tags)
+            ):
+                errors.append(f"{case['id']}:{rubric['id']}: tags must be a string list")
             missing = [path for path in rubric["sources_any"] if path not in paths]
             if missing:
                 errors.append(f"{case['id']}:{rubric['id']}: missing sources {missing}")

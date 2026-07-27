@@ -16,6 +16,20 @@
   "conditions": ["fixed_pack", "filesystem", "workspace"],
   "fixed_pack_chars": 24000,
   "fixed_pack_chunks": 16,
+  "exact_value_claim_slots": {
+    "ruptureops-archive-import-reconciliation": ["c1", "c2", "c3", "c4"],
+    "ruptureops-prompt-history-reconciliation": ["c1", "c4"],
+    "ruptureops-save-state-truth": ["c3", "c4"],
+    "ruptureops-live-poi-advice": ["c1", "c4"],
+    "ruptureops-geo-scanner-learning": ["c4"],
+    "ruptureops-spatial-evidence": ["c3", "c4"],
+    "ruptureops-flowworks-campaign-revision": ["c1", "c2", "c3", "c4"],
+    "ruptureops-multi-goal-field-plan": ["c1", "c2", "c4"],
+    "ruptureops-watch-session-design": ["c1", "c4"],
+    "ruptureops-interrupted-ios-continuation": ["c1", "c2"],
+    "ruptureops-private-public-artifact-boundary": ["c2", "c3"],
+    "ruptureops-forked-agent-idempotency": ["c1", "c2", "c3", "c4"]
+  },
   "future_lanes": [
     "binary image understanding with source-native reads",
     "object-store archive inspection and staged promotion",

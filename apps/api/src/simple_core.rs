@@ -161,6 +161,7 @@ pub struct SearchRequest {
     pub queries: Vec<SearchQuery>,
     pub query: Option<String>,
     pub limit: Option<usize>,
+    pub token_budget: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -287,6 +288,64 @@ struct Candidate {
     score: f64,
     lanes: Vec<String>,
     sections: Vec<CandidateSection>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SearchRepresentation {
+    CompleteSource,
+    Excerpt,
+    PointerLead,
+}
+
+#[derive(Clone, Debug)]
+struct SearchCandidateView {
+    candidate: Candidate,
+    representation: SearchRepresentation,
+    complete_text: Option<String>,
+    demote_additional_sections: bool,
+}
+
+#[derive(Clone, Debug)]
+struct SearchHydration {
+    size_bytes: usize,
+    content: String,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SearchBudgetOptions {
+    fair_share: bool,
+    top1_hydration: bool,
+    char_cap: bool,
+    section_demotion_top_n: Option<usize>,
+    max_chars: usize,
+}
+
+impl SearchBudgetOptions {
+    fn from_request(config: &crate::config::Config, token_budget: Option<usize>) -> Self {
+        let char_cap = config.search_char_cap;
+        let max_chars = if char_cap {
+            token_budget
+                .unwrap_or(DEFAULT_TOKEN_BUDGET)
+                .clamp(1_000, MAX_TOKEN_BUDGET)
+                .saturating_mul(4)
+                .min(MAX_SEARCH_RESPONSE_CHARS)
+        } else {
+            MAX_SEARCH_RESPONSE_CHARS
+        };
+        Self {
+            fair_share: config.search_fair_share,
+            top1_hydration: config.search_top1_hydration,
+            char_cap,
+            section_demotion_top_n: char_cap
+                .then_some(config.search_section_demotion_top_n)
+                .flatten(),
+            max_chars,
+        }
+    }
+
+    fn active(self) -> bool {
+        self.fair_share || self.top1_hydration || self.char_cap
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -562,6 +621,7 @@ pub async fn search(
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
     auth.require(Capability::Query)?;
     let started = Instant::now();
+    let budget_options = SearchBudgetOptions::from_request(&state.config, request.token_budget);
     let queries = if request.queries.is_empty() {
         vec![SearchQuery {
             id: Some("q0".to_owned()),
@@ -598,6 +658,27 @@ pub async fn search(
     completed.sort_by_key(|(index, _, _)| *index);
 
     let budget_started = Instant::now();
+    let (budgeted_views, budgeted_truncated) = if budget_options.active() {
+        let candidate_sets = completed
+            .iter()
+            .map(|(_, _, (candidates, _, _))| candidates.clone())
+            .collect::<Vec<_>>();
+        let (selected, selection_truncated) = select_search_candidate_sets(
+            &candidate_sets,
+            budget_options.fair_share,
+            MAX_SEARCH_RESPONSE_CANDIDATES,
+        );
+        let hydration = if budget_options.top1_hydration {
+            fetch_search_top1_hydration(&state, &auth, &selected).await?
+        } else {
+            HashMap::new()
+        };
+        let (views, evidence_truncated) =
+            assemble_search_candidate_views(selected, &hydration, budget_options);
+        (Some(views), selection_truncated || evidence_truncated)
+    } else {
+        (None, false)
+    };
     let mut result_sets = Vec::with_capacity(completed.len());
     let mut query_timings = Vec::with_capacity(completed.len());
     let mut any_candidates = false;
@@ -605,29 +686,41 @@ pub async fn search(
     let mut all_candidates = Vec::new();
     let mut remaining_candidates = MAX_SEARCH_RESPONSE_CANDIDATES;
     let mut remaining_excerpt_chars = MAX_SEARCH_RESPONSE_CHARS;
-    let mut response_truncated = false;
-    for (index, query, (mut candidates, failures, timings)) in completed {
+    let mut response_truncated = budgeted_truncated;
+    for (position, (index, query, (mut candidates, failures, timings))) in
+        completed.into_iter().enumerate()
+    {
         query_timings.push(json!({
             "id": query.id.clone().unwrap_or_else(|| format!("q{index}")),
             "phases": timings.as_value(),
         }));
-        if candidates.len() > remaining_candidates {
-            candidates.truncate(remaining_candidates);
-            response_truncated = true;
-        }
-        remaining_candidates = remaining_candidates.saturating_sub(candidates.len());
-        for candidate in &mut candidates {
-            if truncate_candidate_evidence(candidate, &mut remaining_excerpt_chars) {
+        let rendered = if let Some(views) = &budgeted_views {
+            let query_views = &views[position];
+            any_candidates |= !query_views.is_empty();
+            all_candidates.extend(query_views.iter().map(|view| view.candidate.clone()));
+            query_views
+                .iter()
+                .map(render_budgeted_search_candidate)
+                .collect::<Vec<_>>()
+        } else {
+            if candidates.len() > remaining_candidates {
+                candidates.truncate(remaining_candidates);
                 response_truncated = true;
             }
-        }
-        any_candidates |= !candidates.is_empty();
+            remaining_candidates = remaining_candidates.saturating_sub(candidates.len());
+            for candidate in &mut candidates {
+                if truncate_candidate_evidence(candidate, &mut remaining_excerpt_chars) {
+                    response_truncated = true;
+                }
+            }
+            any_candidates |= !candidates.is_empty();
+            all_candidates.extend(candidates.iter().cloned());
+            candidates
+                .iter()
+                .map(render_search_candidate)
+                .collect::<Vec<_>>()
+        };
         any_failures |= !failures.is_empty();
-        all_candidates.extend(candidates.iter().cloned());
-        let rendered = candidates
-            .iter()
-            .map(render_search_candidate)
-            .collect::<Vec<_>>();
         let mut result = serde_json::Map::from_iter([
             (
                 "id".to_owned(),
@@ -3284,6 +3377,352 @@ fn normalize_candidate_sections(candidate: &mut Candidate) {
     }
 }
 
+fn select_search_candidate_sets(
+    candidate_sets: &[Vec<Candidate>],
+    fair_share: bool,
+    max_candidates: usize,
+) -> (Vec<Vec<Candidate>>, bool) {
+    let available = candidate_sets.iter().map(Vec::len).sum::<usize>();
+    let mut selected = vec![Vec::new(); candidate_sets.len()];
+    if fair_share {
+        let max_rank = candidate_sets.iter().map(Vec::len).max().unwrap_or(0);
+        let mut selected_count = 0_usize;
+        'ranks: for rank in 0..max_rank {
+            for (query_index, candidates) in candidate_sets.iter().enumerate() {
+                if selected_count == max_candidates {
+                    break 'ranks;
+                }
+                if let Some(candidate) = candidates.get(rank) {
+                    selected[query_index].push(candidate.clone());
+                    selected_count += 1;
+                }
+            }
+        }
+    } else {
+        let mut remaining = max_candidates;
+        for (query_index, candidates) in candidate_sets.iter().enumerate() {
+            let retain = candidates.len().min(remaining);
+            selected[query_index].extend(candidates.iter().take(retain).cloned());
+            remaining = remaining.saturating_sub(retain);
+        }
+    }
+    let retained = selected.iter().map(Vec::len).sum::<usize>();
+    (selected, retained < available)
+}
+
+async fn fetch_search_top1_hydration(
+    state: &AppState,
+    auth: &AuthContext,
+    candidate_sets: &[Vec<Candidate>],
+) -> ApiResult<HashMap<Uuid, SearchHydration>> {
+    let mut seen = HashSet::new();
+    let ids = candidate_sets
+        .iter()
+        .filter_map(|candidates| candidates.first())
+        .map(|candidate| candidate.entry_id)
+        .filter(|entry_id| seen.insert(*entry_id))
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut tx = state.begin_read(auth).await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT entry.id,version.size_bytes,
+               CASE WHEN version.size_bytes <= $3 THEN version.content ELSE NULL END AS content
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND entry.id=ANY($2)
+          AND entry.deleted_at IS NULL
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .bind(&ids)
+    .bind(i64::try_from(MAX_OPEN_COMPLETE_SOURCE_CHARS).unwrap_or(i64::MAX))
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let size_bytes = usize::try_from(row.get::<i64, _>("size_bytes")).ok()?;
+            let content = row.get::<Option<String>, _>("content")?;
+            Some((
+                row.get::<Uuid, _>("id"),
+                SearchHydration {
+                    size_bytes,
+                    content,
+                },
+            ))
+        })
+        .collect())
+}
+
+fn assemble_search_candidate_views(
+    candidate_sets: Vec<Vec<Candidate>>,
+    hydration: &HashMap<Uuid, SearchHydration>,
+    options: SearchBudgetOptions,
+) -> (Vec<Vec<SearchCandidateView>>, bool) {
+    let mut views = candidate_sets
+        .into_iter()
+        .map(|candidates| {
+            candidates
+                .into_iter()
+                .enumerate()
+                .map(|(rank, candidate)| SearchCandidateView {
+                    candidate,
+                    representation: SearchRepresentation::Excerpt,
+                    complete_text: None,
+                    demote_additional_sections: options
+                        .section_demotion_top_n
+                        .is_some_and(|top_n| rank >= top_n),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut remaining_chars = options.max_chars;
+    let mut truncated = false;
+
+    if options.top1_hydration {
+        for query_views in &mut views {
+            let Some(top) = query_views.first_mut() else {
+                continue;
+            };
+            let Some(loaded) = hydration.get(&top.candidate.entry_id) else {
+                continue;
+            };
+            let content_chars = loaded.content.chars().count();
+            if loaded.size_bytes > MAX_OPEN_COMPLETE_SOURCE_CHARS
+                || loaded.size_bytes > remaining_chars
+                || content_chars > remaining_chars
+            {
+                continue;
+            }
+            top.representation = SearchRepresentation::CompleteSource;
+            top.complete_text = Some(loaded.content.clone());
+            remaining_chars = remaining_chars.saturating_sub(content_chars);
+            for view in query_views.iter_mut().skip(1) {
+                if desired_search_evidence_chars(view) > 0 {
+                    truncated = true;
+                }
+                view.representation = SearchRepresentation::PointerLead;
+            }
+        }
+    }
+
+    if options.fair_share {
+        let quotas = fair_search_char_quotas(&views, remaining_chars);
+        for (query_views, quota) in views.iter_mut().zip(quotas) {
+            let mut query_remaining = quota;
+            for view in query_views {
+                let (used, view_truncated) = apply_search_view_budget(view, query_remaining);
+                query_remaining = query_remaining.saturating_sub(used);
+                truncated |= view_truncated;
+            }
+        }
+    } else {
+        for query_views in &mut views {
+            for view in query_views {
+                let (used, view_truncated) = apply_search_view_budget(view, remaining_chars);
+                remaining_chars = remaining_chars.saturating_sub(used);
+                truncated |= view_truncated;
+            }
+        }
+    }
+
+    (views, truncated)
+}
+
+fn fair_search_char_quotas(views: &[Vec<SearchCandidateView>], max_chars: usize) -> Vec<usize> {
+    if views.is_empty() {
+        return Vec::new();
+    }
+    let desired = views
+        .iter()
+        .map(|query_views| {
+            query_views
+                .iter()
+                .map(desired_search_evidence_chars)
+                .sum::<usize>()
+        })
+        .collect::<Vec<_>>();
+    let floor = max_chars / views.len();
+    let mut quotas = desired
+        .iter()
+        .map(|desired_chars| (*desired_chars).min(floor))
+        .collect::<Vec<_>>();
+    let mut remaining = max_chars.saturating_sub(quotas.iter().sum());
+    while remaining > 0 {
+        let mut progressed = false;
+        for (query_index, desired_chars) in desired.iter().enumerate() {
+            let unmet = desired_chars.saturating_sub(quotas[query_index]);
+            let granted = unmet.min(2_400).min(remaining);
+            if granted > 0 {
+                quotas[query_index] += granted;
+                remaining -= granted;
+                progressed = true;
+            }
+            if remaining == 0 {
+                break;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    quotas
+}
+
+fn desired_search_evidence_chars(view: &SearchCandidateView) -> usize {
+    if view.representation != SearchRepresentation::Excerpt {
+        return 0;
+    }
+    let primary = view.candidate.excerpt.chars().count();
+    if view.demote_additional_sections {
+        primary
+    } else {
+        primary.saturating_add(
+            view.candidate
+                .sections
+                .iter()
+                .skip(1)
+                .map(|section| section.excerpt.chars().count())
+                .sum::<usize>(),
+        )
+    }
+}
+
+fn apply_search_view_budget(
+    view: &mut SearchCandidateView,
+    available_chars: usize,
+) -> (usize, bool) {
+    if view.representation != SearchRepresentation::Excerpt {
+        return (0, false);
+    }
+    let original_chars = desired_search_evidence_chars(view);
+    let mut remaining = available_chars.min(original_chars);
+    let starting = remaining;
+    let truncated = if view.demote_additional_sections {
+        let original_primary = view.candidate.excerpt.chars().count();
+        let retained = truncate_chars(&view.candidate.excerpt, remaining.min(2_400));
+        remaining = remaining.saturating_sub(retained.chars().count());
+        let truncated = retained.chars().count() < original_primary
+            || view
+                .candidate
+                .sections
+                .iter()
+                .skip(1)
+                .any(|section| !section.excerpt.is_empty());
+        view.candidate.excerpt = retained;
+        if let Some(primary) = view.candidate.sections.first_mut() {
+            primary.excerpt.clone_from(&view.candidate.excerpt);
+        }
+        truncated
+    } else {
+        truncate_candidate_evidence(&mut view.candidate, &mut remaining)
+    };
+    if view.candidate.excerpt.is_empty() {
+        view.representation = SearchRepresentation::PointerLead;
+    }
+    (starting.saturating_sub(remaining), truncated)
+}
+
+fn render_budgeted_search_candidate(view: &SearchCandidateView) -> Value {
+    let candidate = &view.candidate;
+    let representation = match view.representation {
+        SearchRepresentation::CompleteSource => "complete_source",
+        SearchRepresentation::Excerpt => "excerpt",
+        SearchRepresentation::PointerLead => "pointer_lead",
+    };
+    let mut rendered = serde_json::Map::from_iter([
+        (
+            "reference".to_owned(),
+            Value::String(format!("entry:{}", candidate.entry_id)),
+        ),
+        ("path".to_owned(), Value::String(candidate.path.clone())),
+        ("title".to_owned(), Value::String(candidate.title.clone())),
+        ("version".to_owned(), json!(candidate.version)),
+        (
+            "representation".to_owned(),
+            Value::String(representation.to_owned()),
+        ),
+    ]);
+    if !candidate.heading.is_empty() {
+        rendered.insert(
+            "heading".to_owned(),
+            Value::String(candidate.heading.clone()),
+        );
+    }
+    match view.representation {
+        SearchRepresentation::CompleteSource => {
+            rendered.insert(
+                "content_hash".to_owned(),
+                Value::String(format!("sha256:{}", candidate.content_sha256)),
+            );
+            rendered.insert(
+                "text".to_owned(),
+                Value::String(view.complete_text.clone().unwrap_or_default()),
+            );
+        }
+        SearchRepresentation::PointerLead => {
+            rendered.insert(
+                "content_hash".to_owned(),
+                Value::String(format!("sha256:{}", candidate.content_sha256)),
+            );
+            rendered.insert("score".to_owned(), json!(candidate.score));
+        }
+        SearchRepresentation::Excerpt => {
+            rendered.insert(
+                "excerpt".to_owned(),
+                Value::String(candidate.excerpt.clone()),
+            );
+            let additional_sections = candidate
+                .sections
+                .iter()
+                .skip(1)
+                .filter_map(|section| {
+                    if view.demote_additional_sections {
+                        if section.heading.is_empty() {
+                            return None;
+                        }
+                        Some(json!({
+                            "representation": "heading_lead",
+                            "heading": section.heading,
+                            "path": candidate.path,
+                            "version": candidate.version
+                        }))
+                    } else if section.excerpt.is_empty() {
+                        None
+                    } else {
+                        let mut rendered = serde_json::Map::from_iter([(
+                            "excerpt".to_owned(),
+                            Value::String(section.excerpt.clone()),
+                        )]);
+                        if !section.heading.is_empty() {
+                            rendered.insert(
+                                "heading".to_owned(),
+                                Value::String(section.heading.clone()),
+                            );
+                        }
+                        Some(Value::Object(rendered))
+                    }
+                })
+                .collect::<Vec<_>>();
+            if !additional_sections.is_empty() {
+                rendered.insert(
+                    "additional_sections".to_owned(),
+                    Value::Array(additional_sections),
+                );
+            }
+        }
+    }
+    Value::Object(rendered)
+}
+
 fn render_search_candidate(candidate: &Candidate) -> Value {
     let mut rendered = serde_json::Map::from_iter([
         (
@@ -5653,6 +6092,38 @@ fn render_seed_checkpoint(
 mod tests {
     use super::*;
 
+    fn candidate_with_sections(id: u128, section_chars: &[usize]) -> Candidate {
+        let sections = section_chars
+            .iter()
+            .enumerate()
+            .map(|(index, chars)| CandidateSection {
+                heading: format!("Section {index}"),
+                excerpt: char::from(b'a' + u8::try_from(index).unwrap_or(0))
+                    .to_string()
+                    .repeat(*chars),
+                score: 10.0 - index as f64,
+            })
+            .collect::<Vec<_>>();
+        Candidate {
+            entry_id: Uuid::from_u128(id),
+            path: format!("Sources/{id}.md"),
+            title: format!("Source {id}"),
+            version: 1,
+            content_sha256: format!("{id:064x}"),
+            heading: sections
+                .first()
+                .map(|section| section.heading.clone())
+                .unwrap_or_default(),
+            excerpt: sections
+                .first()
+                .map(|section| section.excerpt.clone())
+                .unwrap_or_default(),
+            score: 10.0,
+            lanes: vec!["lexical".to_owned()],
+            sections,
+        }
+    }
+
     #[test]
     fn path_hints_only_return_explicit_relative_files() {
         assert_eq!(
@@ -6026,6 +6497,147 @@ mod tests {
         assert_eq!(candidate.excerpt, "1234");
         assert_eq!(candidate.sections.len(), 2);
         assert_eq!(candidate.sections[1].excerpt, "5");
+    }
+
+    #[test]
+    fn fair_share_candidate_allocation_preserves_the_last_query_floor() {
+        let candidate_sets = (0_u128..16)
+            .map(|query| {
+                (0_u128..50)
+                    .map(|rank| candidate_with_sections(query * 100 + rank + 1, &[16]))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let (selected, truncated) = select_search_candidate_sets(&candidate_sets, true, 128);
+        assert!(truncated);
+        assert_eq!(
+            selected.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![8; 16]
+        );
+        assert_eq!(selected[15][0].entry_id, candidate_sets[15][0].entry_id,);
+    }
+
+    #[test]
+    fn fair_share_character_allocation_preserves_every_query_floor() {
+        let candidate_sets = (0_u128..16)
+            .map(|query| vec![candidate_with_sections(query + 1, &[2_400, 2_400, 2_400])])
+            .collect::<Vec<_>>();
+        let options = SearchBudgetOptions {
+            fair_share: true,
+            top1_hydration: false,
+            char_cap: true,
+            section_demotion_top_n: None,
+            max_chars: 48_000,
+        };
+        let (views, truncated) =
+            assemble_search_candidate_views(candidate_sets, &HashMap::new(), options);
+        assert!(truncated);
+        assert!(
+            views
+                .iter()
+                .all(|query| { desired_search_evidence_chars(&query[0]) == 3_000 })
+        );
+        assert_eq!(
+            views
+                .iter()
+                .flat_map(|query| query.iter())
+                .map(desired_search_evidence_chars)
+                .sum::<usize>(),
+            48_000,
+        );
+    }
+
+    #[test]
+    fn hydration_is_batched_budgeted_and_degrades_in_request_order() {
+        let candidate_sets = (0_u128..16)
+            .map(|query| {
+                vec![
+                    candidate_with_sections(query * 10 + 1, &[2_400]),
+                    candidate_with_sections(query * 10 + 2, &[2_400]),
+                ]
+            })
+            .collect::<Vec<_>>();
+        let hydration = candidate_sets
+            .iter()
+            .map(|query| {
+                (
+                    query[0].entry_id,
+                    SearchHydration {
+                        size_bytes: 24_000,
+                        content: "x".repeat(24_000),
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let options = SearchBudgetOptions {
+            fair_share: true,
+            top1_hydration: true,
+            char_cap: true,
+            section_demotion_top_n: Some(8),
+            max_chars: 48_000,
+        };
+        let (views, truncated) =
+            assemble_search_candidate_views(candidate_sets, &hydration, options);
+        assert!(truncated);
+        assert_eq!(
+            views[0][0].representation,
+            SearchRepresentation::CompleteSource,
+        );
+        assert_eq!(
+            views[1][0].representation,
+            SearchRepresentation::CompleteSource,
+        );
+        assert_eq!(
+            views[2][0].representation,
+            SearchRepresentation::PointerLead,
+        );
+        assert_eq!(
+            views
+                .iter()
+                .flat_map(|query| query.iter())
+                .map(|view| {
+                    view.complete_text
+                        .as_deref()
+                        .map(str::chars)
+                        .map(Iterator::count)
+                        .unwrap_or_else(|| desired_search_evidence_chars(view))
+                })
+                .sum::<usize>(),
+            48_000,
+        );
+        assert_eq!(
+            views[0][1].representation,
+            SearchRepresentation::PointerLead,
+        );
+    }
+
+    #[test]
+    fn section_demotion_renders_heading_leads_without_body_text() {
+        let candidate_sets = vec![vec![
+            candidate_with_sections(1, &[8, 8]),
+            candidate_with_sections(2, &[8, 8]),
+        ]];
+        let options = SearchBudgetOptions {
+            fair_share: false,
+            top1_hydration: false,
+            char_cap: true,
+            section_demotion_top_n: Some(1),
+            max_chars: 48_000,
+        };
+        let (views, truncated) =
+            assemble_search_candidate_views(candidate_sets, &HashMap::new(), options);
+        assert!(truncated);
+        let rendered = render_budgeted_search_candidate(&views[0][1]);
+        let lead = rendered["additional_sections"][0].as_object().unwrap();
+        assert_eq!(
+            lead.get("representation").and_then(Value::as_str),
+            Some("heading_lead"),
+        );
+        assert!(lead.get("excerpt").is_none());
+        assert_eq!(
+            rendered.get("representation").and_then(Value::as_str),
+            Some("excerpt"),
+        );
     }
 
     #[test]

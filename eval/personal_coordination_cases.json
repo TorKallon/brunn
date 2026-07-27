@@ -17,6 +17,23 @@
   "conditions": ["fixed_pack", "filesystem", "workspace"],
   "fixed_pack_chars": 24000,
   "fixed_pack_chunks": 16,
+  "exact_value_claim_slots": {
+    "coord-person-resolution": ["c1", "c2", "c3", "c4"],
+    "coord-identity-equivalence-reversal": ["c1", "c2", "c3", "c4"],
+    "coord-person-dossier": ["c1", "c2", "c3", "c4"],
+    "coord-role-relationship-provenance": ["c1", "c2", "c3", "c4"],
+    "coord-canonical-contract-normalization": ["c1", "c2", "c3", "c4"],
+    "coord-series-exceptions": ["c1", "c2", "c3", "c4"],
+    "coord-schedule-supersession": ["c1", "c2", "c3", "c4"],
+    "coord-participation-independent-state": ["c1", "c2", "c3", "c4"],
+    "coord-deadline-readiness": ["c1", "c2", "c3", "c4"],
+    "coord-handoff-logistics": ["c1", "c2", "c3", "c4"],
+    "coord-arrangement-independent-state": ["c1", "c2", "c3", "c4"],
+    "coord-vacation-game-continuity": ["c1", "c2", "c3", "c4"],
+    "coord-weekly-brief-change-impact": ["c1", "c2", "c3", "c4"],
+    "coord-read-only-capability-boundary": ["c1", "c2", "c3", "c4"],
+    "coord-minor-export-policy": ["c1", "c2", "c3", "c4"]
+  },
   "cases": [
     {
       "id": "coord-person-resolution",

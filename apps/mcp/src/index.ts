@@ -89,6 +89,9 @@ registerJsonTool(
   {
     session_id: reference,
     queries: z.array(queryItem).min(1).max(16),
+    token_budget: z.number().int().min(1).optional().describe(
+      "Optional total search response budget in tokens; the service converts it to a bounded character cap when budget-contracted retrieval is enabled.",
+    ),
   },
   (input) => client.request("/v1/workspace/search", input),
 );

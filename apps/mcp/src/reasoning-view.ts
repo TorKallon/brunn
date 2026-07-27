@@ -377,7 +377,9 @@ function compactSimpleCandidate(candidate: JsonObject): JsonObject {
     "title",
     "version",
     "heading",
+    "representation",
     "excerpt",
+    "text",
     "additional_sections",
   ]);
   const reference = typeof candidate.reference === "string"
@@ -398,6 +400,12 @@ function compactSimpleCandidate(candidate: JsonObject): JsonObject {
   if (isPresent(contentHash)) compact.content_hash = contentHash;
   const lanes = uniqueStrings(candidate.lanes);
   if (lanes.length > 0) compact.lanes = lanes;
+  if (
+    candidate.representation === "pointer_lead"
+    && typeof candidate.score === "number"
+  ) {
+    compact.score = candidate.score;
+  }
   return compact;
 }
 

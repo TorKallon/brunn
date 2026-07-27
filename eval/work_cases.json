@@ -7,6 +7,19 @@
   "conditions": ["fixed_pack", "filesystem", "workspace"],
   "fixed_pack_chars": 24000,
   "fixed_pack_chunks": 16,
+  "exact_value_claim_slots": {
+    "warmind-parser-learning": ["c1", "c2"],
+    "warmind-final-validation-handoff": ["c1", "c2", "c3"],
+    "charlemagne-storage-current-state": ["c1", "c2", "c3"],
+    "charlemagne-performance-priority": ["c1", "c3"],
+    "warmind-production-cpu-mitigation": ["c1", "c2"],
+    "charlemagne-index-artifact-review": ["c1", "c2", "c3"],
+    "star-rupture-rail-and-heat-plan": ["c1", "c2", "c3"],
+    "star-rupture-source-authority": ["c1", "c3", "c4"],
+    "star-rupture-plan-revision": ["c1", "c2", "c3"],
+    "switzerland-resume-truth": ["c1", "c2", "c4"],
+    "switzerland-itinerary-revision": ["c2", "c3"]
+  },
   "cases": [
     {
       "id": "warmind-parser-learning",

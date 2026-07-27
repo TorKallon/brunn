@@ -138,6 +138,47 @@ test("simple query keeps exact entry identity and retrieval lanes without score 
   assert.equal(JSON.stringify(candidate).includes("entry_id"), false);
 });
 
+test("budgeted query preserves complete sources and followable pointer leads", () => {
+  const compact = compactReasoningResponse("memory.query", {
+    status: "complete",
+    data: {
+      workspace_generation: 42,
+      results: [{
+        id: "q0",
+        candidates: [
+          {
+            reference: "entry:019f8530-e5f6-77d3-a373-052ee8cd24bd",
+            path: "Trips/Plan.md",
+            title: "Plan",
+            version: 3,
+            content_hash: "sha256:complete",
+            representation: "complete_source",
+            text: "The complete current plan.",
+          },
+          {
+            reference: "entry:019f8530-e5f6-77d3-a373-052ee8cd24be",
+            path: "Trips/Backup.md",
+            title: "Backup",
+            version: 2,
+            content_hash: "sha256:pointer",
+            representation: "pointer_lead",
+            score: 8.25,
+          },
+        ],
+      }],
+    },
+  });
+  const data = compact.data as Record<string, unknown>;
+  const item = (data.items as Array<Record<string, unknown>>)[0];
+  const candidates = item?.results as Array<Record<string, unknown>>;
+  assert.equal(candidates[0]?.representation, "complete_source");
+  assert.equal(candidates[0]?.text, "The complete current plan.");
+  assert.equal(candidates[1]?.representation, "pointer_lead");
+  assert.equal(candidates[1]?.content_hash, "sha256:pointer");
+  assert.equal(candidates[1]?.score, 8.25);
+  assert.equal(candidates[1]?.excerpt, undefined);
+});
+
 test("open returns complete source text with pointer-only tail leads", () => {
   const compact = compactReasoningResponse("memory.open", {
     status: "complete",
