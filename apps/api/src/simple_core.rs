@@ -773,12 +773,7 @@ pub async fn search(
             all_candidates.extend(query_views.iter().map(|view| view.candidate.clone()));
             query_views
                 .iter()
-                .map(|view| {
-                    render_budgeted_search_candidate(
-                        view,
-                        &mut remaining_verbatim_chars,
-                    )
-                })
+                .map(|view| render_budgeted_search_candidate(view, &mut remaining_verbatim_chars))
                 .collect::<Vec<_>>()
         } else {
             if candidates.len() > remaining_candidates {
@@ -795,12 +790,7 @@ pub async fn search(
             all_candidates.extend(candidates.iter().cloned());
             candidates
                 .iter()
-                .map(|candidate| {
-                    render_search_candidate(
-                        candidate,
-                        &mut remaining_verbatim_chars,
-                    )
-                })
+                .map(|candidate| render_search_candidate(candidate, &mut remaining_verbatim_chars))
                 .collect::<Vec<_>>()
         };
         any_failures |= !failures.is_empty();
@@ -844,8 +834,7 @@ pub async fn search(
     }
     let total_ms = elapsed_ms(started);
     if state.config.observability_timings_ms {
-        let attributed_ms =
-            query_execution_ms + budget_ms + generation_ms + features_ms;
+        let attributed_ms = query_execution_ms + budget_ms + generation_ms + features_ms;
         envelope.timings_ms = Some(json!({
             "queries": query_timings,
             "retrieval_wall": round_ms(query_execution_ms),
@@ -3122,11 +3111,8 @@ async fn search_one(
         let started = Instant::now();
         if lexical_enabled {
             (
-                bounded_retrieval_lane(
-                    "lexical",
-                    lexical_candidates(state, auth, query, features),
-                )
-                .await,
+                bounded_retrieval_lane("lexical", lexical_candidates(state, auth, query, features))
+                    .await,
                 elapsed_ms(started),
             )
         } else {
@@ -3172,11 +3158,7 @@ async fn search_one(
     timings.semantic_ready = elapsed_ms(semantic_ready_started);
     if semantic_enabled && semantic_ready {
         let semantic_started = Instant::now();
-        match bounded_semantic_lane(
-            semantic_candidates(state, auth, query, features),
-        )
-        .await
-        {
+        match bounded_semantic_lane(semantic_candidates(state, auth, query, features)).await {
             Ok(result) => {
                 timings.embed = result.embed_ms;
                 timings.semantic_db = result.database_ms;
@@ -4019,8 +4001,7 @@ fn render_budgeted_search_candidate(
             }
         }
     }
-    let verbatim_matches =
-        render_verbatim_matches(candidate, remaining_verbatim_chars);
+    let verbatim_matches = render_verbatim_matches(candidate, remaining_verbatim_chars);
     if !verbatim_matches.is_empty() {
         rendered.insert(
             "verbatim_matches".to_owned(),
@@ -7147,10 +7128,8 @@ mod tests {
             assemble_search_candidate_views(candidate_sets, &HashMap::new(), options);
         assert!(truncated);
         let mut remaining_verbatim_chars = MAX_VERBATIM_RESPONSE_CHARS;
-        let rendered = render_budgeted_search_candidate(
-            &views[0][1],
-            &mut remaining_verbatim_chars,
-        );
+        let rendered =
+            render_budgeted_search_candidate(&views[0][1], &mut remaining_verbatim_chars);
         let lead = rendered["additional_sections"][0].as_object().unwrap();
         assert_eq!(
             lead.get("representation").and_then(Value::as_str),
