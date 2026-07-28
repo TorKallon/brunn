@@ -50,6 +50,9 @@ LEGACY_NATIVE_FORMAT = "straylight-legacy-native-record-export@v1"
 WORKSPACE_EXPORT_FORMAT = "straylight-workspace-export@v1"
 WORKSPACE_IMPORT_FORMAT = "straylight-workspace-import-manifest@v1"
 PORTABLE_COMPANION_FORMAT = "straylight-tier-a-portable-companion@v1"
+TIER_A_HISTORY_STAGE_FORMAT = "straylight-tier-a-history-stage@v1"
+ORDINARY_HISTORY_SEMANTICS = "ordinary_content_transition"
+EXACT_HISTORY_SEMANTICS = "preserve_intentional_exact_bytes_version"
 
 NATIVE_ARCHIVE_PATH = "Straylight Migration/Native/legacy-native-records.json"
 NATIVE_INDEX_PATH = "Straylight Migration/Native/legacy-native-records.index.json"
@@ -1097,6 +1100,7 @@ def portable_metadata_for_entry(
     entry: Mapping[str, Any],
     *,
     descriptions: Mapping[str, Mapping[str, Any]],
+    history_semantics: str | None,
 ) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "legacy": {
@@ -1110,6 +1114,12 @@ def portable_metadata_for_entry(
             "stored_at": entry.get("stored_at"),
         }
     }
+    if history_semantics is not None:
+        metadata["_straylight_tier_a_history"] = {
+            "format": TIER_A_HISTORY_STAGE_FORMAT,
+            "target_lineage_ordinal": entry["lineage_ordinal"],
+            "semantics": history_semantics,
+        }
     if entry.get("describes_binary_path"):
         binary_path = str(entry["describes_binary_path"])
         metadata.update(
@@ -1154,6 +1164,10 @@ def materialize_stage(
     output.mkdir(parents=True, mode=0o700)
     output.chmod(0o700)
     entries = [dict(entry) for entry in artifact["entries"]]
+    lineage = {
+        (str(entry["path"]), int(entry["lineage_ordinal"])): entry
+        for entry in entries
+    }
     selected = [
         entry
         for entry in entries
@@ -1171,9 +1185,27 @@ def materialize_stage(
     portable_entries: list[dict[str, Any]] = []
     for entry in sorted(selected, key=lambda item: str(item["path"])):
         relative = f"workspace/{entry['path']}"
+        kind = workspace_kind(entry)
+        ordinal = int(entry["lineage_ordinal"])
+        predecessor = lineage.get((str(entry["path"]), ordinal - 1))
+        same_bytes_as_predecessor = predecessor is not None and (
+            predecessor["content_hash"] == entry["content_hash"]
+            and int(predecessor["size_bytes"]) == int(entry["size_bytes"])
+        )
+        if same_bytes_as_predecessor and kind == "binary":
+            raise TierAError(
+                "same-byte binary history is unsupported; refusing to collapse "
+                "or synthesize a binary version"
+            )
+        history_semantics = None
+        if kind == "markdown":
+            history_semantics = (
+                EXACT_HISTORY_SEMANTICS
+                if same_bytes_as_predecessor
+                else ORDINARY_HISTORY_SEMANTICS
+            )
         source = safe_file(root, str(entry["archive_path"]))
         hardlink_new(source, output.joinpath(*PurePosixPath(relative).parts))
-        kind = workspace_kind(entry)
         portable_entries.append(
             {
                 "path": entry["path"],
@@ -1191,6 +1223,7 @@ def materialize_stage(
                 "metadata": portable_metadata_for_entry(
                     entry,
                     descriptions=descriptions,
+                    history_semantics=history_semantics,
                 ),
                 "current": entry["active"],
                 "deleted": False,

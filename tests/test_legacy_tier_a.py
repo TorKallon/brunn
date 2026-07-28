@@ -14,7 +14,10 @@ from legacy_tier_a import (
     LEGACY_DELTA_FORMAT,
     LEGACY_MANIFEST_FORMAT,
     LEGACY_NATIVE_FORMAT,
+    EXACT_HISTORY_SEMANTICS,
+    ORDINARY_HISTORY_SEMANTICS,
     PORTABLE_COMPANION_FORMAT,
+    TIER_A_HISTORY_STAGE_FORMAT,
     TierAError,
     compose,
     expected_service_history,
@@ -139,7 +142,13 @@ def native_checkpoint(checkpoint_id: str, parent_id: str | None) -> dict:
 
 
 class SyntheticFixture:
-    def __init__(self, root: Path, *, omit_description: bool = False):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        omit_description: bool = False,
+        repeated_markdown_bytes: bool = False,
+    ):
         self.current = root / "current"
         self.delta = root / "delta"
         self.history_path = root / "history.json"
@@ -149,7 +158,7 @@ class SyntheticFixture:
 
         old = b"# Plan\r\n\r\nold\r\n"
         stale_current = b"# Plan\r\n\r\nstale current\r\n"
-        active = b"# Plan\r\n\r\nactive\r\n"
+        active = old if repeated_markdown_bytes else b"# Plan\r\n\r\nactive\r\n"
         binary = b"\x89PNG\r\n\x1a\nsynthetic"
         description = b"# Exact binary description\r\n\r\nbyte copied\r\n"
 
@@ -366,6 +375,14 @@ class LegacyTierATests(unittest.TestCase):
             description["path"],
         )
         self.assertEqual(
+            description["metadata"]["_straylight_tier_a_history"],
+            {
+                "format": TIER_A_HISTORY_STAGE_FORMAT,
+                "target_lineage_ordinal": 1,
+                "semantics": ORDINARY_HISTORY_SEMANTICS,
+            },
+        )
+        self.assertEqual(
             verify_checksum_tree(stage_zero)["manifest.json"],
             sha256_value((stage_zero / "manifest.json").read_bytes()),
         )
@@ -392,6 +409,55 @@ class LegacyTierATests(unittest.TestCase):
         )
         self.assertEqual(artifact["native"]["records"]["count"], 3)
         self.assertEqual(len(artifact["native"]["materialized"]), 3)
+
+    def test_materialized_markdown_marks_an_intentional_same_byte_version(self) -> None:
+        fixture = SyntheticFixture(self.root, repeated_markdown_bytes=True)
+        composite = self.root / "same-byte-composite"
+        compose(
+            current_root=fixture.current,
+            history_manifest_path=fixture.history_path,
+            delta_root=fixture.delta,
+            native_records_path=fixture.native_path,
+            output=composite,
+        )
+        stage_zero = materialize_stage(
+            composite,
+            stage_index=0,
+            output=self.root / "same-byte-stage-zero",
+        )
+        stage_one = materialize_stage(
+            composite,
+            stage_index=1,
+            output=self.root / "same-byte-stage-one",
+        )
+        first = next(
+            entry
+            for entry in stage_zero["entries"]
+            if entry["path"] == "sources/Notes/Plan.md"
+        )
+        second = next(
+            entry
+            for entry in stage_one["entries"]
+            if entry["path"] == "sources/Notes/Plan.md"
+        )
+
+        self.assertEqual(first["content_hash"], second["content_hash"])
+        self.assertEqual(
+            first["metadata"]["_straylight_tier_a_history"],
+            {
+                "format": TIER_A_HISTORY_STAGE_FORMAT,
+                "target_lineage_ordinal": 1,
+                "semantics": ORDINARY_HISTORY_SEMANTICS,
+            },
+        )
+        self.assertEqual(
+            second["metadata"]["_straylight_tier_a_history"],
+            {
+                "format": TIER_A_HISTORY_STAGE_FORMAT,
+                "target_lineage_ordinal": 2,
+                "semantics": EXACT_HISTORY_SEMANTICS,
+            },
+        )
 
     def test_native_record_renderer_matches_the_legacy_export_contract(self) -> None:
         rendered = render_native_record(

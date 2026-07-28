@@ -1,6 +1,6 @@
 # Tier A legacy fidelity import
 
-Status: Local exact-composite preflight passed; isolated service import pending
+Status: Local exact-composite preflight passed; isolated replay exposed and now guards an exact-history edge case; corrected service audit pending
 Date: 2026-07-27
 Supports: D14 gate 2
 
@@ -30,6 +30,15 @@ This is a local preflight, not a Tier A pass. The isolated import, service
 manifest audit, downloaded-byte round trip, release pin, and D13 READ canaries
 remain required.
 
+The first real isolated replay found eight legacy Markdown paths where two
+consecutive historical versions intentionally contain identical bytes. The
+ordinary workspace write contract correctly treated the second write as a
+no-op, so the service audit reported a missing lineage ordinal for each path.
+That replay is evidence of a fidelity blocker, not a passing result. The
+evaluation-only exact-history protocol below preserves those ordinals without
+changing normal production write semantics. No same-byte binary transition was
+present in the owner composite.
+
 ## Safety boundary
 
 Keep every owner artifact and credential under ignored `operator-output/` with
@@ -40,10 +49,10 @@ counts and content-independent fingerprints only.
 Use a fresh isolated Nyx stack with its own port, database/schema, object-store
 prefix, and empty user. Build it from the exact candidate commit. Set
 `STRAYLIGHT_EVALUATION_API_ENABLED=true`, because exact portable binary
-companions are deliberately evaluation-stack-only. Stop the worker and remove
-OpenAI API credentials from the API/worker environment during import. This
-procedure needs no reasoning call and no embedding call, and it must not touch
-the live stack.
+companions and intentional same-byte Markdown history are deliberately
+evaluation-stack-only. Stop the worker and remove OpenAI API credentials from
+the API/worker environment during import. This procedure needs no reasoning
+call and no embedding call, and it must not touch the live stack.
 
 ## 1. Compose and audit
 
@@ -144,6 +153,35 @@ binary and description are committed atomically; the server preserves the
 description string, path, hash, size, mtime, and mode exactly and queues no
 description job.
 
+Every legacy Markdown stage entry also carries
+`_straylight_tier_a_history` metadata with its target lineage ordinal and one
+of two explicit semantics:
+
+- `ordinary_content_transition`; or
+- `preserve_intentional_exact_bytes_version`, emitted only when the target and
+  its immediate predecessor have the same hash and size.
+
+Before sending a write, `carrystate` compares that target with the isolated
+service's current ordinal. It uploads only from exactly `target - 1`, skips a
+retry only when the service is already at the target with matching
+content/portable/legacy identity, and fails closed when the service is behind,
+ahead, or at the target with a different identity. A target imported by the
+pre-protocol importer remains resumable only when its complete legacy metadata
+already proves the same target identity. This permits an interrupted isolated
+replay to be repaired without treating a merely matching hash as proof.
+
+For the same-byte case, the API additionally verifies
+`expected_version == target - 1`, identical predecessor bytes, the exact
+history marker, and `STRAYLIGHT_EVALUATION_API_ENABLED=true` before inserting
+the otherwise-no-op version. A retry at the exact target is a no-op only when
+the stored identity matches. With the evaluation API disabled, the request is
+rejected; ordinary same-byte writes keep their existing no-op behavior.
+
+Same-byte binary history is deliberately unsupported. Stage materialization or
+import must fail rather than synthesize or collapse a binary version. If a
+future owner composite contains such a transition, stop and design an
+equivalent object-store/version protocol before proceeding.
+
 ## 4. Restore checkpoint semantics, then audit the service
 
 Portable native-record Markdown preserves all structured payloads. Checkpoints
@@ -187,8 +225,8 @@ python3 legacy_tier_a.py audit-roundtrip \
 
 Gate 2 passes only when the local, checkpoint-import, service, and round-trip
 artifacts all pass with zero differences. Any unexpected path, missing
-version, changed byte length/hash, regenerated description, or unresolved
-parent is a hard failure.
+version (including an intentional same-byte ordinal), changed byte length/hash,
+regenerated description, or unresolved parent is a hard failure.
 
 ## 6. Transition to the read-only pilot
 

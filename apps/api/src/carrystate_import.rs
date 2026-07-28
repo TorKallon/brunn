@@ -26,6 +26,9 @@ use crate::carrystate_cli::{ApiClient, strip_sha256, unwrap_data};
 const IMPORT_MANIFEST_FORMAT: &str = "straylight-workspace-import-manifest@v1";
 const EXPORT_MANIFEST_FORMAT: &str = "straylight-workspace-export@v1";
 const TIER_A_PORTABLE_COMPANION_FORMAT: &str = "straylight-tier-a-portable-companion@v1";
+const TIER_A_HISTORY_STAGE_FORMAT: &str = "straylight-tier-a-history-stage@v1";
+const TIER_A_ORDINARY_HISTORY_SEMANTICS: &str = "ordinary_content_transition";
+const TIER_A_EXACT_HISTORY_SEMANTICS: &str = "preserve_intentional_exact_bytes_version";
 const MAX_TEXT_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_MULTIPART_BINARY_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_STREAMED_BINARY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -78,6 +81,18 @@ struct PortableMetadata {
     #[serde(alias = "mtime_ns")]
     modified_unix_ns: Option<u64>,
     mode: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TierAHistorySemantics {
+    OrdinaryContentTransition,
+    PreserveIntentionalExactBytesVersion,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TierAHistoryStage {
+    target_lineage_ordinal: i64,
+    semantics: TierAHistorySemantics,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -292,6 +307,12 @@ struct ImportPlan<'a> {
     expected_version: i64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ImportDecision {
+    upload: bool,
+    expected_version: i64,
+}
+
 struct ImportOutcome {
     path_key: String,
     server_entry: RemoteEntry,
@@ -325,17 +346,13 @@ async fn import_phase(
             || current
                 .as_ref()
                 .is_some_and(|value| binary_companion_is_present(value, remote));
-        let matching_hash = current.as_ref().is_some_and(|value| {
-            strip_sha256(&value.content_hash) == strip_sha256(&entry.content_hash)
-                && value.size_bytes == entry.size_bytes
-                && remote_portable_metadata(value).eq(&entry.portable)
-        });
+        let decision = plan_import_entry(entry, current.as_ref(), companion_ready)?;
         plans.push(ImportPlan {
             entry,
             portable_companion,
-            expected_version: current.as_ref().map_or(0, |value| value.version),
+            expected_version: decision.expected_version,
             current,
-            upload: !(matching_hash && companion_ready),
+            upload: decision.upload,
         });
     }
 
@@ -664,9 +681,18 @@ async fn write_markdown(
         )
     })?;
     let metadata = markdown_metadata(entry);
+    let target_identity = tier_a_history_stage(&entry.source_metadata)?
+        .map(|stage| stage.target_lineage_ordinal.to_string())
+        .unwrap_or_default();
     let idempotency_key = format!(
         "workspace-import:{}",
-        &hash_bytes(format!("{}\0{}", entry.path, entry.content_hash).as_bytes())[..32]
+        &hash_bytes(
+            format!(
+                "{}\0{}\0{}",
+                entry.path, entry.content_hash, target_identity
+            )
+            .as_bytes()
+        )[..32]
     );
     let response = client
         .post_json(
@@ -1016,6 +1042,164 @@ async fn fetch_remote_manifest(client: &ApiClient) -> Result<BTreeMap<String, Re
     Ok(entries)
 }
 
+fn tier_a_history_stage(metadata: &Value) -> Result<Option<TierAHistoryStage>> {
+    let Some(value) = metadata.get("_straylight_tier_a_history") else {
+        return Ok(None);
+    };
+    if value.get("format").and_then(Value::as_str) != Some(TIER_A_HISTORY_STAGE_FORMAT) {
+        bail!("Tier-A history stage metadata has a missing or unsupported format");
+    }
+    let target_lineage_ordinal = value
+        .get("target_lineage_ordinal")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
+        .ok_or_else(|| anyhow!("Tier-A history stage target ordinal must be positive"))?;
+    let semantics = match value.get("semantics").and_then(Value::as_str) {
+        Some(TIER_A_ORDINARY_HISTORY_SEMANTICS) => TierAHistorySemantics::OrdinaryContentTransition,
+        Some(TIER_A_EXACT_HISTORY_SEMANTICS) => {
+            TierAHistorySemantics::PreserveIntentionalExactBytesVersion
+        }
+        _ => bail!("Tier-A history stage semantics are missing or unsupported"),
+    };
+    if semantics == TierAHistorySemantics::PreserveIntentionalExactBytesVersion
+        && target_lineage_ordinal < 2
+    {
+        bail!("an intentional exact-byte history version must target ordinal 2 or later");
+    }
+    Ok(Some(TierAHistoryStage {
+        target_lineage_ordinal,
+        semantics,
+    }))
+}
+
+fn content_identity_matches(local: &InventoryEntry, remote: &RemoteEntry) -> bool {
+    strip_sha256(&remote.content_hash) == strip_sha256(&local.content_hash)
+        && remote.size_bytes == local.size_bytes
+}
+
+fn remote_history_identity_matches(
+    local: &InventoryEntry,
+    remote: &RemoteEntry,
+    stage: TierAHistoryStage,
+) -> Result<bool> {
+    if let Some(remote_stage) = tier_a_history_stage(&remote.metadata)? {
+        return Ok(remote_stage == stage);
+    }
+    let local_legacy = local.source_metadata.get("legacy");
+    let remote_legacy = remote.metadata.get("legacy");
+    Ok(local_legacy.is_some()
+        && local_legacy == remote_legacy
+        && remote_legacy
+            .and_then(|value| value.get("lineage_ordinal"))
+            .and_then(Value::as_i64)
+            == Some(stage.target_lineage_ordinal))
+}
+
+fn complete_current_identity_matches(
+    local: &InventoryEntry,
+    remote: &RemoteEntry,
+    companion_ready: bool,
+    stage: TierAHistoryStage,
+) -> Result<bool> {
+    Ok(content_identity_matches(local, remote)
+        && remote_portable_metadata(remote) == local.portable
+        && companion_ready
+        && remote_history_identity_matches(local, remote, stage)?)
+}
+
+fn plan_import_entry(
+    entry: &InventoryEntry,
+    current: Option<&RemoteEntry>,
+    companion_ready: bool,
+) -> Result<ImportDecision> {
+    let Some(stage) = tier_a_history_stage(&entry.source_metadata)? else {
+        let matching_identity = current.is_some_and(|value| {
+            content_identity_matches(entry, value)
+                && remote_portable_metadata(value) == entry.portable
+        });
+        return Ok(ImportDecision {
+            expected_version: current.map_or(0, |value| value.version),
+            upload: !(matching_identity && companion_ready),
+        });
+    };
+    if entry.kind != EntryKind::Markdown {
+        bail!(
+            "Tier-A ordinal replay metadata is supported only for Markdown; \
+             binary history must fail closed"
+        );
+    }
+    let Some(current) = current else {
+        if stage.target_lineage_ordinal != 1 {
+            bail!(
+                "Tier-A history gap for {:?}: target ordinal {} has no predecessor",
+                entry.path,
+                stage.target_lineage_ordinal
+            );
+        }
+        return Ok(ImportDecision {
+            upload: true,
+            expected_version: 0,
+        });
+    };
+    let current_version = current.version;
+    let target = stage.target_lineage_ordinal;
+    if current_version < target - 1 {
+        bail!(
+            "Tier-A history gap for {:?}: current ordinal {} cannot reach target {}",
+            entry.path,
+            current_version,
+            target
+        );
+    }
+    if current_version > target {
+        bail!(
+            "Tier-A history is ahead for {:?}: current ordinal {} exceeds target {}",
+            entry.path,
+            current_version,
+            target
+        );
+    }
+    if current_version == target {
+        if !complete_current_identity_matches(entry, current, companion_ready, stage)? {
+            bail!(
+                "Tier-A history target identity differs for {:?} at ordinal {}",
+                entry.path,
+                target
+            );
+        }
+        return Ok(ImportDecision {
+            upload: false,
+            expected_version: target,
+        });
+    }
+    if current_version != target - 1 {
+        bail!(
+            "Tier-A history ordinal for {:?} is neither predecessor nor target",
+            entry.path
+        );
+    }
+    let content_matches = content_identity_matches(entry, current);
+    match stage.semantics {
+        TierAHistorySemantics::PreserveIntentionalExactBytesVersion if !content_matches => {
+            bail!(
+                "Tier-A exact-history semantics for {:?} do not match the predecessor bytes",
+                entry.path
+            );
+        }
+        TierAHistorySemantics::OrdinaryContentTransition if content_matches => {
+            bail!(
+                "Tier-A stage for {:?} repeats predecessor bytes without exact-history semantics",
+                entry.path
+            );
+        }
+        _ => {}
+    }
+    Ok(ImportDecision {
+        upload: true,
+        expected_version: current_version,
+    })
+}
+
 fn ensure_remote_identity(local: &InventoryEntry, remote: &RemoteEntry) -> Result<()> {
     if local.path != remote.path {
         bail!(
@@ -1048,6 +1232,22 @@ fn verify_upload_receipt(local: &InventoryEntry, remote: &RemoteEntry) -> Result
             remote.content_hash,
             remote.size_bytes
         );
+    }
+    if let Some(stage) = tier_a_history_stage(&local.source_metadata)? {
+        if remote.version != stage.target_lineage_ordinal {
+            bail!(
+                "server history receipt does not match {}: expected ordinal {}, received {}",
+                local.path,
+                stage.target_lineage_ordinal,
+                remote.version
+            );
+        }
+        if !remote_history_identity_matches(local, remote, stage)? {
+            bail!(
+                "server history receipt does not retain the Tier-A target identity for {}",
+                local.path
+            );
+        }
     }
     Ok(())
 }
@@ -1746,6 +1946,50 @@ mod tests {
         }
     }
 
+    fn history_metadata(target: i64, semantics: &str) -> Value {
+        json!({
+            "legacy": {
+                "lineage_ordinal": target,
+                "asset_ref": format!("asset:synthetic-{target}")
+            },
+            "_straylight_tier_a_history": {
+                "format": TIER_A_HISTORY_STAGE_FORMAT,
+                "target_lineage_ordinal": target,
+                "semantics": semantics
+            },
+            "portable": {
+                "modified_unix_ns": null,
+                "mode": null
+            }
+        })
+    }
+
+    fn history_entry(target: i64, semantics: &str) -> InventoryEntry {
+        InventoryEntry {
+            path: "Notes/repeated.md".to_owned(),
+            kind: EntryKind::Markdown,
+            content_hash: format!("sha256:{}", "a".repeat(64)),
+            size_bytes: 7,
+            media_type: "text/markdown".to_owned(),
+            portable: PortableMetadata::default(),
+            attachment_context: Vec::new(),
+            source_metadata: history_metadata(target, semantics),
+            observed: ObservedFile::default(),
+        }
+    }
+
+    fn remote_history_entry(version: i64, target: i64, semantics: &str) -> RemoteEntry {
+        RemoteEntry {
+            entry_ref: format!("entry:{}", Uuid::now_v7()),
+            path: "Notes/repeated.md".to_owned(),
+            kind: "markdown".to_owned(),
+            version,
+            content_hash: format!("sha256:{}", "a".repeat(64)),
+            size_bytes: 7,
+            metadata: history_metadata(target, semantics),
+        }
+    }
+
     #[test]
     fn inventory_is_sorted_and_exact() {
         let temporary = tempdir().unwrap();
@@ -1961,6 +2205,73 @@ mod tests {
         let mut mismatched = entries;
         mismatched[1].content_hash = format!("sha256:{}", "c".repeat(64));
         assert!(portable_companion_entry(&mismatched[0], &mismatched).is_err());
+    }
+
+    #[test]
+    fn tier_a_exact_history_forces_only_the_immediate_next_ordinal() {
+        let entry = history_entry(2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        let predecessor = remote_history_entry(1, 1, TIER_A_ORDINARY_HISTORY_SEMANTICS);
+        let decision = plan_import_entry(&entry, Some(&predecessor), true).unwrap();
+
+        assert_eq!(
+            decision,
+            ImportDecision {
+                upload: true,
+                expected_version: 1
+            }
+        );
+    }
+
+    #[test]
+    fn tier_a_exact_history_retry_is_idempotent_only_at_matching_target() {
+        let entry = history_entry(2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        let target = remote_history_entry(2, 2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        let decision = plan_import_entry(&entry, Some(&target), true).unwrap();
+
+        assert_eq!(
+            decision,
+            ImportDecision {
+                upload: false,
+                expected_version: 2
+            }
+        );
+
+        let mut pre_protocol_target = target;
+        pre_protocol_target
+            .metadata
+            .as_object_mut()
+            .unwrap()
+            .remove("_straylight_tier_a_history");
+        assert_eq!(
+            plan_import_entry(&entry, Some(&pre_protocol_target), true).unwrap(),
+            ImportDecision {
+                upload: false,
+                expected_version: 2
+            }
+        );
+
+        let mismatched_target = remote_history_entry(2, 2, TIER_A_ORDINARY_HISTORY_SEMANTICS);
+        assert!(plan_import_entry(&entry, Some(&mismatched_target), true).is_err());
+    }
+
+    #[test]
+    fn tier_a_history_gap_and_ahead_states_fail_closed() {
+        let entry = history_entry(2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        assert!(plan_import_entry(&entry, None, true).is_err());
+
+        let ahead = remote_history_entry(3, 3, TIER_A_EXACT_HISTORY_SEMANTICS);
+        assert!(plan_import_entry(&entry, Some(&ahead), true).is_err());
+    }
+
+    #[test]
+    fn repeated_bytes_require_exact_history_semantics_and_markdown() {
+        let ordinary = history_entry(2, TIER_A_ORDINARY_HISTORY_SEMANTICS);
+        let predecessor = remote_history_entry(1, 1, TIER_A_ORDINARY_HISTORY_SEMANTICS);
+        assert!(plan_import_entry(&ordinary, Some(&predecessor), true).is_err());
+
+        let mut binary = history_entry(2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        binary.kind = EntryKind::Binary;
+        assert!(plan_import_entry(&binary, Some(&predecessor), true).is_err());
     }
 
     #[test]

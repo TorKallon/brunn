@@ -142,6 +142,9 @@ const RESUME_DELTA_WHOLE_PAIR_CHARS: usize = 2_400;
 const MAX_STREAMED_BINARY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const WORKSPACE_IMPORT_FORMAT: &str = "straylight-workspace-import-manifest@v1";
 const TIER_A_PORTABLE_COMPANION_FORMAT: &str = "straylight-tier-a-portable-companion@v1";
+const TIER_A_HISTORY_STAGE_FORMAT: &str = "straylight-tier-a-history-stage@v1";
+const TIER_A_ORDINARY_HISTORY_SEMANTICS: &str = "ordinary_content_transition";
+const TIER_A_EXACT_HISTORY_SEMANTICS: &str = "preserve_intentional_exact_bytes_version";
 const RETRIEVAL_LANE_TIMEOUT: Duration = Duration::from_millis(2_500);
 const CHUNK_INSERT_BATCH_SIZE: usize = 256;
 
@@ -458,7 +461,27 @@ struct PreparedMarkdown {
     chunks: Vec<DocumentChunk>,
     embeddings: Vec<Option<Vector>>,
     expected_version: Option<i64>,
+    tier_a_history_stage: Option<TierAHistoryStage>,
     frontmatter: DerivedFrontmatter,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TierAHistorySemantics {
+    OrdinaryContentTransition,
+    PreserveIntentionalExactBytesVersion,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TierAHistoryStage {
+    target_lineage_ordinal: i64,
+    semantics: TierAHistorySemantics,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TierAExactHistoryAction {
+    NotRequested,
+    Append,
+    Idempotent,
 }
 
 #[derive(Clone, Debug)]
@@ -5307,6 +5330,170 @@ fn render_read(entry: &EntryRow, request: &ReadItem, max_chars: usize) -> ApiRes
     Ok(Value::Object(rendered))
 }
 
+fn parse_tier_a_history_stage(metadata: &Value) -> ApiResult<Option<TierAHistoryStage>> {
+    let Some(value) = metadata.get("_straylight_tier_a_history") else {
+        return Ok(None);
+    };
+    if value.get("format").and_then(Value::as_str) != Some(TIER_A_HISTORY_STAGE_FORMAT) {
+        return Err(ApiError::invalid(
+            "Tier-A history stage metadata has a missing or unsupported format",
+        ));
+    }
+    let target_lineage_ordinal = value
+        .get("target_lineage_ordinal")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
+        .ok_or_else(|| ApiError::invalid("Tier-A history stage target ordinal must be positive"))?;
+    let semantics = match value.get("semantics").and_then(Value::as_str) {
+        Some(TIER_A_ORDINARY_HISTORY_SEMANTICS) => TierAHistorySemantics::OrdinaryContentTransition,
+        Some(TIER_A_EXACT_HISTORY_SEMANTICS) => {
+            TierAHistorySemantics::PreserveIntentionalExactBytesVersion
+        }
+        _ => {
+            return Err(ApiError::invalid(
+                "Tier-A history stage semantics are missing or unsupported",
+            ));
+        }
+    };
+    if semantics == TierAHistorySemantics::PreserveIntentionalExactBytesVersion
+        && target_lineage_ordinal < 2
+    {
+        return Err(ApiError::invalid(
+            "an intentional exact-byte history version must target ordinal 2 or later",
+        ));
+    }
+    Ok(Some(TierAHistoryStage {
+        target_lineage_ordinal,
+        semantics,
+    }))
+}
+
+fn validate_tier_a_history_request(
+    path: &str,
+    metadata: &Value,
+    expected_version: Option<i64>,
+    evaluation_api_enabled: bool,
+) -> ApiResult<Option<TierAHistoryStage>> {
+    let Some(stage) = parse_tier_a_history_stage(metadata)? else {
+        return Ok(None);
+    };
+    if metadata
+        .get("_straylight_import")
+        .and_then(|value| value.get("format"))
+        .and_then(Value::as_str)
+        != Some(WORKSPACE_IMPORT_FORMAT)
+    {
+        return Err(ApiError::invalid(
+            "Tier-A history replay requires workspace import metadata",
+        ));
+    }
+    let expected = expected_version
+        .ok_or_else(|| ApiError::invalid("Tier-A history replay requires expected_version"))?;
+    if expected < 0 || expected.checked_add(1) != Some(stage.target_lineage_ordinal) {
+        return Err(ApiError::conflict(
+            "tier_a_history_ordinal_mismatch",
+            "Tier-A target ordinal must be exactly expected_version + 1",
+            json!({
+                "path": path,
+                "expected_version": expected,
+                "target_lineage_ordinal": stage.target_lineage_ordinal
+            }),
+        ));
+    }
+    if stage.semantics == TierAHistorySemantics::PreserveIntentionalExactBytesVersion {
+        if !evaluation_api_enabled {
+            return Err(ApiError::invalid(
+                "intentional exact-byte history preservation requires an evaluation-only stack",
+            ));
+        }
+        if path.starts_with(".straylight/") {
+            return Err(ApiError::invalid(
+                "intentional exact-byte history preservation is not supported for managed paths",
+            ));
+        }
+    }
+    Ok(Some(stage))
+}
+
+fn tier_a_exact_history_action(
+    stage: Option<TierAHistoryStage>,
+    current_version: Option<i64>,
+    current_content_matches: bool,
+    current_deleted: bool,
+    current_metadata: Option<&Value>,
+    proposed_metadata: &Value,
+) -> ApiResult<TierAExactHistoryAction> {
+    let Some(stage) = stage.filter(|value| {
+        value.semantics == TierAHistorySemantics::PreserveIntentionalExactBytesVersion
+    }) else {
+        return Ok(TierAExactHistoryAction::NotRequested);
+    };
+    let target = stage.target_lineage_ordinal;
+    let Some(current) = current_version else {
+        return Err(ApiError::conflict(
+            "tier_a_history_gap",
+            "Tier-A exact-history replay has no immediate predecessor",
+            json!({"target_lineage_ordinal": target}),
+        ));
+    };
+    if current < target - 1 {
+        return Err(ApiError::conflict(
+            "tier_a_history_gap",
+            "Tier-A exact-history replay is missing one or more predecessor versions",
+            json!({
+                "current_version": current,
+                "target_lineage_ordinal": target
+            }),
+        ));
+    }
+    if current > target {
+        return Err(ApiError::conflict(
+            "tier_a_history_ahead",
+            "Tier-A exact-history replay is already ahead of the requested target",
+            json!({
+                "current_version": current,
+                "target_lineage_ordinal": target
+            }),
+        ));
+    }
+    if current_deleted || !current_content_matches {
+        return Err(ApiError::conflict(
+            "tier_a_exact_history_identity_mismatch",
+            "Tier-A exact-history replay requires the immediate current version to have identical bytes",
+            json!({
+                "current_version": current,
+                "target_lineage_ordinal": target
+            }),
+        ));
+    }
+    if current == target - 1 {
+        return Ok(TierAExactHistoryAction::Append);
+    }
+    if current == target {
+        if current_metadata == Some(proposed_metadata)
+            && parse_tier_a_history_stage(proposed_metadata)? == Some(stage)
+        {
+            return Ok(TierAExactHistoryAction::Idempotent);
+        }
+        return Err(ApiError::conflict(
+            "tier_a_exact_history_identity_mismatch",
+            "the existing Tier-A target ordinal does not match the requested identity",
+            json!({
+                "current_version": current,
+                "target_lineage_ordinal": target
+            }),
+        ));
+    }
+    Err(ApiError::conflict(
+        "tier_a_history_ordinal_mismatch",
+        "Tier-A exact-history replay is neither at the predecessor nor target ordinal",
+        json!({
+            "current_version": current,
+            "target_lineage_ordinal": target
+        }),
+    ))
+}
+
 async fn prepare_markdown(state: &AppState, request: WriteRequest) -> ApiResult<PreparedMarkdown> {
     validate_path(&request.path)?;
     if request.content.len() > MAX_WRITE_BYTES {
@@ -5340,6 +5527,13 @@ async fn prepare_markdown(state: &AppState, request: WriteRequest) -> ApiResult<
             Value::String(hex::encode(Sha256::digest(idempotency_key.as_bytes()))),
         );
     }
+    let metadata = Value::Object(metadata);
+    let tier_a_history_stage = validate_tier_a_history_request(
+        &request.path,
+        &metadata,
+        request.expected_version,
+        state.config.evaluation_api_enabled,
+    )?;
     Ok(PreparedMarkdown {
         entry_id_hint: None,
         path: request.path,
@@ -5350,10 +5544,11 @@ async fn prepare_markdown(state: &AppState, request: WriteRequest) -> ApiResult<
             .to_owned(),
         content: request.content,
         media_type: request.media_type,
-        metadata: Value::Object(metadata),
+        metadata,
         chunks: normalized.chunks,
         embeddings,
         expected_version: request.expected_version,
+        tier_a_history_stage,
         frontmatter,
     })
 }
@@ -5577,6 +5772,36 @@ async fn upsert_markdown_in_tx(
             json!({"path": prepared.path}),
         ));
     }
+    let exact_history_action = tier_a_exact_history_action(
+        prepared.tier_a_history_stage,
+        existing
+            .as_ref()
+            .map(|row| row.get::<i64, _>("current_version")),
+        existing
+            .as_ref()
+            .is_some_and(|row| row.get::<String, _>("content_sha256") == prepared.content_sha256),
+        existing
+            .as_ref()
+            .is_some_and(|row| row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_some()),
+        existing
+            .as_ref()
+            .map(|row| row.get::<Value, _>("metadata"))
+            .as_ref(),
+        &prepared.metadata,
+    )?;
+    if exact_history_action == TierAExactHistoryAction::Idempotent {
+        let row = existing
+            .as_ref()
+            .expect("an idempotent Tier-A history target has an existing entry");
+        return Ok(MarkdownUpsertResult {
+            entry_id: row.get("id"),
+            version: row.get("current_version"),
+            version_id: Some(row.get("version_id")),
+            generation: None,
+            no_op: true,
+            metadata_only: false,
+        });
+    }
     if let Some(row) = &existing
         && is_checkpoint_path(&prepared.path)
     {
@@ -5600,6 +5825,7 @@ async fn upsert_markdown_in_tx(
     }
     if let Some(row) = &existing
         && row.get::<String, _>("content_sha256") == prepared.content_sha256
+        && exact_history_action != TierAExactHistoryAction::Append
     {
         let was_deleted = row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_some();
         let current_metadata = row.get::<Value, _>("metadata");
@@ -8031,6 +8257,81 @@ mod tests {
         assert_eq!(
             portable_path_key("Trips/Caf\u{e9}.md"),
             portable_path_key("trips/Cafe\u{301}.md")
+        );
+    }
+
+    fn tier_a_history_metadata(target: i64, semantics: &str) -> Value {
+        json!({
+            "_straylight_import": {
+                "format": WORKSPACE_IMPORT_FORMAT
+            },
+            "_straylight_tier_a_history": {
+                "format": TIER_A_HISTORY_STAGE_FORMAT,
+                "target_lineage_ordinal": target,
+                "semantics": semantics
+            }
+        })
+    }
+
+    #[test]
+    fn exact_history_preservation_requires_an_evaluation_stack() {
+        let metadata = tier_a_history_metadata(2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        assert!(
+            validate_tier_a_history_request("Notes/repeated.md", &metadata, Some(1), false)
+                .is_err()
+        );
+        assert_eq!(
+            validate_tier_a_history_request("Notes/repeated.md", &metadata, Some(1), true).unwrap(),
+            Some(TierAHistoryStage {
+                target_lineage_ordinal: 2,
+                semantics: TierAHistorySemantics::PreserveIntentionalExactBytesVersion
+            })
+        );
+        assert!(
+            validate_tier_a_history_request("Notes/repeated.md", &metadata, Some(0), true).is_err()
+        );
+    }
+
+    #[test]
+    fn exact_history_append_retry_gap_and_ahead_are_fail_closed() {
+        let stage = Some(TierAHistoryStage {
+            target_lineage_ordinal: 2,
+            semantics: TierAHistorySemantics::PreserveIntentionalExactBytesVersion,
+        });
+        let metadata = tier_a_history_metadata(2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        assert_eq!(
+            tier_a_exact_history_action(stage, Some(1), true, false, Some(&json!({})), &metadata)
+                .unwrap(),
+            TierAExactHistoryAction::Append
+        );
+        assert_eq!(
+            tier_a_exact_history_action(stage, Some(2), true, false, Some(&metadata), &metadata)
+                .unwrap(),
+            TierAExactHistoryAction::Idempotent
+        );
+        assert!(tier_a_exact_history_action(stage, None, false, false, None, &metadata).is_err());
+        assert!(
+            tier_a_exact_history_action(stage, Some(3), true, false, Some(&metadata), &metadata)
+                .is_err()
+        );
+        assert!(
+            tier_a_exact_history_action(stage, Some(1), false, false, Some(&json!({})), &metadata)
+                .is_err()
+        );
+        assert_eq!(
+            tier_a_exact_history_action(
+                Some(TierAHistoryStage {
+                    target_lineage_ordinal: 2,
+                    semantics: TierAHistorySemantics::OrdinaryContentTransition,
+                }),
+                Some(1),
+                true,
+                false,
+                Some(&json!({})),
+                &metadata,
+            )
+            .unwrap(),
+            TierAExactHistoryAction::NotRequested
         );
     }
 
