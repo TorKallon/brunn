@@ -1,0 +1,181 @@
+{
+  "schema": "straylight-e01-runtime-proof@v1",
+  "captured_at": "2026-07-28T04:26:56-07:00",
+  "project": "slx-e01-232e7c6",
+  "measured_source_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+  "containers": {
+    "slx-e01-232e7c6-api-1": {
+      "image_reference": "straylight-api:232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "image_id": "sha256:4e689c0428a929581dfea851220190bfd1589300e3f15cd5bf8a11b3dc488eac",
+      "status": "running",
+      "health": "healthy",
+      "compose_project": "slx-e01-232e7c6",
+      "openai_api_key_env_present": true,
+      "openai_api_key_file_env_present": true,
+      "openai_api_key_env_empty": true,
+      "openai_api_key_env_usable": false,
+      "openai_api_key_file_env_empty": true,
+      "openai_api_key_file_env_usable": false
+    },
+    "slx-e01-232e7c6-db-1": {
+      "image_reference": "straylight-postgres:local",
+      "image_id": "sha256:54150bce3c0d199a019f2156a80f51624db15fb183a18353491f7e73543800c7",
+      "status": "running",
+      "health": "healthy",
+      "compose_project": "slx-e01-232e7c6",
+      "openai_api_key_env_present": false,
+      "openai_api_key_file_env_present": false,
+      "openai_api_key_env_empty": false,
+      "openai_api_key_env_usable": false,
+      "openai_api_key_file_env_empty": false,
+      "openai_api_key_file_env_usable": false
+    },
+    "slx-e01-232e7c6-minio-1": {
+      "image_reference": "straylight-minio:RELEASE.2025-10-15T17-29-55Z",
+      "image_id": "sha256:69a26e9f3727c4897236a0e2b354b532aa24b76221b40373fdea31a9ce47280e",
+      "status": "running",
+      "health": "healthy",
+      "compose_project": "slx-e01-232e7c6",
+      "openai_api_key_env_present": false,
+      "openai_api_key_file_env_present": false,
+      "openai_api_key_env_empty": false,
+      "openai_api_key_env_usable": false,
+      "openai_api_key_file_env_empty": false,
+      "openai_api_key_file_env_usable": false
+    }
+  },
+  "worker_containers": [],
+  "worker_count": 0,
+  "codex_auth_status": "Logged in using ChatGPT",
+  "reasoning_route": "chatgpt_subscription",
+  "api_fallback": "forbidden",
+  "runtime_snapshots": [
+    {
+      "path": "results/2026-07-28-e01-personal-draw1.json",
+      "sha256": "d07975c5611311f50fd229f5adb3bb0be20488fe63d0274c40554bb7162197b7",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-personal-draw2.json",
+      "sha256": "9c267a931bc0707e32446e645e7442ce96ae72a3224ac78753a71f8c15c4fb42",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-personal-draw3.json",
+      "sha256": "4e2b35fe1af66245a1e63209f0ca2ab8ad7ffdc6d93dde5ac4e710ac0468b350",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-recent-draw1.json",
+      "sha256": "2f5f35c0e4084bbd9afa4f59a4b88e5306fa4c743d2abd27b4de7b3a33620377",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-recent-draw2.json",
+      "sha256": "8622a6fe9e69a5dc5199b1bb31554d33deeb493cc14bfc1eb4d295c6017eebdc",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-recent-draw3.json",
+      "sha256": "ee1354838c8314a233321a9757c7050a8a812ca9ec414998310956785e8b723c",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-rupture-draw1.json",
+      "sha256": "7605790767acdf1095f243abf8dfaef296d3fcf6ed684c3e16b0a554ac1cb1a8",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-rupture-draw2.json",
+      "sha256": "5b70e731e324c3525ce8aeb29e264f2a2807b3a4f3aa437f7579f6f454958b45",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-rupture-draw3.json",
+      "sha256": "0837acb43c6555da3429c82f5712d00232906098ac0ed451558af7def17e69ba",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-transitions-draw1.json",
+      "sha256": "7776f0c8359cd531b96dab5ea43e9a8f266f304704f933242571a5c17dd80dcc",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-transitions-draw2.json",
+      "sha256": "db1de8c56ce5b96e7e14bea75fd2f92c0bb555e2761393d8bb9ff3119e57604a",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-transitions-draw3.json",
+      "sha256": "c2ee9cb949dd822b73e7a90ba6c00b87a6f9ff05c40273d6335acf64323e680b",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-work-draw1.json",
+      "sha256": "298030d18662ddafedc925f56a99e7703519b97d13a1951a41c69441c7395c9a",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-work-draw2.json",
+      "sha256": "cdae731a7c32c0e9a881a5662f27304e4f009169fbc52b6f50396dc1ccbcb490",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    },
+    {
+      "path": "results/2026-07-28-e01-work-draw3.json",
+      "sha256": "e5478a214966890209f17a7a970a48fa8934b78eb5a2a6695dbbb8412f23609a",
+      "build_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+      "semantic_lane": false,
+      "embedding_provider": "hashing",
+      "embedding_status": "degraded"
+    }
+  ],
+  "conclusion": {
+    "real_embedding_worker_present": false,
+    "semantic_lane_enabled": false,
+    "paid_embedding_or_openai_api_spend_usd": 0.0,
+    "openai_key_and_file_env_entries_blank": true,
+    "usable_openai_credential_configured": false
+  }
+}

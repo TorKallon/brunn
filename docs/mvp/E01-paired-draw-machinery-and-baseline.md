@@ -1,9 +1,50 @@
 # E01 — Paired-Draw Machinery and Baseline Parity
 
-Status: Specified — not run
-Date: 2026-07-27
+Status: Complete — non-inferiority not established; paired overfetch absent
+Date: 2026-07-28
 Gates: D01 (overfetch/context-budget design — its priority is contingent on this experiment's overfetch replication); supplies the mandatory n≥3 machinery every subsequent Dxx acceptance gate cites
 Phase: 0 (harness-only, pre-code)
+
+## Result
+
+The definitive 2026-07-28 run completed all 531 untouched case-runs at three
+paired draws. The full record is
+[results/2026-07-28-e01-aggregate.md](../../results/2026-07-28-e01-aggregate.md);
+the machine aggregate is
+[results/2026-07-28-e01-aggregate.json](../../results/2026-07-28-e01-aggregate.json),
+and the 177-session operation audit is
+[results/2026-07-28-e01-operation-accounting-audit.json](../../results/2026-07-28-e01-operation-accounting-audit.json).
+
+- `service_api` minus `filesystem_sidecar` was -4.667 claims per
+  236-claim corpus draw, with case-clustered bootstrap 95% CI
+  [-13.667, 4.333]. The lower bound is not above the -5-claim margin, so
+  non-inferiority is not declared. This does not prove inferiority.
+- RuptureOps `service_api` produced 63,090 model-visible tool-output
+  characters per case versus 142,640 for `filesystem`; the paired difference
+  was -79,549 with 95% CI [-111,508, -49,126]. Paired service-versus-files
+  overfetch is absent under the predeclared rule.
+- All 174 checkpoint-eligible service sessions persisted; one committed a
+  duplicate successful checkpoint. Three read-only controls were correctly
+  ineligible. Sidecars persisted in 176/177 sessions. Service transition
+  lineage was exact in 15/15 cards; sidecars preserved exact parent linkage in
+  13/15.
+- A hash-bound event audit found 20 local checkpoint command failures across
+  17 sessions: 14 unsupported or misnamed flag argparse rejections, one
+  unsupported `--json-stdin` rejection, one shell-quoting rejection, and four
+  wrapper-local status-0 invalid payload rows. Every affected writable session
+  later persisted. The service itself recorded 520 HTTP-200 operations, zero
+  denials, zero 4xx, and zero 5xx.
+- No behavior-selected repair or replacement run was used. All local failure
+  output remains in `model_visible_tool_output_chars`; only service-call
+  accounting is normalized to actual HTTP operations.
+- The run used 534 case-runs including the excluded three-arm calibration,
+  equivalent to $128.16 at the predeclared subscription-equivalent rate. Actual
+  API and embedding spend was $0.
+
+The local retry pattern is a harness prompt defect: E01 said only
+`./memory checkpoint`, so agents guessed incompatible syntax. Later harnesses
+must provide one canonical checkpoint command before E04. That follow-up does
+not alter or regrade E01.
 
 ## Question
 
@@ -93,6 +134,10 @@ spend: $0 — run the isolated E01 stack without a real embedding worker so
 semantic state cannot change mid-draw.
 
 Ceiling: **$150** hard. OWNER DECISION: explicit owner approval required before launching the draws (2026-07-27 cost-audit rule); this spec is not that approval.
+
+Execution remained below the ceiling: 531 definitive case-runs plus three
+excluded calibration case-runs yielded a $128.16 subscription-equivalent.
+There was no paid embedding or other OpenAI API spend.
 
 ## Abort criteria
 

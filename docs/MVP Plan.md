@@ -77,7 +77,7 @@ Phase 0 — measurement, pre-code (no product code changes; harness/corpus only)
 
 | ID | Title | Status | Gates / feeds |
 |---|---|---|---|
-| [E01](mvp/E01-paired-draw-machinery-and-baseline.md) | Paired-draw machinery, writable-sidecar control, baseline replication | Specified — not run | Feeds every Exx; re-establishes the overfetch diagnosis |
+| [E01](mvp/E01-paired-draw-machinery-and-baseline.md) | Paired-draw machinery, writable-sidecar control, baseline measurement | Complete — non-inferiority not established; paired overfetch absent | Feeds every Exx; does not support service-versus-files overfetch |
 | [E02](mvp/E02-verbatim-identifier-gate.md) | Verbatim identifier gate | Stage 1 defect confirmed; Stage 2 flag-on failed 4/30 at every scale; soak and reasoning aborted | D02 rejected; repair and rerun deterministic arm |
 | [E03](mvp/E03-semantic-ready-latency-profile.md) | Semantic-ready latency profile (3 modes) | Mode 1 passed; semantic-ready Mode 2 failed zero-deferred-lane gate; paid Mode 3 aborted | Fix semantic timeout path before E09 |
 
@@ -151,6 +151,12 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Change log
 
+- 2026-07-28: E01 completed 531 untouched definitive case-runs at three
+  paired draws. Service-versus-sidecar non-inferiority was not established
+  (-4.667 claims, 95% CI [-13.667, 4.333], lower bound below the -5 margin).
+  RuptureOps paired service-versus-files overfetch was absent: service minus
+  files was -79,549 model-visible characters/case, 95% CI
+  [-111,508, -49,126]. Actual API/embedding spend was $0.
 - 2026-07-28: Froze the rejected D02 nuisance posture off for E04–E08.
   Recorded current prerequisite aborts for E09 (E03 Mode 2/backfill), E10
   (incomplete accepted launch manifest and upstream qualifications), and E11
