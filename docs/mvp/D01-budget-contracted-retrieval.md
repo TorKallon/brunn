@@ -1,10 +1,21 @@
 # D01 — Budget-Contracted Retrieval
 
-Status: Proposed — not started
+Status: Implemented behind default-off flags — rejected by E04
 Date: 2026-07-27
 Depends on: D02 (ship-pairing; D02-verbatim-span-contract.md — see the exact-value pointer caveat below)
 Gated by: E04 (E04-result-budget-experiment.md)
 Runtime flag: `search.fair_share`, `search.top1_hydration`, `search.char_cap` (three independent kill switches)
+
+## Gate outcome (2026-07-28)
+
+E04 rejected both tested configurations. B and C passed their deterministic
+soaks and exact query-count contract, but neither significantly improved
+RuptureOps claims or achieved the alternative 25% character reduction, and
+both failed the chronic acceptance rule. Keep all three runtime flags off and
+retain the measured A behavior. This design is closed for rollout; a future
+variant requires a newly specified experiment rather than post-hoc bisection.
+See
+[`results/2026-07-28-e04-report.md`](../../results/2026-07-28-e04-report.md).
 
 ## Problem and evidence
 
@@ -66,7 +77,12 @@ Experimental: E04 (E04-result-budget-experiment.md) acceptance criteria, in full
 
 ## Rollout and kill switch
 
-All three flags default off; with flags off, behavior is identical to the measured baselines. Enable on Nyx only for E04 arms. Production enablement follows the winning arm (B configuration before C). Each flag is a runtime-config kill switch — disable without deploy, independently: `fair_share` restores first-query-first, `top1_hydration` restores excerpt-only candidates, `char_cap` restores the flat 96,000-char cap and re-enables all sections. `char_cap` additionally satisfies D14 Tier B entry; the other two ship only on E04 evidence.
+All three flags remain default-off after E04's rejection; with flags off,
+behavior is identical to the measured baselines. Do not enable them on Nyx or
+in production based on this design. Each flag remains a runtime-config kill
+switch for test-only use: `fair_share` restores first-query-first when off,
+`top1_hydration` restores excerpt-only candidates, and `char_cap` restores the
+flat 96,000-char cap and re-enables all sections.
 
 ## References
 

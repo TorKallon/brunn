@@ -1,9 +1,26 @@
 # E04 — Result Budget Experiment
 
-Status: Specified — not run
+Status: Complete negative — B and C rejected; retain A
 Date: 2026-07-27
 Gates: D01 (D01-budget-contracted-retrieval.md)
 Phase: 1 (requires flagged feature build)
+
+## Definitive outcome (2026-07-28)
+
+E04 completed its frozen 52-artifact, 528-case-run grid with zero timeouts or
+record errors. Both candidate configurations passed their deterministic 640K
+and query-count gates, but neither passed the reasoning acceptance criteria.
+Against A on RuptureOps, C had no significant claim improvement
+(`p=1.0`) and reduced mean service-result characters by only 6.8%, short of
+the required 25%; B reduced characters by only 1.3%. The chronic gate also
+failed: B recorded 3 wins / 4 losses / 5 ties and C recorded 3 / 3 / 6, with
+one previously nonzero case falling to 0/5 under each candidate.
+
+Decision: reject B and C, keep all D01 flags default-off, retain A, and do not
+invoke the under-specified bisection contingency. See
+[`results/2026-07-28-e04-report.md`](../../results/2026-07-28-e04-report.md)
+and
+[`results/2026-07-28-e04-definitive-summary.json`](../../results/2026-07-28-e04-definitive-summary.json).
 
 ## Question
 

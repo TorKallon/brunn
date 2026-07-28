@@ -41,8 +41,9 @@ deltas) proven in real use.
 - Downstream E04–E08 runs therefore freeze `verbatim_spans=off`; none can
   rehabilitate D02. E09 is prerequisite-aborted by E03's failed Mode 2 and
   missing quality backfill. E10 lacks an accepted immutable launch flag
-  manifest: E01 is complete, E05 rejected `lexical_single_scan`, and E04 plus
-  E06–E09 have not collectively resolved the launch feature set. E11 is
+  manifest: E01 is complete, E04 rejected both D01 configurations, E05
+  rejected `lexical_single_scan`, and E06–E09 have not collectively resolved
+  the launch feature set. E11 is
   prerequisite-aborted by D02's rejection, the absent D06/`link_leads`
   implementation, and the missing owner-authored, owner-signed-off case
   manifest.
@@ -97,7 +98,8 @@ Features — flag + experiment gated:
 
 | ID | Title | Status | Gated by |
 |---|---|---|---|
-| [D01](mvp/D01-budget-contracted-retrieval.md) | Budget-contracted retrieval + result budgets (overfetch fix; top-1 complete hydration) | Proposed — not started | [E04](mvp/E04-result-budget-experiment.md) |
+| [D01](mvp/D01-budget-contracted-retrieval.md) | Budget-contracted retrieval + result budgets (overfetch fix; top-1 complete hydration) | Implemented default-off, rejected by E04 | Closed; retain baseline A |
+| [E04](mvp/E04-result-budget-experiment.md) | Result-budget experiment | Complete negative — B and C rejected; retain A | Gates D01 |
 | [D02](mvp/D02-verbatim-span-contract.md) | Verbatim-span contract | Implemented default-off, rejected by E02 Stage 2 | Repair, then rerun [E02](mvp/E02-verbatim-identifier-gate.md) |
 | [D03](mvp/D03-resume-delta-packets.md) | Resume delta packets ("changes since your checkpoint") | Proposed — not started | [E06](mvp/E06-resume-delta-experiment.md) |
 | [D04](mvp/D04-supersession-current-truth.md) | Supersession / current-truth (Markdown frontmatter round-trip) | Proposed — not started | [E07](mvp/E07-supersession-experiment.md) |
@@ -153,6 +155,12 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Change log
 
+- 2026-07-28: E04 completed 528/528 case-runs with zero timeout/error.
+  Both candidates passed deterministic 640K and query-count gates, but neither
+  passed reasoning acceptance. C had no significant RuptureOps claim gain and
+  reduced service-result characters by only 6.8% versus the required 25%;
+  B reduced them by 1.3%. Both failed the chronic rule. D01 is rejected for
+  rollout and all three flags remain off. Actual API/embedding spend was $0.
 - 2026-07-28: E01 completed 531 untouched definitive case-runs at three
   paired draws. Service-versus-sidecar non-inferiority was not established
   (-4.667 claims, 95% CI [-13.667, 4.333], lower bound below the -5 margin).

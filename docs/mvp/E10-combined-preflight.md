@@ -7,11 +7,12 @@ Phase: 1 (requires flagged feature build — all shipped Dxx flags landed)
 
 **CURRENT PREREQUISITE ABORT (2026-07-28):** Do not run E10. The accepted
 immutable launch flag manifest is incomplete and not qualified. E01 is
-complete, but E02 rejected D02, E05 rejected `lexical_single_scan`, E04 and
-E06–E08 have not collectively produced the accepted launch feature set, and
-E09 has no decided semantic posture because E03 Mode 2 failed before quality
-backfill. This abort does not change E10's future role or experimental intent.
-Rebuild the manifest only from accepted features after those gates resolve.
+complete, but E02 rejected D02, E04 rejected D01, E05 rejected
+`lexical_single_scan`, E06–E08 have not collectively produced the accepted
+launch feature set, and E09 has no decided semantic posture because E03 Mode 2
+failed before quality backfill. This abort does not change E10's future role
+or experimental intent. Rebuild the manifest only from accepted features
+after those gates resolve.
 
 ## Question
 
@@ -23,7 +24,7 @@ This is the "stronger than MD" endgame gate: the claim was never that a database
 
 ## Preconditions and build items
 
-1. **NOT SATISFIED.** All surviving D01-D05 candidates have a completed ship-or-drop decision from their own Exx gate. Any Dxx that did not ship is absent from the flag set — E10 tests what will actually launch, and the run record says exactly what that was. D02 is currently rejected; E05 separately rejects the deferred D10 `lexical_single_scan` candidate; and E04 plus E06–E08 have not collectively supplied the accepted feature set.
+1. **NOT SATISFIED.** All surviving D01-D05 candidates have a completed ship-or-drop decision from their own Exx gate. Any Dxx that did not ship is absent from the flag set — E10 tests what will actually launch, and the run record says exactly what that was. D01 was rejected by E04, D02 is rejected by E02, and E05 separately rejects the deferred D10 `lexical_single_scan` candidate; E06–E08 have not yet supplied the remaining ship-or-drop decisions.
 2. **SATISFIED.** E01 machinery is complete (E01-paired-draw-machinery-and-baseline.md): the definitive 531-case-run matrix includes `eval/aggregate_draws.py`, the `filesystem_sidecar` condition, and transitions-sidecar coverage across all five suites.
 3. One global budget: the combined context/char budget configuration (per D01) active as a single runtime config, not per-feature budgets summed implicitly. Target posture per Tier B: crude open/search char budget near legacy ~41.4K chars/case at entry.
 4. Flag-manifest snapshot (implemented): every service run stores an authenticated `/v1/status` runtime-feature/knob/build snapshot whose canonical hash is bound into the immutable run ledger.
