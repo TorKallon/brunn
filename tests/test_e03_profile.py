@@ -425,6 +425,182 @@ class E03ProfileTests(unittest.TestCase):
         ))
         self.assertIn("mode3_cold_warm_pair_is_single_corpus", gate_names)
 
+    def test_mode1_requires_lexical_plan_but_not_empty_hnsw_plan(self):
+        scale = scale_fixture()
+        scale["retrieval_plan_assertions"] = {
+            "status": "complete",
+            "pass": False,
+            "sql_drift": [
+                {"lane": "lexical", "pass": True},
+                {"lane": "semantic", "pass": True},
+            ],
+            "lanes": {
+                "lexical": {"plan_assertion": {"pass": True}},
+                "semantic": {
+                    "plan_assertion": {
+                        "pass": False,
+                        "lane": "semantic",
+                        "expected": {
+                            "node_type": "Index Scan",
+                            "index_name": (
+                                "search_chunks_embedding_hnsw_idx"
+                            ),
+                            "no_seq_scan_on": "search_chunks",
+                        },
+                        "matched": [],
+                        "forbidden": [],
+                    },
+                    "function_owner_body_explain": [{
+                        "Plan": {
+                            "Node Type": "Bitmap Heap Scan",
+                            "Relation Name": "search_chunks",
+                            "Recheck Cond": "embedding IS NOT NULL",
+                            "Plans": [{
+                                "Node Type": "Bitmap Index Scan",
+                                "Index Name": (
+                                    "search_chunks_semantic_coverage_idx"
+                                ),
+                            }],
+                        },
+                    }],
+                },
+            },
+        }
+        scale["e03_mode1_pending"] = {
+            "pass": True,
+            "before_sampling": {
+                "database": {
+                    "chunks": 128000,
+                    "semantic_ready_chunks": 0,
+                    "pending_chunks": 128000,
+                },
+            },
+            "after_sampling": {
+                "database": {
+                    "chunks": 128032,
+                    "semantic_ready_chunks": 0,
+                    "pending_chunks": 128032,
+                },
+            },
+        }
+        gates = evaluate_gates(
+            [scale],
+            DEFAULT_THRESHOLDS,
+            require_gin_index=False,
+            verbatim_feature_acceptance_required=False,
+        )
+        gates, findings = apply_e03_gate_policy(
+            [scale],
+            gates,
+            arm="mode1",
+        )
+        by_name = {gate["name"]: gate for gate in gates}
+        self.assertTrue(
+            by_name[
+                f"retrieval_plan_assertions_at_{PRODUCTION_RECORDS}"
+            ]["pass"]
+        )
+        finding = {
+            item["name"]: item for item in findings
+        }["mode1_semantic_plan_is_inapplicable_without_ready_vectors"]
+        self.assertIsNone(finding["pass"])
+        self.assertEqual(finding["outcome"], "not_applicable")
+
+    def test_mode1_does_not_waive_unsafe_semantic_plans(self):
+        for unsafe_plan in (
+            {
+                "Plan": {
+                    "Node Type": "Seq Scan",
+                    "Relation Name": "search_chunks",
+                },
+            },
+            {
+                "Plan": {
+                    "Node Type": "Index Scan",
+                    "Relation Name": "search_chunks",
+                    "Index Name": "wrong_semantic_index",
+                },
+            },
+        ):
+            with self.subTest(plan=unsafe_plan):
+                scale = scale_fixture()
+                forbidden = (
+                    [{
+                        "node_type": "Seq Scan",
+                        "relation": "search_chunks",
+                    }]
+                    if unsafe_plan["Plan"]["Node Type"] == "Seq Scan"
+                    else []
+                )
+                scale["retrieval_plan_assertions"] = {
+                    "status": "complete",
+                    "pass": False,
+                    "sql_drift": [
+                        {"lane": "lexical", "pass": True},
+                        {"lane": "semantic", "pass": True},
+                    ],
+                    "lanes": {
+                        "lexical": {"plan_assertion": {"pass": True}},
+                        "semantic": {
+                            "plan_assertion": {
+                                "pass": False,
+                                "lane": "semantic",
+                                "expected": {
+                                    "node_type": "Index Scan",
+                                    "index_name": (
+                                        "search_chunks_embedding_hnsw_idx"
+                                    ),
+                                    "no_seq_scan_on": "search_chunks",
+                                },
+                                "matched": [],
+                                "forbidden": forbidden,
+                            },
+                            "function_owner_body_explain": [unsafe_plan],
+                        },
+                    },
+                }
+                scale["e03_mode1_pending"] = {
+                    "pass": True,
+                    "before_sampling": {
+                        "database": {
+                            "chunks": 10,
+                            "semantic_ready_chunks": 0,
+                            "pending_chunks": 10,
+                        },
+                    },
+                    "after_sampling": {
+                        "database": {
+                            "chunks": 11,
+                            "semantic_ready_chunks": 0,
+                            "pending_chunks": 11,
+                        },
+                    },
+                }
+                gates = evaluate_gates(
+                    [scale],
+                    DEFAULT_THRESHOLDS,
+                    require_gin_index=False,
+                    verbatim_feature_acceptance_required=False,
+                )
+                gates, findings = apply_e03_gate_policy(
+                    [scale],
+                    gates,
+                    arm="mode1",
+                )
+                by_name = {gate["name"]: gate for gate in gates}
+                self.assertFalse(
+                    by_name[
+                        f"retrieval_plan_assertions_at_{PRODUCTION_RECORDS}"
+                    ]["pass"]
+                )
+                self.assertNotIn(
+                    (
+                        "mode1_semantic_plan_is_inapplicable_without_"
+                        "ready_vectors"
+                    ),
+                    {finding["name"] for finding in findings},
+                )
+
     def test_wrappers_emit_current_profile_and_verbatim_off(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

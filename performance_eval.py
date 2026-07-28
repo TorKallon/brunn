@@ -5073,6 +5073,159 @@ def apply_e03_gate_policy(
     }]
     blocking = list(gates)
     if arm == "mode1":
+        for gate in blocking:
+            if (
+                not str(gate.get("name", "")).startswith(
+                    "retrieval_plan_assertions_at_"
+                )
+                or gate.get("pass") is True
+            ):
+                continue
+            observed = gate.get("observed", {})
+            lanes = (
+                observed.get("lanes", {})
+                if isinstance(observed, dict)
+                else {}
+            )
+            lexical = lanes.get("lexical", {})
+            semantic = lanes.get("semantic", {})
+            drift = (
+                observed.get("sql_drift")
+                if isinstance(observed, dict)
+                else None
+            )
+            scale = next(
+                (
+                    item
+                    for item in scales
+                    if gate.get("name")
+                    == f"retrieval_plan_assertions_at_{item.get('scale')}"
+                ),
+                None,
+            )
+            pending = (
+                scale.get("e03_mode1_pending", {})
+                if isinstance(scale, dict)
+                else {}
+            )
+            before_database = (
+                pending.get("before_sampling", {}).get("database", {})
+                if isinstance(pending, dict)
+                else {}
+            )
+            after_database = (
+                pending.get("after_sampling", {}).get("database", {})
+                if isinstance(pending, dict)
+                else {}
+            )
+            semantic_plan = (
+                scale.get("retrieval_plan_assertions", {})
+                .get("lanes", {})
+                .get("semantic", {})
+                if isinstance(scale, dict)
+                else {}
+            )
+            semantic_nodes = list(iter_plan_nodes(
+                semantic_plan.get("function_owner_body_explain", [])
+                if isinstance(semantic_plan, dict)
+                else []
+            ))
+            search_chunk_relation_nodes = [
+                node
+                for node in semantic_nodes
+                if node.get("Relation Name") == "search_chunks"
+            ]
+            search_chunk_index_nodes = [
+                node
+                for node in semantic_nodes
+                if str(node.get("Index Name", "")).startswith("search_chunks_")
+            ]
+            expected_empty_cardinality_plan = (
+                bool(search_chunk_relation_nodes)
+                and all(
+                    node.get("Node Type") == "Bitmap Heap Scan"
+                    for node in search_chunk_relation_nodes
+                )
+                and any(
+                    "embedding IS NOT NULL"
+                    in str(node.get("Recheck Cond", ""))
+                    for node in search_chunk_relation_nodes
+                )
+                and bool(search_chunk_index_nodes)
+                and all(
+                    node.get("Node Type") == "Bitmap Index Scan"
+                    and node.get("Index Name")
+                    == "search_chunks_semantic_coverage_idx"
+                    for node in search_chunk_index_nodes
+                )
+            )
+            zero_vector_cardinality_proven = (
+                isinstance(pending, dict)
+                and pending.get("pass") is True
+                and all(
+                    isinstance(snapshot, dict)
+                    and isinstance(snapshot.get("chunks"), int)
+                    and snapshot["chunks"] > 0
+                    and snapshot.get("semantic_ready_chunks") == 0
+                    and snapshot.get("pending_chunks") == snapshot["chunks"]
+                    for snapshot in (before_database, after_database)
+                )
+            )
+            mode1_plan_is_healthy = (
+                isinstance(lexical, dict)
+                and lexical.get("pass") is True
+                and isinstance(semantic, dict)
+                and semantic.get("pass") is False
+                and semantic.get("lane") == "semantic"
+                and semantic.get("expected") == {
+                    "node_type": "Index Scan",
+                    "index_name": "search_chunks_embedding_hnsw_idx",
+                    "no_seq_scan_on": "search_chunks",
+                }
+                and semantic.get("matched") == []
+                and semantic.get("forbidden") == []
+                and isinstance(drift, list)
+                and bool(drift)
+                and all(
+                    isinstance(item, dict) and item.get("pass") is True
+                    for item in drift
+                )
+                and zero_vector_cardinality_proven
+                and expected_empty_cardinality_plan
+            )
+            if not mode1_plan_is_healthy:
+                continue
+            gate["pass"] = True
+            gate["observed"] = {
+                **observed,
+                "required_lanes": ["lexical"],
+                "inapplicable_lanes": ["semantic"],
+            }
+            gate["threshold"] = {
+                "lexical": (
+                    "Bitmap Index Scan using search_chunks_fts_idx"
+                ),
+                "semantic": (
+                    "not applicable: Mode 1 intentionally has zero "
+                    "semantic-ready vectors"
+                ),
+                "forbidden": "Seq Scan on search_chunks",
+                "sql_drift": False,
+            }
+            findings.append({
+                "name": (
+                    "mode1_semantic_plan_is_inapplicable_without_ready_vectors"
+                ),
+                "blocking": False,
+                "pass": None,
+                "outcome": "not_applicable",
+                "observed": semantic,
+                "applicability": (
+                    "Mode 1 proves every chunk remains pending with zero "
+                    "embeddings; the HNSW plan remains blocking in semantic-"
+                    "ready Modes 2 and 3"
+                ),
+            })
         pending_evidence = [
             {
                 "scale": item.get("scale"),

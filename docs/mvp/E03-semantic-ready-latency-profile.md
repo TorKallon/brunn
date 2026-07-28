@@ -27,7 +27,10 @@ equal the named API container's single loopback-published port, and that API's
 read/write and read-only database URLs must resolve to the named DB on their
 sole Compose network. `eval/e03_mode1.py` proves a
 hashing-provider, semantic-disabled, no-worker baseline whose chunks stay
-zero-embedded and pending. `eval/e03_mode2.py` owns a run-unique mock lifecycle
+zero-embedded and pending. Its 64K plan gate keeps both authoritative SQL
+fingerprints and the lexical GIN plan blocking; the HNSW plan is explicitly
+not applicable until a semantic-ready arm has nonzero vector cardinality, and
+remains blocking in Modes 2 and 3. `eval/e03_mode2.py` owns a run-unique mock lifecycle
 and proves API and worker point to that exact mock with dummy credentials
 before import. `eval/e03_mode3.py` owns the real-provider proxy and captures
 cold then warm queries after one 64K import; a second provisioning run is

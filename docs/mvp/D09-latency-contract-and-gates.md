@@ -56,6 +56,13 @@ run must record the observed counts, confirm the pinned exact/upper values,
 and update only a demonstrably wrong budget with an evidence artifact. No
 live Nyx service or database was touched while implementing the gate.
 
+The first current-build isolated 64K run calibrated the two provisional
+misses: write is exactly 14 statements (30/30 observations), and checkpoint is
+28 statements with no explicit `source_refs`. An independent 1K/10K/64K E02
+calibration recorded the same shape. The compact evidence record is
+`results/2026-07-27-e03-query-budget-calibration.json`; acceptance still
+requires a clean rerun against the measured contract.
+
 ### (b) Regression-tier gates at 64K and 640K
 
 New tier pinned at roughly 5-10x the v8 measured p95s, cited above:

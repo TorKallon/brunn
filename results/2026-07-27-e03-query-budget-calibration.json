@@ -1,0 +1,84 @@
+{
+  "schema": "straylight-query-budget-calibration@v1",
+  "date": "2026-07-27",
+  "status": "calibration_only",
+  "source_revision": "82ff3dd7d2a3584587435c23d51a836e4dbcef67",
+  "product_base_revision": "232e7c6",
+  "profile": "e03-semantic-ready",
+  "arm": "mode1",
+  "scale": 64000,
+  "samples": 30,
+  "excluded_source_artifact": {
+    "sha256": "bfbf93079d44dd650e89ac039e25a74343e22655599d211def52537b9e29d4a7",
+    "reason": "The fail-closed first run calibrated two provisional query budgets and exposed a Mode 1 semantic-plan applicability defect. It is not an acceptance result."
+  },
+  "corroborating_source_artifact": {
+    "name": "2026-07-27-verbatim-identifier-stage2-calibration.json",
+    "sha256": "e9ac26e2e0cf07aad19e0ac0371520e198165daf8a22c328f661230436e23877",
+    "source_revision": "8baf0d305d90cdc48566df7679c07b0a66085707",
+    "scales": [
+      1000,
+      10000,
+      64000
+    ],
+    "observation": "The independent E02 calibration measured the same 17/11/11/14/28/32 open/search/read/write/checkpoint/resume statement shape at every scale."
+  },
+  "observed_query_counts": {
+    "open": {
+      "samples": 30,
+      "min": 17,
+      "max": 17
+    },
+    "search": {
+      "samples": 270,
+      "min": 11,
+      "max": 11
+    },
+    "read": {
+      "samples": 30,
+      "min": 11,
+      "max": 11
+    },
+    "write": {
+      "samples": 30,
+      "min": 14,
+      "max": 14
+    },
+    "checkpoint": {
+      "samples": 1,
+      "min": 28,
+      "max": 28
+    },
+    "resume": {
+      "samples": 30,
+      "min": 32,
+      "max": 32
+    }
+  },
+  "contract_changes": {
+    "write": {
+      "from_exact": 15,
+      "to_exact": 14
+    },
+    "checkpoint": {
+      "from_at_most": 23,
+      "to_at_most": 28
+    }
+  },
+  "latency_finding_retained_for_clean_rerun": {
+    "metric": "broad_search_p95_ms",
+    "observed": 518.698,
+    "threshold": 500.0,
+    "pass": false,
+    "outlier_samples_ms": [
+      579.232,
+      910.53
+    ],
+    "lexical_phase_p95_ms": 484.657,
+    "retrieval_wall_p95_ms": 484.938,
+    "total_phase_p95_ms": 511.228
+  },
+  "embedding_calls": 0,
+  "embedding_cost_usd": 0.0,
+  "reasoning_api_cost_usd": 0.0
+}

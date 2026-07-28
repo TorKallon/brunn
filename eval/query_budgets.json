@@ -10,9 +10,9 @@
   },
   "definition": "Completed sqlx::query events inside the HTTP request scope. Includes authentication, transaction context/setup, application SQL, and COMMIT. Excludes SQLx's protocol-level BEGIN because SQLx 0.9 does not emit a query event for it. Detached usage bookkeeping is intentionally outside the foreground request scope.",
   "baseline": {
-    "corpus": "3,340-record clean fixture family",
-    "reference": "results/2026-07-27-3340-clean-30-sample.json",
-    "method": "Pinned from the default-safe simple-core statement shape; the first D09-enabled isolated-stack run records all observed counts and must match these budgets before the baseline is considered measured.",
+    "corpus": "Synthetic 1K/10K/64K current-shape fixture family",
+    "reference": "results/2026-07-27-e03-query-budget-calibration.json",
+    "method": "Measured on the first D09-enabled isolated 64K current-build run. Exact values require 30 identical observations; upper bounds retain the reviewed default-safe variability allowance.",
     "feature_flags": "default-safe"
   },
   "operations": {
@@ -33,12 +33,12 @@
     },
     "write": {
       "comparison": "exact",
-      "count": 15,
+      "count": 14,
       "fixture": "One new, single-chunk Markdown entry with semantic work queued."
     },
     "checkpoint": {
       "comparison": "at_most",
-      "max": 23,
+      "max": 28,
       "variability": "The baseline checkpoint has no explicit source_refs; the bounded 64-source probe is reported separately."
     },
     "resume": {
