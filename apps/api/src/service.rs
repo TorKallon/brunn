@@ -154,13 +154,7 @@ pub async fn status(
         "corpus_revision": revision.as_ref().map(|value| format!("revision:{}", value.0)),
         "revision_sequence": revision.map(|value| value.1),
         "read_only": auth.read_only,
-        "feature_flags": {
-            "supersession_demotion": state.config.supersession_demotion,
-            "supersession_demotion_weight": state.config.supersession_demotion_weight,
-            "intention_ledger": state.config.intention_ledger,
-            "read_path_roundtrip_v1": state.config.read_path_roundtrip_v1,
-            "lexical_single_scan": state.config.lexical_single_scan
-        },
+        "feature_flags": runtime_feature_flags(&state),
         "embeddings": {
             "provider": state.embedder.provider(),
             "model": state.embedder.model(),
@@ -172,10 +166,30 @@ pub async fn status(
     })))
 }
 
+fn runtime_feature_flags(state: &AppState) -> Value {
+    json!({
+        "allow_degraded_embeddings": state.config.allow_degraded_embeddings,
+        "embed_cache": state.config.embed_cache,
+        "embedding_backfill_guard": state.config.embedding_backfill_guard,
+        "intention_ledger": state.config.intention_ledger,
+        "lexical_single_scan": state.config.lexical_single_scan,
+        "observability_timings_ms": state.config.observability_timings_ms,
+        "read_path_roundtrip_v1": state.config.read_path_roundtrip_v1,
+        "resume_deltas": state.config.resume_deltas,
+        "search_char_cap": state.config.search_char_cap,
+        "search_fair_share": state.config.search_fair_share,
+        "search_top1_hydration": state.config.search_top1_hydration,
+        "semantic_lane": state.config.semantic_lane,
+        "supersession_demotion": state.config.supersession_demotion,
+        "verbatim_spans": state.config.verbatim_spans
+    })
+}
+
 fn runtime_features(state: &AppState) -> Value {
     json!({
-        "semantic_lane": state.config.semantic_lane,
+        "allow_degraded_embeddings": state.config.allow_degraded_embeddings,
         "embed_cache": state.config.embed_cache,
+        "semantic_lane": state.config.semantic_lane,
         "semantic_deadline_ms": state.config.semantic_deadline.map(|value| {
             u64::try_from(value.as_millis()).unwrap_or(u64::MAX)
         }),
@@ -187,7 +201,20 @@ fn runtime_features(state: &AppState) -> Value {
         "embedding_backfill_open_p95_limit_ms":
             state.config.embedding_backfill_open_p95_limit_ms,
         "embedding_backfill_search_p95_limit_ms":
-            state.config.embedding_backfill_search_p95_limit_ms
+            state.config.embedding_backfill_search_p95_limit_ms,
+        "intention_ledger": state.config.intention_ledger,
+        "lexical_single_scan": state.config.lexical_single_scan,
+        "materialize_token_budget": state.config.materialize_token_budget,
+        "observability_timings_ms": state.config.observability_timings_ms,
+        "read_path_roundtrip_v1": state.config.read_path_roundtrip_v1,
+        "resume_deltas": state.config.resume_deltas,
+        "search_char_cap": state.config.search_char_cap,
+        "search_fair_share": state.config.search_fair_share,
+        "search_section_demotion_top_n": state.config.search_section_demotion_top_n,
+        "search_top1_hydration": state.config.search_top1_hydration,
+        "supersession_demotion": state.config.supersession_demotion,
+        "supersession_demotion_weight": state.config.supersession_demotion_weight,
+        "verbatim_spans": state.config.verbatim_spans
     })
 }
 

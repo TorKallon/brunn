@@ -12,7 +12,7 @@ Can the up-to-3 sequential lexical candidate scans in the search path be consoli
 ## Preconditions and build items
 
 1. **(M) Flagged implementation** — `lexical_single_scan` runtime flag in `apps/api/src/simple_core.rs`, consolidating the sequential lexical candidate scans into one statement while preserving the recent-first two-tier window (256 recent entries, bounded full-index fallback per migration 0055), scoring (3.0 + ts_rank_cd + term bonus, cap 8.0, − derived_penalty), and all caps. Flag off = current triple scan, byte-for-byte.
-2. **(exists) n≥3 aggregator** — `eval/aggregate_draws.py`: per-case win/loss/tie, exact-binomial McNemar, case-level bootstrap CIs, stdlib only.
+2. **(implemented) n≥3 aggregator** — arm-aware pairing, authenticated runtime snapshots, immutable run identity, per-case win/loss/tie, exact-binomial McNemar, and case-level bootstrap CIs are shared through [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
 3. **(implemented) Targeted manifest** — `eval/e05_targeted_cases.json` containing only `star-rupture-plan-revision` and `warmind-parser-learning`, same schema as `eval/work_cases.json`, for the 5-draw repeats.
 4. **(exists) Deterministic guards** — shipped since v7 in performance_eval:
    640K `old_relevant_source_survives_many_newer_writes` (the result samples
@@ -33,7 +33,7 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
 
 ## Corpus and fixtures
 
-- Reasoning: agent-work suite (`eval/work_cases.json`, 13 cases / 52 claims) — the suite containing the historical lexical-collapse cases.
+- Reasoning: agent-work suite (`eval/work_cases.json`, 14 cases / 56 claims) — the suite containing the historical lexical-collapse cases.
 - Targeted: `star-rupture-plan-revision` (the v6 0/3 case) and `warmind-parser-learning`, via the targeted manifest.
 - Deterministic: 640K future-soak fixture (guards); 3,340-record clean fixture optional for latency comparison against results/2026-07-27-3340-clean-30-sample.json.
 - All runs exact+lexical (no semantic profile exists; embeddings pending), which is also the worst case for this change — the lexical lane carries everything.
@@ -50,10 +50,10 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
    `bounded_lexical_overflow_returns_late_relevant_source` pass. Any failure →
    drop the consolidation, stop the experiment, skip all reasoning runs.
 3. Paired draws, N = 1..3, alternating arms per draw to avoid drift:
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --concurrency 3 --timeout 360 --feature-state lexical_single_scan=off --run-tag E05 --run-tag armA --run-id e05-armA-draw<N> --out results/2026-MM-DD-e05-lexical-armA-draw<N>.json --report results/2026-MM-DD-e05-lexical-armA-draw<N>.md` (flag off), then the same with `armB`, `lexical_single_scan=on`, and an API actually started with the treatment flag on.
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --experiment-arm e05-A --paired-draw-id e05-work-draw<N> --feature-state lexical_single_scan=off --run-tag E05 --run-tag armA --concurrency 3 --timeout 360 --run-id e05-armA-draw<N> --out results/2026-MM-DD-e05-lexical-armA-draw<N>.json --report results/2026-MM-DD-e05-lexical-armA-draw<N>.md` (flag off), then the same with `--experiment-arm e05-B`, `--feature-state lexical_single_scan=on`, and an API actually started with the treatment flag on. Both arms use the same paired-draw ID and distinct run IDs.
 4. Targeted 5-draw repeats, N = 1..5, both arms:
-   `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json run --condition service_api --concurrency 2 --timeout 360 --feature-state lexical_single_scan=<off|on> --run-tag E05 --run-tag targeted --run-id e05-targeted-arm<A|B>-draw<N> --out results/2026-MM-DD-e05-targeted-arm<A|B>-draw<N>.json --report results/2026-MM-DD-e05-targeted-arm<A|B>-draw<N>.md`.
-5. Aggregate: `python eval/aggregate_draws.py results/2026-MM-DD-e05-*-draw*.json --out results/2026-MM-DD-e05-aggregate.json` — per-case win/loss/tie across the 3 paired draws, McNemar, bootstrap CI on case-level score difference.
+   Use the same arm identities and feature-state declarations with `--manifest eval/e05_targeted_cases.json`, shared `--paired-draw-id e05-targeted-draw<N>`, and distinct run IDs.
+5. Aggregate full and targeted manifests separately with `--expected-arm e05-B --expected-arm e05-A`; do not mix their case sets in one aggregate.
 6. Record per-lane latency metrics and per-operation lexical query counts from both arms (the D09 assertion delta this would lock in if shipped).
 
 The query-count comparison remains a hard dependency on D09. The current
@@ -61,7 +61,7 @@ execution harness does not infer counts from latency or logs.
 
 ## Metrics
 
-- Claims scored (x/52) per draw per arm; per-case paired win/loss/tie; exact-binomial McNemar p; bootstrap CI on the case-level difference.
+- Claims scored (x/56) per draw per arm; per-case paired win/loss/tie; exact-binomial McNemar p; bootstrap CI on the case-level difference.
 - Targeted cases: pass count out of 5 draws per case per arm.
 - Deterministic: guard pass/fail; search p95 and lexical query count per operation, both arms, vs the v8 baseline (search 53.1ms).
 
@@ -79,9 +79,9 @@ Ship the consolidation only if ALL hold; otherwise drop it permanently and recor
 
 Subscription rule: all reasoning runs go through the ChatGPT-authenticated Codex subscription, fail-closed (`require_codex_subscription` rejects API keys). All-in equivalent cost ≈ $0.24/agent-run (470-run audit, $113.18).
 
-- Paired draws: 13 cases × 2 arms × 3 draws = 78 runs.
+- Paired draws: 14 cases × 2 arms × 3 draws = 84 runs.
 - Targeted: 2 cases × 2 arms × 5 draws = 20 runs.
-- Total 98 runs × $0.24 ≈ $23.52 all-in equivalent.
+- Total 104 runs × $0.24 = $24.96 all-in equivalent.
 - Embeddings-exempt spend: $0 — no semantic lane in these runs (embeddings pending across all fixtures).
 - Deterministic soak runs: compute-local, no reasoning spend.
 
@@ -97,7 +97,7 @@ Hard ceiling: **$40**. Headroom (~$16) covers at most ~2 rerun draws for infrast
 
 ## Reporting
 
-The run record must contain: all artifact paths (`results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1..3}.json`, targeted draws, soak JSONs); aggregator output (win/loss/tie table, McNemar p, bootstrap CI); guard results verbatim; per-lane latency and query-count deltas; git commit fingerprint and flag states per run; actual spend vs the $23.52 preflight; and a one-line verdict — "provably free: ship behind `lexical_single_scan` per D10" or "not free: dropped, negative result recorded alongside v6 recent-first." If dropped, D10's deferred item is closed, not merely postponed.
+The run record must contain: all artifact paths (`results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1..3}.json`, targeted draws, soak JSONs); aggregator output (win/loss/tie table, McNemar p, bootstrap CI); guard results verbatim; per-lane latency and query-count deltas; git commit fingerprint and flag states per run; actual spend vs the $24.96 preflight; and a one-line verdict — "provably free: ship behind `lexical_single_scan` per D10" or "not free: dropped, negative result recorded alongside v6 recent-first." If dropped, D10's deferred item is closed, not merely postponed.
 
 ## References
 

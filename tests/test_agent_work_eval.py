@@ -18,8 +18,12 @@ from agent_work_eval import (  # noqa: E402
     build_run_ledger,
     build_codex_command,
     candidate_matches,
+    capture_service_runtime_snapshot,
+    ensure_run_binding,
+    experiment_provenance_lines,
     forbidden_is_asserted,
     expected_feature_flags,
+    expected_runtime_features,
     grade_answer,
     normalize,
     parse_feature_states,
@@ -33,6 +37,7 @@ from agent_work_eval import (  # noqa: E402
     select_cases,
     summarize,
     subscription_reasoning_environment,
+    validate_experiment_identity,
     load_native_provisioning_state,
     measure_adoption,
     validate,
@@ -41,6 +46,7 @@ from agent_work_eval import (  # noqa: E402
 from straylight_eval import BM25Index  # noqa: E402
 from workspace_cli import corpus_hash, load_corpus, safe_compute  # noqa: E402
 from native_memory import authored_frontmatter  # noqa: E402
+from transition_eval import select_transition_cases  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -200,6 +206,140 @@ class AgentWorkEvalTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "expect-feature-flag"):
             expected_feature_flags(["unknown=on"])
+
+    def test_runtime_snapshot_records_all_current_features_and_detects_drift(self):
+        runtime_features = {
+            "allow_degraded_embeddings": False,
+            "embed_cache": True,
+            "embedding_backfill_batch_chunks": 64,
+            "embedding_backfill_guard": True,
+            "embedding_backfill_inter_batch_ms": 25,
+            "embedding_backfill_open_p95_limit_ms": 150,
+            "embedding_backfill_search_p95_limit_ms": 3000,
+            "lexical_single_scan": False,
+            "read_path_roundtrip_v1": True,
+            "resume_deltas": False,
+            "search_fair_share": True,
+            "search_top1_hydration": True,
+            "search_char_cap": True,
+            "search_section_demotion_top_n": 8,
+            "verbatim_spans": False,
+            "supersession_demotion": True,
+            "supersession_demotion_weight": 1.5,
+            "intention_ledger": False,
+            "observability_timings_ms": True,
+            "materialize_token_budget": 24000,
+            "semantic_deadline_ms": 300,
+            "semantic_lane": True,
+        }
+        status = {
+            "status": "ready",
+            "build_revision": "a" * 40,
+            "corpus_revision": "revision:test",
+            "revision_sequence": 7,
+            "read_only": False,
+            "runtime_features": runtime_features,
+            "embeddings": {
+                "provider": "mock",
+                "model": "mock",
+                "dimensions": 8,
+                "status": "ready",
+            },
+            "semantic_runtime": {
+                "cache_hits": 2,
+                "cache_misses": 3,
+                "deferred": 1,
+                "embed_requests": 4,
+            },
+        }
+        expected = expected_runtime_features(
+            ["search_fair_share=on", "verbatim_spans=off"],
+            ["search_section_demotion_top_n=8"],
+        )
+        snapshot = capture_service_runtime_snapshot(
+            status,
+            expected_features=expected,
+            expected_build_revision="a" * 40,
+        )
+        self.assertEqual(snapshot["runtime_features"], runtime_features)
+        self.assertEqual(snapshot["semantic_runtime"], status["semantic_runtime"])
+        self.assertEqual(snapshot["build_revision"], "a" * 40)
+        provenance = experiment_provenance_lines({
+            "experiment_arm": "treatment",
+            "paired_draw_id": "draw-1",
+            "expected_runtime_features": expected,
+            "service_runtime_snapshot": snapshot,
+        })
+        self.assertIn("- Experiment arm: `treatment`", provenance)
+        self.assertTrue(
+            any("Actual runtime features" in line for line in provenance)
+        )
+        with self.assertRaisesRegex(ValueError, "runtime feature mismatch"):
+            capture_service_runtime_snapshot(
+                status,
+                expected_features={"verbatim_spans": True},
+                expected_build_revision="a" * 40,
+            )
+        with self.assertRaisesRegex(ValueError, "runtime feature mismatch"):
+            capture_service_runtime_snapshot(
+                status,
+                expected_features={"search_fair_share": 1},
+                expected_build_revision="a" * 40,
+            )
+
+    def test_experiment_identity_and_resume_binding_are_fail_closed(self):
+        self.assertEqual(
+            validate_experiment_identity("flag-on", "draw-1", ["service_api"]),
+            ("flag-on", "draw-1"),
+        )
+        with self.assertRaisesRegex(ValueError, "supplied together"):
+            validate_experiment_identity("flag-on", None, ["service_api"])
+        with self.assertRaisesRegex(ValueError, "single-condition"):
+            validate_experiment_identity(
+                "flag-on",
+                "draw-1",
+                ["service_api", "filesystem"],
+            )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binding = {
+                "run_id": "run-1",
+                "experiment_arm": "flag-on",
+                "paired_draw_id": "draw-1",
+                "conditions": ["service_api"],
+                "case_ids": ["case-a"],
+                "model": "gpt-test",
+                "service_protocol": "simple",
+                "manifest_sha256": "b" * 64,
+            }
+            ensure_run_binding(root, resume=False, **binding)
+            ensure_run_binding(root, resume=True, **binding)
+            with self.assertRaisesRegex(ValueError, "immutable experiment binding"):
+                ensure_run_binding(
+                    root,
+                    resume=True,
+                    **{**binding, "experiment_arm": "flag-off"},
+                )
+
+    def test_transition_case_selection_is_exact_and_ordered(self):
+        manifest = {
+            "cases": [
+                {"id": "case-a"},
+                {"id": "case-b"},
+            ]
+        }
+        self.assertEqual(
+            [
+                case["id"]
+                for case in select_transition_cases(
+                    manifest,
+                    ["case-b", "case-a", "case-b"],
+                )
+            ],
+            ["case-b", "case-a"],
+        )
+        with self.assertRaisesRegex(ValueError, "unknown requested transition"):
+            select_transition_cases(manifest, ["missing"])
 
     def test_reasoning_preflight_requires_chatgpt_authentication(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -439,6 +579,28 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertIn("exactly from authoritative evidence", service_prompt)
         self.assertIn("Build a facet checklist", service_prompt)
         self.assertIn("repeat a fact when it is needed in more than one slot", service_prompt)
+
+    def test_e02_identifier_subset_is_frozen_at_five_cases_twenty_claims(self):
+        full = json.loads(
+            (ROOT / "eval" / "recent_work_cases.json").read_text(encoding="utf-8")
+        )
+        subset_path = ROOT / "eval" / "e02_identifier_cases.json"
+        validated = validate(
+            subset_path,
+            ROOT / "eval" / "work_answer_schema.json",
+        )
+        self.assertEqual(validated["errors"], [])
+        subset = validated["manifest"]
+        expected_ids = full["feature_families"]["identifier_heavy"]
+        self.assertEqual(
+            [case["id"] for case in subset["cases"]],
+            expected_ids,
+        )
+        self.assertEqual(len(subset["cases"]), 5)
+        self.assertEqual(
+            sum(len(case["rubric"]) for case in subset["cases"]),
+            20,
+        )
 
     def test_e04_chronic_manifests_are_exact_case_subsets(self):
         specifications = [

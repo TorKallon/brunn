@@ -12,9 +12,9 @@ Does explicit `supersedes` frontmatter with demotion-plus-annotation (D04-supers
 ## Preconditions and build items
 
 1. D04 implemented behind `supersession_demotion` — **M**. Anchors: apps/api/src/simple_core.rs scoring (the derived_penalty application site), write/import frontmatter parse path, read view parameter.
-2. recent-work-v0.2 manifest: add correction notes carrying real `supersedes` frontmatter to the fixture corpus; label the dedup-family case subset in eval/recent_work_cases.json (must include recent-europe-calendar-dedup; expect 3–4 labeled cases whose rubric hinges on current-over-history); re-run `python agent_work_eval.py validate --manifest eval/recent_work_cases.json` — **S**.
+2. recent-work-v0.3 manifest: correction notes carry real `supersedes` frontmatter and `feature_families.supersession_dedup` freezes the four relevant cases — implemented.
 3. Harness flag plumbing: per-arm runtime-config toggle of `supersession_demotion` from agent_work_eval.py run setup (env var or config endpoint per D04 rollout mechanism) — **S**.
-4. n≥3 paired-draw aggregator eval/aggregate_draws.py (per-case win/loss/tie, exact-binomial McNemar, case-level bootstrap CIs, stdlib only) — **S**. Known build item; does not exist yet; shared, specified in E01-paired-draw-machinery-and-baseline.md.
+4. Arm-aware n≥3 paired-draw aggregator and runtime snapshot contract — implemented; see [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
 5. Adoption-arm harness: scripted unprompted agent-work write sessions where the authoring contract is documented in workspace docs but never stated in the task prompt; an eligibility oracle labels which sessions *should* have emitted `supersedes` (session writes a note that factually corrects an existing one) — **M**.
 
 ## Arms
@@ -26,23 +26,23 @@ Does explicit `supersedes` frontmatter with demotion-plus-annotation (D04-supers
 
 ## Corpus and fixtures
 
-recent-work-v0.2: the recent suite (12 cases / 48 claims) with correction notes added as real workspace fixtures — exact paths, full source text, sha256 recorded — each carrying `supersedes:` frontmatter authored in the Markdown itself (round-trip rule). No oracle hints in any task prompt. Dedup-family label list committed in the manifest.
+recent-work-v0.3: the recent suite (14 cases / 56 claims) with correction notes added as real workspace fixtures — exact paths, full source text, sha256 recorded — each carrying `supersedes:` frontmatter authored in the Markdown itself (round-trip rule). No oracle hints in any task prompt. Dedup-family label list is committed in the manifest.
 
 ## Procedure
 
 1. Preflight: clean git tree (implementation fingerprint gate), record commit; confirm flag defaults off.
-2. `python agent_work_eval.py validate --manifest eval/recent_work_cases.json` — must pass on v0.2.
+2. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json validate` — must pass on v0.3.
 3. For draw N in 1..3 (minimum; extend to 5 if the aggregate is borderline):
-   1. `python agent_work_eval.py run --manifest eval/recent_work_cases.json --condition service_api --concurrency 3 --timeout 360 --run-id e07-base-draw<N> --out results/2026-MM-DD-e07-supersession-base-draw<N>.json --report results/2026-MM-DD-e07-supersession-base-draw<N>.md` (flag off).
-   2. Same command with flag on, `--run-id e07-flag-draw<N>`, `--out results/2026-MM-DD-e07-supersession-flag-draw<N>.json`.
-   3. `python agent_work_eval.py run --manifest eval/recent_work_cases.json --condition filesystem --concurrency 3 --timeout 360 --run-id e07-fs-draw<N> --out results/2026-MM-DD-e07-supersession-fs-draw<N>.json --report results/2026-MM-DD-e07-supersession-fs-draw<N>.md`.
-   4. Adoption harness: 12 sessions, artifact `results/2026-MM-DD-e07-adoption-draw<N>.json`.
+   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --condition service_api --experiment-arm e07-base --paired-draw-id e07-draw<N> --expect-feature-flag supersession_demotion=off --concurrency 3 --timeout 360 --run-id e07-base-run<N> --out results/2026-MM-DD-e07-supersession-base-draw<N>.json --report results/2026-MM-DD-e07-supersession-base-draw<N>.md`.
+   2. Same paired-draw ID with `--experiment-arm e07-flag --expect-feature-flag supersession_demotion=on`, a unique run ID, and the flag-on artifact.
+   3. Filesystem uses `--condition filesystem --experiment-arm e07-filesystem --paired-draw-id e07-draw<N>` and a unique run ID.
+   4. Adoption raw run: `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json run --condition service_api --concurrency 3 --timeout 360 --run-id e07-adoption-run<N> --out results/2026-MM-DD-e07-adoption-raw-draw<N>.json`; then `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json measure-adoption --input results/2026-MM-DD-e07-adoption-raw-draw<N>.json --out results/2026-MM-DD-e07-adoption-draw<N>.json`.
 4. `python agent_work_eval.py regrade` on disputed graded answers before aggregation (rescores saved answers without regeneration).
-5. Aggregate: `python eval/aggregate_draws.py results/2026-MM-DD-e07-supersession-*-draw*.json --out results/2026-MM-DD-e07-aggregate.json` over the paired base/flag draws; produce McNemar exact p and bootstrap CIs.
+5. Aggregate: `python3 eval/aggregate_draws.py results/2026-MM-DD-e07-supersession-*-draw*.json --expected-arm e07-flag --expected-arm e07-base --expected-arm e07-filesystem --out results/2026-MM-DD-e07-aggregate.json`.
 
 ## Metrics
 
-- Claims/48 per arm per draw.
+- Claims/56 per arm per draw.
 - Dedup-family paired case wins/losses/ties (flag vs baseline), per draw and summed.
 - Forbidden-assertion rate: rubric-flagged assertions of a superseded (stale) fact, counted separately inside and outside the family.
 - Adoption rate: eligible sessions emitting valid `supersedes` frontmatter / eligible sessions.
@@ -61,13 +61,13 @@ Subscription rule (Decisions.md): all reasoning runs via the ChatGPT-authenticat
 
 All-in equivalent cost ≈ $0.24/agent-run (470-run audit, $113.18).
 
-- Claim-scored runs: 3 arms × 12 cases × 3 draws = 108 runs.
+- Claim-scored runs: 3 arms × 14 cases × 3 draws = 126 runs.
 - Adoption sessions: 12 × 3 draws = 36 runs.
-- Total 144 runs × $0.24 ≈ **$34.56**. Regrade passes ≈ $0 (no regeneration).
+- Total 162 runs × $0.24 = **$38.88**. Regrade passes ≈ $0 (no regeneration).
 
 Embeddings (usage-billed OpenAI, explicitly exempt, listed separately): none required — all arms run exact+lexical; no semantic-ready profile exists. If semantic indexing is later added to the fixture, cost ≤ $0.19 (9.6M-token corpus rate; this corpus is a fraction of that).
 
-**Hard ceiling: $60** all-in equivalent. Headroom covers reruns of invalidated draws and a 5-draw extension of the two service arms (2 × 12 × 2 = 48 runs ≈ $11.52).
+**Hard ceiling: $60** all-in equivalent. A 5-draw extension of the two service arms adds 2 × 14 × 2 = 56 runs = $13.44.
 
 ## Abort criteria
 
@@ -78,4 +78,4 @@ Embeddings (usage-billed OpenAI, explicitly exempt, listed separately): none req
 
 ## Reporting
 
-The run record must contain: git commit fingerprint; per-arm flag configuration; manifest version and hash (recent-work-v0.2); dedup-family label list; all draw artifact paths (results/2026-MM-DD-e07-supersession-{base,flag,fs}-draw<N>.json and -adoption-); per-case paired win/loss/tie table; McNemar exact p and bootstrap CI; forbidden-assertion counts in/out of family per arm; adoption rate with the eligible-session list and each emitted frontmatter block; context chars/case per arm; total cost split into subscription-equivalent and embeddings-exempt lines; explicit pass/fail against each acceptance criterion.
+The run record must contain: git commit fingerprint; per-arm flag configuration; manifest version and hash (recent-work-v0.3); dedup-family label list; all draw artifact paths (results/2026-MM-DD-e07-supersession-{base,flag,fs}-draw<N>.json and -adoption-); per-case paired win/loss/tie table; McNemar exact p and bootstrap CI; forbidden-assertion counts in/out of family per arm; adoption rate with the eligible-session list and each emitted frontmatter block; context chars/case per arm; total cost split into subscription-equivalent and embeddings-exempt lines; explicit pass/fail against each acceptance criterion.

@@ -12,33 +12,33 @@ Does budget-contracted retrieval — fair-share allocation + token-tied char cap
 ## Preconditions and build items
 
 1. (M) D01 feature behind flags `search.fair_share` / `search.top1_hydration` / `search.char_cap` in apps/api/src/simple_core.rs: response-assembly budget allocation; hydration reusing open's complete-source path (`MAX_OPEN_COMPLETE_SOURCE_CHARS`); single batched hydration fetch; `section_demotion_top_n` knob.
-2. (S) n≥3 paired aggregator (known missing build item): eval/aggregate_draws.py — per-case win/loss/tie, exact-binomial McNemar, case-level bootstrap CIs, stdlib only. Shared build item, specified in E01-paired-draw-machinery-and-baseline.md; build once.
+2. (implemented) Arm-aware n≥3 aggregator and immutable arm/draw ledger binding — see [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
 3. (S) Personal suite clean 60-claim run: the last run graded only 40/60. Diagnose with `python agent_work_eval.py regrade` on the saved answers; fix grading against eval/personal_coordination_cases.json; verify one full-grade run before any scored draw. Any draw where personal grades <60 claims is invalid.
 4. (S) Chronic-subset manifests: eval/e04_chronic_rupture_cases.json (ruptureops-archive-import-reconciliation, ruptureops-flowworks-campaign-revision, ruptureops-spatial-evidence, ruptureops-forked-agent-idempotency — from eval/rupture_ops_cases.json) and eval/e04_chronic_guard_cases.json (star-rupture-plan-revision, warmind-parser-learning — from eval/work_cases.json).
 5. (S) Exact-value claim-slot tagging: annotate rubric slots requiring verbatim values (dates, IDs, numbers, paths) in the three manifests; grader carries the tag into results (pointer-demotion risk per D01).
 6. (S) Verify agent_work_eval.py emits per-case `response_character_metrics` service chars; add if missing.
-7. (S) Accepted-source-in-context checker: script comparing saved per-case returned context against rubric accepted-source lists (reproduces the 21/22 baseline measurement).
+7. (implemented) `eval/audit_accepted_sources.py`, comparing saved `service_operations[].source_paths` against each rubric's accepted sources and emitting `straylight-accepted-source-context-audit@v1`.
 
 ## Arms
 
 - **A** — `service_api`, all D01 flags off (current caps). Paired baseline.
 - **B** — `service_api`, `fair_share`=on, `char_cap`=on (`section_demotion_top_n`=8), `top1_hydration`=off.
 - **C** — `service_api`, all three flags on (B plus top-1 hydration).
-- **F** — `filesystem` reference (instruction-restricted read-only; the writable-sidecar control does not exist yet and is out of scope here).
+- **F** — `filesystem` reference (instruction-restricted read-only; the available writable-sidecar control remains out of scope for this D01-specific experiment).
 
 ## Corpus and fixtures
 
-Same corpus and fixtures as the 57-case strict-draw runs, exact+lexical only with embeddings pending — the identical configuration behind every recorded quality and latency baseline. Suites: rupture_ops (primary, 12 cases/48 claims), work (guard, 13/52 per the settled suite-size record; note eval/work_cases.json holds 14 cases/56 claims on disk as of 2026-07-27 — the run uses the manifest as-is, so cost arithmetic below carries the on-disk count), personal_coordination (guard, 15/60) — 41 cases/164 claims per arm-draw at the on-disk count (40/160 at the settled record). The recent suite is excluded: no D01-specific hypothesis, and cost control. Preflight must recount every manifest and use the on-disk counts in the cost ledger.
+Same corpus and fixtures as the strict-draw runs, exact+lexical only with embeddings pending. Suites: rupture_ops (primary, 12 cases/48 claims), work (guard, 14/56), and personal_coordination (guard, 15/60) — 41 cases/164 claims per arm-draw. The recent suite is excluded: no D01-specific hypothesis, and cost control. Preflight must recount every manifest and use the on-disk counts in the cost ledger.
 
 ## Procedure
 
-1. Preflight: clean git tree (implementation fingerprint requires it). Validate every manifest: `python agent_work_eval.py validate --manifest eval/rupture_ops_cases.json` (repeat for eval/work_cases.json, eval/personal_coordination_cases.json, and both chronic manifests). Confirm precondition 3's clean personal run exists.
+1. Preflight: clean git tree (implementation fingerprint requires it). Validate every manifest: `python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json validate` (repeat for eval/work_cases.json, eval/personal_coordination_cases.json, and both chronic manifests). Confirm precondition 3's clean personal run exists.
 2. Confirm reasoning runs on the ChatGPT-authenticated Codex subscription; `require_codex_subscription` must reject API keys (fail-closed).
-3. For draw N in 1..3, complete all four arms before starting draw N+1. Per arm: set that arm's runtime flags on the API under test (runtime config, no deploy), then per suite run:
-   `python agent_work_eval.py run --manifest eval/rupture_ops_cases.json --condition service_api --concurrency 3 --timeout 360 --run-id e04-armA-rupture-draw1 --out results/2026-MM-DD-e04-armA-rupture-draw1.json --report results/2026-MM-DD-e04-armA-rupture-draw1.md`
-   Substitute armB/armC and suites work/personal; arm F uses `--condition filesystem`. Artifact naming: `results/2026-MM-DD-e04-<arm>-<suite>-draw<N>.json`.
-4. Draws 4-5, chronic subsets only, all four arms: same commands with `--manifest eval/e04_chronic_rupture_cases.json` and `--manifest eval/e04_chronic_guard_cases.json`. Combined with draws 1-3 this yields 5 paired draws for the six chronic cases.
-5. Aggregate: `python eval/aggregate_draws.py results/2026-MM-DD-e04-*.json --out results/2026-MM-DD-e04-aggregate.json` — win/loss/tie, McNemar, bootstrap CIs, chars/case per arm.
+3. For draw N in 1..3, complete all four arms before starting draw N+1. Per arm, use a unique `--run-id`, stable `--experiment-arm e04-A|B|C|F`, and one shared `--paired-draw-id e04-<suite>-draw<N>` per suite/draw. Example control:
+   `python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json run --condition service_api --experiment-arm e04-A --paired-draw-id e04-rupture-draw<N> --expect-feature-flag search_fair_share=off --expect-feature-flag search_top1_hydration=off --expect-feature-flag search_char_cap=off --expect-runtime-config search_section_demotion_top_n=null --concurrency 3 --timeout 360 --run-id e04-A-rupture-run<N> --out results/2026-MM-DD-e04-A-rupture-draw<N>.json --report results/2026-MM-DD-e04-A-rupture-draw<N>.md`
+   Substitute B/C and suites work/personal with their exact expected flag/knob values. Arm F uses `--condition filesystem --experiment-arm e04-F` with the same paired-draw ID. Artifact naming: `results/2026-MM-DD-e04-<arm>-<suite>-draw<N>.json`.
+4. Draws 4-5, chronic subsets only, all four arms: retain each parent manifest fingerprint and select the frozen IDs with repeated `--case` options. For rupture use `--manifest eval/rupture_ops_cases.json` with the four IDs listed in `eval/e04_chronic_rupture_cases.json`; for work use `--manifest eval/work_cases.json` with the two IDs in `eval/e04_chronic_guard_cases.json`. Combined with draws 1-3 this yields 5 paired draws for the six chronic cases. Do not run the separately fingerprinted subset manifests as aggregate inputs.
+5. Aggregate: `python3 eval/aggregate_draws.py results/2026-MM-DD-e04-*.json --expected-arm e04-A --expected-arm e04-B --expected-arm e04-C --expected-arm e04-F --allow-case-extension --out results/2026-MM-DD-e04-aggregate.json` — the opt-in extension permits only the predeclared chronic cases to have five draws; arm completeness remains mandatory. Then run `python3 eval/audit_accepted_sources.py results/2026-MM-DD-e04-*.json --out results/2026-MM-DD-e04-accepted-source-context.json`.
 6. Winning-config soak: `python performance_eval.py run --label e04-winning-soak --future-soak --out results/2026-MM-DD-e04-winning-soak.json` (30 samples, definitive) with that config's flags on.
 7. On regression only: one-factor-at-a-time bisection of the three bounds before abandoning D01 — `char_cap` only; `fair_share` only; demotion isolated via `section_demotion_top_n` unset vs 8 — chronic subsets, 3 draws per configuration.
 
@@ -66,7 +66,7 @@ Single-draw deltas decide nothing: the noise floor is ±3-5 claims (agent-work n
 
 Subscription rule (Decisions.md): all reasoning runs on the ChatGPT-authenticated Codex subscription, fail-closed in code (`require_codex_subscription` rejects API keys); observed all-in cost ≈$0.24/agent-run (470-run audit, $113.18).
 
-- Full draws: 4 arms × 41 cases (12+14+15 on-disk; 40 at the settled 13-case work count) × 3 draws = 492 runs × $0.24 = **$118.08** ($115.20 at the settled count).
+- Full draws: 4 arms × 41 cases × 3 draws = 492 runs × $0.24 = **$118.08**.
 - Chronic draws 4-5: 4 arms × 6 cases × 2 draws = 48 runs × $0.24 = **$11.52**
 - Contingency (personal re-grade/re-run plus bisection: 3 configs × 6 cases × 3 draws = 54 runs): ≤ **$12.96**
 - Planned ≈ $129.60; with full contingency ≈ $142.56. **Hard ceiling: $150.**

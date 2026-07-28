@@ -8,6 +8,7 @@ import itertools
 import json
 import math
 import random
+import re
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ CANONICAL_CONDITIONS = {
     "service_api_resume": "service_api",
     "workspace_resume": "workspace",
 }
+EXPERIMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 
 
 def percentile(values: Iterable[float], quantile: float) -> float:
@@ -62,6 +64,39 @@ def exact_mcnemar(discordant_a: int, discordant_b: int) -> dict[str, Any]:
         "interpretation": (
             "Tests asymmetry of collapsed binary case outcomes; a non-significant "
             "p-value is not evidence of non-inferiority."
+        ),
+    }
+
+
+def exact_one_sided_mcnemar(
+    discordant_a: int,
+    discordant_b: int,
+    alternative: str,
+) -> dict[str, Any]:
+    discordant = discordant_a + discordant_b
+    if alternative not in {"a_greater", "b_greater"}:
+        raise ValueError(f"unsupported one-sided McNemar alternative: {alternative}")
+    if discordant == 0:
+        p_value = 1.0
+    elif alternative == "a_greater":
+        p_value = sum(
+            math.comb(discordant, value)
+            for value in range(discordant_a, discordant + 1)
+        ) / (2**discordant)
+    else:
+        p_value = sum(
+            math.comb(discordant, value)
+            for value in range(0, discordant_a + 1)
+        ) / (2**discordant)
+    return {
+        "a_pass_b_fail": discordant_a,
+        "a_fail_b_pass": discordant_b,
+        "discordant_claims": discordant,
+        "alternative": alternative,
+        "one_sided_exact_p": round(p_value, 12),
+        "interpretation": (
+            "Claim outcomes are paired by suite, case, and claim ID, then "
+            "strict-majority collapsed across repeated draws before the exact test."
         ),
     }
 
@@ -107,8 +142,22 @@ def _validate_run_ledger(run: dict[str, Any]) -> str:
         or not isinstance(manifest, dict)
         or configuration.get("model") != manifest.get("model")
         or configuration.get("conditions") != manifest.get("conditions")
+        or configuration.get("experiment_arm") != run.get("experiment_arm")
+        or configuration.get("paired_draw_id") != run.get("paired_draw_id")
+        or configuration.get("expected_runtime_features", {})
+        != run.get("expected_runtime_features", {})
+        or configuration.get("expected_build_revision")
+        != run.get("expected_build_revision")
+        or configuration.get("experiment_parameters", {})
+        != run.get("experiment_parameters", {})
     ):
         raise ValueError("input run ledger does not match the run configuration")
+    experiment_arm = run.get("experiment_arm")
+    paired_draw_id = run.get("paired_draw_id")
+    if bool(experiment_arm) != bool(paired_draw_id):
+        raise ValueError("input run has an incomplete experiment arm/draw identity")
+    if experiment_arm is not None and len(manifest.get("conditions", [])) != 1:
+        raise ValueError("explicit experiment arms require one condition per artifact")
     artifacts = ledger.get("artifacts")
     execution_fingerprints = run.get("execution_fingerprints")
     original_manifest_sha256 = (
@@ -135,6 +184,74 @@ def _validate_run_ledger(run: dict[str, Any]) -> str:
         or artifacts["harness_sha256"] != original_harness_sha256
     ):
         raise ValueError("input run ledger does not match the run fingerprints")
+    runtime_snapshot = run.get("service_runtime_snapshot")
+    runtime_snapshot_sha256 = artifacts.get("runtime_snapshot_sha256")
+    if runtime_snapshot is None:
+        if runtime_snapshot_sha256 is not None:
+            raise ValueError("run ledger references a missing runtime snapshot")
+    else:
+        if (
+            not isinstance(runtime_snapshot, dict)
+            or runtime_snapshot_sha256
+            != hashlib.sha256(
+                json.dumps(
+                    runtime_snapshot,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        ):
+            raise ValueError("run ledger does not match the runtime snapshot")
+        runtime_features = runtime_snapshot.get("runtime_features")
+        build_revision = runtime_snapshot.get("build_revision")
+        if (
+            runtime_snapshot.get("schema")
+            != "straylight-service-runtime-snapshot@v1"
+            or runtime_snapshot.get("status") != "ready"
+            or not isinstance(runtime_snapshot.get("captured_at"), str)
+            or not runtime_snapshot["captured_at"]
+            or not isinstance(runtime_features, dict)
+            or not isinstance(build_revision, str)
+            or not build_revision
+            or build_revision == "unknown"
+        ):
+            raise ValueError("run contains a malformed service runtime snapshot")
+        expected_runtime_features = run.get("expected_runtime_features", {})
+        if not isinstance(expected_runtime_features, dict):
+            raise ValueError("run contains malformed runtime expectations")
+        mismatches = {
+            name: {"expected": expected, "actual": runtime_features.get(name)}
+            for name, expected in expected_runtime_features.items()
+            if (
+                name not in runtime_features
+                or type(runtime_features[name]) is not type(expected)
+                or runtime_features[name] != expected
+            )
+        }
+        if mismatches:
+            raise ValueError(
+                f"run runtime snapshot violates its expectations: {mismatches}"
+            )
+        expected_build_revision = run.get("expected_build_revision")
+        if (
+            expected_build_revision is not None
+            and build_revision != expected_build_revision
+        ):
+            raise ValueError(
+                "run runtime snapshot violates its expected build revision"
+            )
+    selected_conditions = manifest.get("conditions", [])
+    uses_service = any(
+        condition in {"service_api", "service_api_resume"}
+        for condition in selected_conditions
+    )
+    if (
+        uses_service
+        and "expected_runtime_features" in configuration
+        and runtime_snapshot is None
+    ):
+        raise ValueError("service run is missing its authenticated runtime snapshot")
     return revision
 
 
@@ -193,6 +310,37 @@ def load_draw(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     cases = manifest.get("cases")
     if not isinstance(conditions, list) or not conditions or not isinstance(cases, list):
         raise ValueError(f"{path}: manifest lacks selected conditions or cases")
+    if (
+        not all(isinstance(condition, str) and condition for condition in conditions)
+        or len(conditions) != len(set(conditions))
+    ):
+        raise ValueError(f"{path}: manifest has malformed or duplicate conditions")
+    case_ids = [
+        case.get("id")
+        for case in cases
+        if isinstance(case, dict)
+    ]
+    if (
+        len(case_ids) != len(cases)
+        or not all(isinstance(case_id, str) and case_id for case_id in case_ids)
+        or len(case_ids) != len(set(case_ids))
+    ):
+        raise ValueError(f"{path}: manifest has malformed or duplicate case IDs")
+    experiment_arm = run.get("experiment_arm")
+    paired_draw_id = run.get("paired_draw_id")
+    explicit_identity = experiment_arm is not None
+    if explicit_identity:
+        if (
+            not isinstance(experiment_arm, str)
+            or not EXPERIMENT_ID_PATTERN.fullmatch(experiment_arm)
+            or not isinstance(paired_draw_id, str)
+            or not EXPERIMENT_ID_PATTERN.fullmatch(paired_draw_id)
+        ):
+            raise ValueError(f"{path}: invalid explicit experiment arm identity")
+        if len(conditions) != 1:
+            raise ValueError(
+                f"{path}: explicit experiment arms require one condition per artifact"
+            )
     expected = {
         (str(case["id"]), str(condition))
         for case in cases
@@ -210,37 +358,60 @@ def load_draw(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         if key not in expected:
             raise ValueError(f"{path}: unexpected record for {key}")
         grade = record.get("grade")
+        case_pass = (
+            record.get("transition_pass")
+            if "transition_pass" in record
+            else grade.get("pass") if isinstance(grade, dict) else None
+        )
         if (
             record.get("error")
             or not isinstance(grade, dict)
-            or not isinstance(grade.get("claims_passed"), int)
-            or not isinstance(grade.get("claims_total"), int)
+            or type(grade.get("claims_passed")) is not int
+            or type(grade.get("claims_total")) is not int
             or grade["claims_total"] <= 0
             or not 0 <= grade["claims_passed"] <= grade["claims_total"]
+            or not isinstance(case_pass, bool)
         ):
             raise ValueError(f"{path}: incomplete or failed record for {key}")
         characters = record.get("model_visible_tool_output_chars")
-        if not isinstance(characters, int) or characters < 0:
+        if type(characters) is not int or characters < 0:
             raise ValueError(
                 f"{path}: {key} lacks comparable model-visible character accounting"
             )
         canonical = CANONICAL_CONDITIONS.get(key[1], key[1])
+        claim_rows = grade.get("claims")
+        claim_outcomes = None
+        if isinstance(claim_rows, list):
+            claim_outcomes = {}
+            for claim in claim_rows:
+                if (
+                    not isinstance(claim, dict)
+                    or not isinstance(claim.get("id"), str)
+                    or not isinstance(claim.get("pass"), bool)
+                    or claim["id"] in claim_outcomes
+                ):
+                    raise ValueError(
+                        f"{path}: {key} has malformed claim-level outcomes"
+                    )
+                claim_outcomes[claim["id"]] = claim["pass"]
+            if len(claim_outcomes) != grade["claims_total"]:
+                raise ValueError(
+                    f"{path}: {key} claim-level outcomes do not match claims_total"
+                )
         normalized.append({
             "suite": suite,
-            "draw": run_id,
+            "draw": paired_draw_id if explicit_identity else run_id,
             "case": key[0],
             "case_key": f"{suite}:{key[0]}",
+            "arm": experiment_arm if explicit_identity else canonical,
             "condition": canonical,
             "source_condition": key[1],
             "claims_passed": grade["claims_passed"],
             "claims_total": grade["claims_total"],
-            "case_pass": bool(
-                record.get("transition_pass")
-                if "transition_pass" in record
-                else grade.get("pass")
-            ),
+            "case_pass": case_pass,
             "model_visible_tool_output_chars": characters,
             "persisted_checkpoint": bool(record.get("persisted_checkpoint")),
+            "claim_outcomes": claim_outcomes,
         })
     missing = sorted(expected - observed)
     if missing:
@@ -249,13 +420,21 @@ def load_draw(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         "path": str(path.resolve()),
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "run_id": run_id,
+        "paired_draw_id": paired_draw_id if explicit_identity else run_id,
+        "experiment_arm": experiment_arm,
+        "identity_mode": "explicit_arm" if explicit_identity else "condition_arm",
         "suite": suite,
         "conditions": list(conditions),
+        "arms": list(dict.fromkeys(record["arm"] for record in normalized)),
         "cases": len(cases),
         "source_revision": revision,
         "grading_revision": grading_revision,
         "manifest_sha256": run.get("manifest_sha256"),
         "model": manifest.get("model"),
+        "expected_runtime_features": run.get("expected_runtime_features", {}),
+        "expected_build_revision": run.get("expected_build_revision"),
+        "experiment_parameters": run.get("experiment_parameters", {}),
+        "service_runtime_snapshot": run.get("service_runtime_snapshot"),
         "run_ledger": run["run_ledger"],
     }
     return artifact, normalized
@@ -263,24 +442,24 @@ def load_draw(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
 
 def _case_clusters(
     records: Sequence[dict[str, Any]],
-    condition_a: str,
-    condition_b: str,
+    arm_a: str,
+    arm_b: str,
 ) -> list[dict[str, Any]]:
     by_observation = {
         (
             record["suite"],
             record["draw"],
             record["case"],
-            record["condition"],
+            record["arm"],
         ): record
         for record in records
     }
     case_draws: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
-    for suite, draw, case, condition in sorted(by_observation):
-        if condition != condition_a:
+    for suite, draw, case, arm in sorted(by_observation):
+        if arm != arm_a:
             continue
-        left = by_observation[(suite, draw, case, condition_a)]
-        right = by_observation.get((suite, draw, case, condition_b))
+        left = by_observation[(suite, draw, case, arm_a)]
+        right = by_observation.get((suite, draw, case, arm_b))
         if right is not None:
             case_draws[left["case_key"]].append((left, right))
     clusters = []
@@ -339,18 +518,121 @@ def _case_clusters(
     return clusters
 
 
+def _claim_level_mcnemar(
+    records: Sequence[dict[str, Any]],
+    arm_a: str,
+    arm_b: str,
+    alternative: str,
+) -> dict[str, Any]:
+    by_observation = {
+        (
+            record["suite"],
+            record["draw"],
+            record["case"],
+            record["arm"],
+        ): record
+        for record in records
+    }
+    claim_draws: dict[
+        tuple[str, str, str],
+        list[tuple[bool, bool]],
+    ] = defaultdict(list)
+    for suite, draw, case, arm in sorted(by_observation):
+        if arm != arm_a:
+            continue
+        left = by_observation[(suite, draw, case, arm_a)]
+        right = by_observation.get((suite, draw, case, arm_b))
+        if right is None:
+            continue
+        left_claims = left.get("claim_outcomes")
+        right_claims = right.get("claim_outcomes")
+        if not isinstance(left_claims, dict) or not isinstance(right_claims, dict):
+            raise ValueError(
+                "claim-level McNemar requires structured claim outcomes in every record"
+            )
+        if set(left_claims) != set(right_claims):
+            raise ValueError(
+                f"{suite}:{case}: paired arms have different claim IDs"
+            )
+        for claim_id in sorted(left_claims):
+            claim_draws[(suite, case, claim_id)].append(
+                (left_claims[claim_id], right_claims[claim_id])
+            )
+    if not claim_draws:
+        raise ValueError(f"no paired claim outcomes for {arm_a} vs {arm_b}")
+    expected_draws_by_case: dict[tuple[str, str], int] = defaultdict(int)
+    for suite, draw, case, arm in sorted(by_observation):
+        if arm == arm_a and (suite, draw, case, arm_b) in by_observation:
+            expected_draws_by_case[(suite, case)] += 1
+    incomplete_claim_draws = {
+        key: len(pairs)
+        for key, pairs in claim_draws.items()
+        if len(pairs) != expected_draws_by_case[(key[0], key[1])]
+    }
+    if incomplete_claim_draws:
+        first = next(iter(sorted(incomplete_claim_draws.items())))
+        raise ValueError(
+            "claim IDs changed across paired draws; "
+            f"{first[0]} appears in {first[1]} draws"
+        )
+    discordant_a = 0
+    discordant_b = 0
+    collapsed_ties = 0
+    per_claim = []
+    for (suite, case, claim_id), pairs in sorted(claim_draws.items()):
+        draw_count = len(pairs)
+        a_votes = sum(left for left, _ in pairs)
+        b_votes = sum(right for _, right in pairs)
+        a_binary = (
+            True if a_votes * 2 > draw_count
+            else False if a_votes * 2 < draw_count
+            else None
+        )
+        b_binary = (
+            True if b_votes * 2 > draw_count
+            else False if b_votes * 2 < draw_count
+            else None
+        )
+        if a_binary is None or b_binary is None:
+            collapsed_ties += 1
+        elif a_binary and not b_binary:
+            discordant_a += 1
+        elif not a_binary and b_binary:
+            discordant_b += 1
+        per_claim.append({
+            "suite": suite,
+            "case_id": case,
+            "claim_id": claim_id,
+            "draws": draw_count,
+            "a_pass_votes": a_votes,
+            "b_pass_votes": b_votes,
+            "collapsed_a_pass": a_binary,
+            "collapsed_b_pass": b_binary,
+        })
+    result = exact_one_sided_mcnemar(discordant_a, discordant_b, alternative)
+    result.update({
+        "claim_clusters": len(per_claim),
+        "draws_per_claim": sorted({item["draws"] for item in per_claim}),
+        "collapsed_ties_excluded": collapsed_ties,
+        "pairing_unit": "suite + case_id + claim_id",
+        "per_claim": per_claim,
+    })
+    return result
+
+
 def summarize_pair(
     records: Sequence[dict[str, Any]],
-    condition_a: str,
-    condition_b: str,
+    arm_a: str,
+    arm_b: str,
     *,
     iterations: int,
     seed: int,
     non_inferiority_margin_claims: float | None,
+    claim_mcnemar_alternative: str | None,
 ) -> dict[str, Any]:
-    clusters = _case_clusters(records, condition_a, condition_b)
+    clusters = _case_clusters(records, arm_a, arm_b)
     if not clusters:
-        raise ValueError(f"no paired cases for {condition_a} vs {condition_b}")
+        raise ValueError(f"no paired cases for {arm_a} vs {arm_b}")
     wins = sum(item["mean_claim_difference"] > 0 for item in clusters)
     losses = sum(item["mean_claim_difference"] < 0 for item in clusters)
     ties = len(clusters) - wins - losses
@@ -362,7 +644,7 @@ def summarize_pair(
         item["case_pass_a"] is False and item["case_pass_b"] is True
         for item in clusters
     )
-    rng = random.Random(f"{seed}:{condition_a}:{condition_b}:{len(clusters)}")
+    rng = random.Random(f"{seed}:{arm_a}:{arm_b}:{len(clusters)}")
     claim_differences = []
     rate_differences = []
     char_differences = []
@@ -386,8 +668,10 @@ def summarize_pair(
     )
     claim_ci = confidence_interval(claim_differences)
     result = {
-        "condition_a": condition_a,
-        "condition_b": condition_b,
+        "arm_a": arm_a,
+        "arm_b": arm_b,
+        "condition_a": arm_a,
+        "condition_b": arm_b,
         "case_clusters": len(clusters),
         "draws_per_case": sorted({item["draws"] for item in clusters}),
         "total_claims_per_draw": total_claims,
@@ -437,6 +721,13 @@ def summarize_pair(
         },
         "per_case": clusters,
     }
+    if claim_mcnemar_alternative is not None:
+        result["claim_level_exact_mcnemar"] = _claim_level_mcnemar(
+            records,
+            arm_a,
+            arm_b,
+            claim_mcnemar_alternative,
+        )
     if non_inferiority_margin_claims is not None:
         result["non_inferiority"] = {
             "margin_claims": -abs(non_inferiority_margin_claims),
@@ -462,6 +753,9 @@ def aggregate(
     iterations: int = DEFAULT_ITERATIONS,
     seed: int = DEFAULT_SEED,
     non_inferiority_margin_claims: float = DEFAULT_NON_INFERIORITY_MARGIN_CLAIMS,
+    expected_arms: Sequence[str] | None = None,
+    claim_mcnemar_alternative: str | None = None,
+    allow_case_extension: bool = False,
 ) -> dict[str, Any]:
     if iterations < DEFAULT_ITERATIONS:
         raise ValueError(
@@ -480,27 +774,111 @@ def aggregate(
             record["suite"],
             record["draw"],
             record["case"],
-            record["condition"],
+            record["arm"],
         )
         for record in records
     ]
     if len(observation_keys) != len(set(observation_keys)):
         raise ValueError("input artifacts contain duplicate draw observations")
-    case_condition_draws: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    requested_arms = list(dict.fromkeys(expected_arms or []))
+    if expected_arms and len(requested_arms) != len(expected_arms):
+        raise ValueError("expected arms must be unique")
+    if requested_arms and len(requested_arms) < 2:
+        raise ValueError("paired aggregates require at least two expected arms")
+    arm_order = requested_arms or list(
+        dict.fromkeys(record["arm"] for record in records)
+    )
+    if len(arm_order) < 2:
+        raise ValueError("input artifacts contain fewer than two experiment arms")
+
+    arms_by_suite: dict[str, set[str]] = defaultdict(set)
+    arms_by_suite_draw_case: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    cases_by_suite_draw: dict[tuple[str, str], set[str]] = defaultdict(set)
+    source_conditions_by_arm: dict[str, set[str]] = defaultdict(set)
     for record in records:
-        case_condition_draws[
-            (record["suite"], record["case"], record["condition"])
+        arms_by_suite[record["suite"]].add(record["arm"])
+        arms_by_suite_draw_case[
+            (record["suite"], record["draw"], record["case"])
+        ].add(record["arm"])
+        cases_by_suite_draw[(record["suite"], record["draw"])].add(record["case"])
+        source_conditions_by_arm[record["arm"]].add(record["source_condition"])
+    if requested_arms:
+        expected_set = set(requested_arms)
+        mismatched_suites = {
+            suite: sorted(arms)
+            for suite, arms in arms_by_suite.items()
+            if arms != expected_set
+        }
+        if mismatched_suites:
+            raise ValueError(
+                "input suites do not match --expected-arm set: "
+                f"{mismatched_suites}"
+            )
+    incomplete_arm_sets = {
+        key: sorted(arms)
+        for key, arms in arms_by_suite_draw_case.items()
+        if arms != arms_by_suite[key[0]]
+    }
+    if incomplete_arm_sets:
+        first = next(iter(sorted(incomplete_arm_sets.items())))
+        raise ValueError(
+            "input artifacts contain an incomplete or mixed arm set; "
+            f"{first[0]} has {first[1]}, expected "
+            f"{sorted(arms_by_suite[first[0][0]])}"
+        )
+    mixed_arm_conditions = {
+        arm: sorted(conditions)
+        for arm, conditions in source_conditions_by_arm.items()
+        if len(conditions) != 1
+    }
+    if mixed_arm_conditions:
+        raise ValueError(
+            "experiment arms change source condition across draws: "
+            f"{mixed_arm_conditions}"
+        )
+    identity_modes_by_suite: dict[str, set[str]] = defaultdict(set)
+    for artifact in artifacts:
+        identity_modes_by_suite[artifact["suite"]].add(artifact["identity_mode"])
+    mixed_identity_modes = {
+        suite: sorted(modes)
+        for suite, modes in identity_modes_by_suite.items()
+        if len(modes) != 1
+    }
+    if mixed_identity_modes:
+        raise ValueError(
+            "input suites mix explicit-arm and condition-arm identities: "
+            f"{mixed_identity_modes}"
+        )
+    case_set_fingerprints: dict[str, set[tuple[str, ...]]] = defaultdict(set)
+    for (suite, _draw), cases in cases_by_suite_draw.items():
+        case_set_fingerprints[suite].add(tuple(sorted(cases)))
+    mixed_case_sets = {
+        suite: sorted(case_sets)
+        for suite, case_sets in case_set_fingerprints.items()
+        if len(case_sets) != 1
+    }
+    if mixed_case_sets and not allow_case_extension:
+        raise ValueError(
+            "paired draws use mixed case sets within a suite; use a frozen "
+            "subset selection and --allow-case-extension only for a predeclared "
+            f"longitudinal extension: {mixed_case_sets}"
+        )
+
+    case_arm_draws: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    for record in records:
+        case_arm_draws[
+            (record["suite"], record["case"], record["arm"])
         ].add(record["draw"])
     insufficient_draws = {
         key: len(draws)
-        for key, draws in case_condition_draws.items()
+        for key, draws in case_arm_draws.items()
         if len(draws) < 3
     }
     if insufficient_draws:
         first = next(iter(sorted(insufficient_draws.items())))
         raise ValueError(
             "paired aggregates require at least 3 complete draws per "
-            f"case and condition; {first[0]} has {first[1]}"
+            f"case and arm; {first[0]} has {first[1]}"
         )
     revisions = {artifact["source_revision"] for artifact in artifacts}
     if len(revisions) != 1:
@@ -520,26 +898,71 @@ def aggregate(
         raise ValueError("draws for a suite do not share one manifest fingerprint")
     if any(len(values) != 1 for values in suite_models.values()):
         raise ValueError("draws for a suite do not share one model")
+    runtime_build_revisions = {
+        snapshot["build_revision"]
+        for artifact in artifacts
+        if isinstance(
+            (snapshot := artifact.get("service_runtime_snapshot")),
+            dict,
+        )
+    }
+    if len(runtime_build_revisions) > 1:
+        raise ValueError(
+            "service-backed draws span multiple runtime build revisions: "
+            f"{sorted(runtime_build_revisions)}"
+        )
+    runtime_features_by_arm: dict[str, set[str]] = defaultdict(set)
+    for artifact in artifacts:
+        snapshot = artifact.get("service_runtime_snapshot")
+        if not isinstance(snapshot, dict):
+            continue
+        if artifact["identity_mode"] == "explicit_arm":
+            runtime_arms = artifact["arms"]
+        else:
+            runtime_arms = [
+                arm
+                for arm in artifact["arms"]
+                if arm == "service_api"
+            ]
+        rendered_features = json.dumps(
+            snapshot["runtime_features"],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for arm in runtime_arms:
+            runtime_features_by_arm[arm].add(rendered_features)
+    mixed_runtime_features = {
+        arm: len(features)
+        for arm, features in runtime_features_by_arm.items()
+        if len(features) != 1
+    }
+    if mixed_runtime_features:
+        raise ValueError(
+            "runtime feature snapshot changed within an experiment arm: "
+            f"{mixed_runtime_features}"
+        )
     conditions = list(dict.fromkeys(record["condition"] for record in records))
     pairings: dict[str, Any] = {}
     suites = sorted({record["suite"] for record in records})
-    for condition_a, condition_b in itertools.combinations(conditions, 2):
+    for arm_a, arm_b in itertools.combinations(arm_order, 2):
         shared_records = [
             record
             for record in records
-            if record["condition"] in {condition_a, condition_b}
+            if record["arm"] in {arm_a, arm_b}
         ]
-        if not _case_clusters(shared_records, condition_a, condition_b):
+        if not _case_clusters(shared_records, arm_a, arm_b):
             continue
-        key = f"{condition_a}__vs__{condition_b}"
+        key = f"{arm_a}__vs__{arm_b}"
         pairings[key] = {
             "overall": summarize_pair(
                 shared_records,
-                condition_a,
-                condition_b,
+                arm_a,
+                arm_b,
                 iterations=iterations,
                 seed=seed,
                 non_inferiority_margin_claims=non_inferiority_margin_claims,
+                claim_mcnemar_alternative=claim_mcnemar_alternative,
             ),
             "by_suite": {},
         }
@@ -549,14 +972,15 @@ def aggregate(
                 for record in shared_records
                 if record["suite"] == suite
             ]
-            if _case_clusters(suite_records, condition_a, condition_b):
+            if _case_clusters(suite_records, arm_a, arm_b):
                 pairings[key]["by_suite"][suite] = summarize_pair(
                     suite_records,
-                    condition_a,
-                    condition_b,
+                    arm_a,
+                    arm_b,
                     iterations=iterations,
                     seed=seed,
                     non_inferiority_margin_claims=None,
+                    claim_mcnemar_alternative=claim_mcnemar_alternative,
                 )
     if not pairings:
         raise ValueError("input artifacts contain no paired condition observations")
@@ -572,6 +996,21 @@ def aggregate(
             "cluster": "suite plus case_id",
         },
         "input_artifacts": artifacts,
+        "arms": arm_order,
+        "arm_sets_by_suite": {
+            suite: [arm for arm in arm_order if arm in arms]
+            for suite, arms in sorted(arms_by_suite.items())
+        },
+        "case_extension": {
+            "enabled": allow_case_extension,
+            "case_sets_by_suite": {
+                suite: [
+                    list(case_set)
+                    for case_set in sorted(case_sets)
+                ]
+                for suite, case_sets in sorted(case_set_fingerprints.items())
+            },
+        },
         "conditions": conditions,
         "suites": suites,
         "draws": len({(record["suite"], record["draw"]) for record in records}),
@@ -589,6 +1028,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS)
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument(
+        "--expected-arm",
+        action="append",
+        help=(
+            "declare the complete arm set and ordering; repeat once per arm"
+        ),
+    )
+    parser.add_argument(
+        "--claim-mcnemar-alternative",
+        choices=("a_greater", "b_greater"),
+        help=(
+            "also emit a one-sided claim-level McNemar test after strict-majority "
+            "collapse across draws; default case-level output remains two-sided"
+        ),
+    )
+    parser.add_argument(
+        "--allow-case-extension",
+        action="store_true",
+        help=(
+            "allow a predeclared subset to receive additional complete paired "
+            "draws; every case still requires at least three arm-complete draws"
+        ),
+    )
+    parser.add_argument(
         "--non-inferiority-margin-claims",
         type=float,
         default=DEFAULT_NON_INFERIORITY_MARGIN_CLAIMS,
@@ -603,6 +1065,9 @@ def main() -> int:
         iterations=args.iterations,
         seed=args.seed,
         non_inferiority_margin_claims=args.non_inferiority_margin_claims,
+        expected_arms=args.expected_arm,
+        claim_mcnemar_alternative=args.claim_mcnemar_alternative,
+        allow_case_extension=args.allow_case_extension,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

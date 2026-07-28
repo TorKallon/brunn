@@ -20,6 +20,11 @@ from agent_work_eval import (
     DEFAULT_CODEX,
     NATIVE_PROVISIONING_STATE,
     build_run_ledger,
+    canonical_json_sha256,
+    ensure_run_binding,
+    expected_runtime_features,
+    experiment_provenance_lines,
+    fetch_service_runtime_snapshot,
     git_source_fingerprint,
     grade_answer,
     load_native_provisioning_state,
@@ -27,8 +32,10 @@ from agent_work_eval import (
     parse_json_answer,
     read_sidecar_checkpoint,
     require_codex_subscription,
+    require_stable_runtime_configuration,
     sha256_file,
     subscription_reasoning_environment,
+    validate_experiment_identity,
     write_native_provisioning_state,
 )
 from native_eval import (
@@ -1350,6 +1357,7 @@ def render_report(run: dict[str, Any]) -> str:
         f"- Embeddings: `{run['embeddings']['kind']}` / `{run['embeddings']['model']}`",
         f"- Cards: {len(run['manifest']['cases'])} across Warmind, Charlemagne, Star Rupture, Switzerland, and Straylight",
         "- Each card reopens a revision-N checkpoint with a fresh agent, introduces a revision-N+1 delta, and requires a source-preserving child checkpoint.",
+        *experiment_provenance_lines(run),
         "",
         "## Results",
         "| Condition | Cases | Claims | Mean cumulative input | Mean cached input | Mean uncached input | Mean shell calls | Mean workspace calls |",
@@ -1440,10 +1448,29 @@ def select_transition_conditions(manifest: dict[str, Any], args: argparse.Namesp
     return requested
 
 
+def select_transition_cases(
+    manifest: dict[str, Any],
+    requested: Sequence[str] | None,
+) -> list[dict[str, Any]]:
+    if not requested:
+        return list(manifest["cases"])
+    requested_ids = list(dict.fromkeys(requested))
+    cases_by_id = {case["id"]: case for case in manifest["cases"]}
+    unknown = [case_id for case_id in requested_ids if case_id not in cases_by_id]
+    if unknown:
+        raise ValueError(f"unknown requested transition cases: {unknown}")
+    return [cases_by_id[case_id] for case_id in requested_ids]
+
+
 async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[str, Any]:
     reasoning_billing = require_codex_subscription(args.codex)
     manifest = dict(validated["manifest"])
     manifest["model"] = args.model or manifest["model"]
+    manifest["cases"] = select_transition_cases(manifest, args.case)
+    if not manifest["cases"]:
+        raise ValueError("no transition cases were selected")
+    validated = dict(validated)
+    validated["manifest"] = manifest
     run_id = args.resume_run_id or args.run_id or datetime.now().astimezone().strftime("transition-%Y%m%dT%H%M%S%z")
     run_root = ROOT / "runs" / run_id
     if args.resume_run_id:
@@ -1452,6 +1479,27 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
     else:
         run_root.mkdir(parents=True, exist_ok=False)
     selected_conditions = select_transition_conditions(manifest, args)
+    experiment_arm, paired_draw_id = validate_experiment_identity(
+        args.experiment_arm,
+        args.paired_draw_id,
+        selected_conditions,
+    )
+    if experiment_arm is not None and args.reuse_input:
+        raise ValueError(
+            "--reuse-input cannot be combined with explicit experiment-arm pairing"
+        )
+    expected_features = expected_runtime_features(
+        args.expect_feature_flag,
+        args.expect_runtime_config,
+    )
+    if (
+        (expected_features or args.expect_build_revision)
+        and "service_api_resume" not in selected_conditions
+    ):
+        raise ValueError(
+            "runtime/build expectations require service_api_resume"
+        )
+    manifest_sha256 = sha256_file(args.manifest)
     mutation_script = validated.get("mutation_script")
     mutation_enabled = mutation_script is not None
     if mutation_enabled and "workspace_resume" in selected_conditions:
@@ -1463,6 +1511,34 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         prepare_mutation_mirrors(run_root, validated)
         if mutation_enabled
         else None
+    )
+    experiment_parameters = {
+        "mutation_script_sha256": (
+            sha256_file(mutation_script) if mutation_enabled else None
+        ),
+        "mutation_seed": (
+            validated["mutation_seed"] if mutation_enabled else None
+        ),
+        "mutation_plans_sha256": (
+            canonical_json_sha256(validated["mutation_plans"])
+            if mutation_enabled
+            else None
+        ),
+    }
+    ensure_run_binding(
+        run_root,
+        resume=bool(args.resume_run_id),
+        run_id=run_id,
+        experiment_arm=experiment_arm,
+        paired_draw_id=paired_draw_id,
+        conditions=selected_conditions,
+        case_ids=[case["id"] for case in manifest["cases"]],
+        model=manifest["model"],
+        service_protocol=args.service_protocol,
+        manifest_sha256=manifest_sha256,
+        expected_runtime_features=expected_features,
+        expected_build_revision=args.expect_build_revision,
+        experiment_parameters=experiment_parameters,
     )
     legacy_embeddings = args.embeddings if "workspace_resume" in selected_conditions else "none"
     if mutation_enabled:
@@ -1480,6 +1556,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
     else:
         prepared = {case["id"]: {} for case in manifest["cases"]}
     native_metadata: dict[str, dict[str, Any]] = {}
+    runtime_snapshot: dict[str, Any] | None = None
     if "service_api_resume" in selected_conditions:
         native_state_path = run_root / NATIVE_PROVISIONING_STATE
         native_metadata = load_native_provisioning_state(native_state_path, run_id)
@@ -1495,6 +1572,14 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         )
         for case_id, metadata in native_metadata.items():
             prepared[case_id]["native"] = metadata
+        if not native_metadata:
+            raise ValueError("transition evaluation produced no authenticated runtime token")
+        runtime_snapshot = fetch_service_runtime_snapshot(
+            next(iter(native_metadata.values())),
+            run_id=run_id,
+            expected_features=expected_features,
+            expected_build_revision=args.expect_build_revision,
+        )
     if mutation_enabled and "service_api_resume" not in selected_conditions:
         assert mutation_mirrors is not None
         for case in manifest["cases"]:
@@ -1536,15 +1621,29 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
             env_overrides=environment,
         ))
     completed_records.extend(await asyncio.gather(*tasks))
+    if runtime_snapshot is not None:
+        final_runtime_snapshot = fetch_service_runtime_snapshot(
+            next(iter(native_metadata.values())),
+            run_id=run_id,
+            expected_features=expected_features,
+            expected_build_revision=args.expect_build_revision,
+        )
+        require_stable_runtime_configuration(
+            runtime_snapshot,
+            final_runtime_snapshot,
+        )
+        runtime_snapshot = final_runtime_snapshot
     for record in completed_records:
         record["run_id"] = run_id
     records = []
     if args.reuse_input:
         reused = load_json(args.reuse_input)
+        selected_case_ids = {case["id"] for case in manifest["cases"]}
         records.extend(
             record for record in reused["records"]
             if record["condition"] in TRANSITION_ADAPTERS
             and record["condition"] not in selected_conditions
+            and record.get("case_id") in selected_case_ids
         )
     records.extend(completed_records)
     present_conditions = {record["condition"] for record in records}
@@ -1566,9 +1665,11 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
     run = {
         "benchmark_version": manifest["benchmark_version"],
         "run_id": run_id,
+        "experiment_arm": experiment_arm,
+        "paired_draw_id": paired_draw_id,
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "manifest": manifest,
-        "manifest_sha256": sha256_file(args.manifest),
+        "manifest_sha256": manifest_sha256,
         "harness_sha256": sha256_file(Path(__file__)),
         "service_sha256": sha256_file(ROOT / "straylight" / "service.py"),
         "store_sha256": sha256_file(ROOT / "straylight" / "store.py"),
@@ -1606,6 +1707,10 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
             else None
         ),
         "reasoning_billing": reasoning_billing,
+        "expected_runtime_features": expected_features,
+        "expected_build_revision": args.expect_build_revision,
+        "service_runtime_snapshot": runtime_snapshot,
+        "experiment_parameters": experiment_parameters,
     }
     run["run_ledger"] = build_run_ledger(
         run_id=run_id,
@@ -1616,6 +1721,12 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         manifest_sha256=run["manifest_sha256"],
         schema_sha256=sha256_file(args.schema),
         harness_sha256=run["harness_sha256"],
+        experiment_arm=experiment_arm,
+        paired_draw_id=paired_draw_id,
+        runtime_snapshot=runtime_snapshot,
+        expected_runtime_features=expected_features,
+        expected_build_revision=args.expect_build_revision,
+        experiment_parameters=experiment_parameters,
     )
     run["summary"] = summarize(records, manifest["conditions"])
     return run
@@ -1638,6 +1749,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--timeout", type=int, default=420)
     run.add_argument("--run-id")
     run.add_argument("--resume-run-id")
+    run.add_argument(
+        "--experiment-arm",
+        help=(
+            "stable arm identity for a single-condition invocation; requires "
+            "--paired-draw-id"
+        ),
+    )
+    run.add_argument(
+        "--paired-draw-id",
+        help="shared draw identity used by every separately invoked experiment arm",
+    )
+    run.add_argument("--case", action="append")
     run.add_argument("--condition", action="append", choices=tuple(LABELS))
     run.add_argument(
         "--filesystem-native",
@@ -1645,6 +1768,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="run only filesystem reconstruction and native service checkpoint resume",
     )
     run.add_argument("--native-index-timeout", type=float, default=300.0)
+    run.add_argument(
+        "--expect-feature-flag",
+        action="append",
+        help="fail closed unless /v1/status runtime_features matches NAME=on|off",
+    )
+    run.add_argument(
+        "--expect-runtime-config",
+        action="append",
+        help=(
+            "fail closed unless /v1/status runtime_features matches NAME=<JSON value>"
+        ),
+    )
+    run.add_argument(
+        "--expect-build-revision",
+        help="fail closed unless /v1/status reports this exact build revision",
+    )
     run.add_argument(
         "--service-protocol",
         choices=("legacy", "simple"),

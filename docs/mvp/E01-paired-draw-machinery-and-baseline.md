@@ -32,7 +32,7 @@ All arms use the manifest model (gpt-5.6-sol) via the Codex subscription.
 
 ## Corpus and fixtures
 
-Full 5-suite matrix, 57 cases / 228 claims: agent-work 13/52, recent 12/48, rupture 12/48, personal 15/60, transitions 5/20. Same fixtures across all draws and arms; implementation fingerprint requires a clean git tree recorded per draw.
+Full 5-suite matrix, 60 cases / 240 claims: agent-work 14/56, recent 14/56, rupture 12/48, personal 15/60, transitions 5/20. Same fixtures across all draws and arms; implementation fingerprint requires a clean git tree recorded per draw.
 
 ## Procedure
 
@@ -61,7 +61,7 @@ MM-DD below is the actual run date.
 
 ## Cost preflight and ceiling
 
-Reasoning runs: 52 agent-suite cases × 3 conditions × 3 draws = 468, plus transitions 5 cases × 3 conditions × 3 draws = 45, for 513 case-runs. At the observed all-in $0.24/agent-run equivalent (470-run audit, $113.18), 513 × $0.24 ≈ $123.12. All reasoning goes through the ChatGPT-authenticated Codex subscription, fail-closed (`require_codex_subscription` rejects API keys); the $0.24 is an audited subscription-equivalent rate, not API usage billing. Regrades regenerate nothing and are treated as marginal. Embeddings-exempt spend: $0 — run the isolated E01 stack without a real embedding worker so semantic state cannot change mid-draw.
+Reasoning runs: 55 agent-suite cases × 3 conditions × 3 draws = 495, plus transitions 5 cases × 3 conditions × 3 draws = 45, for 540 case-runs. At the observed all-in $0.24/agent-run equivalent (470-run audit, $113.18), 540 × $0.24 = $129.60. All reasoning goes through the ChatGPT-authenticated Codex subscription, fail-closed (`require_codex_subscription` rejects API keys); the $0.24 is an audited subscription-equivalent rate, not API usage billing. Regrades regenerate nothing and are treated as marginal. Embeddings-exempt spend: $0 — run the isolated E01 stack without a real embedding worker so semantic state cannot change mid-draw.
 
 Ceiling: **$150** hard. OWNER DECISION: explicit owner approval required before launching the draws (2026-07-27 cost-audit rule); this spec is not that approval.
 
@@ -74,7 +74,7 @@ Ceiling: **$150** hard. OWNER DECISION: explicit owner approval required before 
 
 ## Reporting
 
-The run record (results/2026-MM-DD-e01-aggregate.json + companion Markdown) must contain: immutable run ledgers with git SHA/clean state and Codex path/version/auth timestamp per draw; all run-ids and per-draw artifact paths/hashes; per-suite paired tables with McNemar p and clustered CIs; comparable chars/case per condition with the paired overfetch verdict stated in one sentence; the two-sided checkpoint comparison; chronic-case per-draw outcomes; cost actuals vs the $123.12 preflight; and the parity statement in the exact non-inferiority language of acceptance criterion 2. This record becomes the baseline every later experiment (E10-combined-preflight.md) diffs against.
+The run record (results/2026-MM-DD-e01-aggregate.json + companion Markdown) must contain: immutable run ledgers with git SHA/clean state and Codex path/version/auth timestamp per draw; all run-ids and per-draw artifact paths/hashes; per-suite paired tables with McNemar p and clustered CIs; comparable chars/case per condition with the paired overfetch verdict stated in one sentence; the two-sided checkpoint comparison; chronic-case per-draw outcomes; cost actuals vs the $129.60 preflight; and the parity statement in the exact non-inferiority language of acceptance criterion 2. This record becomes the baseline every later experiment (E10-combined-preflight.md) diffs against.
 
 ## References
 

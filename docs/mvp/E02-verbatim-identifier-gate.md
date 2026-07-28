@@ -16,8 +16,8 @@ Stage 1 exists to document the defect on the current build before any code chang
 - B1 (S): Extend performance_eval.py synthetic_documents generation to plant a unique identifier token (format `STRAYID-<scale>-<n>-<hex8>`) at a UTF-8 byte offset strictly greater than 2,400 into 30 selected documents per scale, recording (path, identifier, byte offset, position, section depth) in the fixture manifest. Anchor: performance_eval.py synthetic corpus generator.
 - B2 (S): Verbatim-return checker: for each planted identifier, issue an exact-only search whose query contains the exact path plus the identifier and assert the identifier appears in a source-text field of the raw search response. Request/query echoes never count, and follow-up open/read does not count. Register this as the named blocking gate `verbatim_identifier`. This isolates the exact-lane 2,400-char excerpt defect; allowing lexical mode would trivially retrieve the planted identifier and invalidate stage 1.
 - B3 (M, stage 2 only): D02 built behind verbatim_spans — exact-lane response assembly in apps/api/src/simple_core.rs plus byte-for-byte passthrough in apps/mcp memory.query.
-- B4 (S): n≥3 paired-draw aggregator eval/aggregate_draws.py (draws averaged within case, per-case claim win/loss/tie, exact-binomial McNemar on collapsed binary outcomes, case-clustered corpus-total bootstrap CIs, stdlib only) — shared with E01-paired-draw-machinery-and-baseline.md.
-- B5 (S): Identifier-heavy case tag in eval/recent_work_cases.json covering D02's full chronic identifier list (D02-verbatim-span-contract.md): recent-aether-gmail-actions, recent-europe-calendar-dedup, recent-aether-morning-brief, and the tracker cases, for targeted repeats.
+- B4 (implemented): arm-aware n≥3 aggregator in `eval/aggregate_draws.py`; separate service invocations use the immutable arm/draw contract in [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
+- B5 (implemented): `identifier_heavy` tag in `eval/recent_work_cases.json` plus frozen `eval/e02_identifier_cases.json`: recent-aether-gmail-actions, recent-europe-calendar-dedup, recent-aether-morning-brief, recent-tracker-no-delta, and recent-tracker-material-delta (5 cases / 20 claims).
 
 Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane, and all latency baselines are exact+lexical; use tests/mock_openai_embeddings.py only if a run insists on semantic coverage.
 
@@ -30,7 +30,7 @@ Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane
 ## Corpus and fixtures
 
 - Synthetic performance corpus at default scales 1k/10k/64k plus 640k via --future-soak; 30 planted identifiers per scale, all past UTF-8 byte 2,400, mixed positions (mid-document and tail) and mixed section depths.
-- Reasoning: the recent-work fixture corpus used by agent_work_eval (12 cases / 48 claims), model gpt-5.6-sol from manifest.
+- Reasoning: the recent-work fixture corpus used by agent_work_eval (14 cases / 56 claims), model gpt-5.6-sol from manifest; targeted repeat uses the frozen 5-case / 20-claim E02 manifest.
 
 ## Procedure
 
@@ -43,9 +43,9 @@ Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane
 4. Record the expected failure per scale (target: 0/30 exact-only source payloads). If any identifier does return verbatim, record its position and response field and re-scope D02 before proceeding.
 5. Keep `verbatim_identifier` blocking but document the stage-1 failure until D02 ships. Stage 1 is complete; no model runs occurred.
 6. Stage 2 begins only after B3 lands on a clean tree. Repeat the same definitive `--protocol simple`, container-fingerprint, and semantic-hook flags for `verbatim-identifier-stage2-off` and `verbatim-identifier-stage2-on`; add `--future-soak` for `verbatim-identifier-stage2-soak`. Flag off must preserve the failure; flag on must reach 30/30 at every scale.
-7. Reasoning pass, paired draws. For N in 1..3, flag off: `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --concurrency 3 --timeout 360 --run-id verbatim-off-draw<N> --out results/2026-MM-DD-verbatim-off-draw<N>.json --report results/2026-MM-DD-verbatim-off-draw<N>.md`. Flip the runtime flag on (record flag state in the run record) and repeat with slug verbatim-on-draw<N>.
-8. Aggregate with B4: `python3 eval/aggregate_draws.py results/2026-MM-DD-verbatim-*-draw*.json --out results/2026-MM-DD-verbatim-aggregate.json` — repeated draws remain clustered by case; McNemar is reported separately from the claim-difference bootstrap.
-9. If overall delta is inside the noise floor but identifier-tagged cases move, run the 5-draw targeted repeat on the tagged subset (both arms) and aggregate separately.
+7. Reasoning pass, paired draws. For N in 1..3, flag off: `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm verbatim-off --paired-draw-id verbatim-draw<N> --expect-feature-flag verbatim_spans=off --concurrency 3 --timeout 360 --run-id verbatim-off-run<N> --out results/2026-MM-DD-verbatim-off-draw<N>.json --report results/2026-MM-DD-verbatim-off-draw<N>.md`. Flip the isolated stack flag on and repeat with `--experiment-arm verbatim-on --paired-draw-id verbatim-draw<N> --expect-feature-flag verbatim_spans=on --run-id verbatim-on-run<N>`.
+8. Aggregate with B4: `python3 eval/aggregate_draws.py results/2026-MM-DD-verbatim-*-draw*.json --expected-arm verbatim-on --expected-arm verbatim-off --out results/2026-MM-DD-verbatim-aggregate.json` — repeated draws remain clustered by case; McNemar is reported separately from the claim-difference bootstrap.
+9. If overall delta is inside the noise floor but identifier-tagged cases move, repeat step 7 for 5 draws with `--manifest eval/e02_identifier_cases.json`, using targeted-specific run and paired-draw IDs, and aggregate separately.
 10. Use `agent_work_eval.py regrade` for any rubric corrections; never regenerate answers to fix grading.
 11. Promote `verbatim_identifier` to a permanent, blocking performance_eval gate: with flag on it fails closed below 30/30; with flag off it remains a documented expected-fail.
 
@@ -54,7 +54,7 @@ Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane
 - Verbatim in-payload rate, n/30 per scale, per flag state.
 - Search p95 flag on vs off at each scale, vs the 53.1ms v8 640K baseline and the ≤3,000ms hard gate.
 - Payload chars/case delta (overfetch guard; reference legacy ~41,441 vs RuptureOps ~70,814 service chars/case) and verbatim payload chars vs the 9,600-char cap.
-- Claims per draw (n/48), per-case win/loss/tie, exact McNemar p; identifier-tagged case wins.
+- Claims per draw (n/56 full; n/20 targeted), per-case win/loss/tie, exact McNemar p; identifier-tagged case wins.
 - Query count per search (must equal flag-off count exactly).
 
 ## Acceptance criteria
@@ -70,7 +70,7 @@ Subscription rule: all reasoning runs via ChatGPT-authenticated Codex subscripti
 
 - Stage 1: zero model runs. Reasoning spend $0. Embeddings-exempt spend $0 (none used).
 - Stage 2 deterministic: zero model runs. $0.
-- Stage 2 reasoning: 12 cases × 2 arms × 3 draws = 72 case-runs × $0.24 = $17.28. Targeted repeat worst case with the full B5 tag list: 6 tagged cases × 2 arms × 5 draws = 60 × $0.24 = $14.40. Preflight total $31.68.
+- Stage 2 reasoning: 14 cases × 2 arms × 3 draws = 84 case-runs × $0.24 = $20.16. Targeted repeat: 5 cases × 2 arms × 5 draws = 50 × $0.24 = $12.00. Preflight total $32.16.
 - Embeddings-exempt spend: $0 planned (mock server or none; corpus-scale OpenAI embedding would be ~$0.19 per 9.6M tokens if ever needed — listed separately, not planned).
 - Hard ceiling: $40. Stop all runs at the ceiling regardless of state.
 

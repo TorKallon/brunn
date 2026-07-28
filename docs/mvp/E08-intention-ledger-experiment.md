@@ -15,10 +15,10 @@ Does surfacing ≤5 pointer-only pending intentions at open (D05-intention-ledge
 2. Corpus seeding: 6 intention notes added to the shared fixture corpus, ≤2 relevant to any single case — **S** (fixture files with exact paths and sha256; frontmatter authored in Markdown per the round-trip rule).
 3. Two new manifest cases (shapes under Corpus and fixtures) added to eval/recent_work_cases.json, making recent-work-v0.3; rubric claims written; `validate` re-run — **M**.
 4. Prospective subset manifest eval/e08_prospective_cases.json assembling the 5 prospective case definitions (3 chronic + 2 new) against the same fixtures, so the filesystem control and prospective-focused runs don't pay for full suites — **S**.
-5. Harness flag plumbing per arm — **S** (shared with E07-supersession-experiment.md; build once).
-6. n≥3 paired-draw aggregator eval/aggregate_draws.py (McNemar, bootstrap CIs, stdlib only) — **S** (shared build item with E07; specified in E01-paired-draw-machinery-and-baseline.md).
-7. False-surfacing audit script scanning saved open responses in run artifacts against the case oracle — **S**.
-8. Adoption measurement — shared instrument with E07 arm 4; do not duplicate (**M** only if E07's harness is not yet built).
+5. Harness flag/arm plumbing and authenticated runtime snapshots — implemented; see [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
+6. Arm-aware n≥3 paired-draw aggregator — implemented.
+7. False-surfacing audit script scanning saved open responses in run artifacts against the case oracle — implemented as `eval/audit_intentions.py`.
+8. Adoption measurement — implemented and shared with E07 arm 4; do not duplicate.
 
 ## Arms
 
@@ -48,15 +48,15 @@ Prospective cases (5, in eval/e08_prospective_cases.json):
 ## Procedure
 
 1. Preflight: clean git tree, record commit; flags default off.
-2. `python agent_work_eval.py validate --manifest eval/recent_work_cases.json` and `python agent_work_eval.py validate --manifest eval/e08_prospective_cases.json` — both must pass.
+2. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json validate` and `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json validate` — both must pass.
 3. For draw N in 1..3:
-   1. `python agent_work_eval.py run --manifest eval/recent_work_cases.json --condition service_api --concurrency 3 --timeout 360 --run-id e08-base-draw<N> --out results/2026-MM-DD-e08-intention-base-draw<N>.json --report results/2026-MM-DD-e08-intention-base-draw<N>.md` (flag off).
-   2. Same with flag on: `--run-id e08-flag-draw<N>`, `--out results/2026-MM-DD-e08-intention-flag-draw<N>.json`.
-   3. Prospective subset, both service arms: `--manifest eval/e08_prospective_cases.json`, artifacts `results/2026-MM-DD-e08-prospective-{base,flag}-draw<N>.json`.
-   4. Filesystem control on the subset: `--condition filesystem`, `--out results/2026-MM-DD-e08-prospective-fs-draw<N>.json`.
+   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --condition service_api --experiment-arm e08-base --paired-draw-id e08-full-draw<N> --expect-feature-flag intention_ledger=off --concurrency 3 --timeout 360 --run-id e08-base-full-run<N> --out results/2026-MM-DD-e08-intention-base-draw<N>.json --report results/2026-MM-DD-e08-intention-base-draw<N>.md`.
+   2. Same paired-draw ID with `--experiment-arm e08-flag --expect-feature-flag intention_ledger=on`, a unique run ID, and the flag artifact.
+   3. Prospective subset, both service arms, uses `--manifest eval/e08_prospective_cases.json` and shared `--paired-draw-id e08-prospective-draw<N>`.
+   4. Filesystem subset control uses `--condition filesystem --experiment-arm e08-filesystem --paired-draw-id e08-prospective-draw<N>`.
 4. Latency: `python performance_eval.py run --label e08-open-latency-off --scales 64000 --samples 30 --out results/2026-MM-DD-e08-open-latency-off.json` with the flag off, then the same with `--label e08-open-latency-on` and the flag on (embeddings pending, as in every baseline; no reasoning cost).
-5. False-surfacing audit over all flag-on artifacts.
-6. `regrade` disputed answers; then aggregate: `python eval/aggregate_draws.py results/2026-MM-DD-e08-*-draw*.json --out results/2026-MM-DD-e08-aggregate.json` on the paired base/flag draws.
+5. False-surfacing audit: `python3 eval/audit_intentions.py results/2026-MM-DD-e08-*flag*-draw*.json --out results/2026-MM-DD-e08-intention-audit.json`.
+6. `regrade` disputed answers; aggregate full-suite and prospective manifests separately because their arm/case sets differ. Full: `--expected-arm e08-flag --expected-arm e08-base`; prospective: add `--expected-arm e08-filesystem`.
 
 ## Metrics
 

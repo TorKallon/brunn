@@ -26,6 +26,7 @@ from native_eval import (
 )
 from semantic_eval_policy import (
     enforced_retrieval_modes,
+    expected_e09_features,
     response_has_candidates,
     semantic_counter_delta,
     semantic_rates,
@@ -60,12 +61,36 @@ REASONING_BILLING_POLICY = {
 }
 RUN_LEDGER_SCHEMA = "straylight-eval-run-ledger@v1"
 SIDECAR_CHECKPOINT_RELATIVE_PATH = Path("sidecar") / "checkpoint.json"
-SERVICE_BOOLEAN_FEATURE_FLAGS = frozenset({
-    "supersession_demotion",
+RUN_BINDING_STATE = ".experiment-run-binding.json"
+EXPERIMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+BOOLEAN_RUNTIME_FEATURES = {
+    "allow_degraded_embeddings",
+    "embed_cache",
+    "embedding_backfill_guard",
     "intention_ledger",
-    "read_path_roundtrip_v1",
     "lexical_single_scan",
-})
+    "observability_timings_ms",
+    "read_path_roundtrip_v1",
+    "resume_deltas",
+    "search_char_cap",
+    "search_fair_share",
+    "search_top1_hydration",
+    "semantic_lane",
+    "supersession_demotion",
+    "verbatim_spans",
+}
+RUNTIME_FEATURES = BOOLEAN_RUNTIME_FEATURES | {
+    "embedding_backfill_batch_chunks",
+    "embedding_backfill_inter_batch_ms",
+    "embedding_backfill_open_p95_limit_ms",
+    "embedding_backfill_search_p95_limit_ms",
+    "materialize_token_budget",
+    "search_section_demotion_top_n",
+    "semantic_deadline_ms",
+    "supersession_demotion_weight",
+}
+CURRENT_RUNTIME_FEATURES = frozenset(RUNTIME_FEATURES)
+SERVICE_BOOLEAN_FEATURE_FLAGS = frozenset(BOOLEAN_RUNTIME_FEATURES)
 
 
 def evaluation_source_fingerprint() -> dict[str, Any]:
@@ -319,6 +344,88 @@ def git_source_fingerprint(repository: Path = PROJECT_ROOT) -> dict[str, Any]:
     }
 
 
+def canonical_json_sha256(value: Any) -> str:
+    rendered = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
+def validate_experiment_identity(
+    experiment_arm: str | None,
+    paired_draw_id: str | None,
+    conditions: Sequence[str],
+) -> tuple[str | None, str | None]:
+    if bool(experiment_arm) != bool(paired_draw_id):
+        raise ValueError(
+            "--experiment-arm and --paired-draw-id must be supplied together"
+        )
+    if experiment_arm is None:
+        return None, None
+    if not EXPERIMENT_ID_PATTERN.fullmatch(experiment_arm):
+        raise ValueError(
+            "--experiment-arm must be 1-128 safe identifier characters"
+        )
+    if not EXPERIMENT_ID_PATTERN.fullmatch(paired_draw_id or ""):
+        raise ValueError(
+            "--paired-draw-id must be 1-128 safe identifier characters"
+        )
+    if len(conditions) != 1:
+        raise ValueError(
+            "--experiment-arm is only valid for a single-condition invocation; "
+            "same-invocation controls already use condition names as arms"
+        )
+    return experiment_arm, paired_draw_id
+
+
+def ensure_run_binding(
+    run_root: Path,
+    *,
+    resume: bool,
+    run_id: str,
+    experiment_arm: str | None,
+    paired_draw_id: str | None,
+    conditions: Sequence[str],
+    case_ids: Sequence[str],
+    model: str,
+    service_protocol: str,
+    manifest_sha256: str,
+    expected_runtime_features: dict[str, Any] | None = None,
+    expected_build_revision: str | None = None,
+    experiment_parameters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    binding = {
+        "version": 1,
+        "run_id": run_id,
+        "experiment_arm": experiment_arm,
+        "paired_draw_id": paired_draw_id,
+        "conditions": list(conditions),
+        "case_ids": list(case_ids),
+        "model": model,
+        "service_protocol": service_protocol,
+        "manifest_sha256": manifest_sha256,
+        "expected_runtime_features": expected_runtime_features or {},
+        "expected_build_revision": expected_build_revision,
+        "experiment_parameters": experiment_parameters or {},
+    }
+    path = run_root / RUN_BINDING_STATE
+    if resume:
+        if not path.is_file():
+            raise ValueError(f"Resumed run lacks immutable experiment binding: {path}")
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        if existing != binding:
+            raise ValueError(
+                "resumed run configuration differs from its immutable experiment binding"
+            )
+        return binding
+    path.write_text(json.dumps(binding, indent=2) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+    return binding
+
+
 def build_run_ledger(
     *,
     run_id: str,
@@ -329,8 +436,14 @@ def build_run_ledger(
     manifest_sha256: str,
     schema_sha256: str,
     harness_sha256: str,
+    experiment_arm: str | None = None,
+    paired_draw_id: str | None = None,
+    runtime_snapshot: dict[str, Any] | None = None,
+    expected_runtime_features: dict[str, Any] | None = None,
+    expected_build_revision: str | None = None,
+    experiment_parameters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    ledger = {
         "schema": RUN_LEDGER_SCHEMA,
         "run_id": run_id,
         "captured_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -347,6 +460,11 @@ def build_run_ledger(
             "model": model,
             "conditions": list(conditions),
             "service_protocol": service_protocol,
+            "experiment_arm": experiment_arm,
+            "paired_draw_id": paired_draw_id,
+            "expected_runtime_features": expected_runtime_features or {},
+            "expected_build_revision": expected_build_revision,
+            "experiment_parameters": experiment_parameters or {},
         },
         "artifacts": {
             "manifest_sha256": manifest_sha256,
@@ -354,6 +472,11 @@ def build_run_ledger(
             "harness_sha256": harness_sha256,
         },
     }
+    if runtime_snapshot is not None:
+        ledger["artifacts"]["runtime_snapshot_sha256"] = canonical_json_sha256(
+            runtime_snapshot
+        )
+    return ledger
 
 
 def load_native_provisioning_state(path: Path, run_id: str) -> dict[str, dict[str, Any]]:
@@ -1371,6 +1494,47 @@ def summarize(manifest: dict, records: Sequence[dict]) -> dict:
     }
 
 
+def experiment_provenance_lines(run: dict[str, Any]) -> list[str]:
+    lines = []
+    experiment_arm = run.get("experiment_arm")
+    paired_draw_id = run.get("paired_draw_id")
+    if experiment_arm is not None:
+        lines.extend([
+            f"- Experiment arm: `{experiment_arm}`",
+            f"- Paired draw ID: `{paired_draw_id}`",
+        ])
+    snapshot = run.get("service_runtime_snapshot")
+    if isinstance(snapshot, dict):
+        lines.extend([
+            f"- Service build revision: `{snapshot.get('build_revision')}`",
+            "- Expected runtime features: `"
+            + json.dumps(
+                run.get("expected_runtime_features", {}),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "`",
+            "- Actual runtime features: `"
+            + json.dumps(
+                snapshot.get("runtime_features", {}),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "`",
+            "- Embedding posture: `"
+            + json.dumps(
+                snapshot.get("embeddings", {}),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "`",
+        ])
+    return lines
+
+
 def render_report(run: dict) -> str:
     manifest = run["manifest"]
     summary = run["summary"]
@@ -1425,6 +1589,7 @@ def render_report(run: dict) -> str:
         f"- Cases: {len(manifest['cases'])} complex work tasks with {sum(len(case['rubric']) for case in manifest['cases'])} scored claims",
         f"- Workloads: {workloads}",
         "- This evaluates agent work and durable checkpoints, not retrieval recall alone.",
+        *experiment_provenance_lines(run),
         "",
         "## Conditions",
         *(condition_descriptions[condition] for condition in manifest["conditions"]),
@@ -1737,20 +1902,144 @@ def select_conditions(manifest: dict, args: argparse.Namespace) -> list[str]:
 
 
 def expected_feature_flags(values: Sequence[str] | None) -> dict[str, bool]:
-    parsed = {}
+    parsed: dict[str, bool] = {}
     for value in values or []:
         name, separator, state = value.partition("=")
         if (
             not separator
-            or name not in SERVICE_BOOLEAN_FEATURE_FLAGS
+            or name not in BOOLEAN_RUNTIME_FEATURES
             or state not in {"on", "off"}
         ):
             raise ValueError(
-                "--expect-feature-flag requires a known service feature "
+                "--expect-feature-flag requires a known boolean runtime feature "
                 "formatted as NAME=on|off"
             )
+        if name in parsed:
+            raise ValueError(f"duplicate expected feature flag: {name}")
         parsed[name] = state == "on"
     return parsed
+
+
+def expected_runtime_features(
+    flag_values: Sequence[str] | None,
+    config_values: Sequence[str] | None,
+) -> dict[str, Any]:
+    parsed: dict[str, Any] = dict(expected_feature_flags(flag_values))
+    for value in config_values or []:
+        name, separator, rendered = value.partition("=")
+        if not separator or name not in RUNTIME_FEATURES:
+            raise ValueError(
+                "--expect-runtime-config requires a known runtime feature "
+                "formatted as NAME=<JSON value>"
+            )
+        if name in parsed:
+            raise ValueError(f"duplicate expected runtime feature: {name}")
+        try:
+            parsed[name] = json.loads(rendered)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"--expect-runtime-config value for {name} is not valid JSON"
+            ) from exc
+    return parsed
+
+
+def capture_service_runtime_snapshot(
+    status: dict[str, Any],
+    *,
+    expected_features: dict[str, Any],
+    expected_build_revision: str | None,
+) -> dict[str, Any]:
+    if status.get("status") != "ready":
+        raise ValueError("service status is not ready")
+    build_revision = status.get("build_revision")
+    if (
+        not isinstance(build_revision, str)
+        or not build_revision
+        or build_revision == "unknown"
+    ):
+        raise ValueError("service status omitted a usable build_revision")
+    if (
+        expected_build_revision is not None
+        and build_revision != expected_build_revision
+    ):
+        raise ValueError(
+            "service build revision mismatch: "
+            f"expected {expected_build_revision}, actual {build_revision}"
+        )
+    actual_features = status.get("runtime_features")
+    if not isinstance(actual_features, dict):
+        raise ValueError("service status omitted the required runtime_features snapshot")
+    missing_current = sorted(CURRENT_RUNTIME_FEATURES - set(actual_features))
+    if missing_current:
+        raise ValueError(
+            "service runtime_features snapshot is incomplete; missing "
+            f"{missing_current}"
+        )
+    mismatches = {
+        name: {"expected": expected, "actual": actual_features.get(name)}
+        for name, expected in expected_features.items()
+        if (
+            name not in actual_features
+            or type(actual_features[name]) is not type(expected)
+            or actual_features[name] != expected
+        )
+    }
+    if mismatches:
+        raise ValueError(f"service runtime feature mismatch: {mismatches}")
+    embeddings = status.get("embeddings")
+    if not isinstance(embeddings, dict):
+        raise ValueError("service status omitted embeddings metadata")
+    snapshot = {
+        "schema": "straylight-service-runtime-snapshot@v1",
+        "captured_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "status": status["status"],
+        "build_revision": build_revision,
+        "corpus_revision": status.get("corpus_revision"),
+        "revision_sequence": status.get("revision_sequence"),
+        "read_only": status.get("read_only"),
+        "runtime_features": actual_features,
+        "embeddings": embeddings,
+    }
+    semantic_runtime = status.get("semantic_runtime")
+    if semantic_runtime is not None:
+        if not isinstance(semantic_runtime, dict):
+            raise ValueError("service semantic_runtime snapshot must be an object")
+        snapshot["semantic_runtime"] = semantic_runtime
+    return snapshot
+
+
+def fetch_service_runtime_snapshot(
+    metadata: dict[str, Any],
+    *,
+    run_id: str,
+    expected_features: dict[str, Any],
+    expected_build_revision: str | None,
+) -> dict[str, Any]:
+    status_client = NativeApiClient(
+        base_url=os.environ["STRAYLIGHT_API_URL"],
+        token=metadata["token"],
+        run_id=run_id,
+        case_id="runtime-snapshot-preflight",
+    )
+    status = status_client.get("/v1/status").data
+    if not isinstance(status, dict):
+        raise ValueError("service status response was not an object")
+    return capture_service_runtime_snapshot(
+        status,
+        expected_features=expected_features,
+        expected_build_revision=expected_build_revision,
+    )
+
+
+def require_stable_runtime_configuration(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> None:
+    for field in ("build_revision", "runtime_features"):
+        if before.get(field) != after.get(field):
+            raise ValueError(
+                f"service {field} drifted during the evaluation run"
+            )
 
 
 def select_cases(
@@ -1760,8 +2049,12 @@ def select_cases(
     include_retired: bool,
 ) -> list[dict[str, Any]]:
     if requested:
-        requested_ids = set(requested)
-        return [case for case in manifest["cases"] if case["id"] in requested_ids]
+        requested_ids = list(dict.fromkeys(requested))
+        cases_by_id = {case["id"]: case for case in manifest["cases"]}
+        unknown = [case_id for case_id in requested_ids if case_id not in cases_by_id]
+        if unknown:
+            raise ValueError(f"unknown requested cases: {unknown}")
+        return [cases_by_id[case_id] for case_id in requested_ids]
     return [
         case
         for case in manifest["cases"]
@@ -1793,15 +2086,49 @@ async def run_all(args: argparse.Namespace) -> dict:
         args.case,
         include_retired=args.include_retired,
     )
+    if not selected_cases:
+        raise ValueError("no evaluation cases were selected")
     selected_conditions = select_conditions(manifest, args)
-    expected_flags = expected_feature_flags(args.expect_feature_flag)
+    experiment_arm, paired_draw_id = validate_experiment_identity(
+        args.experiment_arm,
+        args.paired_draw_id,
+        selected_conditions,
+    )
+    expected_features = expected_runtime_features(
+        args.expect_feature_flag,
+        args.expect_runtime_config,
+    )
     for name, expected in feature_states.items():
-        if name in expected_flags and expected_flags[name] is not expected:
-            raise ValueError(f"conflicting expected feature states declared for {name}")
-        expected_flags[name] = expected
-    if expected_flags and "service_api" not in selected_conditions:
+        if name in expected_features and expected_features[name] is not expected:
+            raise ValueError(
+                f"conflicting expected feature states declared for {name}"
+            )
+        expected_features[name] = expected
+    e09_experiment_arms = {
+        "no_semantic": "e09-no-semantic",
+        "unbounded_semantic": "e09-unbounded-semantic",
+        "deadline_cache": "e09-deadline-cache",
+    }
+    if args.e09_arm:
+        required_arm = e09_experiment_arms[args.e09_arm]
+        if experiment_arm != required_arm:
+            raise ValueError(
+                f"E09 {args.e09_arm} requires --experiment-arm {required_arm} "
+                "and a --paired-draw-id"
+            )
+        for name, expected in expected_e09_features(args.e09_arm).items():
+            if name in expected_features and expected_features[name] != expected:
+                raise ValueError(
+                    f"E09 {args.e09_arm} conflicts with the declared "
+                    f"runtime expectation for {name}"
+                )
+            expected_features[name] = expected
+    if (
+        (expected_features or args.expect_build_revision)
+        and "service_api" not in selected_conditions
+    ):
         raise ValueError(
-            "feature-state assertions require the service_api condition"
+            "runtime/build expectations require the service_api condition"
         )
     source_fingerprint = evaluation_source_fingerprint()
     if args.e09_arm:
@@ -1836,7 +2163,30 @@ async def run_all(args: argparse.Namespace) -> dict:
             )
     else:
         public_provenance = None
+    selected_model = args.model or manifest["model"]
+    manifest_sha256 = sha256_file(args.manifest)
+    experiment_parameters = {
+        "declared_feature_states": feature_states,
+        "e09_arm": args.e09_arm,
+        "run_tags": sorted(set(args.run_tag)),
+    }
+    ensure_run_binding(
+        run_root,
+        resume=bool(args.resume_run_id),
+        run_id=run_id,
+        experiment_arm=experiment_arm,
+        paired_draw_id=paired_draw_id,
+        conditions=selected_conditions,
+        case_ids=[case["id"] for case in selected_cases],
+        model=selected_model,
+        service_protocol=args.service_protocol,
+        manifest_sha256=manifest_sha256,
+        expected_runtime_features=expected_features,
+        expected_build_revision=args.expect_build_revision,
+        experiment_parameters=experiment_parameters,
+    )
     native_metadata: dict[str, dict[str, Any]] = {}
+    runtime_snapshot: dict[str, Any] | None = None
     if "service_api" in selected_conditions:
         native_state_path = run_root / NATIVE_PROVISIONING_STATE
         native_metadata = load_native_provisioning_state(native_state_path, run_id)
@@ -1876,25 +2226,14 @@ async def run_all(args: argparse.Namespace) -> dict:
                 ),
             )
             write_native_provisioning_state(native_state_path, run_id, native_metadata)
-        if expected_flags and native_metadata:
-            metadata = next(iter(native_metadata.values()))
-            status_client = NativeApiClient(
-                base_url=os.environ["STRAYLIGHT_API_URL"],
-                token=metadata["token"],
-                run_id=run_id,
-                case_id="feature-flag-preflight",
-            )
-            status = status_client.get("/v1/status").data
-            actual_flags = status.get("feature_flags")
-            if not isinstance(actual_flags, dict):
-                raise ValueError("service status omitted the required feature_flags snapshot")
-            mismatches = {
-                name: {"expected": expected, "actual": actual_flags.get(name)}
-                for name, expected in expected_flags.items()
-                if actual_flags.get(name) is not expected
-            }
-            if mismatches:
-                raise ValueError(f"service feature flag mismatch: {mismatches}")
+        if not native_metadata:
+            raise ValueError("service evaluation produced no authenticated runtime token")
+        runtime_snapshot = fetch_service_runtime_snapshot(
+            next(iter(native_metadata.values())),
+            run_id=run_id,
+            expected_features=expected_features,
+            expected_build_revision=args.expect_build_revision,
+        )
     e09_runtime_before: dict[str, Any] | None = None
     e09_provenance: dict[str, Any] | None = None
     if args.e09_arm:
@@ -1965,7 +2304,7 @@ async def run_all(args: argparse.Namespace) -> dict:
             tasks.append(run_one(
                 semaphore,
                 codex=args.codex,
-                model=args.model or manifest["model"],
+                model=selected_model,
                 schema=args.schema,
                 run_dir=run_dir,
                 case=case,
@@ -1991,16 +2330,37 @@ async def run_all(args: argparse.Namespace) -> dict:
         else:
             records.append(item)
     selected_manifest = dict(manifest)
-    selected_manifest["model"] = args.model or manifest["model"]
+    selected_manifest["model"] = selected_model
     selected_manifest["cases"] = selected_cases
     selected_manifest["conditions"] = selected_conditions
+    e09_runtime_after: dict[str, Any] | None = None
+    if runtime_snapshot is not None:
+        if args.e09_arm:
+            first_case = selected_cases[0]["id"]
+            e09_runtime_after = e09_status_snapshot(
+                native_metadata[first_case],
+                run_id=run_id,
+            )
+            final_runtime_snapshot = capture_service_runtime_snapshot(
+                e09_runtime_after,
+                expected_features=expected_features,
+                expected_build_revision=args.expect_build_revision,
+            )
+        else:
+            final_runtime_snapshot = fetch_service_runtime_snapshot(
+                next(iter(native_metadata.values())),
+                run_id=run_id,
+                expected_features=expected_features,
+                expected_build_revision=args.expect_build_revision,
+            )
+        require_stable_runtime_configuration(
+            runtime_snapshot,
+            final_runtime_snapshot,
+        )
+        runtime_snapshot = final_runtime_snapshot
     e09_runtime: dict[str, Any] | None = None
     if args.e09_arm:
-        first_case = selected_cases[0]["id"]
-        e09_runtime_after = e09_status_snapshot(
-            native_metadata[first_case],
-            run_id=run_id,
-        )
+        assert e09_runtime_after is not None
         final_provenance = validate_e09_runtime(
             e09_runtime_after,
             args.e09_arm,
@@ -2026,10 +2386,12 @@ async def run_all(args: argparse.Namespace) -> dict:
         "benchmark_version": manifest["benchmark_version"],
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "run_id": run_id,
+        "experiment_arm": experiment_arm,
+        "paired_draw_id": paired_draw_id,
         "harness_sha256": sha256_file(Path(__file__)),
         "workspace_cli_sha256": sha256_file(PROJECT_ROOT / "workspace_cli.py"),
         "native_memory_sha256": sha256_file(PROJECT_ROOT / "native_memory.py"),
-        "manifest_sha256": sha256_file(args.manifest),
+        "manifest_sha256": manifest_sha256,
         "schema_sha256": sha256_file(args.schema),
         "corpus": {
             "root": str(corpus),
@@ -2047,10 +2409,18 @@ async def run_all(args: argparse.Namespace) -> dict:
         "service_protocol": args.service_protocol,
         "declared_feature_states": feature_states,
         "run_tags": sorted(set(args.run_tag)),
+        "experiment_parameters": experiment_parameters,
         "reasoning_billing": reasoning_billing,
-        "expected_feature_flags": expected_flags,
+        "expected_feature_flags": {
+            name: value
+            for name, value in expected_features.items()
+            if name in BOOLEAN_RUNTIME_FEATURES
+        },
         "implementation_fingerprint": source_fingerprint,
         "e09_runtime": e09_runtime,
+        "expected_runtime_features": expected_features,
+        "expected_build_revision": args.expect_build_revision,
+        "service_runtime_snapshot": runtime_snapshot,
         "records": records,
     }
     run["run_ledger"] = build_run_ledger(
@@ -2062,6 +2432,12 @@ async def run_all(args: argparse.Namespace) -> dict:
         manifest_sha256=run["manifest_sha256"],
         schema_sha256=run["schema_sha256"],
         harness_sha256=run["harness_sha256"],
+        experiment_arm=experiment_arm,
+        paired_draw_id=paired_draw_id,
+        runtime_snapshot=runtime_snapshot,
+        expected_runtime_features=expected_features,
+        expected_build_revision=args.expect_build_revision,
+        experiment_parameters=experiment_parameters,
     )
     run["summary"] = summarize(selected_manifest, records)
     return run
@@ -2171,6 +2547,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="attach a stable experiment tag to the result artifact",
     )
     run_parser.add_argument("--resume-run-id")
+    run_parser.add_argument(
+        "--experiment-arm",
+        help=(
+            "stable arm identity for a single-condition invocation; requires "
+            "--paired-draw-id and is immutable across resume"
+        ),
+    )
+    run_parser.add_argument(
+        "--paired-draw-id",
+        help=(
+            "shared draw identity used by every separately invoked experiment arm"
+        ),
+    )
     run_parser.add_argument("--case", action="append")
     run_parser.add_argument(
         "--include-retired",
@@ -2188,9 +2577,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--expect-feature-flag",
         action="append",
         help=(
-            "fail closed unless /v1/status matches NAME=on|off; supported names are "
-            "supersession_demotion and intention_ledger"
+            "fail closed unless /v1/status runtime_features matches NAME=on|off"
         ),
+    )
+    run_parser.add_argument(
+        "--expect-runtime-config",
+        action="append",
+        help=(
+            "fail closed unless /v1/status runtime_features matches NAME=<JSON value>"
+        ),
+    )
+    run_parser.add_argument(
+        "--expect-build-revision",
+        help="fail closed unless /v1/status reports this exact build revision",
     )
     run_parser.add_argument(
         "--service-protocol",

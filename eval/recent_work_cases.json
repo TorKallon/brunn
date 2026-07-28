@@ -21,6 +21,13 @@
       "recent-aether-morning-brief",
       "recent-cross-agent-intention",
       "recent-intention-expiry-negative"
+    ],
+    "identifier_heavy": [
+      "recent-europe-calendar-dedup",
+      "recent-tracker-no-delta",
+      "recent-tracker-material-delta",
+      "recent-aether-gmail-actions",
+      "recent-aether-morning-brief"
     ]
   },
   "seeded_intentions": [

@@ -17,7 +17,7 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
    switch for both `open` and `search`. The harness additionally forces
    `modes=["exact","lexical"]` into every adapter open/search request so the
    request transcript proves the intended arm. (Implemented.)
-4. n≥3 paired-draw aggregator — per-case win/loss/tie, exact-binomial McNemar, case-level bootstrap CIs, stdlib only. Does not exist yet. (S — eval/aggregate_draws.py, the shared build item specified in E01-paired-draw-machinery-and-baseline.md; build once, one name.)
+4. Arm-aware n≥3 paired-draw aggregation, immutable arm/draw binding, and authenticated runtime snapshots are implemented; see [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
 5. Per-run export of cache hit rate, semantic-deferral rate, and per-lane latency into the run JSON. (S — metrics already exist per-lane; export plumbing only.)
 6. Clean git tree for every run (performance_eval implementation-fingerprint rule applies to quality runs here too).
 
@@ -29,7 +29,7 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 
 ## Corpus and fixtures
 
-- Quality suites: agent-work (13 cases / 52 claims), rupture (12 / 48), recent (12 / 48) = 37 cases / 148 claims per draw. Personal-coordination is excluded for cost control and because it carries no semantic-lane-specific hypothesis (its chronic case, coord-deadline-readiness, is a prospective-memory failure — E08's domain, not a retrieval-lane question). Transitions are excluded because they are stuck at 0/5 on claim-slot omissions unrelated to retrieval lanes.
+- Quality suites: agent-work (14 cases / 56 claims), rupture (12 / 48), recent (14 / 56) = 40 cases / 160 claims per draw. Personal-coordination is excluded for cost control and because it carries no semantic-lane-specific hypothesis. Transitions are excluded because their claim-slot omissions are unrelated to retrieval lanes.
 - Condition: service_api only (the lane under test lives behind the service).
 - Corpus: the standard eval corpus for these manifests, embedded per E03. Coverage check before any semantic-arm draw (precondition 1).
 - Latency fixture: performance_eval 64K scale, 30 samples (definitive), per arm.
@@ -46,7 +46,9 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
    {no_semantic, unbounded_semantic, deadline_cache}, each suite manifest ∈
    {work, rupture_ops, recent_work}, each draw N ∈ {1,2,3}:
 
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --service-protocol simple --e09-arm <arm> --concurrency 3 --timeout 360 --run-id e09-<arm>-work-draw<N> --out results/2026-MM-DD-e09-<arm>-work-draw<N>.json --report results/2026-MM-DD-e09-<arm>-work-draw<N>.md`
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --service-protocol simple --e09-arm <arm> --experiment-arm e09-<arm-with-hyphens> --paired-draw-id e09-work-draw<N> --concurrency 3 --timeout 360 --run-id e09-<arm>-work-draw<N> --out results/2026-MM-DD-e09-<arm>-work-draw<N>.json --report results/2026-MM-DD-e09-<arm>-work-draw<N>.md`
+
+   The exact arm identities are `e09-no-semantic`, `e09-unbounded-semantic`, and `e09-deadline-cache`. `--e09-arm` derives and validates the full semantic policy before reasoning: no-semantic = lane off/cache on/deadline 300ms/backfill guard on; unbounded-semantic = lane on/cache off/no embedding deadline/backfill guard on; deadline-cache = lane on/cache on/deadline 300ms/backfill guard on. Conflicting explicit runtime expectations fail closed.
 
    (substitute eval/rupture_ops_cases.json and eval/recent_work_cases.json with matching slugs: results/2026-MM-DD-e09-<arm>-<suite>-draw<N>.json). Model comes from the manifest (gpt-5.6-sol). 27 harness invocations total.
 3. Interleave draws across arms (arm order rotated per draw) so time-of-day drift is not confounded with arm.
@@ -56,7 +58,7 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
    per arm under that arm's flags. Definitive mode also requires the
    semantic-failure start/stop hooks already specified by the performance
    harness.
-6. Aggregate: `python eval/aggregate_draws.py results/2026-MM-DD-e09-*-draw*.json --out results/2026-MM-DD-e09-aggregate.json` — paired per-case win/loss/tie and exact-binomial McNemar for all three arm pairs (A-B, A-C, B-C), pooled across the 3 draws; bootstrap CIs per suite.
+6. Aggregate: `python3 eval/aggregate_draws.py results/2026-MM-DD-e09-*-draw*.json --expected-arm e09-deadline-cache --expected-arm e09-unbounded-semantic --expected-arm e09-no-semantic --out results/2026-MM-DD-e09-aggregate.json`.
 7. Deadline stepping: only if C loses to B with McNemar significance, step semantic_deadline_ms 300→600→1,000, re-running ONLY the losing suite (3 draws per step), and re-test the B-C pair on that suite.
 
 ## Metrics
@@ -77,8 +79,8 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 
 ## Cost preflight and ceiling
 
-- Reasoning runs: 37 cases × 3 draws × 3 arms = 333 case-runs. At the audited ≈$0.24/agent-run equivalent (470-run audit, $113.18): 333 × $0.24 ≈ $79.92 ≈ $80.
-- Deadline stepping contingency: one suite (12-13 cases) × 3 draws × $0.24 ≈ $9 per step; two steps ≈ $18. $80 + $18 = $98.
+- Reasoning runs: 40 cases × 3 draws × 3 arms = 360 case-runs. At the audited ≈$0.24/agent-run equivalent: 360 × $0.24 = $86.40.
+- Deadline stepping reruns only the changed C arm against the retained B artifact. One worst-case 14-case step costs 14 × 3 × $0.24 = $10.08, for $96.48 total. A second step would reach $106.56 and is forbidden by the current ceiling; either predeclare a smaller decision subset or obtain a revised ceiling before launch.
 - Hard ceiling: $100 all-in for reasoning. Stop at the ceiling even mid-arm.
 - Subscription rule: ALL reasoning runs execute via the ChatGPT-authenticated Codex subscription, fail-closed (require_codex_subscription rejects API keys). No run may be re-pointed at usage-billed API to "finish the draw".
 - Embeddings (exempt, usage-billed OpenAI, listed separately): E03 establishes
