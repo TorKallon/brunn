@@ -1,0 +1,4926 @@
+{
+  "benchmark_version": "rupture-ops-v0.1",
+  "run_at": "2026-07-28T12:47:47-07:00",
+  "run_id": "e04-B-rupture-run5",
+  "experiment_arm": "e04-B",
+  "paired_draw_id": "e04-rupture-draw5",
+  "harness_sha256": "59ce22f34e31ac240543cf1366560a73b976f5c056761570f199d238e15e6030",
+  "workspace_cli_sha256": "6ab5f0becc37dcc8075247eb975756a372e83e393d8d891947c70138a9c934a8",
+  "native_memory_sha256": "39a48f75968c7e9b4ff985f427e5af552563ae7ec13911e22bcd44a02f3cd94c",
+  "manifest_sha256": "b596519119b7d9a1b3f50bcd017ceed5a67a5557dff22baa84df095697ccf9cf",
+  "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+  "corpus": {
+    "root": "/Users/Shared/projects/.codex-straylight-worktrees/e04-run/eval/corpus-rupture-ops-v0.1",
+    "sha256": "aa9c33e39777f0899dacecee61a94f5fd11ec1315f7a6e820a41bc217e1a9803",
+    "artifact_tree_sha256": "aa434eb3ffd5f4b6b9c766000d34ec6c30fd14b5ec6f94a4ff625306396b7b50",
+    "documents": 65,
+    "chunks": 587,
+    "characters": 468399
+  },
+  "manifest": {
+    "benchmark_version": "rupture-ops-v0.1",
+    "name": "Straylight Rupture Ops workload evaluation",
+    "report_title": "Straylight Rupture Ops workload evaluation",
+    "report_date": "2026-07-11",
+    "evaluation_model": "subject_plus_product_work",
+    "grading_mode": "concept_tokens_v1",
+    "fixture_domain": "RuptureOps and StarRupture",
+    "generalization": {
+      "purpose": "Evaluate an agent that learns an evolving subject, tracks a concrete instance, advances goals and decisions, builds durable products, and verifies results.",
+      "planes": [
+        "subject",
+        "instance",
+        "work",
+        "product",
+        "validation"
+      ],
+      "fixture_rule": "Game-specific entities and values are concrete test data, not privileged Straylight schema."
+    },
+    "corpus_root": "eval/corpus-rupture-ops-v0.1",
+    "model": "gpt-5.6-sol",
+    "conditions": [
+      "service_api"
+    ],
+    "fixed_pack_chars": 24000,
+    "fixed_pack_chunks": 16,
+    "exact_value_claim_slots": {
+      "ruptureops-archive-import-reconciliation": [
+        "c1",
+        "c2",
+        "c3",
+        "c4"
+      ],
+      "ruptureops-prompt-history-reconciliation": [
+        "c1",
+        "c4"
+      ],
+      "ruptureops-save-state-truth": [
+        "c3",
+        "c4"
+      ],
+      "ruptureops-live-poi-advice": [
+        "c1",
+        "c4"
+      ],
+      "ruptureops-geo-scanner-learning": [
+        "c4"
+      ],
+      "ruptureops-spatial-evidence": [
+        "c3",
+        "c4"
+      ],
+      "ruptureops-flowworks-campaign-revision": [
+        "c1",
+        "c2",
+        "c3",
+        "c4"
+      ],
+      "ruptureops-multi-goal-field-plan": [
+        "c1",
+        "c2",
+        "c4"
+      ],
+      "ruptureops-watch-session-design": [
+        "c1",
+        "c4"
+      ],
+      "ruptureops-interrupted-ios-continuation": [
+        "c1",
+        "c2"
+      ],
+      "ruptureops-private-public-artifact-boundary": [
+        "c2",
+        "c3"
+      ],
+      "ruptureops-forked-agent-idempotency": [
+        "c1",
+        "c2",
+        "c3",
+        "c4"
+      ]
+    },
+    "future_lanes": [
+      "binary image understanding with source-native reads",
+      "object-store archive inspection and staged promotion",
+      "live web refresh against a snapshot-pinned local corpus",
+      "concurrent multi-agent writes against optimistic revision preconditions"
+    ],
+    "cases": [
+      {
+        "id": "ruptureops-archive-import-reconciliation",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "bulk_import_and_provenance",
+        "task": "Take over the completed Star Rupture Game Analysis ZIP import. Produce an audit-ready checkpoint that states what was preserved, corrects the archive's version claim, explains what was deduplicated versus promoted, and keeps rejected Flowworks work from becoming current guidance. Do not create a second canonical game-data snapshot.",
+        "claim_slots": {
+          "c1": "archive integrity and retention",
+          "c2": "correct two-axis version boundary",
+          "c3": "deduplication and selective promotion",
+          "c4": "superseded material and active authority"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "21,674,717",
+                  "21674717"
+                ]
+              },
+              {
+                "any": [
+                  "123",
+                  "115 manifest",
+                  "115 packaged"
+                ]
+              },
+              {
+                "any": [
+                  "SHA-256",
+                  "checksum",
+                  "integrity"
+                ]
+              },
+              {
+                "any": [
+                  "raw/",
+                  "lossless",
+                  "original ZIP"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "23761620"
+                ]
+              },
+              {
+                "any": [
+                  "latest public executable",
+                  "latest public build",
+                  "not a proven build identity",
+                  "too strong"
+                ]
+              },
+              {
+                "any": [
+                  "35118973",
+                  "22674441"
+                ]
+              },
+              {
+                "any": [
+                  "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/data/current.json"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "not installed as a competing snapshot",
+                  "no competing snapshot",
+                  "canonical RuptureOps snapshot only",
+                  "rather than promoted again",
+                  "existing canonical snapshot"
+                ]
+              },
+              {
+                "any": [
+                  "468 items",
+                  "3,259 map markers",
+                  "3259 map markers"
+                ]
+              },
+              {
+                "any": [
+                  "six",
+                  "6"
+                ]
+              },
+              {
+                "any": [
+                  "nine",
+                  "9",
+                  "site assets",
+                  "player save baseline"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/semantic-audit.json"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "18-file",
+                  "18 file",
+                  "18"
+                ]
+              },
+              {
+                "any": [
+                  "audit history",
+                  "superseded"
+                ]
+              },
+              {
+                "any": [
+                  "active RuptureOps pipeline",
+                  "active pipeline",
+                  "canonical source",
+                  "immutable snapshot boundary"
+                ]
+              },
+              {
+                "any": [
+                  "rerun",
+                  "recomputed",
+                  "canonical snapshot"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the archive data is build 23761620",
+          "install the legacy sqlite as canonical",
+          "the rejected flowworks sizing is current"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "ruptureops-spatial-evidence",
+        "workload": "StarRupture",
+        "scope": "StarRupture",
+        "capability": "multimodal_spatial_and_coordinate_reasoning",
+        "task": "Prepare a landmark-grounded geography checkpoint for Flowworks, Grand Basin, and the first Goethite and Oil satellites. Correct the older Grand Basin match, preserve which pins are only relational, and do not combine screenshot registration with SRDB coordinates without a verified transform.",
+        "claim_slots": {
+          "c1": "Grand Basin correction and landmark relation",
+          "c2": "Flowworks and active-corridor relation",
+          "c3": "coordinate-frame and pin boundary",
+          "c4": "resource satellite directions and rationale"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "east of",
+                  "immediately east"
+                ]
+              },
+              {
+                "any": [
+                  "Mythic Cry"
+                ]
+              },
+              {
+                "any": [
+                  "Red Lake",
+                  "Redleaf"
+                ]
+              },
+              {
+                "any": [
+                  "wrong",
+                  "corrected",
+                  "not the earlier",
+                  "supersedes the older provisional"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md",
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "between Landerworks and Faraday"
+                ]
+              },
+              {
+                "any": [
+                  "selected",
+                  "not a placed Core",
+                  "unbuilt"
+                ]
+              },
+              {
+                "any": [
+                  "Forgotten Engine",
+                  "northeast of Faraday",
+                  "east-central"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "screenshot",
+                  "registration frame",
+                  "registered visually against terrain",
+                  "terrain-registered"
+                ]
+              },
+              {
+                "any": [
+                  "SRDB",
+                  "map coordinates"
+                ]
+              },
+              {
+                "any": [
+                  "verified transform",
+                  "do not mix"
+                ]
+              },
+              {
+                "any": [
+                  "Sunstone",
+                  "Brimstone",
+                  "exact pin",
+                  "open"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md",
+              "Topics/StarRupture/assets/sites/README.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "northwest",
+                  "Goethite"
+                ]
+              },
+              {
+                "any": [
+                  "1393",
+                  "1464",
+                  "three",
+                  "triple"
+                ]
+              },
+              {
+                "any": [
+                  "west/southwest",
+                  "Oil"
+                ]
+              },
+              {
+                "any": [
+                  "raw",
+                  "Cargo Dispatcher",
+                  "process",
+                  "Grand Basin"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+              "Topics/StarRupture/World geography and named locations.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the screenshot pixels directly equal SRDB coordinates",
+          "Sunstone exact coordinates are known",
+          "the dashed line is the surveyed rail path"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "ruptureops-flowworks-campaign-revision",
+        "workload": "StarRupture",
+        "scope": "StarRupture",
+        "capability": "quantitative_plan_with_supersession",
+        "task": "Resume the canonical Flowworks staged build, not the rejected buffer-heavy study. State the starter machine plan, compute peak imported refill demand after the second Stabilizer, decide whether one Rail v3 trunk fits, and explain how buffers and the optional HRS v2 pad should be treated.",
+        "claim_slots": {
+          "c1": "canonical starter build",
+          "c2": "peak import arithmetic",
+          "c3": "rail and local-production decision",
+          "c4": "buffer and supersession boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "10 machines",
+                  "10",
+                  "including extractors"
+                ]
+              },
+              {
+                "any": [
+                  "Titanium Excavator",
+                  "Wolfram Excavator"
+                ]
+              },
+              {
+                "any": [
+                  "Stabilizer",
+                  "Impeller"
+                ]
+              },
+              {
+                "any": [
+                  "Turbine"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "54"
+                ]
+              },
+              {
+                "any": [
+                  "72"
+                ]
+              },
+              {
+                "any": [
+                  "56"
+                ]
+              },
+              {
+                "any": [
+                  "60",
+                  "10",
+                  "252"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "480",
+                  "Rail v3"
+                ]
+              },
+              {
+                "any": [
+                  "252"
+                ]
+              },
+              {
+                "any": [
+                  "fits",
+                  "headroom"
+                ]
+              },
+              {
+                "any": [
+                  "Titanium Rod",
+                  "Wolfram Plate",
+                  "locally"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "superseded",
+                  "rejected"
+                ]
+              },
+              {
+                "any": [
+                  "buffer",
+                  "cannot masquerade",
+                  "not replace production"
+                ]
+              },
+              {
+                "any": [
+                  "HRS v2",
+                  "only if",
+                  "recovery fails"
+                ]
+              },
+              {
+                "any": [
+                  "not confirmed construction",
+                  "planned",
+                  "not built"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Topics/StarRupture/Player save - operating model and factory architecture.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Flowworks is already built",
+          "three stabilizers are the current starter",
+          "buffers replace the missing machines"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      {
+        "id": "ruptureops-forked-agent-idempotency",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "parallel_agent_coordination_and_idempotency",
+        "task": "Coordinate the forked RuptureOps tasks that inherited the same archive-import request while other work is active in the repository. Identify the duplicate task topology, define the idempotency and canonicality rule, preserve the dirty worktree, and leave one continuation checkpoint rather than multiplying promotions.",
+        "claim_slots": {
+          "c1": "forked task topology",
+          "c2": "idempotent import identity",
+          "c3": "canonical output and dirty-tree safety",
+          "c4": "single continuation checkpoint"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "019f52a5",
+                  "general"
+                ]
+              },
+              {
+                "any": [
+                  "019f52fa-6195",
+                  "exploration"
+                ]
+              },
+              {
+                "any": [
+                  "019f52fa-6917",
+                  "logistics"
+                ]
+              },
+              {
+                "any": [
+                  "same",
+                  "inherited",
+                  "exact same request"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "star-rupture-game-analysis__20260708T190137Z"
+                ]
+              },
+              {
+                "any": [
+                  "1a1c1ef0ae00905ced37f1221ab22c4b9268f2ebe17b7516e6c9cac67d7f6fa3",
+                  "SHA-256",
+                  "archive hash"
+                ]
+              },
+              {
+                "any": [
+                  "idempotent",
+                  "one successful reconciliation",
+                  "one canonical import"
+                ]
+              },
+              {
+                "any": [
+                  "receipt",
+                  "manifest",
+                  "immutable source"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "canonical snapshot",
+                  "canonical structured output",
+                  "active RuptureOps pipeline"
+                ]
+              },
+              {
+                "any": [
+                  "promote once",
+                  "no duplicate",
+                  "not independent corroboration",
+                  "competing active corpus"
+                ]
+              },
+              {
+                "any": [
+                  "main",
+                  "dirty"
+                ]
+              },
+              {
+                "any": [
+                  "preserve",
+                  "do not revert",
+                  "unrelated"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "reopen",
+                  "canonical checkpoint",
+                  "child checkpoint"
+                ]
+              },
+              {
+                "any": [
+                  "source references",
+                  "lineage",
+                  "import receipt"
+                ]
+              },
+              {
+                "any": [
+                  "one",
+                  "single"
+                ]
+              },
+              {
+                "any": [
+                  "current repository",
+                  "refresh",
+                  "live state"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          }
+        ],
+        "forbidden": [
+          "three independent imports",
+          "run the import in every fork",
+          "reset the dirty worktree"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    ]
+  },
+  "native_provisioning": {
+    "ruptureops-archive-import-reconciliation": {
+      "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-archive-import-reconciliation",
+      "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-archive-import-reconciliation",
+      "display_scope": "RuptureOps",
+      "access_mode": "read_write",
+      "import_id": "simple-import:40d5c044-2211-4e12-8179-532be4adb3b7",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:7086",
+      "corpus_revision": "generation:7086",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:40d5c044-2211-4e12-8179-532be4adb3b7",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 486.162,
+        "import_batch_count": 1,
+        "max_batch_documents": 65,
+        "ready_elapsed_ms": 486.162,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-archive-import-reconciliation",
+          "base_corpus_revision": "generation:7086",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:7086",
+          "credential_id": "credential:de417438-506b-4010-80db-98088c47bf16",
+          "delta_documents": 0,
+          "display_scope": "RuptureOps",
+          "documents": 65,
+          "embedding_degraded": true,
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_provider": "hashing",
+          "import_id": "simple-import:40d5c044-2211-4e12-8179-532be4adb3b7",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-archive-import-reconciliation",
+          "scope_id": "scope:e8ff754d-5114-48b6-8873-69a1fc0e9a93",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:40d5c044-2211-4e12-8179-532be4adb3b7",
+          "token_status": "issued_once",
+          "user_id": "user:40d5c044-2211-4e12-8179-532be4adb3b7"
+        },
+        "ready_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-archive-import-reconciliation",
+          "base_corpus_revision": "generation:7086",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:7086",
+          "credential_id": "credential:de417438-506b-4010-80db-98088c47bf16",
+          "delta_documents": 0,
+          "display_scope": "RuptureOps",
+          "documents": 65,
+          "embedding_degraded": true,
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_provider": "hashing",
+          "import_id": "simple-import:40d5c044-2211-4e12-8179-532be4adb3b7",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-archive-import-reconciliation",
+          "scope_id": "scope:e8ff754d-5114-48b6-8873-69a1fc0e9a93",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:40d5c044-2211-4e12-8179-532be4adb3b7",
+          "token_status": "issued_once",
+          "user_id": "user:40d5c044-2211-4e12-8179-532be4adb3b7"
+        }
+      }
+    },
+    "ruptureops-spatial-evidence": {
+      "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-spatial-evidence",
+      "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-spatial-evidence",
+      "display_scope": "StarRupture",
+      "access_mode": "read_write",
+      "import_id": "simple-import:4d452424-d3e6-493c-a15c-84260acffd53",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:7151",
+      "corpus_revision": "generation:7151",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:4d452424-d3e6-493c-a15c-84260acffd53",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 124.613,
+        "import_batch_count": 1,
+        "max_batch_documents": 65,
+        "ready_elapsed_ms": 124.613,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-spatial-evidence",
+          "base_corpus_revision": "generation:7151",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:7151",
+          "credential_id": "credential:2c46908b-9201-4fb3-ab81-0b0094cf4a37",
+          "delta_documents": 0,
+          "display_scope": "StarRupture",
+          "documents": 65,
+          "embedding_degraded": true,
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_provider": "hashing",
+          "import_id": "simple-import:4d452424-d3e6-493c-a15c-84260acffd53",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-spatial-evidence",
+          "scope_id": "scope:1d70abe7-0bde-40fc-8d43-966cc93cce5c",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:4d452424-d3e6-493c-a15c-84260acffd53",
+          "token_status": "issued_once",
+          "user_id": "user:4d452424-d3e6-493c-a15c-84260acffd53"
+        },
+        "ready_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-spatial-evidence",
+          "base_corpus_revision": "generation:7151",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:7151",
+          "credential_id": "credential:2c46908b-9201-4fb3-ab81-0b0094cf4a37",
+          "delta_documents": 0,
+          "display_scope": "StarRupture",
+          "documents": 65,
+          "embedding_degraded": true,
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_provider": "hashing",
+          "import_id": "simple-import:4d452424-d3e6-493c-a15c-84260acffd53",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-spatial-evidence",
+          "scope_id": "scope:1d70abe7-0bde-40fc-8d43-966cc93cce5c",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:4d452424-d3e6-493c-a15c-84260acffd53",
+          "token_status": "issued_once",
+          "user_id": "user:4d452424-d3e6-493c-a15c-84260acffd53"
+        }
+      }
+    },
+    "ruptureops-flowworks-campaign-revision": {
+      "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-flowworks-campaign-revision",
+      "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-flowworks-campaign-revision",
+      "display_scope": "StarRupture",
+      "access_mode": "read_write",
+      "import_id": "simple-import:29e9046f-a4b8-4fcf-83f2-24fdd996b978",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:7216",
+      "corpus_revision": "generation:7216",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:29e9046f-a4b8-4fcf-83f2-24fdd996b978",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 161.959,
+        "import_batch_count": 1,
+        "max_batch_documents": 65,
+        "ready_elapsed_ms": 161.959,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-flowworks-campaign-revision",
+          "base_corpus_revision": "generation:7216",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:7216",
+          "credential_id": "credential:5c45f6eb-78b7-4709-a948-913f3e9eab62",
+          "delta_documents": 0,
+          "display_scope": "StarRupture",
+          "documents": 65,
+          "embedding_degraded": true,
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_provider": "hashing",
+          "import_id": "simple-import:29e9046f-a4b8-4fcf-83f2-24fdd996b978",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-flowworks-campaign-revision",
+          "scope_id": "scope:c9a2b992-dc1b-445b-b5ba-79d956216bc4",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:29e9046f-a4b8-4fcf-83f2-24fdd996b978",
+          "token_status": "issued_once",
+          "user_id": "user:29e9046f-a4b8-4fcf-83f2-24fdd996b978"
+        },
+        "ready_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-flowworks-campaign-revision",
+          "base_corpus_revision": "generation:7216",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:7216",
+          "credential_id": "credential:5c45f6eb-78b7-4709-a948-913f3e9eab62",
+          "delta_documents": 0,
+          "display_scope": "StarRupture",
+          "documents": 65,
+          "embedding_degraded": true,
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_provider": "hashing",
+          "import_id": "simple-import:29e9046f-a4b8-4fcf-83f2-24fdd996b978",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-flowworks-campaign-revision",
+          "scope_id": "scope:c9a2b992-dc1b-445b-b5ba-79d956216bc4",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:29e9046f-a4b8-4fcf-83f2-24fdd996b978",
+          "token_status": "issued_once",
+          "user_id": "user:29e9046f-a4b8-4fcf-83f2-24fdd996b978"
+        }
+      }
+    },
+    "ruptureops-forked-agent-idempotency": {
+      "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-forked-agent-idempotency",
+      "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-forked-agent-idempotency",
+      "display_scope": "RuptureOps",
+      "access_mode": "read_write",
+      "import_id": "simple-import:f195bc2e-2d2a-45ef-bc20-dc2c1c4c2c65",
+      "checkpoint_id": null,
+      "base_corpus_revision": "generation:7281",
+      "corpus_revision": "generation:7281",
+      "status_url": "/v1/workspace/admin/eval/imports/simple-import:f195bc2e-2d2a-45ef-bc20-dc2c1c4c2c65",
+      "credential_provenance": "service_issued_case_scope",
+      "provisioning": {
+        "documents": 65,
+        "delta_documents": 0,
+        "characters": 468399,
+        "import_http_status": 200,
+        "import_elapsed_ms": 110.777,
+        "import_batch_count": 1,
+        "max_batch_documents": 65,
+        "ready_elapsed_ms": 110.777,
+        "semantic_waited": false,
+        "semantic_ready_at_start": false,
+        "index_status_at_start": {
+          "exact": "ready",
+          "lexical": "ready",
+          "semantic": "pending"
+        },
+        "import_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-forked-agent-idempotency",
+          "base_corpus_revision": "generation:7281",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:7281",
+          "credential_id": "credential:92f0061c-4bfd-436c-9159-7ec624d4801c",
+          "delta_documents": 0,
+          "display_scope": "RuptureOps",
+          "documents": 65,
+          "embedding_degraded": true,
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_provider": "hashing",
+          "import_id": "simple-import:f195bc2e-2d2a-45ef-bc20-dc2c1c4c2c65",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-forked-agent-idempotency",
+          "scope_id": "scope:ddac1728-d37c-4ece-ace3-26ed208c241f",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:f195bc2e-2d2a-45ef-bc20-dc2c1c4c2c65",
+          "token_status": "issued_once",
+          "user_id": "user:f195bc2e-2d2a-45ef-bc20-dc2c1c4c2c65"
+        },
+        "ready_response": {
+          "access_mode": "read_write",
+          "authorization_scope": "eval:e04-B-rupture-run5/ruptureops-forked-agent-idempotency",
+          "base_corpus_revision": "generation:7281",
+          "batch_count": null,
+          "batch_index": null,
+          "checkpoint_id": null,
+          "corpus_revision": "generation:7281",
+          "credential_id": "credential:92f0061c-4bfd-436c-9159-7ec624d4801c",
+          "delta_documents": 0,
+          "display_scope": "RuptureOps",
+          "documents": 65,
+          "embedding_degraded": true,
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_provider": "hashing",
+          "import_id": "simple-import:f195bc2e-2d2a-45ef-bc20-dc2c1c4c2c65",
+          "index_counts": {
+            "chunks": 569,
+            "documents": 65,
+            "embeddings": 0
+          },
+          "index_status": {
+            "exact": "ready",
+            "lexical": "ready",
+            "semantic": "pending"
+          },
+          "ready_for_evaluation": false,
+          "replayed": false,
+          "requested_authorization_scope": "eval:e04-B-rupture-run5/ruptureops-forked-agent-idempotency",
+          "scope_id": "scope:ddac1728-d37c-4ece-ace3-26ed208c241f",
+          "seed_session_id": null,
+          "status": "indexing",
+          "status_url": "/v1/workspace/admin/eval/imports/simple-import:f195bc2e-2d2a-45ef-bc20-dc2c1c4c2c65",
+          "token_status": "issued_once",
+          "user_id": "user:f195bc2e-2d2a-45ef-bc20-dc2c1c4c2c65"
+        }
+      }
+    }
+  },
+  "service_protocol": "simple",
+  "service_retrieval_modes": [
+    "exact",
+    "lexical"
+  ],
+  "declared_feature_states": {},
+  "run_tags": [],
+  "experiment_parameters": {
+    "declared_feature_states": {},
+    "e09_arm": null,
+    "e09_step_authorization": null,
+    "run_tags": [],
+    "service_retrieval_modes": [
+      "exact",
+      "lexical"
+    ],
+    "service_image_fingerprint": {
+      "schema": "straylight-service-image-fingerprint@v1",
+      "api_container": "7f927a814db32f227f2933f3214727af967e958ab8d49a2683f58c56a382f61e",
+      "api_container_id": "7f927a814db32f227f2933f3214727af967e958ab8d49a2683f58c56a382f61e",
+      "api_container_started_at": "2026-07-28T14:29:23.291761676Z",
+      "api_container_running": true,
+      "api_image_id": "sha256:48328f547bafec436d5b4065c6926905ec6398a90894c66c880d0aac2640f4b9",
+      "api_image_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d"
+    }
+  },
+  "reasoning_billing": {
+    "route": "chatgpt_subscription",
+    "api_fallback": "forbidden",
+    "codex_path": "/Applications/ChatGPT.app/Contents/Resources/codex",
+    "codex_version": "codex-cli 0.146.0-alpha.3.1",
+    "auth_checked_at": "2026-07-28T12:43:09-07:00",
+    "auth_status": "Logged in using ChatGPT"
+  },
+  "expected_feature_flags": {
+    "semantic_lane": false,
+    "verbatim_spans": false,
+    "lexical_single_scan": false,
+    "supersession_demotion": false,
+    "intention_ledger": false,
+    "read_path_roundtrip_v1": false,
+    "resume_deltas": false,
+    "search_fair_share": true,
+    "search_top1_hydration": false,
+    "search_char_cap": true,
+    "embed_cache": false,
+    "allow_degraded_embeddings": false
+  },
+  "implementation_fingerprint": {
+    "source_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+    "tracked_source_clean": true,
+    "untracked_source_files": [],
+    "reproducible_source": true
+  },
+  "e09_runtime": null,
+  "expected_runtime_features": {
+    "semantic_lane": false,
+    "verbatim_spans": false,
+    "lexical_single_scan": false,
+    "supersession_demotion": false,
+    "intention_ledger": false,
+    "read_path_roundtrip_v1": false,
+    "resume_deltas": false,
+    "search_fair_share": true,
+    "search_top1_hydration": false,
+    "search_char_cap": true,
+    "embed_cache": false,
+    "allow_degraded_embeddings": false,
+    "search_section_demotion_top_n": 8
+  },
+  "expected_build_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+  "service_runtime_snapshot": {
+    "schema": "straylight-service-runtime-snapshot@v1",
+    "captured_at": "2026-07-28T12:47:47-07:00",
+    "status": "ready",
+    "build_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+    "corpus_revision": null,
+    "revision_sequence": null,
+    "read_only": false,
+    "runtime_features": {
+      "allow_degraded_embeddings": false,
+      "embed_cache": false,
+      "embedding_backfill_batch_chunks": 64,
+      "embedding_backfill_foreground_status_timeout_ms": 1000,
+      "embedding_backfill_foreground_status_url_configured": true,
+      "embedding_backfill_guard": true,
+      "embedding_backfill_inter_batch_ms": 250,
+      "embedding_backfill_open_p95_limit_ms": 120.0,
+      "embedding_backfill_search_p95_limit_ms": 107.0,
+      "intention_ledger": false,
+      "lexical_single_scan": false,
+      "materialize_token_budget": 24000,
+      "observability_timings_ms": true,
+      "read_path_roundtrip_v1": false,
+      "resume_deltas": false,
+      "search_char_cap": true,
+      "search_fair_share": true,
+      "search_section_demotion_top_n": 8,
+      "search_top1_hydration": false,
+      "semantic_deadline_ms": 300,
+      "semantic_lane": false,
+      "supersession_demotion": false,
+      "supersession_demotion_weight": 1.5,
+      "verbatim_spans": false
+    },
+    "embeddings": {
+      "dimensions": 1536,
+      "model": "straylight-hashing-v1",
+      "provider": "hashing",
+      "status": "degraded"
+    },
+    "semantic_runtime": {
+      "cache_bypasses": 0,
+      "cache_hits": 0,
+      "cache_misses": 0,
+      "deferrals": 0,
+      "disabled": 0,
+      "failures": 0,
+      "negative_cache_hits": 0,
+      "requested": 0,
+      "successes": 0
+    }
+  },
+  "service_image_provenance": {
+    "schema": "straylight-service-image-provenance@v1",
+    "stable": true,
+    "before": {
+      "schema": "straylight-service-image-fingerprint@v1",
+      "api_container": "7f927a814db32f227f2933f3214727af967e958ab8d49a2683f58c56a382f61e",
+      "api_container_id": "7f927a814db32f227f2933f3214727af967e958ab8d49a2683f58c56a382f61e",
+      "api_container_started_at": "2026-07-28T14:29:23.291761676Z",
+      "api_container_running": true,
+      "api_image_id": "sha256:48328f547bafec436d5b4065c6926905ec6398a90894c66c880d0aac2640f4b9",
+      "api_image_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d"
+    },
+    "after": {
+      "schema": "straylight-service-image-fingerprint@v1",
+      "api_container": "7f927a814db32f227f2933f3214727af967e958ab8d49a2683f58c56a382f61e",
+      "api_container_id": "7f927a814db32f227f2933f3214727af967e958ab8d49a2683f58c56a382f61e",
+      "api_container_started_at": "2026-07-28T14:29:23.291761676Z",
+      "api_container_running": true,
+      "api_image_id": "sha256:48328f547bafec436d5b4065c6926905ec6398a90894c66c880d0aac2640f4b9",
+      "api_image_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d"
+    }
+  },
+  "records": [
+    {
+      "case_id": "ruptureops-archive-import-reconciliation",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 81.6,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/.codex-straylight-worktrees/e04-run/runs/e04-B-rupture-run5/service_api/ruptureops-archive-import-reconciliation/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Audit-ready reconciliation completed and persisted as checkpoint checkpoint:485260f4-614a-4e92-6ffb-0a1a2951d3ef. The archive remains losslessly retained as provenance, its executable-version claim is corrected, unique player-derived material was selectively promoted, duplicate game data did not become a second canonical snapshot, and rejected Flowworks work remains audit-only.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The completed import preserves Star Rupture Game Analysis.zip losslessly: 21,674,717 bytes, SHA-256 1a1c1ef0ae00905ced37f1221ab22c4b9268f2ebe17b7516e6c9cac67d7f6fa3, 123 archive entries including directories, and 115 manifested files plus CHECKSUMS.sha256. unzip -t and every packaged SHA-256 passed. The original ZIP and verified extracted tree remain under raw/, which is Git-ignored because it includes a duplicate third-party corpus, personalized save context, generated binaries, and a legacy SQLite database; tracked MANIFEST.csv and CHECKSUMS.sha256 retain the audit trail. The import ID is star-rupture-game-analysis__20260708T190137Z, archive retrieval time is 2026-07-08T19:01:37Z, and import completion time is 2026-07-11T19:54:52Z.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "The archive's repeated build 23761620 description is corrected to a two-axis boundary. Its source/game-data claim is Update 1, internal version 35118973, dated 2026-04-09 and contextually mapped to Steam build 22674441; the canonical source capture is SRDB 2.3.4, captured 2026-07-11, with snapshot ID ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z. Hotfix 0.2.8, Steam build 23761620, is only the latest public executable observed at capture and is not proven provenance for every numeric source value. Imported numeric reports remain legacy calculations until rerun against that canonical snapshot.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "No second canonical game-data snapshot was created. The archive's 468 items, 191 public buildings, 234 recipe definitions, 77 Corporation levels, 121 export offers, 15 upgrades, 3,259 map markers, 3,094 loot rows, and official-news subset were semantically duplicated by the richer RuptureOps corpus and were retained only as legacy provenance. Selective promotion was limited to models/rourke-update1-save-baseline__20260711.json; six imported Ore Excavator v2 recipe/producer associations in sources/recipe-producer-overrides.json; explicit consumable-effect assumptions in sources/consumable-effects.json; nine player-specific site/geography assets; and consolidated player-save, architecture, geography, progression, exploration, food, and remote-resource notes. Reconciliation also corrected two normalization defects: airlock had been overwritten by a building-shaped detail response, and Training Corporation retained a literal $undefined index.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The complete 18-file Flowworks Campaign Sizing - Levels 8 to 15 family is superseded audit history, not current authority. Its buffer-heavy model, five-output-depot bank, and overbuilt three-Stabilizer/two-slow-press direction must not be reactivated without new evidence. The July 11 canonical guidance is explicitly a plan, not confirmed construction: begin with one Stabilizer, one Impeller, and one Turbine; add one Nozzle and two Valves in the valve expansion; add two Pumps for the Pressure Tank stage; add the second Stabilizer before Scanner/levels 11\u201312; reserve one HRS v2 pad and build it only if imported-HRS recovery fails in practice. The active RuptureOps pipeline, database, progression note, and operating-model note remain authoritative; the archive SQLite database, source snapshot JSON, delivery CSVs, workbook, refresh script, query script, and superseded calculations remain preserved under raw/ for audit only.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Topics/StarRupture/Player save - operating model and factory architecture.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Maintain an audit-ready takeover of the completed Star Rupture Game Analysis ZIP import without creating a second canonical game-data snapshot.",
+          "current_state": [
+            "Import integrity and retention are verified.",
+            "The two-axis source-data versus public-executable boundary is established.",
+            "Duplicate numeric data remains legacy provenance; unique player-derived material was selectively promoted.",
+            "Rejected Flowworks work is superseded and separated from current July 11 guidance.",
+            "Checkpoint checkpoint:485260f4-614a-4e92-6ffb-0a1a2951d3ef was committed at corpus generation 7282."
+          ],
+          "decisions": [
+            "Keep ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z as the sole canonical game-data snapshot.",
+            "Treat build 23761620 only as the latest observed public executable, not the numeric corpus provenance.",
+            "Retain the archive losslessly while promoting unique material only once.",
+            "Keep the 18-file rejected Flowworks family audit-only and require new evidence before reactivating any superseded idea."
+          ],
+          "open_questions": [
+            "Exact live Corporation levels and reputation remain unresolved.",
+            "Whether Flowworks or Grand Basin construction has begun remains unresolved.",
+            "Whether imported-HRS recovery fails in practice and triggers the reserved HRS v2 recovery pad remains unresolved."
+          ],
+          "next_actions": [
+            "Confirm the live-save questions in Player save - progression and next builds.md before making a new recommendation.",
+            "If the save has not advanced, follow the July 11 staged Flowworks plan.",
+            "Rerun imported numeric reports against ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z before treating them as current."
+          ],
+          "artifacts": [
+            ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "models/rourke-update1-save-baseline__20260711.json",
+            "sources/recipe-producer-overrides.json",
+            "sources/consumable-effects.json"
+          ]
+        }
+      },
+      "grade": {
+        "score": 1.0,
+        "pass": true,
+        "claims_passed": 4,
+        "claims_total": 4,
+        "claim_score": 1.0,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 10,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "21,674,717",
+                  "21674717"
+                ],
+                "matched": "21,674,717"
+              },
+              {
+                "alternatives": [
+                  "123",
+                  "115 manifest",
+                  "115 packaged"
+                ],
+                "matched": "123"
+              },
+              {
+                "alternatives": [
+                  "SHA-256",
+                  "checksum",
+                  "integrity"
+                ],
+                "matched": "SHA-256"
+              },
+              {
+                "alternatives": [
+                  "raw/",
+                  "lossless",
+                  "original ZIP"
+                ],
+                "matched": "raw/"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "23761620"
+                ],
+                "matched": "23761620"
+              },
+              {
+                "alternatives": [
+                  "latest public executable",
+                  "latest public build",
+                  "not a proven build identity",
+                  "too strong"
+                ],
+                "matched": "latest public executable"
+              },
+              {
+                "alternatives": [
+                  "35118973",
+                  "22674441"
+                ],
+                "matched": "35118973"
+              },
+              {
+                "alternatives": [
+                  "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z"
+                ],
+                "matched": "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "not installed as a competing snapshot",
+                  "no competing snapshot",
+                  "canonical RuptureOps snapshot only",
+                  "rather than promoted again",
+                  "existing canonical snapshot"
+                ],
+                "matched": "canonical RuptureOps snapshot only"
+              },
+              {
+                "alternatives": [
+                  "468 items",
+                  "3,259 map markers",
+                  "3259 map markers"
+                ],
+                "matched": "468 items"
+              },
+              {
+                "alternatives": [
+                  "six",
+                  "6"
+                ],
+                "matched": "six"
+              },
+              {
+                "alternatives": [
+                  "nine",
+                  "9",
+                  "site assets",
+                  "player save baseline"
+                ],
+                "matched": "nine"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "18-file",
+                  "18 file",
+                  "18"
+                ],
+                "matched": "18-file"
+              },
+              {
+                "alternatives": [
+                  "audit history",
+                  "superseded"
+                ],
+                "matched": "audit history"
+              },
+              {
+                "alternatives": [
+                  "active RuptureOps pipeline",
+                  "active pipeline",
+                  "canonical source",
+                  "immutable snapshot boundary"
+                ],
+                "matched": "active RuptureOps pipeline"
+              },
+              {
+                "alternatives": [
+                  "rerun",
+                  "recomputed",
+                  "canonical snapshot"
+                ],
+                "matched": "canonical snapshot"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Topics/StarRupture/Player save - operating model and factory architecture.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 13,
+        "commands": 3,
+        "command_output_chars": 70273,
+        "tokens": {
+          "input_tokens": 119588,
+          "cached_input_tokens": 94208,
+          "output_tokens": 3790
+        }
+      },
+      "model_visible_tool_output_chars": 70273,
+      "service_operations": [
+        {
+          "at": "2026-07-28T12:43:19.802-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa40c6cd74e093af15232cf58b34",
+          "elapsed_ms": 58.149,
+          "result_chars": 50332,
+          "source_text_chars": 42173,
+          "metadata_chars": 8159,
+          "evidence_items": 8,
+          "complete_sources": 7,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/README.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/import.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-01-factory-history.txt",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "Projects/RuptureOps/Repository/ios/RuptureOps/Domain/AlertPlanner.swift",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Projects/RuptureOps/Repository/sources/consumable-effects.json",
+            "Projects/RuptureOps/Repository/sources/mechanics.json",
+            "Projects/RuptureOps/Rupture cycle timer - research and product design.md",
+            "Topics/StarRupture/Early Access - Update 1.md",
+            "Topics/StarRupture/Food strategy - permanent low-chore system.md",
+            "Topics/StarRupture/Game mechanics - Update 1.md",
+            "Topics/StarRupture/Knowledge base and modeling.md",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/StarRupture.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-28T12:43:32.339-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa40f7df7d5183e73ab0ca670457",
+          "elapsed_ms": 34.327,
+          "result_chars": 17865,
+          "source_text_chars": 16598,
+          "metadata_chars": 1267,
+          "evidence_items": 2,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "Topics/StarRupture/Player save - progression and next builds.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:43:59.353-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019faa41614b75d396926b1d34211fbb",
+          "elapsed_ms": 59.667,
+          "result_chars": 2073,
+          "source_text_chars": 0,
+          "metadata_chars": 2073,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "Topics/StarRupture/Player save - progression and next builds.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "local_cli_failures": {
+        "schema": "straylight-local-cli-failure-summary@v1",
+        "count": 0,
+        "operation_counts": {},
+        "result_chars": 0,
+        "source_text_chars": 0,
+        "metadata_chars": 0,
+        "operations": []
+      },
+      "service_calls": 3,
+      "service_result_chars": 70270,
+      "service_source_text_chars": 58771,
+      "service_metadata_chars": 11499,
+      "service_replay_weighted_chars": 188799,
+      "service_latency_ms": 152.143,
+      "service_http_calls": 3,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+        "checkpoint_ref": "checkpoint:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+        "path": ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5b14e9537f79",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:4ccb8351ebd691fbd810f333ad6ed3eca1af1b8427fbe1703211be9385f607e0",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5b3b1256d160",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:1166432bfaf2a1f22c752128ff2975b926fd51a8347f8e8f1b565454c771533c",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5af1ade5a5a3",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:fa838470efe2cae257376ff85d5f0c58af4dd7983dbc9c8489be6e4bbf889875",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-609db0a32d2e",
+            "path": "Topics/StarRupture/Player save - progression and next builds.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:92a0ef90a1930615b62727062a045f7706ae4d117dd8dee5ca78598045614f12",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-605d0aebc7c4",
+            "path": "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7282,
+        "write": {
+          "content_hash": "sha256:6b99cddb8027dc4adcd7c51fa5c131af6f70ee3b8def5e8b60002964df5defdc",
+          "entry_ref": "entry:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa41-6173-7241-8768-56892cef2de7",
+          "workspace_generation": 7282
+        }
+      },
+      "service_session_id": "session:019faa40-c6d0-7123-b1e5-424123c2385b",
+      "service_corpus_revision": "generation:7282",
+      "service_accounting_valid": true,
+      "service_accounting_error": null,
+      "response_character_metrics": {
+        "schema": "straylight-agent-response-character-metrics@v1",
+        "service_result_chars": 70270,
+        "service_source_text_chars": 58771,
+        "service_metadata_chars": 11499,
+        "service_replay_weighted_chars": 188799,
+        "model_visible_tool_output_chars": 70273
+      },
+      "workspace_operations": [
+        {
+          "at": "2026-07-28T12:43:19.802-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa40c6cd74e093af15232cf58b34",
+          "elapsed_ms": 58.149,
+          "result_chars": 50332,
+          "source_text_chars": 42173,
+          "metadata_chars": 8159,
+          "evidence_items": 8,
+          "complete_sources": 7,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/README.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/README.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/import.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/semantic-audit.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-01-factory-history.txt",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "Projects/RuptureOps/Repository/ios/RuptureOps/Domain/AlertPlanner.swift",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Projects/RuptureOps/Repository/sources/consumable-effects.json",
+            "Projects/RuptureOps/Repository/sources/mechanics.json",
+            "Projects/RuptureOps/Rupture cycle timer - research and product design.md",
+            "Topics/StarRupture/Early Access - Update 1.md",
+            "Topics/StarRupture/Food strategy - permanent low-chore system.md",
+            "Topics/StarRupture/Game mechanics - Update 1.md",
+            "Topics/StarRupture/Knowledge base and modeling.md",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/StarRupture.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-28T12:43:32.339-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa40f7df7d5183e73ab0ca670457",
+          "elapsed_ms": 34.327,
+          "result_chars": 17865,
+          "source_text_chars": 16598,
+          "metadata_chars": 1267,
+          "evidence_items": 2,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "Topics/StarRupture/Player save - progression and next builds.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:43:59.353-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019faa41614b75d396926b1d34211fbb",
+          "elapsed_ms": 59.667,
+          "result_chars": 2073,
+          "source_text_chars": 0,
+          "metadata_chars": 2073,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "Topics/StarRupture/Player save - progression and next builds.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 70270,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+        "checkpoint_ref": "checkpoint:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+        "path": ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5b14e9537f79",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:4ccb8351ebd691fbd810f333ad6ed3eca1af1b8427fbe1703211be9385f607e0",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5b3b1256d160",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:1166432bfaf2a1f22c752128ff2975b926fd51a8347f8e8f1b565454c771533c",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5af1ade5a5a3",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:fa838470efe2cae257376ff85d5f0c58af4dd7983dbc9c8489be6e4bbf889875",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-609db0a32d2e",
+            "path": "Topics/StarRupture/Player save - progression and next builds.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:92a0ef90a1930615b62727062a045f7706ae4d117dd8dee5ca78598045614f12",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-605d0aebc7c4",
+            "path": "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7282,
+        "write": {
+          "content_hash": "sha256:6b99cddb8027dc4adcd7c51fa5c131af6f70ee3b8def5e8b60002964df5defdc",
+          "entry_ref": "entry:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa41-6173-7241-8768-56892cef2de7",
+          "workspace_generation": 7282
+        }
+      },
+      "workspace_state_error": null,
+      "sidecar_checkpoint": null,
+      "sidecar_checkpoint_metrics": null,
+      "persisted_checkpoint": {
+        "checkpoint_id": "checkpoint:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+        "checkpoint_ref": "checkpoint:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+        "path": ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5b14e9537f79",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:4ccb8351ebd691fbd810f333ad6ed3eca1af1b8427fbe1703211be9385f607e0",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5b3b1256d160",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:1166432bfaf2a1f22c752128ff2975b926fd51a8347f8e8f1b565454c771533c",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-5af1ade5a5a3",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:fa838470efe2cae257376ff85d5f0c58af4dd7983dbc9c8489be6e4bbf889875",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-609db0a32d2e",
+            "path": "Topics/StarRupture/Player save - progression and next builds.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:92a0ef90a1930615b62727062a045f7706ae4d117dd8dee5ca78598045614f12",
+            "entry_ref": "entry:019faa40-a110-7e71-9cdc-605d0aebc7c4",
+            "path": "Topics/StarRupture/Player save - operating model and factory architecture.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7282,
+        "write": {
+          "content_hash": "sha256:6b99cddb8027dc4adcd7c51fa5c131af6f70ee3b8def5e8b60002964df5defdc",
+          "entry_ref": "entry:485260f4-614a-4e92-6ffb-0a1a2951d3ef",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/485260f4-614a-4e92-6ffb-0a1a2951d3ef.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa41-6173-7241-8768-56892cef2de7",
+          "workspace_generation": 7282
+        }
+      }
+    },
+    {
+      "case_id": "ruptureops-spatial-evidence",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 67.499,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/.codex-straylight-worktrees/e04-run/runs/e04-B-rupture-run5/service_api/ruptureops-spatial-evidence/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Landmark-grounded geography is reconciled, and checkpoint `checkpoint:59c87634-08b2-9dc0-ee69-a8abdc6e09d3` was committed.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "Grand Basin Reserve is the broad basin immediately east of GRO \u201cMythic Cry\u201d and north of the active production corridor; the earlier provisional Red Lake/Redleaf match was wrong and is superseded. Mythic Cry lies in the mountains immediately west of the basin. The Grand Basin marker represents the basin area, not a future Core, and the first active campus should remain east of the mountain/POI boundary with a combat exclusion strip.",
+            "source_paths": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Flowworks is the selected Ti/W mechanical site between Landerworks and Faraday: east/northeast of Landerworks and west/northwest of Faraday. Faraday is east/southeast of Flowworks and immediately north of CRRO \u201cWarm Dawn.\u201d Flowworks remains a proposed footprint, not a confirmed placed Core; together these sites form the active/proposed production corridor south of Grand Basin.",
+            "source_paths": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The overview map\u2019s site pins were registered visually against terrain and express relational placement, not surveyed rail geometry or verified coordinates. Flowworks is a proposed relational footprint, and Grand Basin is an area marker rather than a Core pin. Coordinates in planning notes identify SRDB markers. Screenshot registration and SRDB coordinates must remain separate because no verified transform between those frames exists; therefore exact pins must not be inferred by combining them.",
+            "source_paths": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "The preferred first Goethite site is the safer northwestern triple at approximately `1393\u20131464,1838\u20131891`, northwest of Mythic Cry/Grand Basin. After Engine access and Selenian 9, the adopted plan is three Laser Drills merged into one Goethite-only Cargo link, delivering 45 raw Ore/min into one 1,600-unit Storage Depot v2; the closer west field around `1252\u20131472,2950\u20133282` overlaps scanner/hostile envelopes and is not preferred. The preferred first Oil source is approximately `1234,3760`, west/southwest of Mythic Cry and Grand Basin. After Future Health 11, use one Oil Extractor and one Crude-only Cargo link to deliver 10 Crude/min into one V2 buffer feeding one GB-A Refinery. Reserve but do not initially build the second Oil pair and Refinery: one Refinery already consumes the full 10 Crude/min source plus large Titanium and Calcium feeds, while the second marker around `1351,4473` is a separate site. Raw Goethite and Crude Oil are compact but expand during processing, so transport each raw resource through its own item-specific Cargo link and process beside Grand Basin consumers; they may share a receiver yard but not a Cargo link, rail lane, or storage unit.",
+            "source_paths": [
+              "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Prepare a landmark-grounded geography checkpoint for Flowworks, Grand Basin, and the first Goethite and Oil satellites.",
+          "current_state": [
+            "Grand Basin is corrected to the basin immediately east of GRO \u201cMythic Cry,\u201d north of the active corridor; the Red Lake/Redleaf match is superseded.",
+            "Flowworks is selected between Landerworks and Faraday but remains proposed rather than installed.",
+            "Grand Basin and Flowworks pins are relational terrain registrations, not surveyed SRDB coordinates.",
+            "Preferred first satellites are the northwestern Goethite triple and the Oil source west/southwest of Mythic Cry and Grand Basin."
+          ],
+          "decisions": [
+            "Preserve Grand Basin as an area marker rather than a future Core pin.",
+            "Use landmark-relative directions where surveyed pins are unavailable.",
+            "Do not combine screenshot registration with SRDB coordinates without a verified transform.",
+            "Transport compact raw Goethite and Crude Oil through separate item-specific Cargo links and process them beside Grand Basin consumers."
+          ],
+          "open_questions": [
+            "No verified transform between screenshot registration and SRDB coordinates exists.",
+            "Exact late-campaign quantities require rerunning against the canonical RuptureOps snapshot before app publication because the imported calculations used the older July 8 analysis database."
+          ],
+          "next_actions": [
+            "Register future surveyed pins without overwriting relational evidence.",
+            "After Engine access and Selenian 9, build the three-drill Goethite satellite and charge its receiver buffer before exact-rate processing.",
+            "After Future Health 11, build the one-extractor Oil satellite; reserve but initially omit the second Oil pair and Refinery.",
+            "Rerun exact late-campaign satellite quantities against the canonical snapshot before publishing them in the app."
+          ],
+          "artifacts": [
+            ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+            "Topics/StarRupture/World geography and named locations.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9433,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.9333,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 4,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "east of",
+                  "immediately east"
+                ],
+                "matched": "east of"
+              },
+              {
+                "alternatives": [
+                  "Mythic Cry"
+                ],
+                "matched": "Mythic Cry"
+              },
+              {
+                "alternatives": [
+                  "Red Lake",
+                  "Redleaf"
+                ],
+                "matched": "Red Lake"
+              },
+              {
+                "alternatives": [
+                  "wrong",
+                  "corrected",
+                  "not the earlier",
+                  "supersedes the older provisional"
+                ],
+                "matched": "wrong"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ],
+            "native_paths": [],
+            "tags": [],
+            "exact_value": false
+          },
+          {
+            "id": "c2",
+            "score": 0.7333,
+            "pass": false,
+            "content_fraction": 0.6667,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "between Landerworks and Faraday"
+                ],
+                "matched": "between Landerworks and Faraday"
+              },
+              {
+                "alternatives": [
+                  "selected",
+                  "not a placed Core",
+                  "unbuilt"
+                ],
+                "matched": "selected"
+              },
+              {
+                "alternatives": [
+                  "Forgotten Engine",
+                  "northeast of Faraday",
+                  "east-central"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ],
+            "native_paths": [],
+            "tags": [],
+            "exact_value": false
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "screenshot",
+                  "registration frame",
+                  "registered visually against terrain",
+                  "terrain-registered"
+                ],
+                "matched": "screenshot"
+              },
+              {
+                "alternatives": [
+                  "SRDB",
+                  "map coordinates"
+                ],
+                "matched": "SRDB"
+              },
+              {
+                "alternatives": [
+                  "verified transform",
+                  "do not mix"
+                ],
+                "matched": "verified transform"
+              },
+              {
+                "alternatives": [
+                  "Sunstone",
+                  "Brimstone",
+                  "exact pin",
+                  "open"
+                ],
+                "matched": "exact pin"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c4",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "northwest",
+                  "Goethite"
+                ],
+                "matched": "northwest"
+              },
+              {
+                "alternatives": [
+                  "1393",
+                  "1464",
+                  "three",
+                  "triple"
+                ],
+                "matched": "1393"
+              },
+              {
+                "alternatives": [
+                  "west/southwest",
+                  "Oil"
+                ],
+                "matched": "west/southwest"
+              },
+              {
+                "alternatives": [
+                  "raw",
+                  "Cargo Dispatcher",
+                  "process",
+                  "Grand Basin"
+                ],
+                "matched": "raw"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 17,
+        "commands": 5,
+        "command_output_chars": 95173,
+        "tokens": {
+          "input_tokens": 174958,
+          "cached_input_tokens": 134912,
+          "output_tokens": 2804
+        }
+      },
+      "model_visible_tool_output_chars": 95173,
+      "service_operations": [
+        {
+          "at": "2026-07-28T12:44:39.203-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa41fcfc71d19a7c02f09ae01c4e",
+          "elapsed_ms": 51.532,
+          "result_chars": 51100,
+          "source_text_chars": 47896,
+          "metadata_chars": 3204,
+          "evidence_items": 6,
+          "complete_sources": 5,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Player-derived product requirements.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-28T12:44:47.979-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa421f4a7b10a3d7c898b23b8ea0",
+          "elapsed_ms": 46.309,
+          "result_chars": 23709,
+          "source_text_chars": 0,
+          "metadata_chars": 23709,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:44:55.519-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa423cb775d3a643adb7ee5169a4",
+          "elapsed_ms": 58.187,
+          "result_chars": 15526,
+          "source_text_chars": 0,
+          "metadata_chars": 15526,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:44:59.573-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa424ca770619d898abbcb38c131",
+          "elapsed_ms": 26.988,
+          "result_chars": 3569,
+          "source_text_chars": 2925,
+          "metadata_chars": 644,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:45:14.951-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019faa4288af7dd3b126d020353da996",
+          "elapsed_ms": 36.487,
+          "result_chars": 1264,
+          "source_text_chars": 0,
+          "metadata_chars": 1264,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "local_cli_failures": {
+        "schema": "straylight-local-cli-failure-summary@v1",
+        "count": 0,
+        "operation_counts": {},
+        "result_chars": 0,
+        "source_text_chars": 0,
+        "metadata_chars": 0,
+        "operations": []
+      },
+      "service_calls": 5,
+      "service_result_chars": 95168,
+      "service_source_text_chars": 50821,
+      "service_metadata_chars": 44347,
+      "service_replay_weighted_chars": 405316,
+      "service_latency_ms": 219.503,
+      "service_http_calls": 5,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+        "checkpoint_ref": "checkpoint:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+        "path": ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:1e9896b95742e66fb7b191f78cc656cae1b1e09460d8fe256656ec12acd5db98",
+            "entry_ref": "entry:019faa40-a2de-7270-a8b3-9fe9521fd6ac",
+            "path": "Topics/StarRupture/World geography and named locations.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:c70e5aba981d863a4bc24e8d8202539666dd976702f3414beb5eae03c2c67de2",
+            "entry_ref": "entry:019faa40-a2de-7270-a8b3-9fa2a4624ac4",
+            "path": "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7283,
+        "write": {
+          "content_hash": "sha256:af3027339d97dc2061beaa7ec75b67af810f9128d7a3d3fd389100a48cc07854",
+          "entry_ref": "entry:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa42-88c1-70f1-9606-a3abacf62880",
+          "workspace_generation": 7283
+        }
+      },
+      "service_session_id": "session:019faa41-fd00-7470-a833-faacecb7738e",
+      "service_corpus_revision": "generation:7283",
+      "service_accounting_valid": true,
+      "service_accounting_error": null,
+      "response_character_metrics": {
+        "schema": "straylight-agent-response-character-metrics@v1",
+        "service_result_chars": 95168,
+        "service_source_text_chars": 50821,
+        "service_metadata_chars": 44347,
+        "service_replay_weighted_chars": 405316,
+        "model_visible_tool_output_chars": 95173
+      },
+      "workspace_operations": [
+        {
+          "at": "2026-07-28T12:44:39.203-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa41fcfc71d19a7c02f09ae01c4e",
+          "elapsed_ms": 51.532,
+          "result_chars": 51100,
+          "source_text_chars": 47896,
+          "metadata_chars": 3204,
+          "evidence_items": 6,
+          "complete_sources": 5,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Player-derived product requirements.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - play history.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-28T12:44:47.979-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa421f4a7b10a3d7c898b23b8ea0",
+          "elapsed_ms": 46.309,
+          "result_chars": 23709,
+          "source_text_chars": 0,
+          "metadata_chars": 23709,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - exploration and combat.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:44:55.519-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa423cb775d3a643adb7ee5169a4",
+          "elapsed_ms": 58.187,
+          "result_chars": 15526,
+          "source_text_chars": 0,
+          "metadata_chars": 15526,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/StarRupture.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:44:59.573-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa424ca770619d898abbcb38c131",
+          "elapsed_ms": 26.988,
+          "result_chars": 3569,
+          "source_text_chars": 2925,
+          "metadata_chars": 644,
+          "evidence_items": 1,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:45:14.951-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019faa4288af7dd3b126d020353da996",
+          "elapsed_ms": 36.487,
+          "result_chars": 1264,
+          "source_text_chars": 0,
+          "metadata_chars": 1264,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+            "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "Topics/StarRupture/World geography and named locations.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 95168,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+        "checkpoint_ref": "checkpoint:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+        "path": ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:1e9896b95742e66fb7b191f78cc656cae1b1e09460d8fe256656ec12acd5db98",
+            "entry_ref": "entry:019faa40-a2de-7270-a8b3-9fe9521fd6ac",
+            "path": "Topics/StarRupture/World geography and named locations.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:c70e5aba981d863a4bc24e8d8202539666dd976702f3414beb5eae03c2c67de2",
+            "entry_ref": "entry:019faa40-a2de-7270-a8b3-9fa2a4624ac4",
+            "path": "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7283,
+        "write": {
+          "content_hash": "sha256:af3027339d97dc2061beaa7ec75b67af810f9128d7a3d3fd389100a48cc07854",
+          "entry_ref": "entry:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa42-88c1-70f1-9606-a3abacf62880",
+          "workspace_generation": 7283
+        }
+      },
+      "workspace_state_error": null,
+      "sidecar_checkpoint": null,
+      "sidecar_checkpoint_metrics": null,
+      "persisted_checkpoint": {
+        "checkpoint_id": "checkpoint:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+        "checkpoint_ref": "checkpoint:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+        "path": ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:1e9896b95742e66fb7b191f78cc656cae1b1e09460d8fe256656ec12acd5db98",
+            "entry_ref": "entry:019faa40-a2de-7270-a8b3-9fe9521fd6ac",
+            "path": "Topics/StarRupture/World geography and named locations.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:c70e5aba981d863a4bc24e8d8202539666dd976702f3414beb5eae03c2c67de2",
+            "entry_ref": "entry:019faa40-a2de-7270-a8b3-9fa2a4624ac4",
+            "path": "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7283,
+        "write": {
+          "content_hash": "sha256:af3027339d97dc2061beaa7ec75b67af810f9128d7a3d3fd389100a48cc07854",
+          "entry_ref": "entry:59c87634-08b2-9dc0-ee69-a8abdc6e09d3",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/59c87634-08b2-9dc0-ee69-a8abdc6e09d3.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa42-88c1-70f1-9606-a3abacf62880",
+          "workspace_generation": 7283
+        }
+      }
+    },
+    {
+      "case_id": "ruptureops-flowworks-campaign-revision",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 50.336,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/.codex-straylight-worktrees/e04-run/runs/e04-B-rupture-run5/service_api/ruptureops-flowworks-campaign-revision/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Resume the July 11 canonical staged Flowworks build. Start with 10 machines, then expand by campaign stage. After the second Stabilizer, imports peak at 252/min, so one 480/min Rail v3 trunk has 228/min headroom before buffer smoothing. Keep bulk Titanium Rod and Wolfram Plate production local. Buffers should smooth refill waves and support real capacity\u2014not replace it\u2014and the reserved HRS v2 pad should be built only if imported-HRS recovery measurably fails.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The canonical starter is a planned 10-machine build: 1 Titanium Excavator, 1 Wolfram Excavator, 1 Titanium Smelter, 1 Wolfram Smelter, 1 Titanium Rod v2, 1 Wolfram Powder v2, 1 Wolfram Plate v2, 1 Stabilizer, 1 Impeller, and 1 Turbine. This is the adopted plan, not confirmed construction.",
+            "source_paths": [
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "After the second Stabilizer, peak imported refill demand is HRS 54/min + Helium-3 72/min + Sulphuric Acid 56/min + Rotor 60/min + Stator 10/min = 252/min.",
+            "source_paths": [
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "One Rail v3 trunk fits: 252/min peak imported refill demand is below its 480/min capacity, leaving 228/min nameplate headroom before buffer smoothing. Flowworks should make Titanium Rod and Wolfram Plate locally rather than import them.",
+            "source_paths": [
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Use buffers to support actual production capacity and smooth pull-based refill waves, not as substitutes for capacity. Reserve one HRS v2 pad and install it only if imported-HRS recovery fails in practice. The July 11 staged plan supersedes the rejected buffer-heavy study, including its excessive output storage and later three-Stabilizer/two-slow-press direction; HRS v2 is an evidence-triggered recovery option, not part of the initial build.",
+            "source_paths": [
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Resume the canonical Flowworks staged build and preserve its capacity, freight, buffer, and supersession decisions.",
+          "current_state": [
+            "The July 11 staged Flowworks plan is current but remains a proposal; Flowworks is selected and not confirmed built.",
+            "The starter machine inventory and post-second-Stabilizer import requirements are established by complete authoritative evidence.",
+            "Checkpoint checkpoint:84ad9138-4a81-0724-6cc5-ead90a262ba5 was committed."
+          ],
+          "decisions": [
+            "Use the canonical 10-machine starter.",
+            "Plan for 252/min peak imported refill demand after the second Stabilizer.",
+            "Use one 480/min Rail v3 trunk and retain 228/min nameplate headroom before smoothing.",
+            "Produce Titanium Rod and Wolfram Plate locally.",
+            "Add the reserved HRS v2 pad only after measured imported-HRS recovery failure.",
+            "Do not revive the superseded buffer-heavy study."
+          ],
+          "open_questions": [
+            "Whether any Flowworks construction has begun is unconfirmed.",
+            "Titanium node purity is unknown.",
+            "Live Rail v3 unlock and installation state remains unresolved."
+          ],
+          "next_actions": [
+            "Verify live construction state, node purity, and Rail v3 availability before placement.",
+            "Build and expand Flowworks by the canonical campaign stages.",
+            "Measure imported-HRS buffer recovery before deciding on the optional HRS v2 pad."
+          ],
+          "artifacts": [
+            ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.9575,
+        "pass": false,
+        "claims_passed": 3,
+        "claims_total": 4,
+        "claim_score": 0.95,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 1.0,
+        "citation_count": 7,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "10 machines",
+                  "10",
+                  "including extractors"
+                ],
+                "matched": "10 machines"
+              },
+              {
+                "alternatives": [
+                  "Titanium Excavator",
+                  "Wolfram Excavator"
+                ],
+                "matched": "Titanium Excavator"
+              },
+              {
+                "alternatives": [
+                  "Stabilizer",
+                  "Impeller"
+                ],
+                "matched": "Stabilizer"
+              },
+              {
+                "alternatives": [
+                  "Turbine"
+                ],
+                "matched": "Turbine"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c2",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "54"
+                ],
+                "matched": "54"
+              },
+              {
+                "alternatives": [
+                  "72"
+                ],
+                "matched": "72"
+              },
+              {
+                "alternatives": [
+                  "56"
+                ],
+                "matched": "56"
+              },
+              {
+                "alternatives": [
+                  "60",
+                  "10",
+                  "252"
+                ],
+                "matched": "60"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "480",
+                  "Rail v3"
+                ],
+                "matched": "480"
+              },
+              {
+                "alternatives": [
+                  "252"
+                ],
+                "matched": "252"
+              },
+              {
+                "alternatives": [
+                  "fits",
+                  "headroom"
+                ],
+                "matched": "fits"
+              },
+              {
+                "alternatives": [
+                  "Titanium Rod",
+                  "Wolfram Plate",
+                  "locally"
+                ],
+                "matched": "Titanium Rod"
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c4",
+            "score": 0.8,
+            "pass": false,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "superseded",
+                  "rejected"
+                ],
+                "matched": "rejected"
+              },
+              {
+                "alternatives": [
+                  "buffer",
+                  "cannot masquerade",
+                  "not replace production"
+                ],
+                "matched": "buffer"
+              },
+              {
+                "alternatives": [
+                  "HRS v2",
+                  "only if",
+                  "recovery fails"
+                ],
+                "matched": "HRS v2"
+              },
+              {
+                "alternatives": [
+                  "not confirmed construction",
+                  "planned",
+                  "not built"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 10,
+        "commands": 2,
+        "command_output_chars": 47763,
+        "tokens": {
+          "input_tokens": 76181,
+          "cached_input_tokens": 57600,
+          "output_tokens": 2334
+        }
+      },
+      "model_visible_tool_output_chars": 47763,
+      "service_operations": [
+        {
+          "at": "2026-07-28T12:45:47.592-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa4308107251ae3555a5ec963318",
+          "elapsed_ms": 68.482,
+          "result_chars": 45983,
+          "source_text_chars": 41006,
+          "metadata_chars": 4977,
+          "evidence_items": 8,
+          "complete_sources": 5,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/semantic-audit.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/World geography and named locations.md",
+            "Topics/StarRupture/assets/sites/README.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-28T12:46:10.452-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019faa4361787d32b2d26e5653f5d25f",
+          "elapsed_ms": 42.124,
+          "result_chars": 1778,
+          "source_text_chars": 0,
+          "metadata_chars": 1778,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "local_cli_failures": {
+        "schema": "straylight-local-cli-failure-summary@v1",
+        "count": 0,
+        "operation_counts": {},
+        "result_chars": 0,
+        "source_text_chars": 0,
+        "metadata_chars": 0,
+        "operations": []
+      },
+      "service_calls": 2,
+      "service_result_chars": 47761,
+      "service_source_text_chars": 41006,
+      "service_metadata_chars": 6755,
+      "service_replay_weighted_chars": 93744,
+      "service_latency_ms": 110.606,
+      "service_http_calls": 2,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+        "checkpoint_ref": "checkpoint:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+        "path": ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:fa838470efe2cae257376ff85d5f0c58af4dd7983dbc9c8489be6e4bbf889875",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d415c57c6f17",
+            "path": "Topics/StarRupture/Player save - progression and next builds.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-ce9017eada5b",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:d9eff9babf900dffcae47e53ef576305d18fc10d107e59d24ffb725d7692e9d4",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d21a050ce1c8",
+            "path": "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:871535e40676d6f2567548461ab7a5836f026cfb0a66684a2fbe50af47d621be",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d4359d34d0fb",
+            "path": "Topics/StarRupture/Player save - sites and freight network.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7284,
+        "write": {
+          "content_hash": "sha256:10cbc4b47e159316d9ee5a31dc7c4649db698330d952b46d418cb7ac4d34f146",
+          "entry_ref": "entry:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa43-618b-79b3-8b6a-17d82f1284fa",
+          "workspace_generation": 7284
+        }
+      },
+      "service_session_id": "session:019faa43-0815-7d33-8ebf-db29e7860896",
+      "service_corpus_revision": "generation:7284",
+      "service_accounting_valid": true,
+      "service_accounting_error": null,
+      "response_character_metrics": {
+        "schema": "straylight-agent-response-character-metrics@v1",
+        "service_result_chars": 47761,
+        "service_source_text_chars": 41006,
+        "service_metadata_chars": 6755,
+        "service_replay_weighted_chars": 93744,
+        "model_visible_tool_output_chars": 47763
+      },
+      "workspace_operations": [
+        {
+          "at": "2026-07-28T12:45:47.592-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa4308107251ae3555a5ec963318",
+          "elapsed_ms": 68.482,
+          "result_chars": 45983,
+          "source_text_chars": 41006,
+          "metadata_chars": 4977,
+          "evidence_items": 8,
+          "complete_sources": 5,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-02-scaling-and-app.txt",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/semantic-audit.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-play-history__20260711.json",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md",
+            "Topics/StarRupture/World geography and named locations.md",
+            "Topics/StarRupture/assets/sites/README.md"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-28T12:46:10.452-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019faa4361787d32b2d26e5653f5d25f",
+          "elapsed_ms": 42.124,
+          "result_chars": 1778,
+          "source_text_chars": 0,
+          "metadata_chars": 1778,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "Topics/StarRupture/Player save - progression and next builds.md",
+            "Topics/StarRupture/Player save - sites and freight network.md"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 47761,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+        "checkpoint_ref": "checkpoint:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+        "path": ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:fa838470efe2cae257376ff85d5f0c58af4dd7983dbc9c8489be6e4bbf889875",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d415c57c6f17",
+            "path": "Topics/StarRupture/Player save - progression and next builds.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-ce9017eada5b",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:d9eff9babf900dffcae47e53ef576305d18fc10d107e59d24ffb725d7692e9d4",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d21a050ce1c8",
+            "path": "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:871535e40676d6f2567548461ab7a5836f026cfb0a66684a2fbe50af47d621be",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d4359d34d0fb",
+            "path": "Topics/StarRupture/Player save - sites and freight network.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7284,
+        "write": {
+          "content_hash": "sha256:10cbc4b47e159316d9ee5a31dc7c4649db698330d952b46d418cb7ac4d34f146",
+          "entry_ref": "entry:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa43-618b-79b3-8b6a-17d82f1284fa",
+          "workspace_generation": 7284
+        }
+      },
+      "workspace_state_error": null,
+      "sidecar_checkpoint": null,
+      "sidecar_checkpoint_metrics": null,
+      "persisted_checkpoint": {
+        "checkpoint_id": "checkpoint:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+        "checkpoint_ref": "checkpoint:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+        "path": ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:fa838470efe2cae257376ff85d5f0c58af4dd7983dbc9c8489be6e4bbf889875",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d415c57c6f17",
+            "path": "Topics/StarRupture/Player save - progression and next builds.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-ce9017eada5b",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:d9eff9babf900dffcae47e53ef576305d18fc10d107e59d24ffb725d7692e9d4",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d21a050ce1c8",
+            "path": "Projects/RuptureOps/Repository/models/rourke-update1-save-baseline__20260711.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:871535e40676d6f2567548461ab7a5836f026cfb0a66684a2fbe50af47d621be",
+            "entry_ref": "entry:019faa40-a361-7371-81a7-d4359d34d0fb",
+            "path": "Topics/StarRupture/Player save - sites and freight network.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7284,
+        "write": {
+          "content_hash": "sha256:10cbc4b47e159316d9ee5a31dc7c4649db698330d952b46d418cb7ac4d34f146",
+          "entry_ref": "entry:84ad9138-4a81-0724-6cc5-ead90a262ba5",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/84ad9138-4a81-0724-6cc5-ead90a262ba5.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa43-618b-79b3-8b6a-17d82f1284fa",
+          "workspace_generation": 7284
+        }
+      }
+    },
+    {
+      "case_id": "ruptureops-forked-agent-idempotency",
+      "condition": "service_api",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_seconds": 77.255,
+      "fixed_context_chars": 0,
+      "answer_path": "/Users/Shared/projects/.codex-straylight-worktrees/e04-run/runs/e04-B-rupture-run5/service_api/ruptureops-forked-agent-idempotency/answer.json",
+      "error": null,
+      "answer": {
+        "answer": "Duplicate archive-import work is coordinated around the existing verified reconciliation. No repository files were inspected or changed; one continuation checkpoint was created.",
+        "claims": [
+          {
+            "id": "c1",
+            "value": "The topology contains seven continuing or forked tasks: `019f4f6d-169c-70e2-8de4-81722b41eee9` (initial Update 1 research/bootstrap), `019f5263-8bae-7d10-b944-0fd4a543afb9` (clean bootstrap and ownership split), `019f52a5-72aa-7c11-853c-5de258361b42` (general import/reconciliation), `019f52fa-6195-7701-96a2-da6ec7ef7a08` (live exploration continuation), `019f52fa-6917-78a3-b1e5-7e631263b4a5` (logistics fork), `019f52fa-7180-7552-a3b1-09be4c3ee493` (exploration fork carrying the same inherited import request), and `019f531d-ba10-7d50-958e-4cffc089c334` (rupture-cycle product research and interrupted native build). Several forks inherited the exact same `Star Rupture Game Analysis.zip` request; they are duplicate execution paths, not independent imports or corroboration.",
+            "source_paths": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c2",
+            "value": "Replay identity is `import_id` `star-rupture-game-analysis__20260708T190137Z` plus source archive `Star Rupture Game Analysis.zip` SHA-256 `1a1c1ef0ae00905ced37f1221ab22c4b9268f2ebe17b7516e6c9cac67d7f6fa3`. The ledger records `imported_at` `2026-07-11T19:54:52Z`, byte size `21674717`, `115` manifested files, checksum file `CHECKSUMS.sha256`, and integrity status `verified`. A fork matching this identity must reuse the immutable source copies and existing reconciliation receipts, not create another import or promotion.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c3",
+            "value": "The one successful reconciliation is canonical. The external package is audit history, not a competing source snapshot: its duplicated item, building, recipe, progression, export, map, loot, and news data were not installed again; only distinct evidence was promoted. The active pipeline and canonical snapshot `ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z` remain authoritative, while legacy calculations retain their July 8 boundary until ported and rerun. Dirty-tree safety means making no duplicate promotion or unrelated repository mutation: raw archive content stays under the Git-ignored `raw/` directory, while tracked `MANIFEST.csv` and `CHECKSUMS.sha256` retain auditability. This service-only run did not inspect live Git status and made no repository changes, so any existing dirty work remains untouched.",
+            "source_paths": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "confidence": "high"
+          },
+          {
+            "id": "c4",
+            "value": "Exactly one continuation checkpoint was committed: `checkpoint:fc71b98f-a95f-60db-f018-261439399025` at `.straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md`. Duplicate forks should reopen this checkpoint instead of creating parallel promotions or checkpoints. Future work must first verify the live branch and dirty-file inventory, preserve unrelated changes, and proceed only for a genuinely unresolved facet or a new archive hash.",
+            "source_paths": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md"
+            ],
+            "confidence": "high"
+          }
+        ],
+        "checkpoint": {
+          "objective": "Coordinate forked RuptureOps archive-import tasks without duplicate promotion or disturbance of active repository work.",
+          "current_state": [
+            "Seven continuing/forked tasks are identified; several inherited one archive request.",
+            "The verified reconciliation already exists as `star-rupture-game-analysis__20260708T190137Z`.",
+            "The live Git state was not inspected under the service-only restriction; the repository was not mutated.",
+            "One continuation checkpoint was committed."
+          ],
+          "decisions": [
+            "Use the import ID, exact archive SHA-256, and verified immutable ledger as replay identity.",
+            "Treat the existing successful reconciliation as canonical.",
+            "Route duplicate forks to the single checkpoint rather than importing, promoting, or checkpointing again.",
+            "Preserve all current worktree changes until an authorized continuation verifies repository truth."
+          ],
+          "open_questions": [
+            "The live branch name and exact dirty-file inventory remain unverified."
+          ],
+          "next_actions": [
+            "Reopen `checkpoint:fc71b98f-a95f-60db-f018-261439399025` for duplicate inherited tasks.",
+            "Before any future edit, inspect the live branch and dirty-file inventory and preserve unrelated changes.",
+            "Perform new promotion only for a genuinely new archive hash or independently unresolved material."
+          ],
+          "artifacts": [
+            ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md"
+          ]
+        }
+      },
+      "grade": {
+        "score": 0.8662,
+        "pass": false,
+        "claims_passed": 2,
+        "claims_total": 4,
+        "claim_score": 0.85,
+        "checkpoint_score": 1.0,
+        "checkpoint_fields": {
+          "objective": true,
+          "current_state": true,
+          "next_actions": true,
+          "artifacts": true
+        },
+        "citation_validity": 0.875,
+        "citation_count": 8,
+        "forbidden_hits": [],
+        "claims": [
+          {
+            "id": "c1",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "019f52a5",
+                  "general"
+                ],
+                "matched": "019f52a5"
+              },
+              {
+                "alternatives": [
+                  "019f52fa-6195",
+                  "exploration"
+                ],
+                "matched": "019f52fa-6195"
+              },
+              {
+                "alternatives": [
+                  "019f52fa-6917",
+                  "logistics"
+                ],
+                "matched": "019f52fa-6917"
+              },
+              {
+                "alternatives": [
+                  "same",
+                  "inherited",
+                  "exact same request"
+                ],
+                "matched": "same"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c2",
+            "score": 0.8,
+            "pass": false,
+            "content_fraction": 0.75,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "star-rupture-game-analysis__20260708T190137Z"
+                ],
+                "matched": "star-rupture-game-analysis__20260708T190137Z"
+              },
+              {
+                "alternatives": [
+                  "1a1c1ef0ae00905ced37f1221ab22c4b9268f2ebe17b7516e6c9cac67d7f6fa3",
+                  "SHA-256",
+                  "archive hash"
+                ],
+                "matched": "1a1c1ef0ae00905ced37f1221ab22c4b9268f2ebe17b7516e6c9cac67d7f6fa3"
+              },
+              {
+                "alternatives": [
+                  "idempotent",
+                  "one successful reconciliation",
+                  "one canonical import"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "receipt",
+                  "manifest",
+                  "immutable source"
+                ],
+                "matched": "receipt"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c3",
+            "score": 1.0,
+            "pass": true,
+            "content_fraction": 1.0,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "canonical snapshot",
+                  "canonical structured output",
+                  "active RuptureOps pipeline"
+                ],
+                "matched": "canonical snapshot"
+              },
+              {
+                "alternatives": [
+                  "promote once",
+                  "no duplicate",
+                  "not independent corroboration",
+                  "competing active corpus"
+                ],
+                "matched": "no duplicate"
+              },
+              {
+                "alternatives": [
+                  "main",
+                  "dirty"
+                ],
+                "matched": "main"
+              },
+              {
+                "alternatives": [
+                  "preserve",
+                  "do not revert",
+                  "unrelated"
+                ],
+                "matched": "unrelated"
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/docs/data-corpus.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          },
+          {
+            "id": "c4",
+            "score": 0.6,
+            "pass": false,
+            "content_fraction": 0.5,
+            "source_hit": true,
+            "checks": [
+              {
+                "alternatives": [
+                  "reopen",
+                  "canonical checkpoint",
+                  "child checkpoint"
+                ],
+                "matched": "reopen"
+              },
+              {
+                "alternatives": [
+                  "source references",
+                  "lineage",
+                  "import receipt"
+                ],
+                "matched": null
+              },
+              {
+                "alternatives": [
+                  "one",
+                  "single"
+                ],
+                "matched": "one"
+              },
+              {
+                "alternatives": [
+                  "current repository",
+                  "refresh",
+                  "live state"
+                ],
+                "matched": null
+              }
+            ],
+            "citations": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md"
+            ],
+            "native_paths": [],
+            "tags": [
+              "exact_value"
+            ],
+            "exact_value": true
+          }
+        ],
+        "claim_set_valid": true,
+        "expected_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "actual_claim_ids": [
+          "c1",
+          "c2",
+          "c3",
+          "c4"
+        ],
+        "duplicate_claim_ids": [],
+        "missing_claim_ids": [],
+        "extra_claim_ids": [],
+        "malformed_claim_count": 0
+      },
+      "events": {
+        "events": 15,
+        "commands": 4,
+        "command_output_chars": 56658,
+        "tokens": {
+          "input_tokens": 133591,
+          "cached_input_tokens": 97280,
+          "output_tokens": 3366
+        }
+      },
+      "model_visible_tool_output_chars": 56658,
+      "service_operations": [
+        {
+          "at": "2026-07-28T12:46:38.621-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa43cf7779d1a49d86c0b18540cd",
+          "elapsed_ms": 51.449,
+          "result_chars": 14752,
+          "source_text_chars": 13468,
+          "metadata_chars": 1284,
+          "evidence_items": 2,
+          "complete_sources": 2,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/ios/RuptureOps/Services/ForegroundFeedbackController.swift"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-28T12:46:48.481-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa43f6067cc1b79cb010aa51f62a",
+          "elapsed_ms": 40.938,
+          "result_chars": 16278,
+          "source_text_chars": 0,
+          "metadata_chars": 16278,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/import.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "Topics/StarRupture/Player save - sites and freight network.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:46:53.728-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa440a8a7031862f342c51e00be7",
+          "elapsed_ms": 36.597,
+          "result_chars": 23838,
+          "source_text_chars": 21837,
+          "metadata_chars": 2001,
+          "evidence_items": 3,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:47:18.124-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019faa4469d37022a70892294ecf85d4",
+          "elapsed_ms": 39.828,
+          "result_chars": 1786,
+          "source_text_chars": 0,
+          "metadata_chars": 1786,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "local_cli_failures": {
+        "schema": "straylight-local-cli-failure-summary@v1",
+        "count": 0,
+        "operation_counts": {},
+        "result_chars": 0,
+        "source_text_chars": 0,
+        "metadata_chars": 0,
+        "operations": []
+      },
+      "service_calls": 4,
+      "service_result_chars": 56654,
+      "service_source_text_chars": 35305,
+      "service_metadata_chars": 21349,
+      "service_replay_weighted_chars": 157304,
+      "service_latency_ms": 168.812,
+      "service_http_calls": 4,
+      "service_binary_bytes": 0,
+      "service_checkpoint": {
+        "checkpoint_id": "checkpoint:fc71b98f-a95f-60db-f018-261439399025",
+        "checkpoint_ref": "checkpoint:fc71b98f-a95f-60db-f018-261439399025",
+        "path": ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:51cff0ad84b67c7c6c81d325036eafb530bda3288ea57d8247b43e207bd57b91",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4933634d26ea",
+            "path": "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:4ccb8351ebd691fbd810f333ad6ed3eca1af1b8427fbe1703211be9385f607e0",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4afec5016164",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4adcaefa7eb7",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:5324c2aa1bfb6cc37e6820b22a86e7044526772b267cd302108ddd9ddeadbff3",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-49baf1be360b",
+            "path": "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7285,
+        "write": {
+          "content_hash": "sha256:7a546b68795458cecc400ea0f9c74dbfad9339e36df87f34debf2606353bb81c",
+          "entry_ref": "entry:fc71b98f-a95f-60db-f018-261439399025",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa44-69e6-7852-8bd1-f0b71772f8f3",
+          "workspace_generation": 7285
+        }
+      },
+      "service_session_id": "session:019faa43-cf7a-7a83-a059-668a24dd83cf",
+      "service_corpus_revision": "generation:7285",
+      "service_accounting_valid": true,
+      "service_accounting_error": null,
+      "response_character_metrics": {
+        "schema": "straylight-agent-response-character-metrics@v1",
+        "service_result_chars": 56654,
+        "service_source_text_chars": 35305,
+        "service_metadata_chars": 21349,
+        "service_replay_weighted_chars": 157304,
+        "model_visible_tool_output_chars": 56658
+      },
+      "workspace_operations": [
+        {
+          "at": "2026-07-28T12:46:38.621-07:00",
+          "operation": "open",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa43cf7779d1a49d86c0b18540cd",
+          "elapsed_ms": 51.449,
+          "result_chars": 14752,
+          "source_text_chars": 13468,
+          "metadata_chars": 1284,
+          "evidence_items": 2,
+          "complete_sources": 2,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/ios/RuptureOps/Services/ForegroundFeedbackController.swift"
+          ],
+          "sufficiency_status": "bounded_evidence"
+        },
+        {
+          "at": "2026-07-28T12:46:48.481-07:00",
+          "operation": "query",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa43f6067cc1b79cb010aa51f62a",
+          "elapsed_ms": 40.938,
+          "result_chars": 16278,
+          "source_text_chars": 0,
+          "metadata_chars": 16278,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/import.json",
+            "Projects/RuptureOps/Repository/imports/player-prompt-history__20260711/source/prompt-dump-03-exploration-and-combat.txt",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/MANIFEST.csv",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "Topics/StarRupture/Player save - sites and freight network.md"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:46:53.728-07:00",
+          "operation": "read",
+          "http_status": 200,
+          "service_status": "complete",
+          "request_id": "req_019faa440a8a7031862f342c51e00be7",
+          "elapsed_ms": 36.597,
+          "result_chars": 23838,
+          "source_text_chars": 21837,
+          "metadata_chars": 2001,
+          "evidence_items": 3,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+          ],
+          "sufficiency_status": null
+        },
+        {
+          "at": "2026-07-28T12:47:18.124-07:00",
+          "operation": "checkpoint",
+          "http_status": 200,
+          "service_status": "committed",
+          "request_id": "req_019faa4469d37022a70892294ecf85d4",
+          "elapsed_ms": 39.828,
+          "result_chars": 1786,
+          "source_text_chars": 0,
+          "metadata_chars": 1786,
+          "evidence_items": 0,
+          "complete_sources": 0,
+          "pointer_sources": 0,
+          "source_paths": [
+            ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+            "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+          ],
+          "sufficiency_status": null
+        }
+      ],
+      "workspace_result_chars": 56654,
+      "workspace_checkpoint": {
+        "checkpoint_id": "checkpoint:fc71b98f-a95f-60db-f018-261439399025",
+        "checkpoint_ref": "checkpoint:fc71b98f-a95f-60db-f018-261439399025",
+        "path": ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:51cff0ad84b67c7c6c81d325036eafb530bda3288ea57d8247b43e207bd57b91",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4933634d26ea",
+            "path": "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:4ccb8351ebd691fbd810f333ad6ed3eca1af1b8427fbe1703211be9385f607e0",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4afec5016164",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4adcaefa7eb7",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:5324c2aa1bfb6cc37e6820b22a86e7044526772b267cd302108ddd9ddeadbff3",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-49baf1be360b",
+            "path": "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7285,
+        "write": {
+          "content_hash": "sha256:7a546b68795458cecc400ea0f9c74dbfad9339e36df87f34debf2606353bb81c",
+          "entry_ref": "entry:fc71b98f-a95f-60db-f018-261439399025",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa44-69e6-7852-8bd1-f0b71772f8f3",
+          "workspace_generation": 7285
+        }
+      },
+      "workspace_state_error": null,
+      "sidecar_checkpoint": null,
+      "sidecar_checkpoint_metrics": null,
+      "persisted_checkpoint": {
+        "checkpoint_id": "checkpoint:fc71b98f-a95f-60db-f018-261439399025",
+        "checkpoint_ref": "checkpoint:fc71b98f-a95f-60db-f018-261439399025",
+        "path": ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+        "source_entries": [
+          {
+            "content_hash": "sha256:51cff0ad84b67c7c6c81d325036eafb530bda3288ea57d8247b43e207bd57b91",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4933634d26ea",
+            "path": "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:4ccb8351ebd691fbd810f333ad6ed3eca1af1b8427fbe1703211be9385f607e0",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4afec5016164",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:a5da84dab957da9d45585d72f76e01a412a9679e046e8a38f61b418a153cc9e3",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-4adcaefa7eb7",
+            "path": "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+            "version": 1
+          },
+          {
+            "content_hash": "sha256:5324c2aa1bfb6cc37e6820b22a86e7044526772b267cd302108ddd9ddeadbff3",
+            "entry_ref": "entry:019faa40-a3f9-7721-b298-49baf1be360b",
+            "path": "Projects/RuptureOps/Repository/docs/data-corpus.md",
+            "version": 1
+          }
+        ],
+        "workspace_generation": 7285,
+        "write": {
+          "content_hash": "sha256:7a546b68795458cecc400ea0f9c74dbfad9339e36df87f34debf2606353bb81c",
+          "entry_ref": "entry:fc71b98f-a95f-60db-f018-261439399025",
+          "metadata_only": false,
+          "no_op": false,
+          "path": ".straylight/checkpoints/fc71b98f-a95f-60db-f018-261439399025.md",
+          "search_status": "lexical_ready_semantic_queued",
+          "version": 1,
+          "version_ref": "entry-version:019faa44-69e6-7852-8bd1-f0b71772f8f3",
+          "workspace_generation": 7285
+        }
+      }
+    }
+  ],
+  "run_ledger": {
+    "schema": "straylight-eval-run-ledger@v1",
+    "run_id": "e04-B-rupture-run5",
+    "captured_at": "2026-07-28T12:47:47-07:00",
+    "source": {
+      "revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+      "tracked_source_clean": true,
+      "untracked_source_files": [],
+      "clean": true
+    },
+    "codex": {
+      "path": "/Applications/ChatGPT.app/Contents/Resources/codex",
+      "version": "codex-cli 0.146.0-alpha.3.1",
+      "auth_route": "chatgpt_subscription",
+      "auth_status": "Logged in using ChatGPT",
+      "auth_checked_at": "2026-07-28T12:43:09-07:00",
+      "api_fallback": "forbidden"
+    },
+    "configuration": {
+      "model": "gpt-5.6-sol",
+      "conditions": [
+        "service_api"
+      ],
+      "service_protocol": "simple",
+      "experiment_arm": "e04-B",
+      "paired_draw_id": "e04-rupture-draw5",
+      "expected_runtime_features": {
+        "semantic_lane": false,
+        "verbatim_spans": false,
+        "lexical_single_scan": false,
+        "supersession_demotion": false,
+        "intention_ledger": false,
+        "read_path_roundtrip_v1": false,
+        "resume_deltas": false,
+        "search_fair_share": true,
+        "search_top1_hydration": false,
+        "search_char_cap": true,
+        "embed_cache": false,
+        "allow_degraded_embeddings": false,
+        "search_section_demotion_top_n": 8
+      },
+      "expected_build_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+      "experiment_parameters": {
+        "declared_feature_states": {},
+        "e09_arm": null,
+        "e09_step_authorization": null,
+        "run_tags": [],
+        "service_retrieval_modes": [
+          "exact",
+          "lexical"
+        ],
+        "service_image_fingerprint": {
+          "schema": "straylight-service-image-fingerprint@v1",
+          "api_container": "7f927a814db32f227f2933f3214727af967e958ab8d49a2683f58c56a382f61e",
+          "api_container_id": "7f927a814db32f227f2933f3214727af967e958ab8d49a2683f58c56a382f61e",
+          "api_container_started_at": "2026-07-28T14:29:23.291761676Z",
+          "api_container_running": true,
+          "api_image_id": "sha256:48328f547bafec436d5b4065c6926905ec6398a90894c66c880d0aac2640f4b9",
+          "api_image_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d"
+        }
+      }
+    },
+    "artifacts": {
+      "manifest_sha256": "b596519119b7d9a1b3f50bcd017ceed5a67a5557dff22baa84df095697ccf9cf",
+      "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+      "harness_sha256": "59ce22f34e31ac240543cf1366560a73b976f5c056761570f199d238e15e6030",
+      "runtime_snapshot_sha256": "a5815ba0b083c50bb5698ae756cf549ece3a7672a8238424eb803a7e13f79f25",
+      "service_image_provenance_sha256": "b53eb5fa2a13d66623eb2fb71db511c11e4604e36113672e16babf63115265dd"
+    }
+  },
+  "summary": {
+    "by_condition": {
+      "service_api": {
+        "runs": 4,
+        "successful_runs": 4,
+        "cases_passed": 1,
+        "case_pass_rate": 0.25,
+        "claims_passed": 12,
+        "claims_total": 16,
+        "claim_pass_rate": 0.75,
+        "mean_score": 0.9417,
+        "elapsed_samples": 4,
+        "mean_elapsed_seconds": 69.17,
+        "mean_fixed_context_chars": 0.0,
+        "mean_workspace_result_chars": 67463.2,
+        "persisted_checkpoints": 4,
+        "checkpoint_eligible_runs": 4,
+        "mean_service_calls": 3.5,
+        "mean_service_result_chars": 67463.2,
+        "mean_service_source_text_chars": 46475.8,
+        "mean_service_metadata_chars": 20987.5,
+        "mean_service_replay_weighted_chars": 211290.8,
+        "mean_service_latency_ms": 162.766,
+        "mean_completed_commands": 3.5,
+        "mean_command_output_chars": 67466.8,
+        "mean_model_visible_tool_output_chars": 67466.8,
+        "mean_tokens": {
+          "input_tokens": 126079.5,
+          "output_tokens": 3073.5,
+          "cached_input_tokens": 96000.0,
+          "uncached_input_tokens": 30079.5
+        }
+      }
+    },
+    "by_workload": {
+      "RuptureOps": {
+        "service_api": {
+          "runs": 2,
+          "successful_runs": 2,
+          "cases_passed": 1,
+          "case_pass_rate": 0.5,
+          "claims_passed": 6,
+          "claims_total": 8,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9331,
+          "elapsed_samples": 2,
+          "mean_elapsed_seconds": 79.43,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 63462.0,
+          "persisted_checkpoints": 2,
+          "checkpoint_eligible_runs": 2,
+          "mean_service_calls": 3.5,
+          "mean_service_result_chars": 63462.0,
+          "mean_service_source_text_chars": 47038.0,
+          "mean_service_metadata_chars": 16424.0,
+          "mean_service_replay_weighted_chars": 173051.5,
+          "mean_service_latency_ms": 160.478,
+          "mean_completed_commands": 3.5,
+          "mean_command_output_chars": 63465.5,
+          "mean_model_visible_tool_output_chars": 63465.5,
+          "mean_tokens": {
+            "input_tokens": 126589.5,
+            "output_tokens": 3578.0,
+            "cached_input_tokens": 95744.0,
+            "uncached_input_tokens": 30845.5
+          }
+        }
+      },
+      "StarRupture": {
+        "service_api": {
+          "runs": 2,
+          "successful_runs": 2,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 6,
+          "claims_total": 8,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9504,
+          "elapsed_samples": 2,
+          "mean_elapsed_seconds": 58.92,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 71464.5,
+          "persisted_checkpoints": 2,
+          "checkpoint_eligible_runs": 2,
+          "mean_service_calls": 3.5,
+          "mean_service_result_chars": 71464.5,
+          "mean_service_source_text_chars": 45913.5,
+          "mean_service_metadata_chars": 25551.0,
+          "mean_service_replay_weighted_chars": 249530.0,
+          "mean_service_latency_ms": 165.054,
+          "mean_completed_commands": 3.5,
+          "mean_command_output_chars": 71468.0,
+          "mean_model_visible_tool_output_chars": 71468.0,
+          "mean_tokens": {
+            "input_tokens": 125569.5,
+            "output_tokens": 2569.0,
+            "cached_input_tokens": 96256.0,
+            "uncached_input_tokens": 29313.5
+          }
+        }
+      }
+    },
+    "by_capability": {
+      "bulk_import_and_provenance": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 1,
+          "case_pass_rate": 1.0,
+          "claims_passed": 4,
+          "claims_total": 4,
+          "claim_pass_rate": 1.0,
+          "mean_score": 1.0,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 81.6,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 70270.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 3.0,
+          "mean_service_result_chars": 70270.0,
+          "mean_service_source_text_chars": 58771.0,
+          "mean_service_metadata_chars": 11499.0,
+          "mean_service_replay_weighted_chars": 188799.0,
+          "mean_service_latency_ms": 152.143,
+          "mean_completed_commands": 3.0,
+          "mean_command_output_chars": 70273.0,
+          "mean_model_visible_tool_output_chars": 70273.0,
+          "mean_tokens": {
+            "input_tokens": 119588.0,
+            "output_tokens": 3790.0,
+            "cached_input_tokens": 94208.0,
+            "uncached_input_tokens": 25380.0
+          }
+        }
+      },
+      "multimodal_spatial_and_coordinate_reasoning": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9433,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 67.5,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 95168.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 5.0,
+          "mean_service_result_chars": 95168.0,
+          "mean_service_source_text_chars": 50821.0,
+          "mean_service_metadata_chars": 44347.0,
+          "mean_service_replay_weighted_chars": 405316.0,
+          "mean_service_latency_ms": 219.503,
+          "mean_completed_commands": 5.0,
+          "mean_command_output_chars": 95173.0,
+          "mean_model_visible_tool_output_chars": 95173.0,
+          "mean_tokens": {
+            "input_tokens": 174958.0,
+            "output_tokens": 2804.0,
+            "cached_input_tokens": 134912.0,
+            "uncached_input_tokens": 40046.0
+          }
+        }
+      },
+      "parallel_agent_coordination_and_idempotency": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 2,
+          "claims_total": 4,
+          "claim_pass_rate": 0.5,
+          "mean_score": 0.8662,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 77.25,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 56654.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 4.0,
+          "mean_service_result_chars": 56654.0,
+          "mean_service_source_text_chars": 35305.0,
+          "mean_service_metadata_chars": 21349.0,
+          "mean_service_replay_weighted_chars": 157304.0,
+          "mean_service_latency_ms": 168.812,
+          "mean_completed_commands": 4.0,
+          "mean_command_output_chars": 56658.0,
+          "mean_model_visible_tool_output_chars": 56658.0,
+          "mean_tokens": {
+            "input_tokens": 133591.0,
+            "output_tokens": 3366.0,
+            "cached_input_tokens": 97280.0,
+            "uncached_input_tokens": 36311.0
+          }
+        }
+      },
+      "quantitative_plan_with_supersession": {
+        "service_api": {
+          "runs": 1,
+          "successful_runs": 1,
+          "cases_passed": 0,
+          "case_pass_rate": 0.0,
+          "claims_passed": 3,
+          "claims_total": 4,
+          "claim_pass_rate": 0.75,
+          "mean_score": 0.9575,
+          "elapsed_samples": 1,
+          "mean_elapsed_seconds": 50.34,
+          "mean_fixed_context_chars": 0.0,
+          "mean_workspace_result_chars": 47761.0,
+          "persisted_checkpoints": 1,
+          "checkpoint_eligible_runs": 1,
+          "mean_service_calls": 2.0,
+          "mean_service_result_chars": 47761.0,
+          "mean_service_source_text_chars": 41006.0,
+          "mean_service_metadata_chars": 6755.0,
+          "mean_service_replay_weighted_chars": 93744.0,
+          "mean_service_latency_ms": 110.606,
+          "mean_completed_commands": 2.0,
+          "mean_command_output_chars": 47763.0,
+          "mean_model_visible_tool_output_chars": 47763.0,
+          "mean_tokens": {
+            "input_tokens": 76181.0,
+            "output_tokens": 2334.0,
+            "cached_input_tokens": 57600.0,
+            "uncached_input_tokens": 18581.0
+          }
+        }
+      }
+    },
+    "case_metadata": {
+      "ruptureops-archive-import-reconciliation": {
+        "id": "ruptureops-archive-import-reconciliation",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "bulk_import_and_provenance",
+        "task": "Take over the completed Star Rupture Game Analysis ZIP import. Produce an audit-ready checkpoint that states what was preserved, corrects the archive's version claim, explains what was deduplicated versus promoted, and keeps rejected Flowworks work from becoming current guidance. Do not create a second canonical game-data snapshot.",
+        "claim_slots": {
+          "c1": "archive integrity and retention",
+          "c2": "correct two-axis version boundary",
+          "c3": "deduplication and selective promotion",
+          "c4": "superseded material and active authority"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "21,674,717",
+                  "21674717"
+                ]
+              },
+              {
+                "any": [
+                  "123",
+                  "115 manifest",
+                  "115 packaged"
+                ]
+              },
+              {
+                "any": [
+                  "SHA-256",
+                  "checksum",
+                  "integrity"
+                ]
+              },
+              {
+                "any": [
+                  "raw/",
+                  "lossless",
+                  "original ZIP"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "23761620"
+                ]
+              },
+              {
+                "any": [
+                  "latest public executable",
+                  "latest public build",
+                  "not a proven build identity",
+                  "too strong"
+                ]
+              },
+              {
+                "any": [
+                  "35118973",
+                  "22674441"
+                ]
+              },
+              {
+                "any": [
+                  "ea-u1-gv35118973__srdb-2.3.4__20260711T050230Z"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/data/current.json"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "not installed as a competing snapshot",
+                  "no competing snapshot",
+                  "canonical RuptureOps snapshot only",
+                  "rather than promoted again",
+                  "existing canonical snapshot"
+                ]
+              },
+              {
+                "any": [
+                  "468 items",
+                  "3,259 map markers",
+                  "3259 map markers"
+                ]
+              },
+              {
+                "any": [
+                  "six",
+                  "6"
+                ]
+              },
+              {
+                "any": [
+                  "nine",
+                  "9",
+                  "site assets",
+                  "player save baseline"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/semantic-audit.json"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "18-file",
+                  "18 file",
+                  "18"
+                ]
+              },
+              {
+                "any": [
+                  "audit history",
+                  "superseded"
+                ]
+              },
+              {
+                "any": [
+                  "active RuptureOps pipeline",
+                  "active pipeline",
+                  "canonical source",
+                  "immutable snapshot boundary"
+                ]
+              },
+              {
+                "any": [
+                  "rerun",
+                  "recomputed",
+                  "canonical snapshot"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md",
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the archive data is build 23761620",
+          "install the legacy sqlite as canonical",
+          "the rejected flowworks sizing is current"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "ruptureops-spatial-evidence": {
+        "id": "ruptureops-spatial-evidence",
+        "workload": "StarRupture",
+        "scope": "StarRupture",
+        "capability": "multimodal_spatial_and_coordinate_reasoning",
+        "task": "Prepare a landmark-grounded geography checkpoint for Flowworks, Grand Basin, and the first Goethite and Oil satellites. Correct the older Grand Basin match, preserve which pins are only relational, and do not combine screenshot registration with SRDB coordinates without a verified transform.",
+        "claim_slots": {
+          "c1": "Grand Basin correction and landmark relation",
+          "c2": "Flowworks and active-corridor relation",
+          "c3": "coordinate-frame and pin boundary",
+          "c4": "resource satellite directions and rationale"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "east of",
+                  "immediately east"
+                ]
+              },
+              {
+                "any": [
+                  "Mythic Cry"
+                ]
+              },
+              {
+                "any": [
+                  "Red Lake",
+                  "Redleaf"
+                ]
+              },
+              {
+                "any": [
+                  "wrong",
+                  "corrected",
+                  "not the earlier",
+                  "supersedes the older provisional"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md",
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "between Landerworks and Faraday"
+                ]
+              },
+              {
+                "any": [
+                  "selected",
+                  "not a placed Core",
+                  "unbuilt"
+                ]
+              },
+              {
+                "any": [
+                  "Forgotten Engine",
+                  "northeast of Faraday",
+                  "east-central"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "screenshot",
+                  "registration frame",
+                  "registered visually against terrain",
+                  "terrain-registered"
+                ]
+              },
+              {
+                "any": [
+                  "SRDB",
+                  "map coordinates"
+                ]
+              },
+              {
+                "any": [
+                  "verified transform",
+                  "do not mix"
+                ]
+              },
+              {
+                "any": [
+                  "Sunstone",
+                  "Brimstone",
+                  "exact pin",
+                  "open"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/World geography and named locations.md",
+              "Topics/StarRupture/assets/sites/README.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "northwest",
+                  "Goethite"
+                ]
+              },
+              {
+                "any": [
+                  "1393",
+                  "1464",
+                  "three",
+                  "triple"
+                ]
+              },
+              {
+                "any": [
+                  "west/southwest",
+                  "Oil"
+                ]
+              },
+              {
+                "any": [
+                  "raw",
+                  "Cargo Dispatcher",
+                  "process",
+                  "Grand Basin"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Remote resource satellites - Goethite and Oil.md",
+              "Topics/StarRupture/World geography and named locations.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          }
+        ],
+        "forbidden": [
+          "the screenshot pixels directly equal SRDB coordinates",
+          "Sunstone exact coordinates are known",
+          "the dashed line is the surveyed rail path"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "ruptureops-flowworks-campaign-revision": {
+        "id": "ruptureops-flowworks-campaign-revision",
+        "workload": "StarRupture",
+        "scope": "StarRupture",
+        "capability": "quantitative_plan_with_supersession",
+        "task": "Resume the canonical Flowworks staged build, not the rejected buffer-heavy study. State the starter machine plan, compute peak imported refill demand after the second Stabilizer, decide whether one Rail v3 trunk fits, and explain how buffers and the optional HRS v2 pad should be treated.",
+        "claim_slots": {
+          "c1": "canonical starter build",
+          "c2": "peak import arithmetic",
+          "c3": "rail and local-production decision",
+          "c4": "buffer and supersession boundary"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "10 machines",
+                  "10",
+                  "including extractors"
+                ]
+              },
+              {
+                "any": [
+                  "Titanium Excavator",
+                  "Wolfram Excavator"
+                ]
+              },
+              {
+                "any": [
+                  "Stabilizer",
+                  "Impeller"
+                ]
+              },
+              {
+                "any": [
+                  "Turbine"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "54"
+                ]
+              },
+              {
+                "any": [
+                  "72"
+                ]
+              },
+              {
+                "any": [
+                  "56"
+                ]
+              },
+              {
+                "any": [
+                  "60",
+                  "10",
+                  "252"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Player save - progression and next builds.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "480",
+                  "Rail v3"
+                ]
+              },
+              {
+                "any": [
+                  "252"
+                ]
+              },
+              {
+                "any": [
+                  "fits",
+                  "headroom"
+                ]
+              },
+              {
+                "any": [
+                  "Titanium Rod",
+                  "Wolfram Plate",
+                  "locally"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Topics/StarRupture/Player save - sites and freight network.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "superseded",
+                  "rejected"
+                ]
+              },
+              {
+                "any": [
+                  "buffer",
+                  "cannot masquerade",
+                  "not replace production"
+                ]
+              },
+              {
+                "any": [
+                  "HRS v2",
+                  "only if",
+                  "recovery fails"
+                ]
+              },
+              {
+                "any": [
+                  "not confirmed construction",
+                  "planned",
+                  "not built"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Topics/StarRupture/Player save - progression and next builds.md",
+              "Topics/StarRupture/Player save - operating model and factory architecture.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          }
+        ],
+        "forbidden": [
+          "Flowworks is already built",
+          "three stabilizers are the current starter",
+          "buffers replace the missing machines"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      },
+      "ruptureops-forked-agent-idempotency": {
+        "id": "ruptureops-forked-agent-idempotency",
+        "workload": "RuptureOps",
+        "scope": "RuptureOps",
+        "capability": "parallel_agent_coordination_and_idempotency",
+        "task": "Coordinate the forked RuptureOps tasks that inherited the same archive-import request while other work is active in the repository. Identify the duplicate task topology, define the idempotency and canonicality rule, preserve the dirty worktree, and leave one continuation checkpoint rather than multiplying promotions.",
+        "claim_slots": {
+          "c1": "forked task topology",
+          "c2": "idempotent import identity",
+          "c3": "canonical output and dirty-tree safety",
+          "c4": "single continuation checkpoint"
+        },
+        "rubric": [
+          {
+            "id": "c1",
+            "checks": [
+              {
+                "any": [
+                  "019f52a5",
+                  "general"
+                ]
+              },
+              {
+                "any": [
+                  "019f52fa-6195",
+                  "exploration"
+                ]
+              },
+              {
+                "any": [
+                  "019f52fa-6917",
+                  "logistics"
+                ]
+              },
+              {
+                "any": [
+                  "same",
+                  "inherited",
+                  "exact same request"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c2",
+            "checks": [
+              {
+                "any": [
+                  "star-rupture-game-analysis__20260708T190137Z"
+                ]
+              },
+              {
+                "any": [
+                  "1a1c1ef0ae00905ced37f1221ab22c4b9268f2ebe17b7516e6c9cac67d7f6fa3",
+                  "SHA-256",
+                  "archive hash"
+                ]
+              },
+              {
+                "any": [
+                  "idempotent",
+                  "one successful reconciliation",
+                  "one canonical import"
+                ]
+              },
+              {
+                "any": [
+                  "receipt",
+                  "manifest",
+                  "immutable source"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/import.json"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c3",
+            "checks": [
+              {
+                "any": [
+                  "canonical snapshot",
+                  "canonical structured output",
+                  "active RuptureOps pipeline"
+                ]
+              },
+              {
+                "any": [
+                  "promote once",
+                  "no duplicate",
+                  "not independent corroboration",
+                  "competing active corpus"
+                ]
+              },
+              {
+                "any": [
+                  "main",
+                  "dirty"
+                ]
+              },
+              {
+                "any": [
+                  "preserve",
+                  "do not revert",
+                  "unrelated"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md",
+              "Projects/RuptureOps/Repository/iOS build checkpoint - 2026-07-11T2314Z.md",
+              "Projects/RuptureOps/Repository/imports/star-rupture-game-analysis__20260708T190137Z/README.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          },
+          {
+            "id": "c4",
+            "checks": [
+              {
+                "any": [
+                  "reopen",
+                  "canonical checkpoint",
+                  "child checkpoint"
+                ]
+              },
+              {
+                "any": [
+                  "source references",
+                  "lineage",
+                  "import receipt"
+                ]
+              },
+              {
+                "any": [
+                  "one",
+                  "single"
+                ]
+              },
+              {
+                "any": [
+                  "current repository",
+                  "refresh",
+                  "live state"
+                ]
+              }
+            ],
+            "sources_any": [
+              "Projects/RuptureOps/Interactions/Session and interaction evidence.md"
+            ],
+            "tags": [
+              "exact_value"
+            ]
+          }
+        ],
+        "forbidden": [
+          "three independent imports",
+          "run the import in every fork",
+          "reset the dirty worktree"
+        ],
+        "grading_mode": "concept_tokens_v1"
+      }
+    }
+  }
+}

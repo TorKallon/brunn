@@ -1,0 +1,519 @@
+{
+  "schema": "straylight-experiment-summary@v1",
+  "experiment": "E04",
+  "title": "Result budget experiment",
+  "completed_at": "2026-07-28T13:03:09-07:00",
+  "status": "complete_negative",
+  "experiment_verdict": "rejected",
+  "decision": "Reject D01 in its tested form, retain the current Arm A retrieval behavior, and ship neither Arm B nor Arm C.",
+  "reason": "Both candidates passed their 640K deterministic gates and neither produced a statistically significant guard-suite regression, but neither met the RuptureOps primary tradeoff. Arm B reduced cluster-weighted RuptureOps service result characters by only 1.26% and Arm C by only 6.78%, versus the required 25% reduction and absolute target of at most 53,100 characters. Both also failed the chronic criterion: neither produced strictly more wins than losses, and each moved one previously nonzero complete-case result to 0/5.",
+  "provenance": {
+    "source_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+    "harness_sha256": "59ce22f34e31ac240543cf1366560a73b976f5c056761570f199d238e15e6030",
+    "api_image_id": "sha256:48328f547bafec436d5b4065c6926905ec6398a90894c66c880d0aac2640f4b9",
+    "api_image_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+    "model": "gpt-5.6-sol",
+    "retrieval_modes": [
+      "exact",
+      "lexical"
+    ],
+    "semantic_lane": false,
+    "verbatim_spans": false,
+    "embedding_provider": "hashing",
+    "worker_started": false,
+    "reasoning_route": "chatgpt_subscription",
+    "reasoning_api_fallback": "forbidden"
+  },
+  "predeclarations": {
+    "latency": {
+      "path": "results/2026-07-28-e04-latency-predeclaration.json",
+      "sha256": "a44caf3298dbe60760facd2bff60c6fd7622caf17210bd32de17fa357a5eead8",
+      "acceptance_maxima_ms": {
+        "open_p95": 119.4,
+        "search_p95": 106.2,
+        "concurrent_write_p95": 58.0,
+        "concurrent_search_p95": 201.8
+      }
+    },
+    "contingency": {
+      "path": "results/2026-07-28-e04-contingency-predeclaration.json",
+      "sha256": "209b2027628fac9d137378f39a663f8c86383c3f05d56e6af125e9f69d5d86f6",
+      "decision": "Do not invoke the under-specified bisection contingency in this execution."
+    },
+    "case_extension_plan": {
+      "path": "eval/e04_case_extension_plan.json",
+      "sha256": "5a50d84dafdd8dacd845e99e19b3146f26feacafc2bafb82f5aa1b89dde0843a"
+    }
+  },
+  "artifacts": {
+    "reasoning_run_set": {
+      "json_artifacts": 52,
+      "markdown_artifacts": 52,
+      "artifact_pairs": 52,
+      "combined_bytes": 19854482,
+      "ledger_sha256": "1f133d537a8df9e258c0f3bc795cf806e34019b6f8cd7c08ac7b45bd2c7b4e3a",
+      "json_ledger_sha256": "96dbaaa1d0707c9030897d72a8ccc65140503f82c1e47af81d891e653c31d470",
+      "markdown_ledger_sha256": "7cb268fa0f489097d6455a9bda5538a02f9cbb27e99d41a7b2f2727d1f92d350",
+      "ledger_definition": "SHA-256 of sorted lines formatted as '<file_sha256>  <relative_path>\\n'."
+    },
+    "aggregate": {
+      "path": "results/2026-07-28-e04-aggregate.json",
+      "sha256": "c57f5ad69ce646e784e0ddea47a6fe2e70a3ab5189e7c34a17b87fc576ee9c90",
+      "definitive": true
+    },
+    "accepted_source_audit": {
+      "path": "results/2026-07-28-e04-accepted-source-context.json",
+      "sha256": "f65d8a292c947a83cd6cc5296df86385e00951534ee5f5b438fb9343fd4a0bb3"
+    },
+    "arm_b_soak": {
+      "path": "results/2026-07-28-e04-B-soak.json",
+      "sha256": "89cfeab1e7b9861e087f4b4cda3252503a7b2ea168f958a43651d8eb16e9b014",
+      "pass": true
+    },
+    "arm_c_soak": {
+      "path": "results/2026-07-28-e04-C-soak.json",
+      "sha256": "a242ca2f6e494a21c7a3ea128810b0ef70965b051987d685b4015b1451ea8012",
+      "pass": true
+    },
+    "hydration_query_count_comparison": {
+      "path": "results/2026-07-28-e04-hydration-query-count-comparison.json",
+      "sha256": "ad3b79ffbaa68152efee30aa09c8aa09c20de000a5f2c8a56dcf6dd305cf5033",
+      "pass": true
+    },
+    "personal_preflight": {
+      "source_path": "results/2026-07-28-e01-personal-draw1.json",
+      "source_sha256": "ad5e4ff0f27a2b5466849ea91a25215b46862ef5cf24635ae5ae45c9c8b79703",
+      "regraded_path": "results/2026-07-28-e04-personal-preflight-regrade-1c37f15.json",
+      "regraded_sha256": "8f53827749964fd80acd1cc5e4cb408135533ab44f0e4d08436ed60860875d83",
+      "service_records": 15,
+      "successful_service_records": 15,
+      "graded_service_claims": 60
+    }
+  },
+  "integrity": {
+    "expected_run_artifact_pairs": 52,
+    "observed_run_artifact_pairs": 52,
+    "case_runs": 528,
+    "service_case_runs": 396,
+    "filesystem_case_runs": 132,
+    "successful_case_runs": 528,
+    "timed_out_case_runs": 0,
+    "errored_case_runs": 0,
+    "graded_claim_slots": 2112,
+    "forbidden_assertion_hits": 0,
+    "recovered_local_cli_failures": 34,
+    "unrecovered_local_cli_failures": 0,
+    "measured_non_2xx_service_operations": 0,
+    "personal_artifacts": 12,
+    "personal_artifacts_with_exactly_60_graded_claims": 12,
+    "zero_claim_observations": [
+      {
+        "arm": "e04-A",
+        "suite": "0.2",
+        "case_id": "warmind-parser-learning",
+        "draw": 1
+      },
+      {
+        "arm": "e04-B",
+        "suite": "0.2",
+        "case_id": "star-rupture-plan-revision",
+        "draw": 2
+      },
+      {
+        "arm": "e04-C",
+        "suite": "0.2",
+        "case_id": "star-rupture-plan-revision",
+        "draw": 3
+      }
+    ],
+    "arm_case_pairs_with_two_or_more_zero_claim_draws": 0,
+    "zero_composite_score_observations": 0,
+    "aggregate_reproduction": "pass; payload exactly reproduced apart from created_at",
+    "accepted_source_audit_reproduction": "pass; payload exactly reproduced apart from created_at"
+  },
+  "arms": {
+    "e04-A": {
+      "condition": "service_api",
+      "search_fair_share": false,
+      "search_char_cap": false,
+      "search_top1_hydration": false,
+      "search_section_demotion_top_n": null
+    },
+    "e04-B": {
+      "condition": "service_api",
+      "search_fair_share": true,
+      "search_char_cap": true,
+      "search_top1_hydration": false,
+      "search_section_demotion_top_n": 8
+    },
+    "e04-C": {
+      "condition": "service_api",
+      "search_fair_share": true,
+      "search_char_cap": true,
+      "search_top1_hydration": true,
+      "search_section_demotion_top_n": 8
+    },
+    "e04-F": {
+      "condition": "filesystem"
+    }
+  },
+  "claim_results": {
+    "by_arm": {
+      "e04-A": {
+        "passed": 419,
+        "total": 528,
+        "rate": 0.79356061
+      },
+      "e04-B": {
+        "passed": 401,
+        "total": 528,
+        "rate": 0.7594697
+      },
+      "e04-C": {
+        "passed": 415,
+        "total": 528,
+        "rate": 0.78598485
+      },
+      "e04-F": {
+        "passed": 442,
+        "total": 528,
+        "rate": 0.83712121
+      }
+    },
+    "pairings": {
+      "e04-A__vs__e04-B": {
+        "case_outcomes_a_wins_b_wins_ties": [
+          16,
+          11,
+          13
+        ],
+        "two_sided_exact_mcnemar_p": 1.0,
+        "cluster_mean_claim_difference_a_minus_b": 4.533333,
+        "bootstrap_95_ci_claims": [
+          -2.333333,
+          11.533333
+        ]
+      },
+      "e04-A__vs__e04-C": {
+        "case_outcomes_a_wins_b_wins_ties": [
+          17,
+          11,
+          12
+        ],
+        "two_sided_exact_mcnemar_p": 1.0,
+        "cluster_mean_claim_difference_a_minus_b": 1.333333,
+        "bootstrap_95_ci_claims": [
+          -5.2,
+          7.466667
+        ]
+      },
+      "e04-A__vs__e04-F": {
+        "case_outcomes_a_wins_b_wins_ties": [
+          9,
+          15,
+          16
+        ],
+        "two_sided_exact_mcnemar_p": 0.75390625,
+        "cluster_mean_claim_difference_a_minus_b": -5.933333,
+        "bootstrap_95_ci_claims": [
+          -13.466667,
+          1.133333
+        ]
+      },
+      "e04-B__vs__e04-C": {
+        "case_outcomes_a_wins_b_wins_ties": [
+          11,
+          14,
+          15
+        ],
+        "two_sided_exact_mcnemar_p": 1.0,
+        "cluster_mean_claim_difference_a_minus_b": -3.2,
+        "bootstrap_95_ci_claims": [
+          -11.6,
+          4.201667
+        ]
+      },
+      "e04-B__vs__e04-F": {
+        "case_outcomes_a_wins_b_wins_ties": [
+          8,
+          16,
+          16
+        ],
+        "two_sided_exact_mcnemar_p": 0.75390625,
+        "cluster_mean_claim_difference_a_minus_b": -10.466667,
+        "bootstrap_95_ci_claims": [
+          -20.466667,
+          -1.733333
+        ]
+      },
+      "e04-C__vs__e04-F": {
+        "case_outcomes_a_wins_b_wins_ties": [
+          7,
+          18,
+          15
+        ],
+        "two_sided_exact_mcnemar_p": 0.75390625,
+        "cluster_mean_claim_difference_a_minus_b": -7.266667,
+        "bootstrap_95_ci_claims": [
+          -13.066667,
+          -1.466667
+        ]
+      }
+    }
+  },
+  "candidate_comparisons_by_suite": {
+    "e04-B": {
+      "0.2": {
+        "claims_passed_a": 137,
+        "claims_passed_treatment": 133,
+        "claim_slots_per_arm": 172,
+        "two_sided_exact_mcnemar_p": 1.0,
+        "cluster_mean_service_result_chars_a": 51499.944,
+        "cluster_mean_service_result_chars_treatment": 52222.2,
+        "treatment_char_reduction_vs_a": -0.0140244
+      },
+      "personal-coordination-v0.1": {
+        "claims_passed_a": 149,
+        "claims_passed_treatment": 148,
+        "claim_slots_per_arm": 180,
+        "two_sided_exact_mcnemar_p": 1.0,
+        "cluster_mean_service_result_chars_a": 12737.933,
+        "cluster_mean_service_result_chars_treatment": 12303.044,
+        "treatment_char_reduction_vs_a": 0.03414125
+      },
+      "rupture-ops-v0.1": {
+        "claims_passed_a": 133,
+        "claims_passed_treatment": 120,
+        "claim_slots_per_arm": 176,
+        "two_sided_exact_mcnemar_p": 0.625,
+        "cluster_mean_claim_difference_a_minus_treatment": 3.266667,
+        "bootstrap_95_ci_claims": [
+          -0.333333,
+          6.2
+        ],
+        "cluster_mean_service_result_chars_a": 59975.344,
+        "cluster_mean_service_result_chars_treatment": 59221.611,
+        "treatment_char_reduction_vs_a": 0.01256738
+      }
+    },
+    "e04-C": {
+      "0.2": {
+        "claims_passed_a": 137,
+        "claims_passed_treatment": 140,
+        "claim_slots_per_arm": 172,
+        "two_sided_exact_mcnemar_p": 1.0,
+        "cluster_mean_service_result_chars_a": 51499.944,
+        "cluster_mean_service_result_chars_treatment": 46641.01,
+        "treatment_char_reduction_vs_a": 0.09434834
+      },
+      "personal-coordination-v0.1": {
+        "claims_passed_a": 149,
+        "claims_passed_treatment": 147,
+        "claim_slots_per_arm": 180,
+        "two_sided_exact_mcnemar_p": 1.0,
+        "cluster_mean_service_result_chars_a": 12737.933,
+        "cluster_mean_service_result_chars_treatment": 10498.933,
+        "treatment_char_reduction_vs_a": 0.1757742
+      },
+      "rupture-ops-v0.1": {
+        "claims_passed_a": 133,
+        "claims_passed_treatment": 128,
+        "claim_slots_per_arm": 176,
+        "two_sided_exact_mcnemar_p": 1.0,
+        "cluster_mean_claim_difference_a_minus_treatment": 0.866667,
+        "bootstrap_95_ci_claims": [
+          -3.333333,
+          4.4
+        ],
+        "cluster_mean_service_result_chars_a": 59975.344,
+        "cluster_mean_service_result_chars_treatment": 55908.078,
+        "treatment_char_reduction_vs_a": 0.06781563
+      }
+    }
+  },
+  "exact_value_results": {
+    "e04-A": {
+      "passed": 320,
+      "total": 395,
+      "rate": 0.81012658
+    },
+    "e04-B": {
+      "passed": 306,
+      "total": 395,
+      "rate": 0.77468354
+    },
+    "e04-C": {
+      "passed": 316,
+      "total": 395,
+      "rate": 0.8
+    },
+    "e04-F": {
+      "passed": 330,
+      "total": 395,
+      "rate": 0.83544304
+    }
+  },
+  "accepted_source_in_context": {
+    "all_service_claims": {
+      "accepted": 1511,
+      "total": 1584,
+      "rate": 0.9539141414141414
+    },
+    "missed_service_claims": {
+      "accepted": 276,
+      "total": 349,
+      "rate": 0.7908309455587392
+    },
+    "by_arm": {
+      "e04-A": {
+        "all_claim_rate": 0.9545454545454546,
+        "missed_claim_rate": 0.7798165137614679
+      },
+      "e04-B": {
+        "all_claim_rate": 0.9412878787878788,
+        "missed_claim_rate": 0.7559055118110236
+      },
+      "e04-C": {
+        "all_claim_rate": 0.9659090909090909,
+        "missed_claim_rate": 0.8407079646017699
+      }
+    }
+  },
+  "chronic_results": {
+    "extension_draws_4_and_5": {
+      "case_draw_pairs": 12,
+      "arm_a_claims_passed": 32,
+      "e04-B": {
+        "claims_passed": 30,
+        "wins": 3,
+        "losses": 4,
+        "ties": 5,
+        "wins_greater_than_losses": false
+      },
+      "e04-C": {
+        "claims_passed": 34,
+        "wins": 3,
+        "losses": 3,
+        "ties": 6,
+        "wins_greater_than_losses": false
+      }
+    },
+    "all_five_longitudinal_draws": {
+      "case_draw_pairs": 30,
+      "e04-B": {
+        "wins": 5,
+        "losses": 14,
+        "ties": 11,
+        "wins_greater_than_losses": false
+      },
+      "e04-C": {
+        "wins": 7,
+        "losses": 9,
+        "ties": 14,
+        "wins_greater_than_losses": false
+      }
+    },
+    "formerly_nonzero_complete_case_to_zero_of_five": {
+      "e04-B": [
+        {
+          "suite": "0.2",
+          "case_id": "star-rupture-plan-revision",
+          "arm_a_complete_passes": 2,
+          "treatment_complete_passes": 0,
+          "treatment_claim_scores": [
+            1,
+            0,
+            1,
+            1,
+            1
+          ]
+        }
+      ],
+      "e04-C": [
+        {
+          "suite": "rupture-ops-v0.1",
+          "case_id": "ruptureops-archive-import-reconciliation",
+          "arm_a_complete_passes": 3,
+          "treatment_complete_passes": 0,
+          "treatment_claim_scores": [
+            3,
+            3,
+            2,
+            3,
+            3
+          ]
+        }
+      ]
+    }
+  },
+  "performance": {
+    "scale_records": 640000,
+    "arm_b": {
+      "built_in_gates_passed": 72,
+      "built_in_gates_failed": 0,
+      "open_p95_ms": 20.875,
+      "search_p95_ms": 17.583,
+      "concurrent_write_p95_ms": 10.917,
+      "concurrent_search_p95_ms": 16.171,
+      "passes_predeclared_maxima": true
+    },
+    "arm_c": {
+      "built_in_gates_passed": 72,
+      "built_in_gates_failed": 0,
+      "open_p95_ms": 91.807,
+      "search_p95_ms": 61.423,
+      "concurrent_write_p95_ms": 14.382,
+      "concurrent_search_p95_ms": 21.273,
+      "passes_predeclared_maxima": true
+    },
+    "hydration_query_counts": {
+      "selected_search_samples": 795,
+      "observed_selected_deltas": [
+        5
+      ],
+      "selected_samples_with_delta_5": 795,
+      "unselected_samples": 407,
+      "unselected_nonzero_deltas": 0,
+      "pass": true
+    }
+  },
+  "acceptance_criteria": {
+    "ruptureops_primary": {
+      "arm_b_pass": false,
+      "arm_c_pass": false,
+      "reason": "No significant improvement and neither candidate reached a 25% character reduction or the absolute 53,100-character target."
+    },
+    "no_guard_regression": {
+      "arm_b_pass": true,
+      "arm_c_pass": true,
+      "reason": "Work and personal collapsed-case McNemar p-values were 1.0, and all 12 personal artifacts contained exactly 60 graded claims."
+    },
+    "chronic_net_positive": {
+      "arm_b_pass": false,
+      "arm_c_pass": false,
+      "reason": "B had 3 wins, 4 losses, and 5 ties in the two dedicated chronic draws; C had 3 wins, 3 losses, and 6 ties. Each also produced one formerly nonzero complete case at 0/5."
+    },
+    "soak_and_query_count": {
+      "arm_b_pass": true,
+      "arm_c_pass": true
+    },
+    "overall": false
+  },
+  "cost": {
+    "actual_usage_billed_reasoning_usd": 0.0,
+    "actual_embedding_usd": 0.0,
+    "executed_subscription_case_runs": 528,
+    "actual_subscription_equivalent_usd": 126.72,
+    "hard_ceiling_usd": 150.0,
+    "unincurred_bisection_case_runs": 54,
+    "unincurred_bisection_equivalent_usd": 12.96,
+    "embedding_warning_threshold_usd": 20.0,
+    "embedding_warning_triggered": false
+  },
+  "limitations": [
+    "The model and deterministic claim rubrics are fixed, so the result estimates one agent-policy configuration rather than all possible agents.",
+    "The candidate latency soaks were serial observations; passing the predeclared 2x maxima is not a claim of statistical latency equivalence.",
+    "The D02 verbatim feature was deliberately frozen off. E04 cannot rehabilitate the rejected D02 design.",
+    "The predeclared contingency prohibits the under-specified bisection in this execution; any future factor isolation requires a new paired and repriced experiment."
+  ]
+}
