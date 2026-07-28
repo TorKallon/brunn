@@ -924,6 +924,44 @@ def evaluate_retrieval_plan(
     }
 
 
+def is_expected_mode1_empty_semantic_plan(plan: Any) -> bool:
+    """Accept only the two safe plans PostgreSQL uses with zero ready vectors."""
+    nodes = list(iter_plan_nodes(plan))
+    relation_nodes = [
+        node
+        for node in nodes
+        if node.get("Relation Name") == "search_chunks"
+    ]
+    index_nodes = [
+        node
+        for node in nodes
+        if str(node.get("Index Name", "")).startswith("search_chunks_")
+    ]
+    if len(relation_nodes) != 1 or len(index_nodes) != 1:
+        return False
+
+    relation_node = relation_nodes[0]
+    index_node = index_nodes[0]
+    if index_node.get("Index Name") != "search_chunks_semantic_coverage_idx":
+        return False
+    if relation_node.get("Node Type") == "Index Scan":
+        return (
+            index_node is relation_node
+            and index_node.get("Node Type") == "Index Scan"
+        )
+    if relation_node.get("Node Type") != "Bitmap Heap Scan":
+        return False
+    if "embedding IS NOT NULL" not in str(
+        relation_node.get("Recheck Cond", "")
+    ):
+        return False
+    descendants = list(iter_plan_nodes(relation_node.get("Plans", [])))
+    return (
+        index_node.get("Node Type") == "Bitmap Index Scan"
+        and any(node is index_node for node in descendants)
+    )
+
+
 def flatten_numeric_timings(
     value: Any,
     *,
@@ -5125,38 +5163,11 @@ def apply_e03_gate_policy(
                 if isinstance(scale, dict)
                 else {}
             )
-            semantic_nodes = list(iter_plan_nodes(
-                semantic_plan.get("function_owner_body_explain", [])
-                if isinstance(semantic_plan, dict)
-                else []
-            ))
-            search_chunk_relation_nodes = [
-                node
-                for node in semantic_nodes
-                if node.get("Relation Name") == "search_chunks"
-            ]
-            search_chunk_index_nodes = [
-                node
-                for node in semantic_nodes
-                if str(node.get("Index Name", "")).startswith("search_chunks_")
-            ]
             expected_empty_cardinality_plan = (
-                bool(search_chunk_relation_nodes)
-                and all(
-                    node.get("Node Type") == "Bitmap Heap Scan"
-                    for node in search_chunk_relation_nodes
-                )
-                and any(
-                    "embedding IS NOT NULL"
-                    in str(node.get("Recheck Cond", ""))
-                    for node in search_chunk_relation_nodes
-                )
-                and bool(search_chunk_index_nodes)
-                and all(
-                    node.get("Node Type") == "Bitmap Index Scan"
-                    and node.get("Index Name")
-                    == "search_chunks_semantic_coverage_idx"
-                    for node in search_chunk_index_nodes
+                is_expected_mode1_empty_semantic_plan(
+                    semantic_plan.get("function_owner_body_explain", [])
+                    if isinstance(semantic_plan, dict)
+                    else []
                 )
             )
             zero_vector_cardinality_proven = (

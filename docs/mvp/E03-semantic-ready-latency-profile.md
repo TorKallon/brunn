@@ -29,7 +29,11 @@ sole Compose network. `eval/e03_mode1.py` proves a
 hashing-provider, semantic-disabled, no-worker baseline whose chunks stay
 zero-embedded and pending. Its 64K plan gate keeps both authoritative SQL
 fingerprints and the lexical GIN plan blocking; the HNSW plan is explicitly
-not applicable until a semantic-ready arm has nonzero vector cardinality, and
+not applicable until a semantic-ready arm has nonzero vector cardinality. The
+waiver accepts only PostgreSQL's two zero-vector access shapes for the exact
+partial `search_chunks_semantic_coverage_idx`: a direct index scan, or a
+bitmap heap/index pair whose recheck includes `embedding IS NOT NULL`. It
+rejects mixed, multiple, sequential, and wrong-index shapes. The HNSW plan
 remains blocking in Modes 2 and 3. `eval/e03_mode2.py` owns a run-unique mock lifecycle
 and proves API and worker point to that exact mock with dummy credentials
 before import. `eval/e03_mode3.py` owns the real-provider proxy and captures
