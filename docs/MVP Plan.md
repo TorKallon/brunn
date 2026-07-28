@@ -74,7 +74,7 @@ Infrastructure — no reasoning-quality risk (code, no experiment gate):
 
 | ID | Title | Status | Notes |
 |---|---|---|---|
-| [D09](mvp/D09-latency-contract-and-gates.md) | Latency contract: timings_ms, regression-tier gates, per-op query budgets, EXPLAIN assertions | Proposed — not started | Build first; enabler for E03 mode 3 |
+| [D09](mvp/D09-latency-contract-and-gates.md) | Latency contract: timings_ms, regression-tier gates, per-op query budgets, EXPLAIN assertions | Implemented in harness — isolated acceptance runs remain | Enabler for E03 mode 3; query budgets become measured only after the coordinated run |
 | [D08](mvp/D08-legacy-freeze-and-deletion.md) | Legacy freeze now; deletion later (needs gates 3–4 AND n≥3 parity); dream-retry fix now; MCP residue removal now | Proposed — not started | Dream-retry fix and MCP residue are immediate |
 | [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — not started | Deferred lexical consolidation needs [E05](mvp/E05-lexical-consolidation-guard.md) |
 | [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Proposed — not started | Kills the MinIO CVE release blocker |
@@ -130,12 +130,18 @@ touch only the harness; Tier A touches only deployment and data. Feature work
    spend estimate first.
 2. Ship the immediate D08 items: dream-retry permanent-failure fix, MCP legacy
    residue removal, legacy cargo-feature freeze.
-3. Build D09 (timings, regression tiers, query budgets, EXPLAIN gate).
+3. Run D09's isolated 64K/640K acceptance and calibrate the fail-closed
+   code-shape query budgets only if the recorded counts prove an adjustment is
+   necessary.
 4. Execute Tier A per D14: tag/retain v8, export→import owner corpus to Nyx,
    fidelity audit, read-only tokens, three-client read canaries per D13.
 5. Then Tier B per D14 — that is the MVP.
 
 ## Change log
 
+- 2026-07-27: D09 implementation landed in the harness: request-scoped SQL
+  counting, 64K/640K regression tiers, checked query budgets, and
+  migration/database-fingerprinted EXPLAIN assertions. Isolated-stack
+  acceptance and measured budget confirmation remain.
 - 2026-07-27: Plan created and adopted as authoritative. All items Proposed /
   Specified; nothing started.

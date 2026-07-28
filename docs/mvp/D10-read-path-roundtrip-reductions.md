@@ -18,10 +18,13 @@ retains the prior response and sequential-query behavior. The separately
 default-off `lexical_single_scan` treatment also exists for E05.
 
 This is implementation readiness, not acceptance evidence. D09's
-`query_count` field is reserved in the current envelope, but the request-scoped
-counter and checked-in budgets are not implemented. Acceptance gate 1 and the
-query-count portions of gates 3/E05 therefore remain blocked on D09. No
-substitute query-count claim is recorded.
+request-scoped `query_count` counter and checked-in fail-closed budgets are now
+implemented, and the D10 generation-piggyback lexical wrapper shares its SQL
+constant with the D09 drift contract. Acceptance gate 1 and the query-count
+portions of gates 3/E05 still require the coordinated isolated-stack run:
+record both flag states, confirm the default-safe budget, and pin the lower
+treatment count only from the resulting artifact. No substitute query-count
+claim is recorded.
 
 ## Problem and evidence
 

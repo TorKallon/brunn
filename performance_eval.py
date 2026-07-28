@@ -7,6 +7,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import statistics
@@ -89,6 +90,22 @@ DEFAULT_THRESHOLDS = {
     "latency_growth_floor_ms": 1_000.0,
     "protocol_to_evidence_ratio": 1.0,
 }
+REGRESSION_THRESHOLDS = {
+    "open_p95_ms": 500.0,
+    "search_p95_ms": 500.0,
+    "broad_search_p95_ms": 500.0,
+    "overflow_search_p95_ms": 500.0,
+    "old_source_search_p95_ms": 500.0,
+    "read_p95_ms": 100.0,
+    "checkpoint_ms": 200.0,
+    "resume_ms": 400.0,
+    "concurrent_write_p95_ms": 500.0,
+    "concurrent_search_p95_ms": 750.0,
+}
+QUERY_BUDGETS_PATH = PROJECT_ROOT / "eval" / "query_budgets.json"
+RETRIEVAL_PLAN_CONTRACT_PATH = (
+    PROJECT_ROOT / "eval" / "retrieval_plan_contract.json"
+)
 
 
 @dataclass(frozen=True)
@@ -192,6 +209,197 @@ def response_timings(value: Any) -> dict[str, Any]:
         return {}
     timings = value.get("timings_ms")
     return dict(timings) if isinstance(timings, dict) else {}
+
+
+def response_query_count(value: Any) -> int | None:
+    if not isinstance(value, dict):
+        return None
+    count = value.get("query_count")
+    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        return count
+    return None
+
+
+def summarize_query_counts(
+    samples: Sequence[tuple[str, dict[str, Any]]],
+) -> dict[str, Any]:
+    operation_aliases = {
+        "open": "open",
+        "search": "search",
+        "broad_search": "search",
+        "bounded_overflow_search": "search",
+        "old_source_search": "search",
+        "concurrent_search": "search",
+        "read": "read",
+        "write": "write",
+        "checkpoint": "checkpoint",
+        "resume": "resume",
+    }
+    by_operation: dict[str, list[int]] = {}
+    missing: dict[str, int] = {}
+    for sample_name, body in samples:
+        operation = operation_aliases.get(sample_name)
+        if operation is None:
+            continue
+        count = response_query_count(body)
+        if count is None:
+            missing[operation] = missing.get(operation, 0) + 1
+            continue
+        by_operation.setdefault(operation, []).append(count)
+    return {
+        "definition": (
+            "completed sqlx::query events within the request scope; includes "
+            "authentication, transaction context/setup, application SQL, and "
+            "COMMIT; excludes SQLx's unlogged protocol-level BEGIN"
+        ),
+        "by_operation": {
+            operation: {
+                "samples": len(values),
+                "min": min(values),
+                "max": max(values),
+                "counts": values,
+            }
+            for operation, values in sorted(by_operation.items())
+        },
+        "missing_by_operation": dict(sorted(missing.items())),
+    }
+
+
+def load_query_budgets(
+    path: Path = QUERY_BUDGETS_PATH,
+) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema") != "straylight-query-budgets@v1":
+        raise ValueError(f"unsupported query-budget schema in {path}")
+    operations = payload.get("operations")
+    if not isinstance(operations, dict) or not operations:
+        raise ValueError(f"query-budget operations are missing in {path}")
+    for operation, budget in operations.items():
+        if not isinstance(budget, dict):
+            raise ValueError(f"invalid query budget for {operation}")
+        comparison = budget.get("comparison")
+        if comparison == "exact":
+            value = budget.get("count")
+        elif comparison == "at_most":
+            value = budget.get("max")
+        else:
+            raise ValueError(
+                f"query budget {operation} has invalid comparison {comparison!r}"
+            )
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"query budget {operation} is not a non-negative integer")
+    return payload
+
+
+def evaluate_query_budgets(
+    summary: dict[str, Any],
+    budgets: dict[str, Any],
+) -> list[dict[str, Any]]:
+    observed = summary.get("by_operation", {})
+    missing = summary.get("missing_by_operation", {})
+    gates = []
+    for operation, budget in budgets["operations"].items():
+        values = observed.get(operation, {}).get("counts", [])
+        comparison = budget["comparison"]
+        threshold = (
+            budget["count"] if comparison == "exact" else budget["max"]
+        )
+        within = bool(values) and all(
+            value == threshold if comparison == "exact" else value <= threshold
+            for value in values
+        )
+        gates.append({
+            "name": f"query_budget_{operation}",
+            "pass": within and int(missing.get(operation, 0)) == 0,
+            "observed": {
+                "counts": values,
+                "missing": int(missing.get(operation, 0)),
+            },
+            "threshold": {
+                "comparison": comparison,
+                "count": threshold,
+            },
+        })
+    return gates
+
+
+def normalize_sql(value: str) -> str:
+    return " ".join(value.split())
+
+
+def sql_fingerprint(value: str) -> str:
+    return hashlib.sha256(normalize_sql(value).encode("utf-8")).hexdigest()
+
+
+def extract_sql_function_body(source: str, function_name: str) -> str:
+    pattern = re.compile(
+        rf"CREATE(?:\s+OR\s+REPLACE)?\s+FUNCTION\s+"
+        rf"{re.escape(function_name)}\s*\([^)]*\).*?"
+        r"\bAS\s+\$\$(.*?)\$\$\s*;",
+        re.IGNORECASE | re.DOTALL,
+    )
+    match = pattern.search(source)
+    if match is None:
+        raise ValueError(f"could not extract SQL body for {function_name}")
+    return match.group(1).strip()
+
+
+def iter_plan_nodes(plan: Any) -> Iterator[dict[str, Any]]:
+    if isinstance(plan, list):
+        for item in plan:
+            yield from iter_plan_nodes(item)
+    elif isinstance(plan, dict):
+        if isinstance(plan.get("Node Type"), str):
+            yield plan
+        for value in plan.values():
+            if isinstance(value, (list, dict)):
+                yield from iter_plan_nodes(value)
+
+
+def evaluate_retrieval_plan(
+    plan: Any,
+    *,
+    lane: str,
+    expected_index: str,
+) -> dict[str, Any]:
+    nodes = list(iter_plan_nodes(plan))
+    forbidden = [
+        {
+            "node_type": node.get("Node Type"),
+            "relation": node.get("Relation Name"),
+        }
+        for node in nodes
+        if node.get("Node Type") == "Seq Scan"
+        and node.get("Relation Name") == "search_chunks"
+    ]
+    expected_node_type = (
+        "Bitmap Index Scan" if lane == "lexical" else "Index Scan"
+    )
+    matched = [
+        {
+            "node_type": node.get("Node Type"),
+            "index_name": node.get("Index Name"),
+        }
+        for node in nodes
+        if node.get("Node Type") == expected_node_type
+        and node.get("Index Name") == expected_index
+    ]
+    return {
+        "pass": bool(matched) and not forbidden,
+        "lane": lane,
+        "expected": {
+            "node_type": expected_node_type,
+            "index_name": expected_index,
+            "no_seq_scan_on": "search_chunks",
+        },
+        "matched": matched,
+        "forbidden": forbidden,
+        "node_types": sorted({
+            str(node.get("Node Type"))
+            for node in nodes
+            if node.get("Node Type")
+        }),
+    }
 
 
 def flatten_numeric_timings(
@@ -941,6 +1149,236 @@ def run_psql(container: str, sql: str) -> str:
     return completed.stdout.strip()
 
 
+def sql_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def container_env_value(container: str, name: str) -> str | None:
+    completed = subprocess.run(
+        [
+            "docker",
+            "inspect",
+            "--format={{json .Config.Env}}",
+            container,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"could not inspect environment for {container}")
+    values = json.loads(completed.stdout)
+    prefix = f"{name}="
+    return next(
+        (
+            value[len(prefix):]
+            for value in values
+            if isinstance(value, str) and value.startswith(prefix)
+        ),
+        None,
+    )
+
+
+def explain_json(container: str, prelude: str, statement: str) -> Any:
+    output = run_psql(
+        container,
+        f"""
+BEGIN;
+{prelude}
+EXPLAIN (FORMAT JSON) {statement};
+ROLLBACK;
+""",
+    )
+    return json.loads(output)
+
+
+def retrieval_plan_assertions(
+    container: str,
+    *,
+    target_path: str,
+    query: str,
+    contract_path: Path = RETRIEVAL_PLAN_CONTRACT_PATH,
+) -> dict[str, Any]:
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    if contract.get("schema") != "straylight-retrieval-plan-contract@v1":
+        raise ValueError(f"unsupported retrieval plan contract in {contract_path}")
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", str(contract.get("app_role", ""))):
+        raise ValueError("retrieval plan contract has an unsafe app role")
+
+    identity_lines = run_psql(
+        container,
+        f"""
+SELECT entry.user_id::text || '|' || credential.id::text
+FROM straylight.entries AS entry
+CROSS JOIN LATERAL (
+  SELECT id
+  FROM straylight.api_credentials
+  WHERE user_id=entry.user_id AND disabled_at IS NULL
+  ORDER BY created_at,id
+  LIMIT 1
+) AS credential
+WHERE entry.path={sql_literal(target_path)}
+ORDER BY entry.updated_at DESC,entry.id DESC
+LIMIT 1;
+""",
+    ).splitlines()
+    identity = identity_lines[-1] if identity_lines else ""
+    try:
+        user_id, credential_id = identity.split("|", 1)
+        uuid.UUID(user_id)
+        uuid.UUID(credential_id)
+    except (ValueError, IndexError) as error:
+        raise RuntimeError(
+            f"could not resolve plan-gate identity for {target_path}"
+        ) from error
+
+    vector_literal = (
+        "'[" + ",".join(["0.001"] * 1536) + "]'::public.vector"
+    )
+    request_timeout_text = container_env_value(
+        container,
+        "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS",
+    )
+    try:
+        request_timeout_seconds = int(request_timeout_text or "30")
+    except ValueError as error:
+        raise RuntimeError(
+            "STRAYLIGHT_REQUEST_TIMEOUT_SECONDS is not an integer"
+        ) from error
+    statement_timeout_ms = max(1, request_timeout_seconds - 5) * 1_000
+    context_gucs = "\n".join([
+        f"SET LOCAL app.current_user_id={sql_literal(user_id)};",
+        f"SET LOCAL app.current_credential_id={sql_literal(credential_id)};",
+        "SET LOCAL app.context_valid='true';",
+        "SET LOCAL app.capabilities='open,query,read';",
+        "SET LOCAL app.scope_refs='';",
+        "SET LOCAL app.scope_ids='';",
+        f"SET LOCAL statement_timeout={sql_literal(f'{statement_timeout_ms}ms')};",
+        "SET LOCAL hnsw.iterative_scan='relaxed_order';",
+    ])
+    role_prelude = (
+        f"SET LOCAL ROLE {contract['app_role']};\n" + context_gucs
+    )
+    owner_prelude = context_gucs + "\nSET LOCAL row_security=off;"
+
+    lanes: dict[str, Any] = {}
+    drift_checks = []
+    for lane, lane_contract in contract["lanes"].items():
+        function_name = str(lane_contract["function_name"])
+        regprocedure = str(lane_contract["regprocedure"])
+        invocation_sql = str(lane_contract["invocation_sql"])
+        if not re.fullmatch(
+            r"[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*",
+            function_name,
+        ):
+            raise ValueError(f"unsafe retrieval function name for {lane}")
+        if not re.fullmatch(
+            r"[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\([a-z0-9_(), ]+\)",
+            regprocedure,
+        ):
+            raise ValueError(f"unsafe retrieval regprocedure for {lane}")
+        if invocation_sql != f"SELECT * FROM {function_name}($1)":
+            raise ValueError(f"retrieval invocation drift for {lane}")
+        migration = (PROJECT_ROOT / lane_contract["migration"]).resolve()
+        if not migration.is_relative_to(PROJECT_ROOT.resolve()):
+            raise ValueError(f"retrieval migration escapes project root for {lane}")
+        source_body = extract_sql_function_body(
+            migration.read_text(encoding="utf-8"),
+            function_name,
+        )
+        source_fingerprint = sql_fingerprint(source_body)
+        installed_body = run_psql(
+            container,
+            (
+                "SELECT prosrc FROM pg_proc "
+                f"WHERE oid={sql_literal(regprocedure)}"
+                "::regprocedure;"
+            ),
+        )
+        installed_fingerprint = sql_fingerprint(installed_body)
+        expected_fingerprint = lane_contract["body_sha256"]
+        drift = {
+            "lane": lane,
+            "migration": lane_contract["migration"],
+            "expected_sha256": expected_fingerprint,
+            "source_sha256": source_fingerprint,
+            "installed_sha256": installed_fingerprint,
+            "pass": (
+                source_fingerprint == expected_fingerprint
+                and installed_fingerprint == expected_fingerprint
+            ),
+        }
+        drift_checks.append(drift)
+
+        if lane == "lexical":
+            argument = sql_literal(query)
+            body_statement = re.sub(
+                r"\bp_query\b",
+                argument,
+                source_body,
+            )
+        elif lane == "semantic":
+            argument = vector_literal
+            body_statement = re.sub(
+                r"\bp_embedding\b",
+                argument,
+                source_body,
+            )
+        else:
+            raise ValueError(f"unsupported retrieval plan lane {lane}")
+
+        invocation = invocation_sql.replace(
+            "$1",
+            argument,
+        )
+        invocation_plan = explain_json(
+            container,
+            role_prelude,
+            invocation,
+        )
+        body_plan = explain_json(
+            container,
+            owner_prelude,
+            body_statement,
+        )
+        plan_assertion = evaluate_retrieval_plan(
+            body_plan,
+            lane=lane,
+            expected_index=lane_contract["expected_index"],
+        )
+        lanes[lane] = {
+            "app_role_invocation_explain": invocation_plan,
+            "function_owner_body_explain": body_plan,
+            "plan_assertion": plan_assertion,
+            "pass": drift["pass"] and plan_assertion["pass"],
+        }
+
+    passed = all(item["pass"] for item in drift_checks) and all(
+        lane["pass"] for lane in lanes.values()
+    )
+    return {
+        "status": "complete",
+        "pass": passed,
+        "contract": str(contract_path.relative_to(PROJECT_ROOT)),
+        "scale_identity_path": target_path,
+        "production_gucs": {
+            "hnsw.iterative_scan": "relaxed_order",
+            "statement_timeout_ms": statement_timeout_ms,
+            "row_security_for_function_body": "off",
+        },
+        "app_role": contract["app_role"],
+        "explain_boundary": (
+            "PostgreSQL represents SECURITY DEFINER SQL-function calls as a "
+            "Function Scan. The gate therefore EXPLAINs the callable as the "
+            "app role to prove the invocation boundary, then EXPLAINs the "
+            "fingerprinted installed function body with its owner/RLS "
+            "semantics to assert nested search_chunks plan nodes."
+        ),
+        "sql_drift": drift_checks,
+        "lanes": lanes,
+    }
+
+
 def database_snapshot(container: str) -> DatabaseSnapshot:
     sql = r"""
 CREATE TEMP TABLE benchmark_counts(table_name text PRIMARY KEY, row_count bigint);
@@ -1502,6 +1940,7 @@ def concurrent_write_search_probe(
             write_body, write_ms = write_future.result()
             search_results = [future.result() for future in search_futures]
         if response_samples is not None:
+            response_samples.append(("write", write_body))
             response_samples.extend(
                 ("concurrent_search", body)
                 for body, _ in search_results
@@ -1850,6 +2289,7 @@ def benchmark_scale(
             "source_refs": [],
         },
     )
+    response_samples.append(("checkpoint", checkpoint))
     checkpoint_id = str(
         recursive_find(checkpoint, "checkpoint_id")
         or recursive_find(checkpoint, "checkpoint_ref")
@@ -2052,6 +2492,25 @@ def benchmark_scale(
             "rows": sum(checkpoint_growth.values()),
             "tables": checkpoint_growth,
         }
+    query_counts = summarize_query_counts(response_samples)
+    plan_assertions = (
+        retrieval_plan_assertions(
+            db_container,
+            target_path=target_path,
+            query=discovery_key,
+        )
+        if db_container
+        and protocol == "simple"
+        and scale in {PRODUCTION_RECORDS, FUTURE_RECORDS}
+        else {
+            "status": "not_applicable",
+            "pass": None,
+            "reason": (
+                "plan assertions run only for simple-core 64K/640K scales "
+                "with --db-container"
+            ),
+        }
+    )
     return {
         "scale": scale,
         "protocol": protocol,
@@ -2122,6 +2581,8 @@ def benchmark_scale(
                 + resume_timing_samples
             )
         ),
+        "query_counts": query_counts,
+        "retrieval_plan_assertions": plan_assertions,
         "boundary_probe": boundary_probe,
         "flat_file_control": flat_file_control,
         "flat_file_control_reused_from": flat_file_control_source,
@@ -2296,6 +2757,105 @@ def evaluate_gates(
                 True,
             ),
         ])
+    query_count_scales = [
+        item
+        for item in scales
+        if item.get("protocol") == "simple" and "query_counts" in item
+    ]
+    if query_count_scales:
+        combined_counts: dict[str, list[int]] = {}
+        combined_missing: dict[str, int] = {}
+        for item in query_count_scales:
+            summary = item["query_counts"]
+            for operation, observed in summary.get("by_operation", {}).items():
+                combined_counts.setdefault(operation, []).extend(
+                    int(value) for value in observed.get("counts", [])
+                )
+            for operation, count in summary.get(
+                "missing_by_operation",
+                {},
+            ).items():
+                combined_missing[operation] = (
+                    combined_missing.get(operation, 0) + int(count)
+                )
+        combined_summary = {
+            "by_operation": {
+                operation: {"counts": values}
+                for operation, values in combined_counts.items()
+            },
+            "missing_by_operation": combined_missing,
+        }
+        gates.extend(
+            (
+                gate["name"],
+                gate["pass"],
+                gate["observed"],
+                gate["threshold"],
+            )
+            for gate in evaluate_query_budgets(
+                combined_summary,
+                load_query_budgets(),
+            )
+        )
+    for item in scales:
+        if (
+            item.get("protocol") == "simple"
+            and item["scale"] in {PRODUCTION_RECORDS, FUTURE_RECORDS}
+        ):
+            plan = item.get("retrieval_plan_assertions", {})
+            gates.append((
+                f"retrieval_plan_assertions_at_{item['scale']}",
+                plan.get("status") == "complete" and plan.get("pass") is True,
+                {
+                    "status": plan.get("status", "missing"),
+                    "sql_drift": plan.get("sql_drift"),
+                    "lanes": {
+                        lane: details.get("plan_assertion")
+                        for lane, details in plan.get("lanes", {}).items()
+                    },
+                },
+                {
+                    "lexical": (
+                        "Bitmap Index Scan using search_chunks_fts_idx"
+                    ),
+                    "semantic": (
+                        "Index Scan using search_chunks_embedding_hnsw_idx"
+                    ),
+                    "forbidden": "Seq Scan on search_chunks",
+                    "sql_drift": False,
+                },
+            ))
+    for item in scales:
+        if item["scale"] not in {PRODUCTION_RECORDS, FUTURE_RECORDS}:
+            continue
+        regression_observed = {
+            "open_p95_ms": item.get("open_p95_ms"),
+            "search_p95_ms": item.get("search_p95_ms"),
+            "broad_search_p95_ms": item.get("broad_search_p95_ms"),
+            "overflow_search_p95_ms": item.get("overflow_search_p95_ms"),
+            "old_source_search_p95_ms": item.get("old_source_search_p95_ms"),
+            "read_p95_ms": item.get("read_p95_ms"),
+            "checkpoint_ms": item.get("checkpoint_ms"),
+            "resume_ms": item.get("resume_ms"),
+            "concurrent_write_p95_ms": item.get(
+                "concurrent_probe",
+                {},
+            ).get("write_p95_ms"),
+            "concurrent_search_p95_ms": item.get(
+                "concurrent_probe",
+                {},
+            ).get("search_p95_ms"),
+        }
+        for metric, threshold in REGRESSION_THRESHOLDS.items():
+            observed = regression_observed[metric]
+            gates.append((
+                f"regression_tier_{item['scale']}_{metric}",
+                isinstance(observed, (int, float))
+                and not isinstance(observed, bool)
+                and float(observed) <= threshold,
+                observed,
+                threshold,
+            ))
     semantic_ready_scales = [
         item
         for item in scales
@@ -3093,6 +3653,22 @@ def command_run(args: argparse.Namespace) -> int:
         "future_reference_records": FUTURE_RECORDS,
         "scales": scales,
         "thresholds": DEFAULT_THRESHOLDS,
+        "regression_thresholds": REGRESSION_THRESHOLDS,
+        "query_budget_contract": {
+            "path": str(QUERY_BUDGETS_PATH.relative_to(PROJECT_ROOT)),
+            "sha256": hashlib.sha256(
+                QUERY_BUDGETS_PATH.read_bytes()
+            ).hexdigest(),
+            "contract": load_query_budgets(),
+        },
+        "retrieval_plan_contract": {
+            "path": str(
+                RETRIEVAL_PLAN_CONTRACT_PATH.relative_to(PROJECT_ROOT)
+            ),
+            "sha256": hashlib.sha256(
+                RETRIEVAL_PLAN_CONTRACT_PATH.read_bytes()
+            ).hexdigest(),
+        },
         "gates": gates,
         "errors": errors,
         "pass": bool(scales and not errors and all(gate["pass"] for gate in gates)),

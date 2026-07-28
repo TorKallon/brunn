@@ -7,6 +7,8 @@ use axum::{
 use tracing::Instrument;
 use uuid::Uuid;
 
+use crate::request_query_count;
+
 const REQUEST_ID_HEADER: HeaderName = HeaderName::from_static("x-request-id");
 
 tokio::task_local! {
@@ -22,16 +24,15 @@ pub async fn middleware(mut request: Request, next: Next) -> Response {
         .map(str::to_owned)
         .unwrap_or_else(new_request_id);
     let span = tracing::info_span!("http_request", request_id = %request_id);
-    REQUEST_ID
-        .scope(request_id.clone(), async move {
-            request.extensions_mut().insert(request_id.clone());
-            let mut response = next.run(request).instrument(span).await;
-            if let Ok(header) = HeaderValue::from_str(&request_id) {
-                response.headers_mut().insert(REQUEST_ID_HEADER, header);
-            }
-            response
-        })
-        .await
+    request_query_count::scope(REQUEST_ID.scope(request_id.clone(), async move {
+        request.extensions_mut().insert(request_id.clone());
+        let mut response = next.run(request).instrument(span).await;
+        if let Ok(header) = HeaderValue::from_str(&request_id) {
+            response.headers_mut().insert(REQUEST_ID_HEADER, header);
+        }
+        response
+    }))
+    .await
 }
 
 pub fn current_request_id() -> String {

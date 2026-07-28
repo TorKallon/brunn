@@ -1,6 +1,6 @@
 # D09 — Latency Contract and Gates
 
-Status: Partially implemented — part (a) is ready; parts (b)-(d) remain
+Status: Implemented in harness — isolated-stack 64K/640K acceptance runs remain
 Date: 2026-07-27
 Depends on: none
 Gated by: none (not context-shaping; all gates here are deterministic, no paired-draw experiment required)
@@ -31,16 +31,30 @@ checkpoint text, excerpts, and anything an agent can quote back into context;
 MCP clients pass it through untouched. `performance_eval.py` records
 `timings_ms` per sample so p50/p95/p99 per phase becomes reportable.
 
-Implementation note (2026-07-27): part (a) now emits open/search phase timing
+Implementation note (2026-07-27): part (a) emits open/search phase timing
 metadata behind `STRAYLIGHT_OBSERVABILITY_TIMINGS_MS` (default on), records
 phase percentiles in `performance_eval.py`, and gates top-level phase-sum
 sanity. E03's `--wait-semantic` and `--unique-queries` harness modes, its
 semantic-ready no-deferred-lane assertion, repeated resume sampling, and an
-explicit estimated embedding-spend field are also implemented. Parts (b)-(d)
-remain blocked on measured regression baselines, request-scoped SQL statement
-counting plus `eval/query_budgets.json`, and the production-GUC EXPLAIN
-assertions respectively. The optional `query_count` envelope field is reserved
-but is not emitted until part (c) lands.
+explicit estimated embedding-spend field are also implemented.
+
+Parts (b)-(d) are now wired into `performance_eval.py`. The 64K/640K inner
+latency tier is blocking; request-scoped SQLx completion events are counted
+without enabling SQL logs and emitted as `query_count`; the six-operation
+contract is checked in at `eval/query_budgets.json`; and the 64K/640K plan gate
+fingerprints the authoritative migration function bodies and installed
+`pg_proc.prosrc` before checking the GIN/HNSW plans. PostgreSQL deliberately
+shows a `SECURITY DEFINER` SQL function as a `Function Scan`, so the plan gate
+has two explicit halves: EXPLAIN the callable as `app_ro`, then EXPLAIN the
+fingerprinted function body under its owner and `row_security=off` semantics.
+Both use the production request GUCs, including
+`hnsw.iterative_scan=relaxed_order`.
+
+The code-shape budgets are intentionally fail-closed on the first isolated
+run. They are not yet called measured baselines: the coordinated 3,340/64K
+run must record the observed counts, confirm the pinned exact/upper values,
+and update only a demonstrably wrong budget with an evidence artifact. No
+live Nyx service or database was touched while implementing the gate.
 
 ### (b) Regression-tier gates at 64K and 640K
 
@@ -62,7 +76,7 @@ Gates run at 64K (default `performance_eval.py` scale) per release and at 640K (
 
 The 07-26 failure class — unbudgeted synchronous work — is scale-dependent in latency but scale-independent in shape: it always adds statements to the request path. So we gate the shape, deterministically:
 
-- Wrap the connection pool with an in-process per-request statement counter (no schema; counter exposed alongside `timings_ms` as `query_count`).
+- Count SQLx statement-completion events within the request task scope (no schema; counter exposed alongside `timings_ms` as `query_count`). This includes authentication, transaction context/setup, application SQL, and `COMMIT`; SQLx 0.9 does not emit an event for its protocol-level `BEGIN`, and detached usage bookkeeping is intentionally excluded.
 - Build item: measure current statement counts for open, search, read, write, checkpoint, resume on the clean 3,340-record fixture (results/2026-07-27-3340-clean-30-sample.json corpus) and record them as the baseline in a checked-in budget file (eval/query_budgets.json).
 - Gate: each operation's count must equal the budget exactly (or ≤ budget where counts are legitimately variable, e.g. batched queries ≤16). Any change requires editing the budget file in the same PR — a visible, reviewable diff instead of a silent accretion.
 
@@ -78,7 +92,13 @@ At 64K, reproduce the SECURITY DEFINER candidate-function SQL as the app role, w
 
 This guards against silent planner flips (statistics drift, index bloat, a migration dropping an index) that latency percentiles only reveal after the fact at scale.
 
-Lockstep-maintenance cost, acknowledged: the gate duplicates SQL that lives in apps/api/src/simple_core.rs and migrations 0051-0055. If they drift, the gate tests stale SQL and passes vacuously. Mitigation: extract the candidate SQL into shared text constants included by both simple_core.rs and the harness (or have the harness fingerprint the SQL text against the simple_core.rs source and fail on mismatch). This drift check is part of the gate, not optional.
+Lockstep-maintenance cost, acknowledged: the function bodies live in
+migrations 0051/0055, while the request path invokes them from
+`simple_core.rs`. The default and D10 generation-piggyback call text is now
+centralized in `apps/api/src/retrieval_sql.rs`; the plan contract fingerprints each
+authoritative migration body and compares that fingerprint to the installed
+`pg_proc.prosrc` before any plan can pass. A migration, installed-database, or
+invocation drift is therefore a blocking, visible failure.
 
 ## What this does NOT change
 
@@ -99,8 +119,8 @@ Lockstep-maintenance cost, acknowledged: the gate duplicates SQL that lives in a
 1. `timings_ms` phases sum to within 5% of `total` across a 30-sample 64K run; per-phase p50/p95/p99 reportable by `performance_eval.py`.
 2. Byte-diff: context-bearing response fields identical with `observability.timings_ms` on/off.
 3. Regression tier (table above) green at 64K, 30 samples, clean git tree fingerprint; 640K soak green before any Tier C shadow release.
-4. eval/query_budgets.json exists with measured baselines for all six operations; budget assertion wired into `performance_eval.py` correctness markers; a deliberately added extra query in a scratch branch fails the gate (negative test).
-5. EXPLAIN gate green at 64K including the SQL-drift fingerprint check; a scratch-branch `DROP INDEX` on the GIN index fails the gate (negative test).
+4. `eval/query_budgets.json` exists for all six operations; budget assertions are wired into `performance_eval.py`; the checked negative test proves a single over-budget query fails. Final acceptance still requires the isolated run to turn the pinned code-shape values into measured baselines.
+5. EXPLAIN gate green at 64K including the SQL-drift fingerprint check; checked negative plan fixtures prove a missing expected index or `Seq Scan` on `search_chunks` fails without mutating any database.
 
 ## Rollout and kill switch
 

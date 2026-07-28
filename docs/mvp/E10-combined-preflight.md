@@ -1,6 +1,6 @@
 # E10 — Combined Preflight
 
-Status: Specified — not run
+Status: Deterministic D09 preflight implemented — not run
 Date: 2026-07-27
 Gates: D01, D02, D03, D04, D05 in combination — the final pre-launch gate before Tier C sole authority (D14-migration-and-authority-tiers.md, which lists E10 in gate 5 and the Tier C entry requirements); no cutover proceeds without it
 Phase: 1 (requires flagged feature build — all shipped Dxx flags landed)
@@ -37,7 +37,7 @@ Full 5-suite matrix, 57 cases / 228 claims (agent-work 13/52, recent 12/48, rupt
 MM-DD is the run date.
 
 1. Freeze the launch flag set; record the flag manifest; verify clean git tree.
-2. Deterministic pass first (cheap, fails fast): `python performance_eval.py run --label e10-perf-64k --scales 64000 --samples 30 --out results/2026-MM-DD-e10-perf-64k.json` with all flags on — all D09 gates (regression tier, query-count budgets vs eval/query_budgets.json, EXPLAIN plan assertions, phase-sum sanity), then `python performance_eval.py run --label e10-perf-640k --future-soak --out results/2026-MM-DD-e10-perf-640k.json` including the concurrent write/search probe, semantic-failure probe, checkpoint footprint (≤100 rows/4MiB), protocol-to-evidence ratio ≤1.0, and flat-file control. Any red gate stops the experiment before a single reasoning dollar is spent.
+2. Deterministic pass first (cheap, fails fast), against the exact isolated API image and database container: `python performance_eval.py run --protocol simple --label e10-perf-64k --scales 64000 --samples 30 --api-container <api> --db-container <db> --out results/2026-MM-DD-e10-perf-64k.json` with all flags on — all D09 gates (regression tier, query-count budgets vs `eval/query_budgets.json`, app-role/function-body EXPLAIN plan assertions, SQL-drift fingerprints, phase-sum sanity), then `python performance_eval.py run --protocol simple --label e10-perf-640k --future-soak --api-container <api> --db-container <db> --out results/2026-MM-DD-e10-perf-640k.json` including the concurrent write/search probe, semantic-failure probe, checkpoint footprint (≤100 rows/4MiB), protocol-to-evidence ratio ≤1.0, and flat-file control. Supply both semantic-failure hooks required by the harness. Any red gate stops the experiment before a single reasoning dollar is spent. The first D09-enabled run must also confirm that the checked-in code-shape query budgets are the observed default-safe counts before they are described as measured baselines.
 3. For each draw N in 1..3, for each manifest M in {work, recent_work, rupture_ops, personal_coordination}:
    `python agent_work_eval.py run --manifest eval/M_cases.json --condition service_api --condition filesystem_sidecar --concurrency 3 --timeout 360 --run-id e10-M-draw<N> --out results/2026-MM-DD-e10-M-draw<N>.json --report results/2026-MM-DD-e10-M-draw<N>.md` (harnesses live at repo root; eval/ holds only manifests)
 4. For each draw N: `python transition_eval.py run --condition service_api_resume --condition filesystem_sidecar --embeddings none --run-id e10-transitions-draw<N> --out results/2026-MM-DD-e10-transitions-draw<N>.json --report results/2026-MM-DD-e10-transitions-draw<N>.md` (condition name per the E01 build item's final spelling).

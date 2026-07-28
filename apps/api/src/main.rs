@@ -5,11 +5,14 @@ use straylight::{
     AppState, Config, db,
     logging::UdpLogMakeWriter,
     object_store::{ObjectStore, backup as object_backup},
-    operator_service, router, telemetry, worker,
+    operator_service,
+    request_query_count::QueryCountLayer,
+    router, telemetry, worker,
 };
 use tokio::net::TcpListener;
 use tracing_subscriber::{
-    EnvFilter, fmt::writer::MakeWriterExt, layer::SubscriberExt, util::SubscriberInitExt,
+    EnvFilter, Layer as _, filter::filter_fn, fmt::writer::MakeWriterExt, layer::SubscriberExt,
+    util::SubscriberInitExt,
 };
 
 #[derive(Debug, Parser)]
@@ -259,24 +262,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn init_tracing() {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn"));
+    let query_count_layer =
+        || QueryCountLayer.with_filter(filter_fn(|metadata| metadata.target() == "sqlx::query"));
     match UdpLogMakeWriter::from_env() {
         Ok(Some(datadog)) => tracing_subscriber::registry()
-            .with(filter)
+            .with(query_count_layer())
             .with(
                 tracing_subscriber::fmt::layer()
                     .json()
-                    .with_writer(std::io::stdout.and(datadog)),
+                    .with_writer(std::io::stdout.and(datadog))
+                    .with_filter(filter),
             )
             .init(),
         Ok(None) => tracing_subscriber::registry()
-            .with(filter)
-            .with(tracing_subscriber::fmt::layer().json())
+            .with(query_count_layer())
+            .with(tracing_subscriber::fmt::layer().json().with_filter(filter))
             .init(),
         Err(error) => {
             eprintln!("Datadog log forwarding is disabled: {error}");
             tracing_subscriber::registry()
-                .with(filter)
-                .with(tracing_subscriber::fmt::layer().json())
+                .with(query_count_layer())
+                .with(tracing_subscriber::fmt::layer().json().with_filter(filter))
                 .init();
         }
     }

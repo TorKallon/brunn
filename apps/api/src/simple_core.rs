@@ -32,6 +32,10 @@ use crate::{
     eval_service::EvalImportRequest,
     ingest::{DocumentChunk, normalize_document},
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId},
+    retrieval_sql::{
+        SIMPLE_LEXICAL_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL,
+        SIMPLE_SEMANTIC_CANDIDATES_SQL,
+    },
     usage::UsageOperation,
     workspace_features::{
         DerivedFrontmatter, SupersessionAnnotation, WorkspaceFeatureDocument,
@@ -69,7 +73,7 @@ impl<T> WorkspaceEnvelope<T> {
             data,
             gaps: Vec::new(),
             timings_ms: None,
-            query_count: None,
+            query_count: crate::request_query_count::current(),
         }
     }
 }
@@ -3618,33 +3622,16 @@ async fn fetch_lexical_candidates(
     user_id: Uuid,
 ) -> ApiResult<(Vec<Candidate>, Option<i64>)> {
     let rows = if include_generation {
-        sqlx::query(
-            r#"
-            WITH generation AS (
-              SELECT coalesce(max(change.generation),0) AS workspace_generation
-              FROM straylight.workspace_changes AS change
-              WHERE change.user_id=$1
-            )
-            SELECT generation.workspace_generation,candidate.*
-            FROM generation
-            LEFT JOIN LATERAL straylight.workspace_lexical_candidates($2) AS candidate
-              ON true
-            "#,
-        )
-        .bind(user_id)
-        .bind(retrieval_query)
-        .fetch_all(&mut **tx)
-        .await?
+        sqlx::query(SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL)
+            .bind(user_id)
+            .bind(retrieval_query)
+            .fetch_all(&mut **tx)
+            .await?
     } else {
-        sqlx::query(
-            r#"
-            SELECT *
-            FROM straylight.workspace_lexical_candidates($1)
-            "#,
-        )
-        .bind(retrieval_query)
-        .fetch_all(&mut **tx)
-        .await?
+        sqlx::query(SIMPLE_LEXICAL_CANDIDATES_SQL)
+            .bind(retrieval_query)
+            .fetch_all(&mut **tx)
+            .await?
     };
     let workspace_generation = include_generation
         .then(|| {
@@ -3702,15 +3689,10 @@ async fn semantic_candidates(
     })?;
     let database_started = Instant::now();
     let mut tx = state.begin_read(auth).await?;
-    let rows = sqlx::query(
-        r#"
-        SELECT *
-        FROM straylight.workspace_semantic_candidates($1)
-        "#,
-    )
-    .bind(Vector::from(vector))
-    .fetch_all(&mut *tx)
-    .await?;
+    let rows = sqlx::query(SIMPLE_SEMANTIC_CANDIDATES_SQL)
+        .bind(Vector::from(vector))
+        .fetch_all(&mut *tx)
+        .await?;
     tx.commit().await?;
     let database_ms = elapsed_ms(database_started);
     let candidates = rows

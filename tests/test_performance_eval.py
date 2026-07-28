@@ -14,12 +14,18 @@ from performance_eval import (  # noqa: E402
     FUTURE_RECORDS,
     LEXICAL_CONSOLIDATION_REQUIRED_GATES,
     PRODUCTION_RECORDS,
+    QUERY_BUDGETS_PATH,
+    RETRIEVAL_PLAN_CONTRACT_PATH,
     DatabaseSnapshot,
     benchmark_flat_files,
     build_parser,
     compare_results,
     counter_growth,
     evaluate_gates,
+    evaluate_query_budgets,
+    evaluate_retrieval_plan,
+    extract_sql_function_body,
+    load_query_budgets,
     load_reused_flat_controls,
     old_source_marker,
     parse_feature_states,
@@ -31,6 +37,8 @@ from performance_eval import (  # noqa: E402
     semantic_failure_probe,
     source_text_contains,
     response_timings,
+    sql_fingerprint,
+    summarize_query_counts,
     summarize_timing_samples,
     timing_phase_sum_sane,
     verify_service_feature_states,
@@ -105,6 +113,137 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertIn(
             "old_relevant_source_survives_many_newer_writes",
             LEXICAL_CONSOLIDATION_REQUIRED_GATES,
+        )
+
+    def test_query_count_summary_and_budget_reject_one_extra_statement(self):
+        budgets = {
+            "schema": "straylight-query-budgets@v1",
+            "operations": {
+                "read": {"comparison": "exact", "count": 11},
+                "search": {"comparison": "at_most", "max": 23},
+            },
+        }
+        summary = summarize_query_counts([
+            ("read", {"query_count": 11}),
+            ("search", {"query_count": 23}),
+            ("broad_search", {"query_count": 22}),
+        ])
+        passing = {
+            gate["name"]: gate
+            for gate in evaluate_query_budgets(summary, budgets)
+        }
+        self.assertTrue(passing["query_budget_read"]["pass"])
+        self.assertTrue(passing["query_budget_search"]["pass"])
+
+        summary["by_operation"]["search"]["counts"].append(24)
+        failing = {
+            gate["name"]: gate
+            for gate in evaluate_query_budgets(summary, budgets)
+        }
+        self.assertFalse(failing["query_budget_search"]["pass"])
+
+    def test_checked_in_query_budget_contract_covers_six_operations(self):
+        contract = load_query_budgets()
+        self.assertEqual(
+            set(contract["operations"]),
+            {"open", "search", "read", "write", "checkpoint", "resume"},
+        )
+        self.assertEqual(QUERY_BUDGETS_PATH.name, "query_budgets.json")
+
+    def test_plan_assertion_rejects_missing_index_and_search_chunk_seq_scan(self):
+        healthy = [{
+            "Plan": {
+                "Node Type": "Bitmap Heap Scan",
+                "Relation Name": "search_chunks",
+                "Plans": [{
+                    "Node Type": "Bitmap Index Scan",
+                    "Index Name": "search_chunks_fts_idx",
+                }],
+            },
+        }]
+        self.assertTrue(evaluate_retrieval_plan(
+            healthy,
+            lane="lexical",
+            expected_index="search_chunks_fts_idx",
+        )["pass"])
+        self.assertFalse(evaluate_retrieval_plan(
+            [{"Plan": {
+                "Node Type": "Seq Scan",
+                "Relation Name": "search_chunks",
+            }}],
+            lane="lexical",
+            expected_index="search_chunks_fts_idx",
+        )["pass"])
+        self.assertFalse(evaluate_retrieval_plan(
+            [{"Plan": {
+                "Node Type": "Index Scan",
+                "Index Name": "some_other_index",
+                "Relation Name": "search_chunks",
+            }}],
+            lane="semantic",
+            expected_index="search_chunks_embedding_hnsw_idx",
+        )["pass"])
+
+    def test_plan_contract_fingerprints_migration_bodies_and_shared_calls(self):
+        contract = json.loads(
+            RETRIEVAL_PLAN_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        shared = (
+            Path(__file__).resolve().parents[1]
+            / "apps/api/src/retrieval_sql.rs"
+        ).read_text(encoding="utf-8")
+        for lane in contract["lanes"].values():
+            source = (
+                Path(__file__).resolve().parents[1] / lane["migration"]
+            ).read_text(encoding="utf-8")
+            body = extract_sql_function_body(source, lane["function_name"])
+            self.assertEqual(sql_fingerprint(body), lane["body_sha256"])
+            self.assertIn(lane["invocation_sql"], shared)
+
+    def test_64k_regression_tier_fails_before_the_outer_slo(self):
+        scale = {
+            "scale": PRODUCTION_RECORDS,
+            "open_found": [True],
+            "open_p95_ms": 501.0,
+            "search_p95_ms": 80.0,
+            "broad_search_p95_ms": 90.0,
+            "overflow_search_p95_ms": 90.0,
+            "old_source_search_p95_ms": 90.0,
+            "read_p95_ms": 20.0,
+            "checkpoint_ms": 50.0,
+            "resume_ms": 100.0,
+            "search_found": [True],
+            "read_found": [True],
+            "resume_found": True,
+            "critical_lane_failures": [],
+            "concurrent_probe": {
+                "rounds": 1,
+                "write_committed": True,
+                "write_ms": 30.0,
+                "write_p95_ms": 30.0,
+                "search_p95_ms": 100.0,
+                "search_found": [True],
+                "search_lane_failures": [],
+            },
+            "checkpoint_database_growth": {
+                "rows": 1,
+                "bytes": None,
+                "tables": {},
+            },
+        }
+        gates = {
+            gate["name"]: gate
+            for gate in evaluate_gates(
+                [scale],
+                DEFAULT_THRESHOLDS,
+                require_gin_index=False,
+            )
+        }
+        self.assertTrue(gates["every_scale_open_p95_ms"]["pass"])
+        self.assertFalse(
+            gates[
+                f"regression_tier_{PRODUCTION_RECORDS}_open_p95_ms"
+            ]["pass"]
         )
 
     def test_checkpoint_footprint_rejects_untrusted_ids_before_running_sql(self):
