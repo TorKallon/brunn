@@ -308,6 +308,70 @@ next case. Resume an interrupted run with `--resume-run-id <run-id>`; the
 public JSON result contains only redacted provisioning metadata. Transition
 runs use the same private state and resume option.
 
+### Real-provider semantic fault proxy
+
+Real-provider E03 mode 3 and E09 semantic-arm stacks use the checked-in
+`eval/openai_embedding_fault_proxy.py`. Give every isolated stack unique
+state/config/log paths, ports, and an instance ID. Set the API's
+`OPENAI_BASE_URL` to the proxy's `/v1` URL; the API keeps the provider key and
+the proxy forwards its authorization header without logging it.
+
+Start with the upstream base URL free of credentials, query, and fragment:
+
+```bash
+python3 eval/openai_embedding_fault_proxy.py start \
+  --state runs/<run>/proxy-state.json \
+  --config runs/<run>/proxy-config.json \
+  --log runs/<run>/proxy.log \
+  --instance-id <run-unique-id> \
+  --port <run-unique-port> \
+  --upstream-base-url https://api.openai.com/v1
+```
+
+If control is reachable from anything other than loopback, also supply
+`--control-token-file <owner-only-file>` on start and every control command.
+The start receipt contains the implementation and upstream URL SHA-256 values.
+Bind both values and the exact instance ID into every hook:
+
+```bash
+python3 eval/openai_embedding_fault_proxy.py configure \
+  --state runs/<run>/proxy-state.json \
+  --instance-id <run-unique-id> \
+  --expect-implementation-sha256 <start-receipt-value> \
+  --expect-upstream-base-url-sha256 <start-receipt-value> \
+  --mode error --error-status 503
+
+python3 eval/openai_embedding_fault_proxy.py configure \
+  --state runs/<run>/proxy-state.json \
+  --instance-id <run-unique-id> \
+  --expect-implementation-sha256 <start-receipt-value> \
+  --expect-upstream-base-url-sha256 <start-receipt-value> \
+  --mode forward
+```
+
+Use `--mode slow --delay-ms 800` for the HTTP deadline probe. Configure
+commands emit only a fixed attestation schema. Definitive performance runs use
+`--require-semantic-failure-hook-attestation`; the HTTP deadline probe requires
+attestation unless explicitly run in non-definitive local mode with
+`--allow-unattested-hooks`. Both harnesses require the injection and restore
+attestations to identify the same proxy, implementation, and upstream, with a
+newer restore revision. Restore forward mode before stopping the run-owned
+proxy. Stop is fingerprint-bound too:
+
+```bash
+python3 eval/openai_embedding_fault_proxy.py stop \
+  --state runs/<run>/proxy-state.json \
+  --instance-id <run-unique-id> \
+  --expect-implementation-sha256 <start-receipt-value> \
+  --expect-upstream-base-url-sha256 <start-receipt-value>
+```
+
+The semantic HTTP probe provisions one unique read/write evaluation identity.
+`DELETE /v1/workspace/admin/eval/imports/{import_id}` is available only on an
+evaluation-enabled stack and only to that identity's own delete-capable scoped
+credential. It atomically removes searchable fixture state and jobs, soft
+deletes its entries, and revokes all credentials for that evaluation user.
+
 Provision full suites serially when they use OpenAI embeddings. Each case is an
 isolated user and intentionally reimports the frozen corpus; launching several
 fresh suites together can exhaust the account embedding-token-per-minute limit

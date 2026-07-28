@@ -10,8 +10,10 @@ provider directly and never writes a scoped credential to the result artifact.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import re
 import sys
 import time
 from datetime import datetime
@@ -33,6 +35,9 @@ from native_eval import (  # noqa: E402
 
 
 SCHEMA = "straylight-e03-quality-backfill@v1"
+RECONCILIATION_SCHEMA = (
+    "straylight-e03-quality-receipt-reconciliation@v1"
+)
 DEFAULT_MANIFESTS = (
     PROJECT_ROOT / "eval" / "work_cases.json",
     PROJECT_ROOT / "eval" / "rupture_ops_cases.json",
@@ -44,6 +49,7 @@ DEFAULT_CEILING_USD = 5.0
 CHUNK_OVERLAP_ALLOWANCE = 1.25
 SEMANTIC_ARMS = 2
 DEFINITIVE_DRAWS = 3
+SHA256_PATTERN = re.compile(r"^(?:sha256:)?([0-9a-f]{64})$")
 
 
 def estimated_tokens(characters: int) -> int:
@@ -418,6 +424,173 @@ def write_artifact(path: Path, artifact: dict[str, Any]) -> None:
     path.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
 
 
+def normalize_sha256(value: str, *, field: str) -> str:
+    match = SHA256_PATTERN.fullmatch(value.casefold())
+    if match is None:
+        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
+    return match.group(1)
+
+
+def reconcile_receipt(
+    *,
+    input_path: Path,
+    expected_input_sha256: str,
+    run_id: str,
+    provider_receipt_path: Path,
+    billed_input_tokens: int,
+    billed_usd: float,
+) -> dict[str, Any]:
+    """Derive a receipt-bound accounting artifact without changing the run."""
+
+    if input_path.resolve() == provider_receipt_path.resolve():
+        raise ValueError(
+            "provider receipt must differ from the run artifact"
+        )
+    expected_digest = normalize_sha256(
+        expected_input_sha256,
+        field="--input-sha256",
+    )
+    source_bytes = input_path.read_bytes()
+    source_digest = hashlib.sha256(source_bytes).hexdigest()
+    if source_digest != expected_digest:
+        raise ValueError(
+            "input artifact SHA-256 does not match --input-sha256"
+        )
+    try:
+        source = json.loads(source_bytes)
+    except json.JSONDecodeError as error:
+        raise ValueError("input artifact is not valid JSON") from error
+    if not isinstance(source, dict) or source.get("schema") != SCHEMA:
+        raise ValueError("input is not an E03 quality-backfill artifact")
+    if source.get("run_id") != run_id or not run_id.strip():
+        raise ValueError("input artifact run_id does not match --run-id")
+    if (
+        source.get("status") != "complete"
+        or source.get("pass") is not True
+        or source.get("errors") != []
+    ):
+        raise ValueError(
+            "only a complete, passing, error-free run can be reconciled"
+        )
+    implementation = source.get("implementation")
+    current_harness_sha256 = sha256_file(Path(__file__))
+    if (
+        not isinstance(implementation, dict)
+        or implementation.get("harness")
+        != str(Path(__file__).relative_to(PROJECT_ROOT))
+        or implementation.get("harness_sha256")
+        != current_harness_sha256
+    ):
+        raise ValueError(
+            "input artifact is not bound to this reconciliation harness"
+        )
+    cost = source.get("cost")
+    preflight = cost.get("preflight") if isinstance(cost, dict) else None
+    original_actual = cost.get("actual") if isinstance(cost, dict) else None
+    if (
+        not isinstance(preflight, dict)
+        or preflight.get("provider_mode") != "openai"
+        or preflight.get("ceiling_pass") is not True
+        or not isinstance(original_actual, dict)
+        or original_actual.get("provider_receipt") is not False
+        or original_actual.get("accounting_status")
+        != "estimated_from_exact_imported_characters_no_provider_receipt"
+        or original_actual.get("billed_input_tokens") is not None
+        or original_actual.get("billed_usd") is not None
+    ):
+        raise ValueError(
+            "input must be an unreconciled real-provider run"
+        )
+    if (
+        type(billed_input_tokens) is not int
+        or billed_input_tokens <= 0
+    ):
+        raise ValueError("--billed-input-tokens must be a positive integer")
+    if not math.isfinite(billed_usd) or billed_usd <= 0:
+        raise ValueError("--billed-usd must be finite and positive")
+    unit_price = preflight.get("usd_per_million_tokens")
+    ceiling_usd = preflight.get("ceiling_usd")
+    if (
+        not isinstance(unit_price, (int, float))
+        or isinstance(unit_price, bool)
+        or not math.isfinite(unit_price)
+        or unit_price <= 0
+        or not isinstance(ceiling_usd, (int, float))
+        or isinstance(ceiling_usd, bool)
+        or not math.isfinite(ceiling_usd)
+        or ceiling_usd <= 0
+    ):
+        raise ValueError("input artifact has invalid pricing constraints")
+    expected_billed_usd = estimated_usd(
+        billed_input_tokens,
+        float(unit_price),
+    )
+    receipt_tolerance_usd = max(0.000001, expected_billed_usd * 0.000001)
+    if abs(billed_usd - expected_billed_usd) > receipt_tolerance_usd:
+        raise ValueError(
+            "billed token and USD values are inconsistent with the "
+            "artifact's embedding unit price"
+        )
+    if billed_usd > float(ceiling_usd):
+        raise ValueError("provider receipt exceeds the approved ceiling")
+    if (
+        not provider_receipt_path.is_file()
+        or provider_receipt_path.stat().st_size <= 0
+    ):
+        raise ValueError("--provider-receipt must be a nonempty regular file")
+    receipt_bytes = provider_receipt_path.read_bytes()
+    receipt_digest = hashlib.sha256(receipt_bytes).hexdigest()
+    reconciled_actual = {
+        **original_actual,
+        "accounting_status": "provider_receipt_reconciled",
+        "accounted_input_tokens": billed_input_tokens,
+        "accounted_usd": round(billed_usd, 6),
+        "provider_receipt": True,
+        "billed_input_tokens": billed_input_tokens,
+        "billed_usd": round(billed_usd, 6),
+    }
+    return {
+        "schema": RECONCILIATION_SCHEMA,
+        "created_at": datetime.now().astimezone().isoformat(
+            timespec="seconds"
+        ),
+        "status": "reconciled",
+        "pass": True,
+        "run_id": run_id,
+        "source": {
+            "artifact": str(input_path),
+            "artifact_schema": SCHEMA,
+            "artifact_sha256": source_digest,
+            "harness_sha256": implementation["harness_sha256"],
+        },
+        "implementation": {
+            "harness": str(Path(__file__).relative_to(PROJECT_ROOT)),
+            "harness_sha256": current_harness_sha256,
+        },
+        "provider_receipt": {
+            "sha256": receipt_digest,
+            "size_bytes": len(receipt_bytes),
+            "contents_recorded": False,
+        },
+        "constraints": {
+            "usd_per_million_tokens": unit_price,
+            "expected_billed_usd": round(expected_billed_usd, 9),
+            "receipt_tolerance_usd": round(receipt_tolerance_usd, 9),
+            "ceiling_usd": ceiling_usd,
+            "ceiling_pass": True,
+            "token_usd_consistency_pass": True,
+        },
+        "original_actual": original_actual,
+        "reconciled_actual": reconciled_actual,
+    }
+
+
+def write_artifact_exclusive(path: Path, artifact: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8") as output:
+        output.write(json.dumps(artifact, indent=2) + "\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Estimate or run E03 quality-suite semantic backfill"
@@ -450,11 +623,51 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--billed-input-tokens", type=int)
     run.add_argument("--billed-usd", type=float)
     run.add_argument("--out", type=Path, required=True)
+    reconcile = subparsers.add_parser("reconcile-receipt")
+    reconcile.add_argument("--input", type=Path, required=True)
+    reconcile.add_argument("--input-sha256", required=True)
+    reconcile.add_argument("--run-id", required=True)
+    reconcile.add_argument("--provider-receipt", type=Path, required=True)
+    reconcile.add_argument("--billed-input-tokens", type=int, required=True)
+    reconcile.add_argument("--billed-usd", type=float, required=True)
+    reconcile.add_argument("--out", type=Path, required=True)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.command == "reconcile-receipt":
+        if args.out.resolve() in {
+            args.input.resolve(),
+            args.provider_receipt.resolve(),
+        }:
+            raise ValueError(
+                "reconciliation output must differ from its source artifacts"
+            )
+        before = hashlib.sha256(args.input.read_bytes()).hexdigest()
+        artifact = reconcile_receipt(
+            input_path=args.input,
+            expected_input_sha256=args.input_sha256,
+            run_id=args.run_id,
+            provider_receipt_path=args.provider_receipt,
+            billed_input_tokens=args.billed_input_tokens,
+            billed_usd=args.billed_usd,
+        )
+        if hashlib.sha256(args.input.read_bytes()).hexdigest() != before:
+            raise RuntimeError(
+                "input artifact changed during receipt reconciliation"
+            )
+        write_artifact_exclusive(args.out, artifact)
+        print(json.dumps({
+            "status": "reconciled",
+            "out": str(args.out),
+            "run_id": artifact["run_id"],
+            "source_sha256": artifact["source"]["artifact_sha256"],
+            "provider_receipt_sha256": (
+                artifact["provider_receipt"]["sha256"]
+            ),
+        }, indent=2))
+        return 0
     manifests = tuple(args.manifests or DEFAULT_MANIFESTS)
     suites = load_suites(manifests, args.schema)
     artifact = artifact_base(args, suites)

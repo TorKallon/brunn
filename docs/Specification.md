@@ -449,6 +449,10 @@ test compatibility surfaces:
 - development may enable them explicitly;
 - production disables them by default;
 - evaluation routes are always disabled in the production Compose profile;
+- a simple-workspace evaluation identity may call `DELETE` on only its own
+  evaluation import status URL; this evaluation-only transaction removes its
+  searchable fixture state and jobs, soft-deletes its entries, and revokes its
+  credentials without granting general credential-management authority;
 - an operator must make a deliberate configuration change to expose legacy
   routes in production.
 

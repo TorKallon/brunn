@@ -7,9 +7,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
+import re
 import shlex
-import subprocess
 import sys
 import time
 import uuid
@@ -22,11 +21,24 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from native_eval import NativeApiClient, NativeApiError  # noqa: E402
+from eval.hook_provenance import (  # noqa: E402
+    hook_target_matches,
+    run_hook as run_provenance_hook,
+)
+from native_eval import (  # noqa: E402
+    NativeApiClient,
+    NativeApiError,
+    provision_evaluation,
+    public_provisioning,
+    recursively_redact_secrets,
+)
 
 
 SCHEMA = "straylight-semantic-http-probe@v1"
 SOURCE_TEXT_KEYS = frozenset({"content", "text", "excerpt", "source_text"})
+DEFAULT_QUERY = "locate the current semantic deadline qualification source"
+DEFAULT_MARKER_PREFIX = "straylight-semantic-http-probe"
+SAFE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 
 
 def semantic_failure(value: Any) -> bool:
@@ -89,53 +101,19 @@ def source_text_contains(
     )
 
 
-def hook_fingerprint(argv: list[str]) -> dict[str, Any]:
-    canonical = json.dumps(argv, separators=(",", ":"), ensure_ascii=False)
-    return {
-        "executable": Path(argv[0]).name,
-        "argv_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
-        "argument_count": len(argv),
-    }
-
-
-def run_hook(command: str, timeout_seconds: float) -> dict[str, Any]:
-    started = time.monotonic()
-    try:
-        argv = shlex.split(command)
-    except ValueError as error:
-        return {
-            "pass": False,
-            "error": f"invalid command syntax: {error}",
-            "elapsed_ms": round((time.monotonic() - started) * 1_000, 3),
-        }
-    if not argv:
-        return {
-            "pass": False,
-            "error": "empty command",
-            "elapsed_ms": round((time.monotonic() - started) * 1_000, 3),
-        }
-    try:
-        completed = subprocess.run(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return {
-            **hook_fingerprint(argv),
-            "pass": False,
-            "error": type(error).__name__,
-            "elapsed_ms": round((time.monotonic() - started) * 1_000, 3),
-        }
-    return {
-        **hook_fingerprint(argv),
-        "pass": completed.returncode == 0,
-        "exit_code": completed.returncode,
-        "elapsed_ms": round((time.monotonic() - started) * 1_000, 3),
-    }
+def run_hook(
+    command: str,
+    timeout_seconds: float,
+    *,
+    require_attestation: bool = False,
+    expected_mode: str | None = None,
+) -> dict[str, Any]:
+    return run_provenance_hook(
+        command,
+        timeout_seconds=timeout_seconds,
+        require_attestation=require_attestation,
+        expected_mode=expected_mode,
+    )
 
 
 def runtime_snapshot(client: NativeApiClient, expected_deadline_ms: int) -> dict[str, Any]:
@@ -191,7 +169,13 @@ def search(
     }
 
 
-def run_probe(args: argparse.Namespace) -> dict[str, Any]:
+def run_contract(
+    args: argparse.Namespace,
+    *,
+    client: NativeApiClient,
+    query: str,
+    marker: str,
+) -> dict[str, Any]:
     if args.injected_delay_ms <= args.deadline_ms:
         raise ValueError("injected delay must exceed the semantic deadline")
     if args.injected_delay_ms <= 50:
@@ -204,13 +188,12 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError(
             "slow and restore hooks must be non-empty, distinct argv commands"
         )
-    client = NativeApiClient(timeout=max(30.0, args.max_response_ms / 1_000 + 5))
     runtime = runtime_snapshot(client, args.deadline_ms)
     nonce = uuid.uuid4().hex
     baseline = search(
         client,
         query_id="semantic-http-baseline",
-        query=f"{args.query} semantic baseline {nonce}",
+        query=f"{query} semantic baseline {nonce}",
         modes=["semantic"],
     )
     if baseline["semantic_failure"] or baseline["candidate_count"] < 1:
@@ -218,7 +201,15 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
             "semantic-only baseline was not healthy before slow-provider injection"
         )
 
-    slow_hook = run_hook(args.slow_command, args.hook_timeout)
+    require_attestation = bool(
+        getattr(args, "require_hook_attestation", False)
+    )
+    slow_hook = run_hook(
+        args.slow_command,
+        args.hook_timeout,
+        require_attestation=require_attestation,
+        expected_mode="slow" if require_attestation else None,
+    )
     restore_hook: dict[str, Any] | None = None
     cold: dict[str, Any] | None = None
     warm: dict[str, Any] | None = None
@@ -228,7 +219,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
         if not slow_hook["pass"]:
             raise RuntimeError("slow-provider hook failed")
         time.sleep(max(0.0, args.settle_ms / 1_000))
-        cache_query = f"{args.query} {args.marker} cache-probe-{nonce}"
+        cache_query = f"{query} {marker} cache-probe-{nonce}"
         cold = search(
             client,
             query_id="semantic-http-cold-deadline",
@@ -243,7 +234,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
             {
                 "exact_lexical_marker_retained": source_text_contains(
                     cold["body"],
-                    args.marker,
+                    marker,
                 ),
                 "effective_response_limit_ms": effective_response_limit,
             }
@@ -275,7 +266,7 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
             {
                 "exact_lexical_marker_retained": source_text_contains(
                     warm["body"],
-                    args.marker,
+                    marker,
                 )
             }
         )
@@ -289,14 +280,19 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     except (NativeApiError, RuntimeError) as failure:
         error = f"{type(failure).__name__}: {failure}"
     finally:
-        restore_hook = run_hook(args.restore_command, args.hook_timeout)
+        restore_hook = run_hook(
+            args.restore_command,
+            args.hook_timeout,
+            require_attestation=require_attestation,
+            expected_mode="forward" if require_attestation else None,
+        )
         time.sleep(max(0.0, args.settle_ms / 1_000))
         if restore_hook["pass"]:
             try:
                 restored = search(
                     client,
                     query_id="semantic-http-restored",
-                    query=f"{args.query} semantic restored {uuid.uuid4().hex}",
+                    query=f"{query} semantic restored {uuid.uuid4().hex}",
                     modes=["semantic"],
                 )
                 restored["pass"] = (
@@ -307,10 +303,16 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
             except NativeApiError as failure:
                 error = error or f"{type(failure).__name__}: {failure}"
 
+    hook_target_bound = (
+        hook_target_matches(slow_hook, restore_hook or {})
+        if require_attestation
+        else None
+    )
     passed = bool(
         slow_hook["pass"]
         and restore_hook
         and restore_hook["pass"]
+        and (hook_target_bound is not False)
         and cold
         and cold.get("pass")
         and warm
@@ -335,12 +337,15 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
         "status": "passed" if passed else "failed",
         "pass": passed,
         "runtime": runtime,
+        "definitive": require_attestation,
         "injection": {
             "injected_delay_ms": args.injected_delay_ms,
             "semantic_deadline_ms": args.deadline_ms,
             "max_response_ms": args.max_response_ms,
             "slow_hook": slow_hook,
             "restore_hook": restore_hook,
+            "hook_attestation_required": require_attestation,
+            "hook_target_bound": hook_target_bound,
         },
         "baseline": public_sample(baseline),
         "cold_deadline": public_sample(cold),
@@ -357,12 +362,208 @@ def run_probe(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def probe_document(
+    *,
+    nonce: str,
+    marker: str,
+    query: str,
+) -> dict[str, Any]:
+    content = (
+        f"# Semantic deadline probe {nonce}\n\n"
+        f"The unique current qualification marker is `{marker}`.\n\n"
+        "This source exists only to prove that exact and lexical evidence "
+        "survives a slow semantic embedding request, then that the identical "
+        f"query warms asynchronously. Retrieval intent: {query}.\n"
+    )
+    encoded = content.encode("utf-8")
+    return {
+        "path": f"eval/semantic-http-probe/{nonce}.md",
+        "content": content,
+        "content_sha256": hashlib.sha256(encoded).hexdigest(),
+        "media_type": "text/markdown",
+    }
+
+
+def cleanup_fixture(
+    scoped: NativeApiClient,
+    *,
+    status_url: str,
+) -> dict[str, Any]:
+    receipt: dict[str, Any] = {
+        "attempted": True,
+        "status_url_sha256": hashlib.sha256(
+            status_url.encode("utf-8")
+        ).hexdigest(),
+        "response": None,
+        "credential_revocation_verified": False,
+        "pass": False,
+        "error": None,
+    }
+    try:
+        response = scoped.request("DELETE", status_url)
+        public_response = recursively_redact_secrets(response.body)
+        receipt["response"] = {
+            "http_status": response.http_status,
+            "body": public_response,
+        }
+        cleaned = response.data
+        receipt["cleanup_receipt"] = {
+            key: cleaned.get(key)
+            for key in (
+                "status",
+                "import_id",
+                "entries_removed",
+                "search_chunks_removed",
+                "jobs_removed",
+                "credentials_revoked",
+                "revoked_at",
+            )
+        }
+        try:
+            scoped.get("/v1/status")
+        except NativeApiError as error:
+            receipt["credential_revocation_verified"] = error.status == 401
+        receipt["pass"] = bool(
+            cleaned.get("status") == "cleaned"
+            and isinstance(cleaned.get("entries_removed"), int)
+            and cleaned["entries_removed"] >= 1
+            and isinstance(cleaned.get("credentials_revoked"), int)
+            and cleaned["credentials_revoked"] >= 1
+            and receipt["credential_revocation_verified"]
+        )
+    except Exception as error:
+        receipt["error"] = f"{type(error).__name__}: {error}"
+    return receipt
+
+
+def run_probe(args: argparse.Namespace) -> dict[str, Any]:
+    if not SAFE_ID_PATTERN.fullmatch(args.run_id):
+        raise ValueError("--run-id must be a safe 1-128 character identifier")
+    if not SAFE_ID_PATTERN.fullmatch(args.marker_prefix):
+        raise ValueError(
+            "--marker-prefix must be a safe 1-128 character identifier"
+        )
+    if args.provision_timeout <= 0:
+        raise ValueError("--provision-timeout must be positive")
+    nonce = uuid.uuid4().hex
+    marker = f"{args.marker_prefix}-{nonce}"
+    query = args.query.strip()
+    if not query:
+        raise ValueError("--query must not be empty")
+    document = probe_document(nonce=nonce, marker=marker, query=query)
+    case_id = f"semantic-http-probe-{nonce}"
+    admin = NativeApiClient(
+        run_id=args.run_id,
+        case_id=case_id,
+        timeout=max(30.0, args.max_response_ms / 1_000 + 5),
+    )
+    metadata: dict[str, Any] | None = None
+    scoped: NativeApiClient | None = None
+    contract: dict[str, Any] | None = None
+    lifecycle_error: str | None = None
+    cleanup: dict[str, Any] = {
+        "attempted": False,
+        "pass": False,
+        "error": "fixture was not provisioned",
+    }
+    try:
+        metadata = provision_evaluation(
+            admin,
+            run_id=args.run_id,
+            case_id=case_id,
+            display_scope=f"Semantic HTTP probe {nonce}",
+            access_mode="read_write",
+            documents=[document],
+            timeout_seconds=args.provision_timeout,
+            import_path="/v1/workspace/admin/eval/import",
+            wait_for_semantic=True,
+        )
+        scoped = NativeApiClient(
+            base_url=admin.base_url,
+            token=str(metadata["token"]),
+            run_id=args.run_id,
+            case_id=case_id,
+            timeout=max(30.0, args.max_response_ms / 1_000 + 5),
+        )
+        contract = run_contract(
+            args,
+            client=scoped,
+            query=query,
+            marker=marker,
+        )
+    except Exception as error:
+        lifecycle_error = f"{type(error).__name__}: {error}"
+    finally:
+        if scoped is not None and metadata is not None:
+            status_url = str(metadata.get("status_url") or "")
+            if status_url:
+                cleanup = cleanup_fixture(
+                    scoped,
+                    status_url=status_url,
+                )
+            else:
+                cleanup = {
+                    "attempted": False,
+                    "pass": False,
+                    "error": "provisioning receipt omitted status_url",
+                }
+    if contract is None:
+        contract = {
+            "schema": SCHEMA,
+            "created_at": datetime.now().astimezone().isoformat(
+                timespec="seconds"
+            ),
+            "status": "failed",
+            "pass": False,
+            "definitive": bool(
+                getattr(args, "require_hook_attestation", False)
+            ),
+            "error": lifecycle_error,
+            "conclusion": "The full HTTP deadline/cache contract was not proven.",
+        }
+    contract["fixture"] = {
+        "run_id": args.run_id,
+        "case_id": case_id,
+        "path": document["path"],
+        "content_sha256": document["content_sha256"],
+        "content_bytes": len(document["content"].encode("utf-8")),
+        "marker": marker,
+        "marker_sha256": hashlib.sha256(marker.encode("utf-8")).hexdigest(),
+        "credential_recorded": False,
+        "provisioning": (
+            public_provisioning(metadata)
+            if metadata is not None
+            else None
+        ),
+    }
+    contract["cleanup"] = cleanup
+    contract["pass"] = bool(contract.get("pass") and cleanup.get("pass"))
+    contract["status"] = "passed" if contract["pass"] else "failed"
+    if lifecycle_error and not contract.get("error"):
+        contract["error"] = lifecycle_error
+    if not cleanup.get("pass"):
+        contract["error"] = contract.get("error") or (
+            "evaluation fixture cleanup or credential revocation failed"
+        )
+    return contract
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run a full HTTP slow-provider/deadline/cache probe"
     )
-    parser.add_argument("--query", required=True)
-    parser.add_argument("--marker", required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--query", default=DEFAULT_QUERY)
+    parser.add_argument(
+        "--marker-prefix",
+        "--marker",
+        dest="marker_prefix",
+        default=DEFAULT_MARKER_PREFIX,
+        help=(
+            "safe marker prefix; a unique nonce is always appended before "
+            "the evaluation fixture is provisioned"
+        ),
+    )
     parser.add_argument("--slow-command", required=True)
     parser.add_argument("--restore-command", required=True)
     parser.add_argument("--injected-delay-ms", type=int, default=800)
@@ -371,6 +572,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--settle-ms", type=int, default=100)
     parser.add_argument("--warm-wait-ms", type=int)
     parser.add_argument("--hook-timeout", type=float, default=30.0)
+    parser.add_argument("--provision-timeout", type=float, default=1_800.0)
+    parser.add_argument(
+        "--allow-unattested-hooks",
+        action="store_false",
+        dest="require_hook_attestation",
+        help=(
+            "permit a visibly non-definitive local probe without fault-proxy "
+            "hook attestations"
+        ),
+    )
+    parser.set_defaults(require_hook_attestation=True)
     parser.add_argument("--out", type=Path, required=True)
     return parser
 

@@ -3340,6 +3340,47 @@ pub async fn evaluation_status(
     })))
 }
 
+pub async fn cleanup_evaluation(
+    State(state): State<AppState>,
+    Extension(caller): Extension<AuthContext>,
+    Path(import_id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    caller.require(Capability::Delete)?;
+    let user_id = import_id
+        .strip_prefix("simple-import:")
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| ApiError::invalid("invalid simple evaluation import ID"))?;
+    if caller.user_id.0 != user_id {
+        return Err(ApiError::public(
+            StatusCode::FORBIDDEN,
+            "evaluation_scope_mismatch",
+            "evaluation cleanup requires its own scoped credential",
+        ));
+    }
+    let mut tx = state.begin_write(&caller).await?;
+    let row = sqlx::query(
+        r#"
+        SELECT *
+        FROM straylight_auth.cleanup_evaluation_user($1,$2)
+        "#,
+    )
+    .bind(user_id)
+    .bind(caller.credential_id.0)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    state.workspace_features.invalidate(user_id).await;
+    Ok(Json(json!({
+        "status": "cleaned",
+        "import_id": import_id,
+        "entries_removed": row.get::<i64, _>("entries_removed"),
+        "search_chunks_removed": row.get::<i64, _>("search_chunks_removed"),
+        "jobs_removed": row.get::<i64, _>("jobs_removed"),
+        "credentials_revoked": row.get::<i64, _>("credentials_revoked"),
+        "revoked_at": row.get::<DateTime<Utc>, _>("revoked_at")
+    })))
+}
+
 async fn current_generation(state: &AppState, auth: &AuthContext) -> ApiResult<i64> {
     let mut tx = state.begin_read(auth).await?;
     let generation = sqlx::query_scalar::<_, Option<i64>>(

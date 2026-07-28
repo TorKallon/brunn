@@ -9,11 +9,21 @@ import json
 import math
 import random
 import re
+import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from eval.e09_step_authorization import (
+    BASE_EXPERIMENT_ARM,
+    STEP_EXPERIMENT_ARM,
+    load_step_authorization,
+)
 
 SCHEMA = "straylight-paired-draw-aggregate@v1"
 RUN_LEDGER_SCHEMA = "straylight-eval-run-ledger@v1"
@@ -756,6 +766,8 @@ def aggregate(
     expected_arms: Sequence[str] | None = None,
     claim_mcnemar_alternative: str | None = None,
     allow_case_extension: bool = False,
+    e09_step_policy: Path | None = None,
+    e09_step_policy_sha256: str | None = None,
 ) -> dict[str, Any]:
     if iterations < DEFAULT_ITERATIONS:
         raise ValueError(
@@ -769,6 +781,92 @@ def aggregate(
         artifact, draw_records = load_draw(path)
         artifacts.append(artifact)
         records.extend(draw_records)
+    if bool(e09_step_policy) != bool(e09_step_policy_sha256):
+        raise ValueError(
+            "--e09-step-policy and --e09-step-policy-sha256 must be supplied "
+            "together"
+        )
+    source_revisions = {
+        artifact["source_revision"] for artifact in artifacts
+    }
+    step_authorization: dict[str, Any] | None = None
+    observed_arms = {record["arm"] for record in records}
+    if STEP_EXPERIMENT_ARM in observed_arms and e09_step_policy is None:
+        raise ValueError(
+            "deadline-cache-600 inputs require a checked step-policy artifact"
+        )
+    if e09_step_policy is not None:
+        if len(source_revisions) != 1:
+            raise ValueError(
+                "step aggregation inputs span multiple source revisions"
+            )
+        required_step_arms = {
+            BASE_EXPERIMENT_ARM,
+            STEP_EXPERIMENT_ARM,
+        }
+        requested_step_arms = set(expected_arms or ())
+        if requested_step_arms != required_step_arms:
+            raise ValueError(
+                "step aggregation requires exactly the 300ms and 600ms "
+                "deadline-cache expected arms"
+            )
+        step_authorization = load_step_authorization(
+            e09_step_policy,
+            str(e09_step_policy_sha256),
+            expected_source_revision=next(iter(source_revisions)),
+        )
+        authorized_cases = set(
+            step_authorization["selected_case_ids"]
+        )
+        authorized_manifest_sha256 = step_authorization["manifest_sha256"]
+        if any(
+            artifact.get("manifest_sha256")
+            != authorized_manifest_sha256
+            for artifact in artifacts
+        ):
+            raise ValueError(
+                "step aggregation includes an unauthorized suite manifest"
+            )
+
+        def stable_binding(value: Any) -> dict[str, Any] | None:
+            if not isinstance(value, dict):
+                return None
+            return {
+                key: item
+                for key, item in value.items()
+                if key != "artifact"
+            }
+
+        expected_binding = stable_binding(step_authorization)
+        for artifact in artifacts:
+            if STEP_EXPERIMENT_ARM not in artifact["arms"]:
+                continue
+            actual_binding = stable_binding(
+                artifact.get("experiment_parameters", {}).get(
+                    "e09_step_authorization"
+                )
+            )
+            if actual_binding != expected_binding:
+                raise ValueError(
+                    "600ms run is not bound to the checked step-policy "
+                    "authorization"
+                )
+        records = [
+            record
+            for record in records
+            if record["case"] in authorized_cases
+        ]
+        if not records:
+            raise ValueError(
+                "step-policy selected case set is absent from input artifacts"
+            )
+        observed_authorized_cases = {
+            record["case"] for record in records
+        }
+        if observed_authorized_cases != authorized_cases:
+            raise ValueError(
+                "step aggregate does not contain every authorized case ID"
+            )
     observation_keys = [
         (
             record["suite"],
@@ -1011,6 +1109,7 @@ def aggregate(
                 for suite, case_sets in sorted(case_set_fingerprints.items())
             },
         },
+        "e09_step_authorization": step_authorization,
         "conditions": conditions,
         "suites": suites,
         "draws": len({(record["suite"], record["draw"]) for record in records}),
@@ -1051,6 +1150,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--e09-step-policy",
+        type=Path,
+        help=(
+            "checked one-step authorization used only for a 300ms versus "
+            "600ms E09 aggregate"
+        ),
+    )
+    parser.add_argument(
+        "--e09-step-policy-sha256",
+        help="expected SHA-256 of --e09-step-policy",
+    )
+    parser.add_argument(
         "--non-inferiority-margin-claims",
         type=float,
         default=DEFAULT_NON_INFERIORITY_MARGIN_CLAIMS,
@@ -1068,6 +1179,8 @@ def main() -> int:
         expected_arms=args.expected_arm,
         claim_mcnemar_alternative=args.claim_mcnemar_alternative,
         allow_case_extension=args.allow_case_extension,
+        e09_step_policy=args.e09_step_policy,
+        e09_step_policy_sha256=args.e09_step_policy_sha256,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

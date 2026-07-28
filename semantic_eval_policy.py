@@ -6,6 +6,7 @@ state reported by a Straylight service and computes counter deltas.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 
@@ -28,6 +29,12 @@ E09_ARM_SETTINGS: dict[str, dict[str, Any]] = {
         "semantic_deadline_ms": 300,
         "embedding_backfill_guard": True,
     },
+    "deadline_cache_600": {
+        "semantic_lane": True,
+        "embed_cache": True,
+        "semantic_deadline_ms": 600,
+        "embedding_backfill_guard": True,
+    },
 }
 
 SEMANTIC_COUNTERS = (
@@ -41,6 +48,42 @@ SEMANTIC_COUNTERS = (
     "failures",
     "deferrals",
 )
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+def validate_step_binding(
+    arm: str,
+    step_authorization: Mapping[str, Any] | None,
+) -> str | None:
+    if arm != "deadline_cache_600":
+        if step_authorization is not None:
+            raise ValueError(
+                "E09 step authorization is valid only for deadline_cache_600"
+            )
+        return None
+    authorization_id = (
+        step_authorization.get("authorization_id")
+        if isinstance(step_authorization, Mapping)
+        else None
+    )
+    if (
+        not isinstance(step_authorization, Mapping)
+        or step_authorization.get("schema")
+        != "straylight-e09-step-authorization-binding@v1"
+        or step_authorization.get("deadline_before_ms") != 300
+        or step_authorization.get("deadline_after_ms") != 600
+        or step_authorization.get("automatic_1000ms_step_allowed") is not False
+        or not isinstance(authorization_id, str)
+        or not SHA256_PATTERN.fullmatch(authorization_id)
+        or not isinstance(step_authorization.get("artifact_sha256"), str)
+        or not SHA256_PATTERN.fullmatch(
+            str(step_authorization["artifact_sha256"])
+        )
+    ):
+        raise ValueError(
+            "E09 deadline_cache_600 requires a checked step-policy binding"
+        )
+    return authorization_id
 
 
 def response_has_candidates(value: Any) -> bool:
@@ -55,25 +98,47 @@ def response_has_candidates(value: Any) -> bool:
     return False
 
 
-def expected_e09_features(arm: str) -> dict[str, Any]:
+def expected_e09_features(
+    arm: str,
+    *,
+    step_authorization: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    validate_step_binding(arm, step_authorization)
     try:
         return dict(E09_ARM_SETTINGS[arm])
     except KeyError as exc:
         raise ValueError(f"unknown E09 arm: {arm}") from exc
 
 
-def enforced_retrieval_modes(arm: str | None) -> tuple[str, ...]:
+def enforced_retrieval_modes(
+    arm: str | None,
+    *,
+    step_authorization: Mapping[str, Any] | None = None,
+) -> tuple[str, ...]:
     if arm is None:
+        if step_authorization is not None:
+            raise ValueError(
+                "E09 step authorization requires an E09 arm"
+            )
         return ()
-    expected_e09_features(arm)
+    expected_e09_features(
+        arm,
+        step_authorization=step_authorization,
+    )
     return ("exact", "lexical") if arm == "no_semantic" else ()
 
 
 def validate_e09_runtime(
     status: Mapping[str, Any],
     arm: str,
+    *,
+    step_authorization: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    expected = expected_e09_features(arm)
+    authorization_id = validate_step_binding(arm, step_authorization)
+    expected = expected_e09_features(
+        arm,
+        step_authorization=step_authorization,
+    )
     features = status.get("runtime_features")
     if not isinstance(features, Mapping):
         raise ValueError(
@@ -97,7 +162,11 @@ def validate_e09_runtime(
         "build_revision": build_revision,
         "runtime_features": dict(features),
         "expected_features": expected,
-        "enforced_request_modes": list(enforced_retrieval_modes(arm)),
+        "enforced_request_modes": list(enforced_retrieval_modes(
+            arm,
+            step_authorization=step_authorization,
+        )),
+        "step_authorization_id": authorization_id,
     }
 
 

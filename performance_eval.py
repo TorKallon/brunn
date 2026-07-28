@@ -27,6 +27,11 @@ from native_eval import (
     provision_evaluation,
     recursively_redact_secrets,
 )
+from eval.e09_step_authorization import load_step_authorization
+from eval.hook_provenance import (
+    hook_target_matches,
+    run_hook as run_provenance_hook,
+)
 from semantic_eval_policy import (
     response_has_candidates,
     semantic_counter_delta,
@@ -2124,57 +2129,15 @@ def run_external_hook(
     command_text: str,
     *,
     timeout_seconds: float,
+    require_attestation: bool = False,
+    expected_mode: str | None = None,
 ) -> dict[str, Any]:
-    started = time.monotonic()
-    try:
-        command = shlex.split(command_text)
-    except ValueError:
-        return {
-            "command": None,
-            "exit_code": None,
-            "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
-            "pass": False,
-            "error": "invalid_command_syntax",
-        }
-    if not command:
-        return {
-            "command": None,
-            "exit_code": None,
-            "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
-            "pass": False,
-            "error": "empty_command",
-        }
-    try:
-        completed = subprocess.run(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=timeout_seconds,
-            check=False,
-        )
-        return {
-            "command": command[0],
-            "exit_code": completed.returncode,
-            "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
-            "pass": completed.returncode == 0,
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "command": command[0],
-            "exit_code": None,
-            "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
-            "pass": False,
-            "error": "timeout",
-        }
-    except OSError as error:
-        return {
-            "command": command[0],
-            "exit_code": None,
-            "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
-            "pass": False,
-            "error": type(error).__name__,
-        }
+    return run_provenance_hook(
+        command_text,
+        timeout_seconds=timeout_seconds,
+        require_attestation=require_attestation,
+        expected_mode=expected_mode,
+    )
 
 
 def semantic_failure_probe(
@@ -2190,6 +2153,7 @@ def semantic_failure_probe(
     stop_command: str | None,
     settle_seconds: float,
     timeout_seconds: float,
+    require_hook_attestation: bool = False,
 ) -> dict[str, Any]:
     required_arguments = [
         "--semantic-failure-start-command",
@@ -2262,6 +2226,8 @@ def semantic_failure_probe(
     start_result = run_external_hook(
         start_command,
         timeout_seconds=timeout_seconds,
+        require_attestation=require_hook_attestation,
+        expected_mode="error" if require_hook_attestation else None,
     )
     restore_result: dict[str, Any] | None = None
     semantic_failure_observed = False
@@ -2310,6 +2276,8 @@ def semantic_failure_probe(
         restore_result = run_external_hook(
             stop_command,
             timeout_seconds=timeout_seconds,
+            require_attestation=require_hook_attestation,
+            expected_mode="forward" if require_hook_attestation else None,
         )
         time.sleep(max(0.0, settle_seconds))
         if restore_result["pass"]:
@@ -2329,9 +2297,15 @@ def semantic_failure_probe(
             except NativeApiError:
                 restored_found = False
 
+    hook_target_bound = (
+        hook_target_matches(start_result, restore_result or {})
+        if require_hook_attestation
+        else None
+    )
     passed = bool(
         start_result["pass"]
         and restore_result["pass"]
+        and (hook_target_bound is not False)
         and restored_found
         and semantic_failure_observed
         and lexical_found
@@ -2350,6 +2324,7 @@ def semantic_failure_probe(
         "semantic_lane_healthy_after_restore": restored_found,
         "start_hook": start_result,
         "restore_hook": restore_result,
+        "hook_target_bound": hook_target_bound,
         "error": probe_error,
     }
 
@@ -2572,6 +2547,7 @@ def benchmark_scale(
     semantic_failure_start_command: str | None,
     semantic_failure_stop_command: str | None,
     semantic_failure_settle_seconds: float,
+    require_semantic_failure_hook_attestation: bool,
     wait_for_semantic: bool,
     unique_queries: bool,
     e09_arm: str | None,
@@ -2626,7 +2602,12 @@ def benchmark_scale(
         wait_for_semantic=(
             wait_for_semantic
             or protocol != "simple"
-            or e09_arm in {"unbounded_semantic", "deadline_cache"}
+            or e09_arm
+            in {
+                "unbounded_semantic",
+                "deadline_cache",
+                "deadline_cache_600",
+            }
         ),
         batch_size=10_000 if protocol == "simple" else None,
     )
@@ -2640,7 +2621,11 @@ def benchmark_scale(
     )
     authorization_scope = provisioning["authorization_scope"]
     semantic_coverage_probe: dict[str, Any] | None = None
-    if e09_arm in {"unbounded_semantic", "deadline_cache"}:
+    if e09_arm in {
+        "unbounded_semantic",
+        "deadline_cache",
+        "deadline_cache_600",
+    }:
         semantic_coverage_probe = client.post(
             "/v1/workspace/search",
             {
@@ -3029,6 +3014,9 @@ def benchmark_scale(
             stop_command=semantic_failure_stop_command,
             settle_seconds=semantic_failure_settle_seconds,
             timeout_seconds=max(timeout_seconds, 30.0),
+            require_hook_attestation=(
+                require_semantic_failure_hook_attestation
+            ),
         )
         if run_semantic_failure
         else {
@@ -4102,6 +4090,14 @@ def command_run(args: argparse.Namespace) -> int:
                 "definitive simple-protocol runs require --db-container"
             )
         validate_e09_request_modes(args.e09_arm, retrieval_modes)
+        if (
+            args.require_semantic_failure_hook_attestation
+            and not args.semantic_failure_start_command
+        ):
+            raise ValueError(
+                "required semantic-failure hook attestation needs both hook "
+                "commands"
+            )
         if args.gate_profile == LEXICAL_CONSOLIDATION_GATE_PROFILE:
             if not args.future_soak or args.protocol != "simple":
                 raise ValueError(
@@ -4191,14 +4187,45 @@ def command_run(args: argparse.Namespace) -> int:
 
     e09_runtime_before: dict[str, Any] | None = None
     e09_provenance: dict[str, Any] | None = None
+    e09_step_authorization: dict[str, Any] | None = None
     if args.e09_arm:
         try:
             if args.protocol != "simple":
                 raise ValueError("E09 arms require --protocol simple")
+            if not fingerprint_before["reproducible"]:
+                raise ValueError(
+                    "E09 requires a reproducible implementation: "
+                    f"{fingerprint_before}"
+                )
+            if args.e09_arm == "deadline_cache_600":
+                if (
+                    args.e09_step_policy is None
+                    or args.e09_step_policy_sha256 is None
+                ):
+                    raise ValueError(
+                        "E09 deadline_cache_600 requires --e09-step-policy "
+                        "and --e09-step-policy-sha256"
+                    )
+                e09_step_authorization = load_step_authorization(
+                    args.e09_step_policy,
+                    args.e09_step_policy_sha256,
+                    expected_source_revision=str(
+                        fingerprint_before["source_revision"]
+                    ),
+                )
+            elif (
+                args.e09_step_policy is not None
+                or args.e09_step_policy_sha256 is not None
+            ):
+                raise ValueError(
+                    "step-policy arguments are valid only for "
+                    "--e09-arm deadline_cache_600"
+                )
             e09_runtime_before = runtime_status_before
             e09_provenance = validate_e09_runtime(
                 e09_runtime_before,
                 args.e09_arm,
+                step_authorization=e09_step_authorization,
             )
             if (
                 e09_provenance["build_revision"]
@@ -4210,6 +4237,17 @@ def command_run(args: argparse.Namespace) -> int:
                 )
         except (NativeApiError, ValueError) as error:
             return write_configuration_error(args, error)
+    elif (
+        args.e09_step_policy is not None
+        or args.e09_step_policy_sha256 is not None
+    ):
+        return write_configuration_error(
+            args,
+            ValueError(
+                "step-policy arguments require "
+                "--e09-arm deadline_cache_600"
+            ),
+        )
     scales = []
     errors = []
     partial_flat_controls: dict[int, dict[str, Any]] = {}
@@ -4242,6 +4280,9 @@ def command_run(args: argparse.Namespace) -> int:
                 semantic_failure_stop_command=args.semantic_failure_stop_command,
                 semantic_failure_settle_seconds=(
                     args.semantic_failure_settle_seconds
+                ),
+                require_semantic_failure_hook_attestation=(
+                    args.require_semantic_failure_hook_attestation
                 ),
                 wait_for_semantic=args.wait_semantic,
                 unique_queries=args.unique_queries,
@@ -4333,6 +4374,7 @@ def command_run(args: argparse.Namespace) -> int:
             final_provenance = validate_e09_runtime(
                 runtime_status_after,
                 args.e09_arm,
+                step_authorization=e09_step_authorization,
             )
             if final_provenance != e09_provenance:
                 raise ValueError(
@@ -4430,6 +4472,7 @@ def command_run(args: argparse.Namespace) -> int:
         "implementation_fingerprint": fingerprint,
         "e09_runtime": e09_runtime,
         "d03_resume_delta": d03_resume_delta,
+        "e09_step_authorization": e09_step_authorization,
         "run_profile": {
             "mode": "definitive" if profile.definitive else "quick",
             "definitive": profile.definitive,
@@ -4445,6 +4488,9 @@ def command_run(args: argparse.Namespace) -> int:
             "semantic_failure_hooks_configured": bool(
                 args.semantic_failure_start_command
                 and args.semantic_failure_stop_command
+            ),
+            "semantic_failure_hook_attestation_required": bool(
+                args.require_semantic_failure_hook_attestation
             ),
             "wait_for_semantic": bool(args.wait_semantic),
             "unique_queries": bool(args.unique_queries),
@@ -4646,10 +4692,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--e09-arm",
-        choices=("no_semantic", "unbounded_semantic", "deadline_cache"),
+        choices=(
+            "no_semantic",
+            "unbounded_semantic",
+            "deadline_cache",
+            "deadline_cache_600",
+        ),
         help=(
             "fail-closed E09 arm selection; verifies clean source, API image "
             "revision, runtime flags, and semantic cache/deferral counters"
+        ),
+    )
+    run.add_argument(
+        "--e09-step-policy",
+        type=Path,
+        help=(
+            "immutable approved E09 step-policy artifact; required only for "
+            "deadline_cache_600"
+        ),
+    )
+    run.add_argument(
+        "--e09-step-policy-sha256",
+        help=(
+            "expected SHA-256 of --e09-step-policy; required only for "
+            "deadline_cache_600"
         ),
     )
     run.add_argument(
@@ -4682,6 +4748,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--semantic-failure-settle-seconds",
         type=float,
         default=2.0,
+    )
+    run.add_argument(
+        "--require-semantic-failure-hook-attestation",
+        action="store_true",
+        help=(
+            "require checked-in hook fingerprints plus a fault-proxy "
+            "attestation for injected error and restored forward modes"
+        ),
     )
     run.add_argument(
         "--wait-semantic",

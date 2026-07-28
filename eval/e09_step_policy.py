@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -27,8 +29,20 @@ DEFAULT_CEILING_USD = 100.0
 DEFAULT_MAX_STEP_CASES = 12
 
 
+def canonical_json_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def load_manifest(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    content = path.read_bytes()
+    value = json.loads(content)
     cases = value.get("cases")
     if not isinstance(cases, list):
         raise ValueError(f"{path}: cases must be a list")
@@ -45,6 +59,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
     return {
         "path": path,
         "relative_path": str(path.relative_to(PROJECT_ROOT)),
+        "sha256": hashlib.sha256(content).hexdigest(),
         "suite": path.stem.removesuffix("_cases"),
         "case_ids": sorted(ids),
     }
@@ -81,8 +96,16 @@ def step_plan(
         raise ValueError("per-case-run cost must be finite and positive")
     if not math.isfinite(ceiling_usd) or ceiling_usd <= 0:
         raise ValueError("ceiling must be finite and positive")
+    if ceiling_usd > DEFAULT_CEILING_USD:
+        raise ValueError(
+            f"ceiling cannot exceed the fixed ${DEFAULT_CEILING_USD:.0f} cap"
+        )
     if max_step_cases <= 0:
         raise ValueError("max-step-cases must be positive")
+    if max_step_cases > DEFAULT_MAX_STEP_CASES:
+        raise ValueError(
+            "max-step-cases cannot exceed the fixed 12-case bound"
+        )
     projection = base_projection(manifests, per_case_run_usd)
     accounted_base = (
         projection["subscription_equivalent_usd"]
@@ -161,6 +184,7 @@ def step_plan(
         "remaining_budget_usd": round(available_usd, 2),
         "losing_suite": {
             "manifest": suite["relative_path"],
+            "manifest_sha256": suite["sha256"],
             "active_cases": len(suite["case_ids"]),
         },
         "step": {
@@ -178,6 +202,67 @@ def step_plan(
             ],
         },
     }
+
+
+def source_fingerprint() -> dict[str, Any]:
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    tracked_clean = subprocess.run(
+        ["git", "diff", "--quiet", "HEAD", "--"],
+        cwd=PROJECT_ROOT,
+        check=False,
+    ).returncode == 0
+    untracked = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=PROJECT_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    untracked_source = [
+        path
+        for path in untracked.stdout.splitlines()
+        if not path.startswith(("results/", "runs/"))
+    ]
+    value = revision.stdout.strip() if revision.returncode == 0 else ""
+    return {
+        "source_revision": value or None,
+        "source_clean": bool(
+            value
+            and tracked_clean
+            and untracked.returncode == 0
+            and not untracked_source
+        ),
+        "untracked_source_files": untracked_source,
+    }
+
+
+def finalize_authorization(artifact: dict[str, Any]) -> dict[str, Any]:
+    fingerprint = source_fingerprint()
+    artifact["implementation"] = {
+        "harness": str(Path(__file__).relative_to(PROJECT_ROOT)),
+        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        **fingerprint,
+    }
+    if not fingerprint["source_clean"]:
+        artifact["pass"] = False
+        artifact["status"] = "blocked_dirty_source"
+    artifact["authorization_id"] = canonical_json_sha256({
+        "schema": artifact["schema"],
+        "source_revision": fingerprint["source_revision"],
+        "manifest": artifact["losing_suite"]["manifest"],
+        "manifest_sha256": artifact["losing_suite"]["manifest_sha256"],
+        "selected_case_ids": artifact["step"]["selected_case_ids"],
+        "deadline_before_ms": artifact["policy"]["deadline_before_ms"],
+        "deadline_after_ms": artifact["policy"]["deadline_after_ms"],
+        "maximum_total_usd": artifact["step"]["maximum_total_usd"],
+    })
+    return artifact
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -214,17 +299,34 @@ def main() -> int:
         load_manifest(path)
         for path in (args.manifests or DEFAULT_MANIFESTS)
     ]
-    artifact = step_plan(
+    artifact = finalize_authorization(step_plan(
         manifests,
         losing_suite=args.losing_suite,
         actual_base_usd=args.actual_base_usd,
         per_case_run_usd=args.per_case_run_usd,
         ceiling_usd=args.ceiling_usd,
         max_step_cases=args.max_step_cases,
-    )
+    ))
+    try:
+        output_relative = args.out.resolve().relative_to(PROJECT_ROOT)
+    except ValueError as error:
+        raise ValueError(
+            "--out must be under the repository results directory"
+        ) from error
+    if not output_relative.parts or output_relative.parts[0] != "results":
+        raise ValueError(
+            "--out must be under the repository results directory"
+        )
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
+    with args.out.open("x", encoding="utf-8") as output:
+        output.write(json.dumps(artifact, indent=2) + "\n")
+    artifact_sha256 = hashlib.sha256(args.out.read_bytes()).hexdigest()
     print(json.dumps(artifact, indent=2))
+    print(json.dumps({
+        "artifact": str(args.out),
+        "artifact_sha256": artifact_sha256,
+        "authorization_id": artifact["authorization_id"],
+    }, indent=2))
     return 0 if artifact["pass"] else 2
 
 

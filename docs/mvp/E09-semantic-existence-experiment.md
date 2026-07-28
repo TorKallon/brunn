@@ -26,6 +26,10 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 - A. no_semantic — exact+lexical only via modes; the configuration of all measured baselines.
 - B. unbounded_semantic — semantic_lane=on, embed_cache=off, no semantic deadline (only RETRIEVAL_LANE_TIMEOUT bounds the lane). Current code behavior with coverage present.
 - C. deadline_cache — semantic_lane=on, embed_cache=on, semantic_deadline_ms=300.
+- C600. deadline_cache_600 — semantic_lane=on, embed_cache=on,
+  semantic_deadline_ms=600. This identity does not exist as an ordinary arm:
+  it is accepted only with the exact SHA-256 of a clean-source step-policy
+  artifact authorizing the selected suite and case IDs.
 
 ## Corpus and fixtures
 
@@ -71,13 +75,35 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 6. Aggregate an explicit quality-only array:
    `E09_QUALITY=(results/2026-MM-DD-e09-{no_semantic,unbounded_semantic,deadline_cache}-{work,rupture,recent}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E09_QUALITY[@]}" --expected-arm e09-deadline-cache --expected-arm e09-unbounded-semantic --expected-arm e09-no-semantic --out results/2026-MM-DD-e09-aggregate.json`.
 7. Deadline stepping: only if C loses to B with McNemar significance, generate
-   `eval/e09_step_policy.py --losing-suite <suite> --out
+   `python3 eval/e09_step_policy.py --losing-suite <suite> --out
    results/2026-MM-DD-e09-step-policy.json`, supplying actual base spend when
    available. The artifact may authorize exactly one 300→600ms step, three
    draws, and at most 12 deterministic case IDs while keeping accounted spend
    at or below $100. A truncated suite is exploratory and requires an owner
    decision after the step. Automatic 1,000ms stepping is forbidden; it needs
    new owner authorization and a new budget artifact.
+
+   The policy output is immutable (`open(..., "x")`) and records its clean
+   source revision, harness SHA-256, suite-manifest SHA-256, deterministic case
+   IDs, and authorization identity. Hash that file, restart the isolated stack
+   at a 600ms deadline, and execute each authorized draw with:
+
+   `--e09-arm deadline_cache_600 --experiment-arm e09-deadline-cache-600 --e09-step-policy <policy.json> --e09-step-policy-sha256 <sha256>`
+
+   Pass the exact `--case` arguments emitted by the policy and reuse the
+   corresponding base-C `--paired-draw-id` values. The agent harness rejects
+   any extra, missing, reordered, differently manifested, dirty-source, or
+   differently revised selection. The 600ms latency artifact requires the same
+   policy/hash pair in `performance_eval.py`.
+
+   Aggregate only C versus C600:
+
+   `python3 eval/aggregate_draws.py <base-C-jsons> <C600-jsons> --expected-arm e09-deadline-cache --expected-arm e09-deadline-cache-600 --e09-step-policy <policy.json> --e09-step-policy-sha256 <sha256> --out results/2026-MM-DD-e09-step-aggregate.json`
+
+   The aggregator uses only the authorized subset from the immutable full-suite
+   300ms draws, requires arm-complete three-draw pairing, and rejects any C600
+   artifact whose run ledger is not bound to that policy. There is deliberately
+   no 1,000ms arm.
 
 ## Metrics
 

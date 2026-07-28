@@ -42,6 +42,7 @@ from agent_work_eval import (  # noqa: E402
     measure_adoption,
     validate,
     write_native_provisioning_state,
+    build_parser as build_agent_parser,
 )
 from straylight_eval import BM25Index  # noqa: E402
 from workspace_cli import corpus_hash, load_corpus, safe_compute  # noqa: E402
@@ -53,6 +54,32 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AgentWorkEvalTests(unittest.TestCase):
+    def test_agent_parser_exposes_only_the_policy_gated_600ms_step(self):
+        args = build_agent_parser().parse_args([
+            "--manifest",
+            str(ROOT / "eval" / "work_cases.json"),
+            "run",
+            "--condition",
+            "service_api",
+            "--e09-arm",
+            "deadline_cache_600",
+            "--experiment-arm",
+            "e09-deadline-cache-600",
+            "--paired-draw-id",
+            "e09-work-draw1",
+            "--e09-step-policy",
+            "results/step-policy.json",
+            "--e09-step-policy-sha256",
+            "a" * 64,
+            "--out",
+            "result.json",
+        ])
+        self.assertEqual(args.e09_arm, "deadline_cache_600")
+        self.assertEqual(
+            args.e09_step_policy,
+            Path("results/step-policy.json"),
+        )
+
     def test_e09_semantic_coverage_probe_rejects_all_gap_shapes(self):
         self.assertTrue(response_reports_semantic_gap({
             "data": {

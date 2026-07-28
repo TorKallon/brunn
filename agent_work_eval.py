@@ -24,6 +24,7 @@ from native_eval import (
     text_documents,
     write_native_memory_wrapper,
 )
+from eval.e09_step_authorization import load_step_authorization
 from semantic_eval_policy import (
     enforced_retrieval_modes,
     expected_e09_features,
@@ -2110,6 +2111,7 @@ async def run_all(args: argparse.Namespace) -> dict:
         "no_semantic": "e09-no-semantic",
         "unbounded_semantic": "e09-unbounded-semantic",
         "deadline_cache": "e09-deadline-cache",
+        "deadline_cache_600": "e09-deadline-cache-600",
     }
     if args.e09_arm:
         required_arm = e09_experiment_arms[args.e09_arm]
@@ -2118,13 +2120,6 @@ async def run_all(args: argparse.Namespace) -> dict:
                 f"E09 {args.e09_arm} requires --experiment-arm {required_arm} "
                 "and a --paired-draw-id"
             )
-        for name, expected in expected_e09_features(args.e09_arm).items():
-            if name in expected_features and expected_features[name] != expected:
-                raise ValueError(
-                    f"E09 {args.e09_arm} conflicts with the declared "
-                    f"runtime expectation for {name}"
-                )
-            expected_features[name] = expected
     if (
         (expected_features or args.expect_build_revision)
         and "service_api" not in selected_conditions
@@ -2133,6 +2128,8 @@ async def run_all(args: argparse.Namespace) -> dict:
             "runtime/build expectations require the service_api condition"
         )
     source_fingerprint = evaluation_source_fingerprint()
+    manifest_sha256 = sha256_file(args.manifest)
+    step_authorization: dict[str, Any] | None = None
     if args.e09_arm:
         if args.service_protocol != "simple":
             raise ValueError("E09 arms require --service-protocol simple")
@@ -2146,6 +2143,50 @@ async def run_all(args: argparse.Namespace) -> dict:
             raise ValueError(
                 f"E09 requires a clean source fingerprint: {source_fingerprint}"
             )
+        if args.e09_arm == "deadline_cache_600":
+            if (
+                args.e09_step_policy is None
+                or args.e09_step_policy_sha256 is None
+            ):
+                raise ValueError(
+                    "E09 deadline_cache_600 requires --e09-step-policy and "
+                    "--e09-step-policy-sha256"
+                )
+            step_authorization = load_step_authorization(
+                args.e09_step_policy,
+                args.e09_step_policy_sha256,
+                expected_source_revision=str(
+                    source_fingerprint["source_revision"]
+                ),
+                expected_manifest_path=str(
+                    args.manifest.resolve().relative_to(PROJECT_ROOT)
+                ),
+                expected_manifest_sha256=manifest_sha256,
+                expected_case_ids=[
+                    case["id"] for case in selected_cases
+                ],
+            )
+        elif (
+            args.e09_step_policy is not None
+            or args.e09_step_policy_sha256 is not None
+        ):
+            raise ValueError(
+                "step-policy arguments are valid only for "
+                "--e09-arm deadline_cache_600"
+            )
+        for name, expected in expected_e09_features(
+            args.e09_arm,
+            step_authorization=step_authorization,
+        ).items():
+            if (
+                name in expected_features
+                and expected_features[name] != expected
+            ):
+                raise ValueError(
+                    f"E09 {args.e09_arm} conflicts with the declared "
+                    f"runtime expectation for {name}"
+                )
+            expected_features[name] = expected
         public_status = NativeApiClient(
             token="public-status",
             timeout=15,
@@ -2153,6 +2194,7 @@ async def run_all(args: argparse.Namespace) -> dict:
         public_provenance = validate_e09_runtime(
             public_status,
             args.e09_arm,
+            step_authorization=step_authorization,
         )
         if (
             public_provenance["build_revision"]
@@ -2165,11 +2207,19 @@ async def run_all(args: argparse.Namespace) -> dict:
             )
     else:
         public_provenance = None
+        if (
+            args.e09_step_policy is not None
+            or args.e09_step_policy_sha256 is not None
+        ):
+            raise ValueError(
+                "step-policy arguments require "
+                "--e09-arm deadline_cache_600"
+            )
     selected_model = args.model or manifest["model"]
-    manifest_sha256 = sha256_file(args.manifest)
     experiment_parameters = {
         "declared_feature_states": feature_states,
         "e09_arm": args.e09_arm,
+        "e09_step_authorization": step_authorization,
         "run_tags": sorted(set(args.run_tag)),
     }
     ensure_run_binding(
@@ -2224,6 +2274,7 @@ async def run_all(args: argparse.Namespace) -> dict:
                     or args.e09_arm in {
                         "unbounded_semantic",
                         "deadline_cache",
+                        "deadline_cache_600",
                     }
                 ),
             )
@@ -2254,6 +2305,7 @@ async def run_all(args: argparse.Namespace) -> dict:
         e09_provenance = validate_e09_runtime(
             e09_runtime_before,
             args.e09_arm,
+            step_authorization=step_authorization,
         )
         if (
             e09_provenance["build_revision"]
@@ -2298,7 +2350,10 @@ async def run_all(args: argparse.Namespace) -> dict:
                     "STRAYLIGHT_API_URL": os.environ["STRAYLIGHT_API_URL"],
                     "STRAYLIGHT_EVAL_TOKEN": metadata["token"],
                 }
-                enforced_modes = enforced_retrieval_modes(args.e09_arm)
+                enforced_modes = enforced_retrieval_modes(
+                    args.e09_arm,
+                    step_authorization=step_authorization,
+                )
                 if enforced_modes:
                     environment["STRAYLIGHT_EVAL_RETRIEVAL_MODES"] = ",".join(
                         enforced_modes
@@ -2366,6 +2421,7 @@ async def run_all(args: argparse.Namespace) -> dict:
         final_provenance = validate_e09_runtime(
             e09_runtime_after,
             args.e09_arm,
+            step_authorization=step_authorization,
         )
         if final_provenance != e09_provenance:
             raise ValueError(
@@ -2600,10 +2656,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--e09-arm",
-        choices=("no_semantic", "unbounded_semantic", "deadline_cache"),
+        choices=(
+            "no_semantic",
+            "unbounded_semantic",
+            "deadline_cache",
+            "deadline_cache_600",
+        ),
         help=(
             "fail-closed E09 arm selection; verifies API flags/build provenance "
             "and enforces exact+lexical requests for no_semantic"
+        ),
+    )
+    run_parser.add_argument(
+        "--e09-step-policy",
+        type=Path,
+        help=(
+            "immutable approved E09 step-policy artifact; required only for "
+            "deadline_cache_600"
+        ),
+    )
+    run_parser.add_argument(
+        "--e09-step-policy-sha256",
+        help=(
+            "expected SHA-256 of --e09-step-policy; required only for "
+            "deadline_cache_600"
         ),
     )
     run_parser.add_argument("--out", type=Path, required=True)

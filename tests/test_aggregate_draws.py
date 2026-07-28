@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from eval.aggregate_draws import aggregate  # noqa: E402
+from eval.e09_step_authorization import canonical_json_sha256  # noqa: E402
 
 
 REVISION = "a" * 40
@@ -90,6 +91,50 @@ def explicit_arm_payload(run_id, paired_draw_id, experiment_arm, rows):
     payload["run_ledger"]["configuration"]["experiment_arm"] = experiment_arm
     payload["run_ledger"]["configuration"]["paired_draw_id"] = paired_draw_id
     return payload
+
+
+def step_policy_payload(selected_case_ids):
+    value = {
+        "schema": "straylight-e09-step-policy@v1",
+        "status": "approved_one_step_bounded_subset",
+        "pass": True,
+        "policy": {
+            "one_step_only": True,
+            "deadline_before_ms": 300,
+            "deadline_after_ms": 600,
+            "automatic_1000ms_step_allowed": False,
+            "step_draws": 3,
+            "max_step_cases": 12,
+            "reasoning_ceiling_usd": 100.0,
+            "second_step_status": "forbidden_without_new_owner_authorization",
+        },
+        "losing_suite": {
+            "manifest": "eval/synthetic_cases.json",
+            "manifest_sha256": "b" * 64,
+        },
+        "step": {
+            "selected_case_ids": selected_case_ids,
+            "selected_cases": len(selected_case_ids),
+            "case_runs": len(selected_case_ids) * 3,
+            "maximum_total_usd": 92.0,
+        },
+        "implementation": {
+            "source_revision": REVISION,
+            "source_clean": True,
+            "harness_sha256": "f" * 64,
+        },
+    }
+    value["authorization_id"] = canonical_json_sha256({
+        "schema": value["schema"],
+        "source_revision": REVISION,
+        "manifest": value["losing_suite"]["manifest"],
+        "manifest_sha256": value["losing_suite"]["manifest_sha256"],
+        "selected_case_ids": selected_case_ids,
+        "deadline_before_ms": 300,
+        "deadline_after_ms": 600,
+        "maximum_total_usd": 92.0,
+    })
+    return value
 
 
 class AggregateDrawTests(unittest.TestCase):
@@ -397,6 +442,81 @@ class AggregateDrawTests(unittest.TestCase):
             self.assertEqual(claim_test["draws_per_claim"], [3])
             self.assertEqual(claim_test["one_sided_exact_p"], 0.0625)
             self.assertIn("two_sided_exact_p", pair["exact_mcnemar"])
+
+    def test_authorized_600ms_step_reuses_only_the_policy_subset(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy_path = root / "step-policy.json"
+            policy_path.write_text(
+                json.dumps(step_policy_payload(["case-b"])) + "\n",
+                encoding="utf-8",
+            )
+            policy_sha256 = hashlib.sha256(
+                policy_path.read_bytes()
+            ).hexdigest()
+            from eval.e09_step_authorization import load_step_authorization
+
+            binding = load_step_authorization(
+                policy_path,
+                policy_sha256,
+                expected_source_revision=REVISION,
+            )
+            paths = []
+            for draw in range(3):
+                for arm, rows in (
+                    (
+                        "e09-deadline-cache",
+                        [
+                            ("case-a", "service_api", 4, True, 100),
+                            ("case-b", "service_api", 3, False, 120),
+                        ],
+                    ),
+                    (
+                        "e09-deadline-cache-600",
+                        [
+                            ("case-b", "service_api", 4, True, 110),
+                        ],
+                    ),
+                ):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        rows,
+                    )
+                    parameters = (
+                        {"e09_step_authorization": binding}
+                        if arm == "e09-deadline-cache-600"
+                        else {}
+                    )
+                    payload["experiment_parameters"] = parameters
+                    payload["run_ledger"]["configuration"][
+                        "experiment_parameters"
+                    ] = parameters
+                    path = root / f"{arm}-{draw}.json"
+                    path.write_text(
+                        json.dumps(payload) + "\n",
+                        encoding="utf-8",
+                    )
+                    paths.append(path)
+            result = aggregate(
+                paths,
+                expected_arms=[
+                    "e09-deadline-cache",
+                    "e09-deadline-cache-600",
+                ],
+                e09_step_policy=policy_path,
+                e09_step_policy_sha256=policy_sha256,
+            )
+            pair = result["pairings"][
+                "e09-deadline-cache__vs__e09-deadline-cache-600"
+            ]["overall"]
+            self.assertEqual(pair["case_clusters"], 1)
+            self.assertEqual(pair["per_case"][0]["case_id"], "case-b")
+            self.assertEqual(
+                result["e09_step_authorization"]["authorization_id"],
+                binding["authorization_id"],
+            )
 
 
 if __name__ == "__main__":

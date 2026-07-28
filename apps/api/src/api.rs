@@ -125,7 +125,8 @@ pub fn router(state: AppState) -> Router {
     let evaluation_ordinary = Router::new()
         .route(
             "/workspace/admin/eval/imports/{import_id}",
-            get(simple_core::evaluation_status),
+            get(simple_core::evaluation_status)
+                .delete(simple_core::cleanup_evaluation),
         )
         .route(
             "/admin/eval/imports/{import_id}",

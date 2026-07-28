@@ -59,6 +59,38 @@ class SemanticEvalPolicyTests(unittest.TestCase):
                 "deadline_cache",
             )
 
+    def test_authorized_step_arm_has_a_distinct_600ms_runtime_identity(self):
+        status = {
+            "build_revision": "abc123",
+            "runtime_features": {
+                "semantic_lane": True,
+                "embed_cache": True,
+                "semantic_deadline_ms": 600,
+                "embedding_backfill_guard": True,
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "checked step-policy"):
+            validate_e09_runtime(status, "deadline_cache_600")
+        binding = {
+            "schema": "straylight-e09-step-authorization-binding@v1",
+            "authorization_id": "a" * 64,
+            "artifact_sha256": "b" * 64,
+            "deadline_before_ms": 300,
+            "deadline_after_ms": 600,
+            "automatic_1000ms_step_allowed": False,
+        }
+        result = validate_e09_runtime(
+            status,
+            "deadline_cache_600",
+            step_authorization=binding,
+        )
+        self.assertEqual(result["arm"], "deadline_cache_600")
+        self.assertEqual(result["step_authorization_id"], "a" * 64)
+        self.assertEqual(
+            result["expected_features"]["semantic_deadline_ms"],
+            600,
+        )
+
     def test_counter_delta_and_rates_are_exact(self):
         before = {
             "requested": 10,

@@ -926,6 +926,28 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertTrue(args.wait_semantic)
         self.assertTrue(args.unique_queries)
 
+    def test_e09_600ms_parser_requires_explicit_policy_inputs_at_execution(self):
+        args = build_parser().parse_args([
+            "run",
+            "--label",
+            "e09-step",
+            "--e09-arm",
+            "deadline_cache_600",
+            "--e09-step-policy",
+            "results/step-policy.json",
+            "--e09-step-policy-sha256",
+            "a" * 64,
+            "--require-semantic-failure-hook-attestation",
+            "--out",
+            "result.json",
+        ])
+        self.assertEqual(args.e09_arm, "deadline_cache_600")
+        self.assertEqual(
+            args.e09_step_policy,
+            Path("results/step-policy.json"),
+        )
+        self.assertTrue(args.require_semantic_failure_hook_attestation)
+
     def test_lane_failure_detection_handles_query_and_gap_shapes(self):
         self.assertTrue(response_reports_lane_failure(
             {"lane_failures": ["semantic"]},

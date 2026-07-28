@@ -29,6 +29,17 @@ cross-process foreground guard is configured, and requires a semantic-only
 warm probe with candidates and no semantic gap. These harnesses are unit
 tested; no definitive experiment has been run.
 
+Current-build execution hardening adds
+`eval/openai_embedding_fault_proxy.py` for real-provider modes. The proxy is
+run-unique and forwards only `/v1/embeddings`; it never logs or persists bearer
+headers, request bodies, or response bodies. Loopback control is allowed
+locally, while non-loopback control requires a bearer token loaded from an
+owner-only file. Every configure command binds the proxy instance ID, checked-in
+implementation SHA-256, and upstream-base-URL SHA-256. Definitive real-provider
+performance runs add `--require-semantic-failure-hook-attestation`, so both the
+injected-error hook and restored-forward hook must return matching,
+secret-free attestations.
+
 ## Arms
 
 Three modes, per the Codex review note:
@@ -70,16 +81,23 @@ MM-DD is the run date.
    mock's injected-503 configure command and distinct fast-state restore
    command into `--semantic-failure-start-command` /
    `--semantic-failure-stop-command`. In addition, run
-   `eval/semantic_http_probe.py` with the mock's slow/restore configure hooks;
-   require the cold full HTTP response to retain exact+lexical evidence and
+   `eval/semantic_http_probe.py --run-id <unique-run>` with slow/restore proxy
+   configure hooks. The probe now provisions its own unique one-document,
+   read/write evaluation user and nonce-bearing marker, waits for semantic
+   readiness, and always calls the atomic evaluation cleanup endpoint in a
+   `finally` path. Passing the probe requires both source cleanup and proof
+   that the scoped credential was revoked; neither token nor fixture source
+   body is written to the result artifact.
+   Require the cold full HTTP response to retain exact+lexical evidence and
    defer semantic before provider delay, the identical query to succeed from
    the asynchronously warmed cache, and a new semantic query to succeed after
    restore.
 5. Mode 3 uses real OpenAI embeddings, semantic lane on, cache off, and an
    unbounded semantic deadline. A controllable per-stack provider proxy is
    mandatory; set `SEMANTIC_FAILURE_START` and `SEMANTIC_FAILURE_STOP` to its
-   distinct failure/restore commands. Run cold first:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical semantic --semantic-failure-probe required --semantic-failure-start-command "$SEMANTIC_FAILURE_START" --semantic-failure-stop-command "$SEMANTIC_FAILURE_STOP" --wait-semantic --unique-queries --query-budget-profile default-safe --label e03-mode3-cold-64k --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=on --expect-feature-flag embed_cache=off --expect-feature-flag verbatim_spans=on --expect-runtime-config semantic_deadline_ms=null --out results/2026-MM-DD-e03-mode3-cold-64k.json`.
+   distinct injected-503 and restored-forward configure commands. Definitive
+   runs require both hooks to attest the same proxy target. Run cold first:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical semantic --semantic-failure-probe required --semantic-failure-start-command "$SEMANTIC_FAILURE_START" --semantic-failure-stop-command "$SEMANTIC_FAILURE_STOP" --require-semantic-failure-hook-attestation --wait-semantic --unique-queries --query-budget-profile default-safe --label e03-mode3-cold-64k --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=on --expect-feature-flag embed_cache=off --expect-feature-flag verbatim_spans=on --expect-runtime-config semantic_deadline_ms=null --out results/2026-MM-DD-e03-mode3-cold-64k.json`.
    Then repeat without `--unique-queries`, against the same API process, as
    `e03-mode3-warm-64k`. Do not substitute the deterministic mock for the
    real-provider failure proof.
@@ -94,6 +112,15 @@ MM-DD is the run date.
    prices the shared backfill path; it is not persistent coverage proof for
    E09, whose quality harness provisions isolated per-case users and must
    independently wait for and verify semantic coverage.
+   After retrieving the provider receipt, hash the immutable run artifact and
+   invoke:
+
+   `python3 eval/e03_quality_backfill.py reconcile-receipt --input <run.json> --input-sha256 <sha256> --run-id <exact-run-id> --provider-receipt <receipt-file> --billed-input-tokens <tokens> --billed-usd <usd> --out <new-reconciliation.json>`
+
+   The command refuses overwrite, run-ID or hash mismatch, already-reconciled
+   input, inconsistent token/USD pricing, and spend above the original
+   ceiling. It records only the receipt hash and size, never the receipt
+   contents, and does not mutate the original run.
 7. Report per-phase p50/p95/p99 tables per mode from `timings_ms`; diff against the v8 baselines.
 
 ## Metrics
@@ -136,4 +163,6 @@ The run record must contain: git SHA (clean tree); all six-plus artifact paths n
 - results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json; results/2026-07-27-3340-clean-30-sample.json (both exact+lexical only — the gap this closes)
 - apps/api/src/simple_core.rs:3005 (synchronous uncached query embed); RETRIEVAL_LANE_TIMEOUT ~2.5s
 - tests/mock_openai_embeddings.py (deterministic mock + failure hooks)
+- eval/openai_embedding_fault_proxy.py (real-provider forwarding and
+  fingerprint-bound slow/error/restore controls)
 - D09-latency-contract-and-gates.md ((a) is prerequisite; (b) gates consumed); E09-semantic-existence-experiment.md (consumer; D11-semantic-lane-policy.md is the policy design); E10-combined-preflight.md (inherits whichever semantic posture E09 picks); Decisions.md (cost rules, embeddings exemption)

@@ -99,7 +99,14 @@ Per D14 (D14-migration-and-authority-tiers.md), semantic stays OFF the Tier B cr
 Deterministic (pre-experiment):
 
 1. Unit tests: key normalization (whitespace/trim), LRU eviction at 4,096, TTL expiry, negative-cache window, model-id self-invalidation.
-2. Deterministic mock-embedder deadline test with injected latency greater than `semantic_deadline_ms`: the bounded future defers, and the cache is populated asynchronously afterward. `eval/semantic_http_probe.py` supplies the full HTTP slow-provider/deadline/cache acceptance probe; it remains to be executed against the isolated E09 stack.
+2. Deterministic mock-embedder deadline test with injected latency greater than
+   `semantic_deadline_ms`: the bounded future defers, and the cache is populated
+   asynchronously afterward. `eval/semantic_http_probe.py` supplies the full
+   HTTP slow-provider/deadline/cache acceptance probe. It now atomically owns a
+   unique scoped marker fixture, requires fingerprint-bound fault-proxy
+   attestations by default, cleans the fixture, revokes its credential, and
+   records redacted lifecycle receipts. It remains to be executed against the
+   isolated E09 stack.
 3. Round-trip budget assertion: a search performs ≤1 embed call, exactly 0 on cache hit (per the constraint that query-count budgets accompany latency gates).
 4. `eval/e03_mode2.py` wires distinct injected-failure and restore commands into performance_eval.py's semantic-failure hooks; the definitive 64K 30-sample p95 run must pass the hard gates with the lane on.
 5. Backfill guard test: the rolling-p95 calculator and a real cross-process HTTP boundary deterministically prove pause/fail-closed behavior. The definitive D12 64K concurrent-load artifact must additionally prove pause and resume within one batch without a foreground p95 breach.
