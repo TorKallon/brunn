@@ -1,18 +1,18 @@
 # E10 — Combined Preflight
 
 Status: Prerequisite abort — accepted launch manifest is not qualified
-Date: 2026-07-27
+Date: 2026-07-28
 Gates: D01, D02, D03, D04, D05 in combination — the final pre-launch gate before Tier C sole authority (D14-migration-and-authority-tiers.md, which lists E10 in gate 5 and the Tier C entry requirements); no cutover proceeds without it
 Phase: 1 (requires flagged feature build — all shipped Dxx flags landed)
 
 **CURRENT PREREQUISITE ABORT (2026-07-28):** Do not run E10. The accepted
 immutable launch flag manifest is incomplete and not qualified. E01 is
 complete, but E02 rejected D02, E04 rejected D01, E05 rejected
-`lexical_single_scan`, E06–E08 have not collectively produced the accepted
-launch feature set, and E09 has no decided semantic posture because E03 Mode 2
-failed before quality backfill. This abort does not change E10's future role
-or experimental intent. Rebuild the manifest only from accepted features
-after those gates resolve.
+`lexical_single_scan`, and E06 rejected D03. E07's mechanism passed but its
+unprompted-adoption gate failed, E08 stopped before a D05 feature verdict, and
+E09 remains prerequisite-aborted because E03 Mode 2 failed before quality
+backfill. This abort does not change E10's future role or experimental intent.
+Rebuild the manifest only from accepted features after those gates resolve.
 
 ## Question
 
@@ -24,7 +24,7 @@ This is the "stronger than MD" endgame gate: the claim was never that a database
 
 ## Preconditions and build items
 
-1. **NOT SATISFIED.** All surviving D01-D05 candidates have a completed ship-or-drop decision from their own Exx gate. Any Dxx that did not ship is absent from the flag set — E10 tests what will actually launch, and the run record says exactly what that was. D01 was rejected by E04, D02 is rejected by E02, and E05 separately rejects the deferred D10 `lexical_single_scan` candidate; E06–E08 have not yet supplied the remaining ship-or-drop decisions.
+1. **NOT SATISFIED.** All surviving D01-D05 candidates have a completed ship-or-drop decision from their own Exx gate. Any Dxx that did not ship is absent from the flag set — E10 tests what will actually launch, and the run record says exactly what that was. D01, D02, and D03 are resolved drops; E05 separately rejected the deferred D10 `lexical_single_scan` candidate. D04's mechanism passed but its adoption gate failed, and E08 supplied no D05 verdict. The final D04/D05 ship-or-drop set therefore remains unresolved.
 2. **SATISFIED.** E01 machinery is complete (E01-paired-draw-machinery-and-baseline.md): the definitive 531-case-run matrix includes `eval/aggregate_draws.py`, the `filesystem_sidecar` condition, and transitions-sidecar coverage across all five suites.
 3. One global budget: the combined context/char budget configuration (per D01) active as a single runtime config, not per-feature budgets summed implicitly. Target posture per Tier B: crude open/search char budget near legacy ~41.4K chars/case at entry.
 4. Flag-manifest snapshot (implemented): every service run stores an authenticated `/v1/status` runtime-feature/knob/build snapshot whose canonical hash is bound into the immutable run ledger.
@@ -53,10 +53,10 @@ MM-DD is the run date.
    revision—not an earlier experiment
    SHA—and the complete runtime manifest. Use one immutable image across all
    stacks. The current provisional semantic-off posture must already bind the
-   two rejected features off; the remaining feature values are illustrative
-   until E04 and E06–E09 resolve and therefore do not constitute an accepted
-   immutable launch manifest:
-   `E10_RUNTIME=(--expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_top1_hydration=on --expect-feature-flag search_char_cap=on --expect-runtime-config search_section_demotion_top_n=8 --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --expect-feature-flag intention_ledger=on --expect-feature-flag read_path_roundtrip_v1=on --expect-feature-flag lexical_single_scan=off)`.
+   every resolved rejected feature off. D04, D05, and E09 remain unresolved,
+   so the following current-safe posture is diagnostic only and does not
+   constitute an accepted immutable launch manifest:
+   `E10_RUNTIME=(--expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag search_fair_share=off --expect-feature-flag search_top1_hydration=off --expect-feature-flag search_char_cap=off --expect-runtime-config search_section_demotion_top_n=null --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=off --expect-feature-flag supersession_demotion=off --expect-runtime-config supersession_demotion_weight=1.5 --expect-feature-flag intention_ledger=off --expect-feature-flag read_path_roundtrip_v1=off --expect-feature-flag lexical_single_scan=off)`.
    Remove any rejected feature from the launch behavior instead of pretending
    it shipped, while still asserting its authenticated off state.
 2. The default-safe query contract is forbidden for this combined shape.

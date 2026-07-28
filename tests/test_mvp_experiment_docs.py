@@ -86,16 +86,24 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
         self.assertIn("immutable launch flag manifest is incomplete", e10)
         self.assertIn("E01 is\ncomplete", e10)
         self.assertIn("E04 rejected D01", e10)
+        self.assertIn("E06 rejected D03", e10)
+        normalized_e10 = " ".join(e10.split())
         self.assertIn(
-            "E06–E08 have not collectively produced the accepted\n"
-            "launch feature set",
-            e10,
+            "E07's mechanism passed but its unprompted-adoption gate failed",
+            normalized_e10,
         )
         self.assertIn(
-            "E09 has no decided semantic posture because E03 Mode 2 failed",
-            " ".join(e10.split()),
+            "E08 stopped before a D05 feature verdict",
+            normalized_e10,
+        )
+        self.assertIn(
+            "E09 remains prerequisite-aborted because E03 Mode 2 failed",
+            normalized_e10,
         )
         self.assertIn("--expect-feature-flag verbatim_spans=off", e10)
+        self.assertIn("--expect-feature-flag resume_deltas=off", e10)
+        self.assertIn("--expect-feature-flag supersession_demotion=off", e10)
+        self.assertIn("--expect-feature-flag intention_ledger=off", e10)
         self.assertIn("--expect-feature-flag lexical_single_scan=off", e10)
         self.assertNotIn("verbatim_spans=on", e10)
         self.assertNotIn("lexical_single_scan=on", e10)

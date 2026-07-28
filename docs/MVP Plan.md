@@ -38,6 +38,11 @@ deltas) proven in real use.
   The D02 flag-on arm recovered only the four byte-2,600 probes at each scale
   and lost every deeper identifier. D02 remains default-off pending repair;
   the 640K soak and reasoning draws were aborted.
+- E07 completed all 162 frozen sessions. The D04 mechanism cleared its
+  predeclared net-win, safety, deterministic, and context gates, but the effect
+  estimate remained imprecise and unprompted supersession authoring failed at
+  7/18. D04 remains default-off and is not Tier-C ready; assisted authoring and
+  a fresh adoption qualification are required.
 - E08 stopped at deterministic preflight without a feature verdict. Its
   flag-on calibration recorded complete canonical query counts but failed the
   nonintentional 64K concurrent-search p95 gate at 874.535 ms against the
@@ -48,18 +53,18 @@ deltas) proven in real use.
   rehabilitate D02. E09 is prerequisite-aborted by E03's failed Mode 2 and
   missing quality backfill. E10 lacks an accepted immutable launch flag
   manifest: E01 is complete, E04 rejected both D01 configurations, E05
-  rejected `lexical_single_scan`, E06 rejected D03, and E07–E09 have not
-  collectively resolved the launch feature set. E11 is
+  rejected `lexical_single_scan`, and E06 rejected D03; E07's adoption failure,
+  E08's absent feature verdict, and E09's prerequisite abort still prevent the
+  launch feature set from being frozen. E11 is
   prerequisite-aborted by D02's rejection, the absent D06/`link_leads`
   implementation, and the missing owner-authored, owner-signed-off case
   manifest.
-- Reasoning is at parity-within-noise vs direct Markdown but unproven (n=1;
-  single-draw suite scores swing ±3–5 claims). The native API on the simplified
-  core scored 186/228 vs files 194/228; 21/22 disputed answers had the right
-  source in returned context — losses are context compilation, not retrieval.
-- RuptureOps overfetch (~70,814 vs 41,441 service chars/case) is the leading
-  quality risk. Chronic cases are enumerated in
-  [E04](mvp/E04-result-budget-experiment.md).
+- E01's n=3 paired baseline did not establish service non-inferiority or
+  suite-level superiority. It also found materially fewer model-visible
+  RuptureOps characters in service than filesystem, so the earlier
+  service-over-files overfetch diagnosis is not supported by the paired
+  baseline. E04 then showed that neither tested D01 candidate produced the
+  required 25% reduction or acceptable chronic-case tradeoff.
 - Zero of the six launch gates are complete. No client has exercised the MCP
   surface against the simplified core (all 2026-07-24 MCP results were
   legacy-core). No deployment holds owner data on the new core: hosted runs
@@ -109,8 +114,10 @@ Features — flag + experiment gated:
 | [D02](mvp/D02-verbatim-span-contract.md) | Verbatim-span contract | Implemented default-off, rejected by E02 Stage 2 | Repair, then rerun [E02](mvp/E02-verbatim-identifier-gate.md) |
 | [D03](mvp/D03-resume-delta-packets.md) | Resume delta packets ("changes since your checkpoint") | Implemented default-off, rejected by E06 | Closed; keep `resume_deltas` off |
 | [E06](mvp/E06-resume-delta-experiment.md) | Resume delta experiment | Complete negative — no case win or paired claim improvement; payload larger in 15/15 pairs | D03 rejected |
-| [D04](mvp/D04-supersession-current-truth.md) | Supersession / current-truth (Markdown frontmatter round-trip) | Proposed — not started | [E07](mvp/E07-supersession-experiment.md) |
+| [D04](mvp/D04-supersession-current-truth.md) | Supersession / current-truth (Markdown frontmatter round-trip) | Implemented default-off — E07 mechanism passed, adoption failed; not Tier-C ready | Add assisted authoring and requalify adoption |
+| [E07](mvp/E07-supersession-experiment.md) | Supersession demotion and adoption | Complete split result — mechanism passed frozen gate; adoption failed 7/18 | D04 remains default-off pending assisted authoring |
 | [D05](mvp/D05-intention-ledger.md) | Intention ledger at open | Implemented default-off — E08 deterministic preflight stopped; no feature verdict | Prospectively approve an amended [E08](mvp/E08-intention-ledger-experiment.md) protocol before rerun |
+| [E08](mvp/E08-intention-ledger-experiment.md) | Intention ledger experiment | Stopped at deterministic preflight — concurrent-search p95 874.535ms > 750ms; no feature verdict | No contract or reasoning ran; D05 remains default-off |
 | [D11](mvp/D11-semantic-lane-policy.md) | Semantic lane policy: existence question, embed cache + deadline | Implemented behind default-off flags — E09 prerequisite-aborted | Repair E03 Mode 2 and complete quality backfill before [E09](mvp/E09-semantic-existence-experiment.md) |
 
 Readiness — clients, migration, authority:
@@ -127,7 +134,7 @@ Conditional — do not start until stated preconditions hold:
 | [D06](mvp/D06-wiki-link-leads.md) | Wiki-link neighbor leads | Conditional — not implemented; E11 prerequisite-aborted | D01+D02 accepted; owner corpus imported; owner-authored and signed-off case manifest |
 | [D07](mvp/D07-lesson-artifacts.md) | Lesson artifacts, role-scoped | Conditional | D01–D04 landed |
 | [E05](mvp/E05-lexical-consolidation-guard.md) | Lexical consolidation guard | Complete negative — zero SQL reduction in 795 paired search samples; treatment rejected | Deferred D10 item closed |
-| [E10](mvp/E10-combined-preflight.md) | Combined all-flags-on preflight | Prerequisite abort — accepted immutable launch manifest not qualified | E01 complete; E04 and E06–E08 resolved; E09 posture decided; rejected flags excluded |
+| [E10](mvp/E10-combined-preflight.md) | Combined all-flags-on preflight | Prerequisite abort — accepted immutable launch manifest not qualified | Resolve D04 adoption, E08/D05, and E09; exclude rejected flags; then freeze the manifest |
 
 ## Sequencing
 
@@ -164,6 +171,15 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Change log
 
+- 2026-07-28: Re-audited E10 after E06–E08. E04/D01 and E06/D03
+  are now resolved drops, but E07's failed adoption gate, E08's absent feature
+  verdict, E09's prerequisite abort, and the absent accepted immutable launch
+  manifest still block E10. The Tier-C gate remains closed.
+- 2026-07-28: E07 completed all 162 frozen sessions. Its mechanism gate passed
+  at 6 flag wins / 2 baseline wins / 4 ties (net +4), with a wide clustered
+  95% interval of [-2.333, 3.667] and collapsed McNemar p=1.0. Unprompted
+  supersession adoption failed at 7/18, so D04 remains default-off and requires
+  assisted authoring before a new adoption qualification.
 - 2026-07-28: E08 stopped at deterministic preflight with no D05 feature
   verdict. Its exact flag-on calibration recorded complete canonical query
   counts but failed concurrent-search p95 at 874.535 ms against the 750.0 ms
@@ -190,15 +206,11 @@ touch only the harness; Tier A touches only deployment and data. Feature work
   RuptureOps paired service-versus-files overfetch was absent: service minus
   files was -79,549 model-visible characters/case, 95% CI
   [-111,508, -49,126]. Actual API/embedding spend was $0.
-- 2026-07-28: Froze the rejected D02 nuisance posture off for E04–E08.
-  Recorded current prerequisite aborts for E09 (E03 Mode 2/backfill), E10
-  (no accepted immutable launch manifest and unresolved E04/E06–E09
-  qualifications), and E11 (D02 rejection, absent D06 implementation, and
-  missing owner-authored, signed-off manifest). These are prerequisite
-  outcomes, not experiment verdicts; no E09–E11 service, reasoning, or
-  embedding run occurred. Machine-readable records and the cost ledger are in
-  `results/2026-07-28-e{09,10,11}-prerequisite-abort.json` and
-  `results/2026-07-28-e09-e11-prerequisite-aborts.md`.
+- 2026-07-28: At the `d989ae5` evidence snapshot, froze the rejected D02
+  nuisance posture off for E04–E08 and recorded prerequisite aborts for E09,
+  E10, and E11. Later outcomes do not rewrite those snapshot artifacts; the
+  current E10 blocker audit is recorded separately. No E09–E11 service,
+  reasoning, or embedding run occurred.
 - 2026-07-28: E05 completed negative. Both 640K soaks passed, but all 795
   paired search query-count deltas were zero, so the strict-improvement gate
   blocked reasoning. `lexical_single_scan` is rejected and the deferred D10
