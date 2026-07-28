@@ -77,7 +77,9 @@ Prospective cases (5, in eval/e08_prospective_cases.json):
    Confirm the on artifact's `query_budget_contract.sha256` equals
    `E08_QUERY_BUDGET_SHA256`. Any red gate or open p95 delta ≥10ms stops all
    reasoning.
-5. For draw N in 1..3:
+5. Run draw N with the commands below. For N=1, run substeps 1–4, then stop
+   before the filesystem control or N=2 until the interim audit in step 6
+   passes:
    1. Full-suite base:
       `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e08-base --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=off --concurrency 3 --timeout 360 --run-id "e08-base-full-run${N}" --out "results/2026-MM-DD-e08-intention-base-draw${N}.json" --report "results/2026-MM-DD-e08-intention-base-draw${N}.md"`.
    2. Full-suite flag:
@@ -88,12 +90,25 @@ Prospective cases (5, in eval/e08_prospective_cases.json):
       `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e08-flag --paired-draw-id "e08-prospective-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=on --expect-feature-flag resume_deltas=off --concurrency 3 --timeout 360 --run-id "e08-flag-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-flag-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-flag-draw${N}.md"`.
    5. Prospective filesystem control, with no service runtime expectations:
       `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --condition filesystem --experiment-arm e08-filesystem --paired-draw-id "e08-prospective-draw${N}" --concurrency 3 --timeout 360 --run-id "e08-filesystem-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-filesystem-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-filesystem-draw${N}.md"`.
-6. False-surfacing audit uses only exact flag-on draw artifacts:
-   `E08_FLAG=(results/2026-MM-DD-e08-intention-flag-draw{1,2,3}.json results/2026-MM-DD-e08-prospective-flag-draw{1,2,3}.json); python3 eval/audit_intentions.py "${E08_FLAG[@]}" --full-manifest eval/recent_work_cases.json --prospective-manifest eval/e08_prospective_cases.json --expected-full-draw e08-full-draw1 --expected-full-draw e08-full-draw2 --expected-full-draw e08-full-draw3 --expected-prospective-draw e08-prospective-draw1 --expected-prospective-draw e08-prospective-draw2 --expected-prospective-draw e08-prospective-draw3 --out results/2026-MM-DD-e08-intention-audit.json`.
+6. Immediately after both flag-on draw-1 runs complete, enforce the
+   prescribed abort gate using exactly those two raw artifacts:
+   `E08_DRAW1_FLAG=(results/2026-MM-DD-e08-intention-flag-draw1.json results/2026-MM-DD-e08-prospective-flag-draw1.json); python3 eval/audit_intentions.py "${E08_DRAW1_FLAG[@]}" --audit-mode draw1-abort --full-manifest eval/recent_work_cases.json --prospective-manifest eval/e08_prospective_cases.json --expected-full-draw e08-full-draw1 --expected-prospective-draw e08-prospective-draw1 --out results/2026-MM-DD-e08-intention-draw1-abort-audit.json`.
+   The command reopens and hashes both artifacts and applies the same exact
+   manifest/source/build/image/runtime/feature/mode/arm/draw validation as the
+   final audit. Exit 0 requires false surfacing ≤25%, zero surfacing of the
+   `status: done` fixture, and valid pointer/character accounting. A rate
+   exactly equal to 25% does not trigger the specified `>25%` abort. Any
+   invalid evidence or exit 2 stops the experiment: fix the implementation,
+   discard the partial draw set, and restart at draw 1.
+7. Only after step 6 exits 0, run the N=1 filesystem control from step 5.5,
+   then repeat all five substeps for N=2 and N=3.
+8. The final false-surfacing acceptance audit uses only the exact six flag-on
+   draw artifacts:
+   `E08_FLAG=(results/2026-MM-DD-e08-intention-flag-draw{1,2,3}.json results/2026-MM-DD-e08-prospective-flag-draw{1,2,3}.json); python3 eval/audit_intentions.py "${E08_FLAG[@]}" --audit-mode final --full-manifest eval/recent_work_cases.json --prospective-manifest eval/e08_prospective_cases.json --expected-full-draw e08-full-draw1 --expected-full-draw e08-full-draw2 --expected-full-draw e08-full-draw3 --expected-prospective-draw e08-prospective-draw1 --expected-prospective-draw e08-prospective-draw2 --expected-prospective-draw e08-prospective-draw3 --out results/2026-MM-DD-e08-intention-audit.json`.
    The audit hashes and reopens exactly six raw artifacts, validates their
    manifest/source/build/image/runtime/feature/mode/arm/draw provenance, and
    exits nonzero on either invalid evidence or a failed audit gate.
-7. Regrade disputed answers with the correct global `--manifest` before
+9. Regrade disputed answers with the correct global `--manifest` before
    `regrade`. Never put original and regraded versions of one draw into the
    same aggregate. Aggregate the two case/arm sets separately:
    `E08_FULL=(results/2026-MM-DD-e08-intention-{flag,base}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E08_FULL[@]}" --expected-arm e08-flag --expected-arm e08-base --expected-arm-retrieval-modes e08-flag=exact,lexical --expected-arm-retrieval-modes e08-base=exact,lexical --require-feature-family prospective --out results/2026-MM-DD-e08-full-aggregate.json`.
@@ -146,9 +161,10 @@ manifest versions and hashes (recent-work-v0.3, e08_prospective,
 personal_coordination); the calibration path/hash, reviewer decision, frozen
 query-contract path/hash, and both latency artifacts; the 6 seeded intention
 paths with frontmatter; every exact full/prospective/filesystem artifact path;
-both aggregate paths; prospective slot table per arm per draw with paired
-aggregate, McNemar p, and bootstrap CI; false-surfacing audit path and every
-flagged instance; non-prospective paired table; open p95 off/on with delta;
-char-assertion results; cost split (subscription-equivalent vs
+the draw-1 abort-audit path/result; both aggregate paths; prospective slot
+table per arm per draw with paired aggregate, McNemar p, and bootstrap CI;
+final false-surfacing audit path and every flagged instance; non-prospective
+paired table; open p95 off/on with delta; char-assertion results; cost split
+(subscription-equivalent vs
 embeddings-exempt); adoption measurement reference (E07 artifact) and its
 result; explicit pass/fail per acceptance criterion.

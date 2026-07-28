@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,13 +101,20 @@ class AuditIntentionsTests(unittest.TestCase):
         self.assertEqual(result["false_surfacing_rate"], 0.0)
 
     def test_done_pointer_fails_and_malformed_character_receipt_raises(self):
+        done_artifact = accepted_artifact([intention_pointer(
+            "Intentions/Completed renewal invoice.md",
+            due="2026-07-18",
+            status_note="overdue",
+        )])
         result = audit_runs([
-            accepted_artifact([intention_pointer(
-                "Intentions/Completed renewal invoice.md",
-                due="2026-07-18",
-                status_note="overdue",
-            )]),
+            done_artifact,
         ])
+        interim_result = audit_runs(
+            [done_artifact],
+            audit_mode="draw1-abort",
+        )
+        self.assertFalse(interim_result["pass"])
+        self.assertEqual(len(interim_result["done_surfacings"]), 1)
         self.assertFalse(result["pass"])
         self.assertEqual(len(result["done_surfacings"]), 1)
 
@@ -115,6 +124,42 @@ class AuditIntentionsTests(unittest.TestCase):
         ] = 99
         with self.assertRaisesRegex(ValueError, "malformed intention accounting"):
             audit_runs([malformed])
+
+    def test_draw1_abort_mode_uses_inclusive_25_percent_threshold(self):
+        artifact = accepted_artifact([
+            intention_pointer("Intentions/Irrelevant probe.md"),
+        ])
+        empty_open = {
+            "operation": "open",
+            "at": "2026-07-28T12:00:00+00:00",
+            "pending_intentions": [],
+            "pending_intention_chars": 2,
+        }
+        artifact["run"]["records"][0]["service_operations"].extend(
+            [dict(empty_open), dict(empty_open), dict(empty_open)]
+        )
+
+        interim = audit_runs(
+            [artifact],
+            audit_mode="draw1-abort",
+        )
+        final = audit_runs([artifact])
+        self.assertTrue(interim["pass"])
+        self.assertEqual(interim["audit_mode"], "draw1-abort")
+        self.assertEqual(interim["false_surfacing_rate"], 0.25)
+        self.assertEqual(
+            interim["thresholds"]["false_surfacing_rate"],
+            "<=0.25",
+        )
+        self.assertFalse(final["pass"])
+
+        artifact["run"]["records"][0]["service_operations"].pop()
+        over_threshold = audit_runs(
+            [artifact],
+            audit_mode="draw1-abort",
+        )
+        self.assertFalse(over_threshold["pass"])
+        self.assertGreater(over_threshold["false_surfacing_rate"], 0.25)
 
     def test_pointer_schema_cap_and_overdue_semantics_fail_closed(self):
         too_many = [
@@ -197,6 +242,7 @@ class AuditIntentionsTests(unittest.TestCase):
             "audit.json",
         ])
         self.assertEqual(len(args.inputs), 6)
+        self.assertEqual(args.audit_mode, "final")
         full = load_manifest(
             ROOT / "eval" / "recent_work_cases.json",
             expected_benchmark="recent-work-v0.3",
@@ -214,7 +260,7 @@ class AuditIntentionsTests(unittest.TestCase):
             "coord-deadline-readiness",
             prospective["embedded_oracle"],
         )
-        with self.assertRaisesRegex(ValueError, "exactly six"):
+        with self.assertRaisesRegex(ValueError, "exactly 6 flag-on"):
             accepted_e08_runs(
                 [],
                 full_manifest_path=ROOT / "eval" / "recent_work_cases.json",
@@ -232,6 +278,84 @@ class AuditIntentionsTests(unittest.TestCase):
                     "e08-prospective-draw3",
                 ),
             )
+
+    def test_draw1_abort_cli_requires_exact_two_draw1_selections(self):
+        args = build_parser().parse_args([
+            "full-1.json",
+            "prospective-1.json",
+            "--audit-mode",
+            "draw1-abort",
+            "--full-manifest",
+            "eval/recent_work_cases.json",
+            "--prospective-manifest",
+            "eval/e08_prospective_cases.json",
+            "--expected-full-draw",
+            "e08-full-draw1",
+            "--expected-prospective-draw",
+            "e08-prospective-draw1",
+            "--out",
+            "draw1-audit.json",
+        ])
+        self.assertEqual(args.audit_mode, "draw1-abort")
+        self.assertEqual(len(args.inputs), 2)
+        with self.assertRaisesRegex(ValueError, "exactly 2 flag-on"):
+            accepted_e08_runs(
+                [],
+                full_manifest_path=ROOT / "eval" / "recent_work_cases.json",
+                prospective_manifest_path=(
+                    ROOT / "eval" / "e08_prospective_cases.json"
+                ),
+                expected_full_draws=("e08-full-draw1",),
+                expected_prospective_draws=("e08-prospective-draw1",),
+                audit_mode="draw1-abort",
+            )
+        with self.assertRaisesRegex(
+            ValueError,
+            "requires exactly e08-full-draw1",
+        ):
+            accepted_e08_runs(
+                [],
+                full_manifest_path=ROOT / "eval" / "recent_work_cases.json",
+                prospective_manifest_path=(
+                    ROOT / "eval" / "e08_prospective_cases.json"
+                ),
+                expected_full_draws=("e08-full-draw2",),
+                expected_prospective_draws=("e08-prospective-draw2",),
+                audit_mode="draw1-abort",
+            )
+
+    def test_draw1_abort_runs_the_definitive_provenance_validator(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary)
+            paths = [
+                temporary_root / "full.json",
+                temporary_root / "prospective.json",
+            ]
+            for path in paths:
+                path.write_text("{}\n", encoding="utf-8")
+            with patch(
+                "eval.audit_intentions.definitive_service_run_provenance",
+                side_effect=ValueError("provenance rejected"),
+            ) as validator:
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "provenance rejected",
+                ):
+                    accepted_e08_runs(
+                        paths,
+                        full_manifest_path=(
+                            ROOT / "eval" / "recent_work_cases.json"
+                        ),
+                        prospective_manifest_path=(
+                            ROOT / "eval" / "e08_prospective_cases.json"
+                        ),
+                        expected_full_draws=("e08-full-draw1",),
+                        expected_prospective_draws=(
+                            "e08-prospective-draw1",
+                        ),
+                        audit_mode="draw1-abort",
+                    )
+                validator.assert_called_once_with({})
 
 
 if __name__ == "__main__":

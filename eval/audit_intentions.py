@@ -39,6 +39,18 @@ EXPECTED_FEATURES = {
     "intention_ledger": True,
     "resume_deltas": False,
 }
+FINAL_AUDIT_MODE = "final"
+DRAW1_ABORT_AUDIT_MODE = "draw1-abort"
+AUDIT_MODES = {
+    FINAL_AUDIT_MODE: {
+        "false_surfacing_limit": 0.10,
+        "false_surfacing_threshold": "<0.10",
+    },
+    DRAW1_ABORT_AUDIT_MODE: {
+        "false_surfacing_limit": 0.25,
+        "false_surfacing_threshold": "<=0.25",
+    },
+}
 
 
 def validate_pending_intention_pointers(
@@ -225,21 +237,40 @@ def accepted_e08_runs(
     prospective_manifest_path: Path,
     expected_full_draws: Sequence[str],
     expected_prospective_draws: Sequence[str],
+    audit_mode: str = FINAL_AUDIT_MODE,
 ) -> list[dict[str, Any]]:
-    if len(paths) != 6:
+    if audit_mode not in AUDIT_MODES:
+        raise ValueError(f"unsupported E08 intention audit mode {audit_mode!r}")
+    if audit_mode == DRAW1_ABORT_AUDIT_MODE:
+        if (
+            list(expected_full_draws) != ["e08-full-draw1"]
+            or list(expected_prospective_draws)
+            != ["e08-prospective-draw1"]
+        ):
+            raise ValueError(
+                "E08 draw1-abort audit requires exactly "
+                "e08-full-draw1 and e08-prospective-draw1"
+            )
+        required_artifact_count = 2
+        required_draw_count = 1
+    else:
+        required_artifact_count = 6
+        required_draw_count = 3
+    if len(paths) != required_artifact_count:
         raise ValueError(
-            "E08 intention audit requires exactly six flag-on artifacts"
+            f"E08 {audit_mode} intention audit requires exactly "
+            f"{required_artifact_count} flag-on artifacts"
         )
     if (
-        len(expected_full_draws) != 3
-        or len(set(expected_full_draws)) != 3
-        or len(expected_prospective_draws) != 3
-        or len(set(expected_prospective_draws)) != 3
+        len(expected_full_draws) != required_draw_count
+        or len(set(expected_full_draws)) != required_draw_count
+        or len(expected_prospective_draws) != required_draw_count
+        or len(set(expected_prospective_draws)) != required_draw_count
         or set(expected_full_draws) & set(expected_prospective_draws)
     ):
         raise ValueError(
-            "E08 intention audit requires exact, disjoint three-draw sets "
-            "for full and prospective suites"
+            f"E08 {audit_mode} intention audit requires exact, disjoint "
+            f"{required_draw_count}-draw sets for full and prospective suites"
         )
     suites = {
         "full": {
@@ -416,7 +447,16 @@ def accepted_e08_runs(
     return accepted
 
 
-def audit_runs(accepted: Sequence[dict[str, Any]]) -> dict[str, Any]:
+def audit_runs(
+    accepted: Sequence[dict[str, Any]],
+    *,
+    audit_mode: str = FINAL_AUDIT_MODE,
+) -> dict[str, Any]:
+    mode_contract = AUDIT_MODES.get(audit_mode)
+    if mode_contract is None:
+        raise ValueError(f"unsupported E08 intention audit mode {audit_mode!r}")
+    if not accepted:
+        raise ValueError("E08 intention audit requires accepted artifacts")
     opens = 0
     pointers = 0
     false_surfacings = []
@@ -498,16 +538,28 @@ def audit_runs(accepted: Sequence[dict[str, Any]]) -> dict[str, Any]:
     false_surfacing_rate = (
         len(false_surfacings) / opens if opens else None
     )
+    if audit_mode == DRAW1_ABORT_AUDIT_MODE:
+        false_surfacing_passed = bool(
+            false_surfacing_rate is not None
+            and false_surfacing_rate
+            <= mode_contract["false_surfacing_limit"]
+        )
+    else:
+        false_surfacing_passed = bool(
+            false_surfacing_rate is not None
+            and false_surfacing_rate
+            < mode_contract["false_surfacing_limit"]
+        )
     passed = bool(
         opens
-        and false_surfacing_rate is not None
-        and false_surfacing_rate < 0.10
+        and false_surfacing_passed
         and not done_surfacings
         and not char_budget_violations
     )
     stable_provenance = accepted[0]["provenance"]
     return {
         "schema": "straylight-intention-audit@v2",
+        "audit_mode": audit_mode,
         "inputs": [
             {
                 "path": artifact["path"],
@@ -546,7 +598,9 @@ def audit_runs(accepted: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "done_surfacings": done_surfacings,
         "char_budget_violations": char_budget_violations,
         "thresholds": {
-            "false_surfacing_rate": "<0.10",
+            "false_surfacing_rate": mode_contract[
+                "false_surfacing_threshold"
+            ],
             "pending_intention_pointers": f"<={POINTER_LIMIT}",
             "pending_intention_chars": f"<={CHAR_BUDGET}",
             "done_surfacings": 0,
@@ -558,11 +612,21 @@ def audit_runs(accepted: Sequence[dict[str, Any]]) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit the exact six accepted E08 flag-on artifacts for intention "
-            "false surfacing"
+            "Audit provenance-bound E08 flag-on artifacts for intention false "
+            "surfacing"
         )
     )
     parser.add_argument("inputs", nargs="+", type=Path)
+    parser.add_argument(
+        "--audit-mode",
+        choices=tuple(AUDIT_MODES),
+        default=FINAL_AUDIT_MODE,
+        help=(
+            "final requires all six artifacts and the <10%% acceptance gate; "
+            "draw1-abort requires only the exact two draw-1 artifacts and "
+            "enforces the >25%% abort gate"
+        ),
+    )
     parser.add_argument("--full-manifest", required=True, type=Path)
     parser.add_argument("--prospective-manifest", required=True, type=Path)
     parser.add_argument(
@@ -587,8 +651,9 @@ def main() -> int:
         prospective_manifest_path=args.prospective_manifest,
         expected_full_draws=args.expected_full_draw,
         expected_prospective_draws=args.expected_prospective_draw,
+        audit_mode=args.audit_mode,
     )
-    result = audit_runs(accepted)
+    result = audit_runs(accepted, audit_mode=args.audit_mode)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
         json.dumps(result, indent=2) + "\n",
