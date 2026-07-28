@@ -85,10 +85,15 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
         self.assertIn("Status: Prerequisite abort", e10)
         self.assertIn("immutable launch flag manifest is incomplete", e10)
         self.assertIn("E01 is\ncomplete", e10)
-        self.assertIn("E04 and\nE06–E08", e10)
+        self.assertIn("E04 rejected D01", e10)
         self.assertIn(
-            "semantic posture because E03 Mode 2 failed",
+            "E06–E08 have not collectively produced the accepted\n"
+            "launch feature set",
             e10,
+        )
+        self.assertIn(
+            "E09 has no decided semantic posture because E03 Mode 2 failed",
+            " ".join(e10.split()),
         )
         self.assertIn("--expect-feature-flag verbatim_spans=off", e10)
         self.assertIn("--expect-feature-flag lexical_single_scan=off", e10)
