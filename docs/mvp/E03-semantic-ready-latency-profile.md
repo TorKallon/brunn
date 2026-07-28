@@ -63,6 +63,12 @@ and worker network namespaces before importing. Native Linux may use the exact
 Compose gateway; Docker Desktop uses the explicit `host.docker.internal`
 route because its bridge gateway is VM-local.
 
+The definitive semantic arms default provisioning to 43,200 seconds, matching
+the documented 12-hour stall boundary below; their owning wrappers outlive
+that boundary. A prior 1,800-second generic import default could terminate a
+healthy rate-limited 64K backfill before any latency sample and is retained
+only as excluded, non-evidentiary harness calibration.
+
 ## Arms
 
 Three modes, per the Codex review note:

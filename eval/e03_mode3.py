@@ -24,6 +24,8 @@ from performance_eval import (  # noqa: E402
     E03_COMMON_RUNTIME_EXPECTATIONS,
     E03_EMBEDDING_DIMENSIONS,
     E03_EMBEDDING_MODELS,
+    E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS,
+    E03_WRAPPER_TIMEOUT_SECONDS,
 )
 
 PERFORMANCE = PROJECT_ROOT / "performance_eval.py"
@@ -729,7 +731,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--probe-image", default=DEFAULT_PROBE_IMAGE)
     parser.add_argument("--control-token-file", type=Path)
     parser.add_argument("--samples", type=int, default=30)
-    parser.add_argument("--timeout", type=float, default=14_400.0)
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=E03_WRAPPER_TIMEOUT_SECONDS,
+    )
     parser.add_argument("--out", type=Path, required=True)
     return parser
 
@@ -738,8 +744,11 @@ def main() -> int:
     args = build_parser().parse_args()
     if args.samples != 30:
         raise ValueError("definitive E03 Mode 3 requires exactly 30 samples")
-    if args.timeout <= 0:
-        raise ValueError("--timeout must be positive")
+    if args.timeout < E03_WRAPPER_TIMEOUT_SECONDS:
+        raise ValueError(
+            "--timeout must preserve the E03 12-hour import boundary plus "
+            "the 30-minute result-finalization margin"
+        )
     if args.proxy_port < 1 or args.proxy_port > 65_535:
         raise ValueError("--proxy-port is out of range")
     if args.proxy_state.exists():

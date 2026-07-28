@@ -11,17 +11,21 @@ from eval.e03_mode1 import build_performance_command as mode1_command
 from eval.e03_mode2 import (
     MOCK,
     build_performance_command as mode2_command,
+    main as mode2_main,
     mock_network_probe,
 )
 from eval.e03_mode3 import (
     build_performance_command as mode3_command,
     container_host_route_allowed,
+    main as mode3_main,
     normalize_official_upstream,
     usage_receipt_contract,
 )
 from performance_eval import (
     E03_COMMON_RUNTIME_EXPECTATIONS,
+    E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS,
     E03_SEMANTIC_READY_GATE_PROFILE,
+    E03_WRAPPER_TIMEOUT_SECONDS,
     DEFAULT_THRESHOLDS,
     PRODUCTION_RECORDS,
     apply_e03_gate_policy,
@@ -29,6 +33,7 @@ from performance_eval import (
     evaluate_gates,
     e03_api_route_binding,
     iter_plan_nodes,
+    resolve_run_profile,
     validate_e03_request,
     validate_e03_runtime_metadata,
     verbatim_identifier_measurement_evidence,
@@ -138,6 +143,103 @@ def request_namespace(arm: str):
 
 
 class E03ProfileTests(unittest.TestCase):
+    def test_semantic_arms_default_to_documented_twelve_hour_import_boundary(self):
+        for arm in ("mode2", "mode3"):
+            parser = build_parser()
+            args = parser.parse_args([
+                "run",
+                "--label",
+                f"e03-{arm}",
+                "--gate-profile",
+                E03_SEMANTIC_READY_GATE_PROFILE,
+                "--e03-arm",
+                arm,
+                "--scales",
+                str(PRODUCTION_RECORDS),
+                "--out",
+                "result.json",
+            ])
+            self.assertEqual(
+                resolve_run_profile(args).import_timeout_seconds,
+                E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS,
+            )
+            args.import_timeout = E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS - 1
+            with self.assertRaisesRegex(ValueError, "require --import-timeout"):
+                resolve_run_profile(args)
+
+    def test_mode_wrappers_outlive_semantic_import_boundary(self):
+        from eval.e03_mode2 import build_parser as mode2_parser
+        from eval.e03_mode3 import build_parser as mode3_parser
+
+        for parser in (mode2_parser(), mode3_parser()):
+            self.assertEqual(
+                parser.get_default("timeout"),
+                E03_WRAPPER_TIMEOUT_SECONDS,
+            )
+            self.assertGreater(
+                parser.get_default("timeout"),
+                E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS,
+            )
+
+    def test_mode_wrappers_reject_shortened_tail_margin(self):
+        shortened = str(E03_WRAPPER_TIMEOUT_SECONDS - 1)
+        common = [
+            "--label",
+            "e03-timeout-test",
+            "--api-container",
+            "api",
+            "--db-container",
+            "db",
+            "--worker-container",
+            "worker",
+            "--expect-build-revision",
+            "a" * 40,
+            "--expect-api-image-id",
+            "sha256:" + "b" * 64,
+            "--expect-db-image-id",
+            "sha256:" + "c" * 64,
+            "--timeout",
+            shortened,
+            "--out",
+            "result.json",
+        ]
+        with patch("sys.argv", [
+            "e03_mode2.py",
+            *common,
+            "--mock-port",
+            "55212",
+            "--mock-state",
+            "mock.state",
+            "--mock-log",
+            "mock.log",
+            "--mock-config",
+            "mock.config",
+            "--mock-instance-id",
+            "e03-mode2-timeout-test",
+            "--expected-openai-base-url",
+            "http://host.docker.internal:55212/v1",
+        ]):
+            with self.assertRaisesRegex(ValueError, "30-minute"):
+                mode2_main()
+        with patch("sys.argv", [
+            "e03_mode3.py",
+            *common,
+            "--proxy-port",
+            "55213",
+            "--proxy-state",
+            "proxy.state",
+            "--proxy-config",
+            "proxy.config",
+            "--proxy-log",
+            "proxy.log",
+            "--proxy-instance-id",
+            "e03-mode3-timeout-test",
+            "--expected-proxy-base-url",
+            "http://host.docker.internal:55213/v1",
+        ]):
+            with self.assertRaisesRegex(ValueError, "30-minute"):
+                mode3_main()
+
     def test_parser_requires_profile_and_arm_to_be_validated_together(self):
         parser = build_parser()
         parsed = parser.parse_args([

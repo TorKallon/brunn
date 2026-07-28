@@ -59,6 +59,8 @@ LEXICAL_CONSOLIDATION_GATE_PROFILE = "e05-lexical-consolidation"
 D03_RESUME_DELTAS_GATE_PROFILE = "d03-resume-deltas"
 E03_SEMANTIC_READY_GATE_PROFILE = "e03-semantic-ready"
 E03_ARMS = ("mode1", "mode2", "mode3")
+E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS = 43_200.0
+E03_WRAPPER_TIMEOUT_SECONDS = 45_000.0
 SEMANTIC_FAILURE_PROBE_REQUIRED = "required"
 SEMANTIC_FAILURE_PROBE_NOT_APPLICABLE = "not-applicable"
 DEFAULT_QUERY_BUDGET_PROFILE = "default-safe"
@@ -2010,7 +2012,16 @@ def resolve_run_profile(args: argparse.Namespace) -> RunProfile:
         scales.append(FUTURE_RECORDS)
     scales = sorted(set(scales))
 
-    default_import_timeout = 7_200.0 if args.future_soak else 1_800.0
+    e03_semantic_backfill = (
+        getattr(args, "gate_profile", None)
+        == E03_SEMANTIC_READY_GATE_PROFILE
+        and getattr(args, "e03_arm", None) in {"mode2", "mode3"}
+    )
+    default_import_timeout = (
+        E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS
+        if e03_semantic_backfill
+        else 7_200.0 if args.future_soak else 1_800.0
+    )
     import_timeout = (
         float(args.import_timeout)
         if args.import_timeout is not None
@@ -2018,6 +2029,14 @@ def resolve_run_profile(args: argparse.Namespace) -> RunProfile:
     )
     if import_timeout <= 0:
         raise ValueError("--import-timeout must be positive")
+    if (
+        e03_semantic_backfill
+        and import_timeout < E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS
+    ):
+        raise ValueError(
+            "E03 semantic arms require --import-timeout >= 43200 seconds "
+            "to preserve the documented 12-hour stall boundary"
+        )
     return RunProfile(
         scales=tuple(scales),
         samples=samples,
@@ -6406,7 +6425,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--import-timeout",
         type=float,
         help=(
-            "seconds allowed for fixture import/index readiness; defaults to "
+            "seconds allowed for fixture import/index readiness; E03 semantic "
+            "arms default to the documented 12-hour stall boundary, otherwise "
             "1800, or 7200 with --future-soak"
         ),
     )
