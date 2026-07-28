@@ -86,6 +86,11 @@ recent-work-v0.3: the recent suite (14 cases / 56 claims) with correction notes 
    service-only aggregate:
    `E07_SERVICE5=(results/2026-MM-DD-e07-supersession-{flag,base}-draw{1,2,3,4,5}.json); python3 eval/aggregate_draws.py "${E07_SERVICE5[@]}" --expected-arm e07-flag --expected-arm e07-base --expected-arm-retrieval-modes e07-flag=exact,lexical --expected-arm-retrieval-modes e07-base=exact,lexical --require-feature-family supersession_dedup --out results/2026-MM-DD-e07-service-five-draw-aggregate.json`.
 
+   **Predeclared for the 2026-07-28 execution:** do not use this optional
+   extension. "Borderline" has no frozen numeric definition, so inspecting the
+   three-draw result before deciding would create a post-hoc stopping rule.
+   Draws 1-3 and the stated acceptance criteria are definitive for this run.
+
 ## Metrics
 
 - Claims/56 per arm per draw.

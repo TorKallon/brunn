@@ -1,0 +1,29 @@
+{
+  "schema": "straylight-experiment-predeclaration@v1",
+  "experiment": "E07",
+  "created_at": "2026-07-28T07:01:35-07:00",
+  "status": "frozen_before_e07_outcomes",
+  "authoring_parent_revision": "eb781411d916b496d149bf2f504667f46d8b51a3",
+  "decision": "Use exactly three definitive draws. Do not run optional service-only draws 4-5.",
+  "reason": "The spec does not define borderline numerically. Choosing the extension after inspecting draw 3 would introduce a post-hoc stopping rule.",
+  "definitive_draw_ids": [
+    "e07-draw1",
+    "e07-draw2",
+    "e07-draw3"
+  ],
+  "adoption_draw_ids": [
+    "e07-adoption-draw1",
+    "e07-adoption-draw2",
+    "e07-adoption-draw3"
+  ],
+  "optional_draw_ids_disabled": [
+    "e07-draw4",
+    "e07-draw5"
+  ],
+  "planned_subscription_case_runs": 162,
+  "planned_subscription_equivalent_usd": 38.88,
+  "unincurred_optional_subscription_case_runs": 56,
+  "unincurred_optional_subscription_equivalent_usd": 13.44,
+  "actual_embedding_usd_expected": 0.0,
+  "hard_ceiling_usd": 60.0
+}
