@@ -119,6 +119,14 @@ Accept D01 (config = best of B/C) only if ALL hold:
 3. **Chronic set net-positive:** across the six chronic cases over 5 paired draws, wins > losses vs arm A, and no previously-nonzero case falls to 0/5.
 4. **640K soak unchanged:** all performance_eval.py gates pass with the winning flags; no drift vs v8 baseline search p95 53.1ms / open 59.7ms (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json); the paired query-count artifact passes with every B→C search delta in the exact set `{0,+5}`, at least one `+5`, and all non-search deltas at 0. The `+5` is one batched hydration `SELECT` plus its four authenticated transaction statements, not five candidate lookups.
 
+   **Predeclared 2026-07-28 before inspecting either candidate outcome:** for
+   this execution, "no drift" at the 640,000-record scale means no more than
+   2x the recorded v8 p95 in each directly comparable lane: open ≤119.4ms,
+   search ≤106.2ms, concurrent write ≤58.0ms, and concurrent search ≤201.8ms.
+   This uses the existing 2x regression precedent in D11 and the E05/E11
+   unrelated-write guards. It is a conservative operational acceptance bound,
+   not a claim that serial-soak latency is statistically equal.
+
 Single-draw deltas decide nothing: the noise floor is ±3-5 claims (agent-work native 40→47→44→43→47 across builds). If C fails but B passes, ship B and park `top1_hydration`. OWNER DECISION: whether a B-only pass justifies re-running arm C after D02 (D02-verbatim-span-contract.md) lands.
 
 ## Cost preflight and ceiling

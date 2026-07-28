@@ -1,0 +1,31 @@
+{
+  "schema": "straylight-experiment-predeclaration@v1",
+  "experiment": "E04",
+  "created_at": "2026-07-28T06:58:05-07:00",
+  "status": "frozen_before_candidate_outcomes",
+  "run_source_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+  "authoring_parent_revision": "1db6c04ce02ff7d4f6a1bf3143d657b62160a0cb",
+  "scale_records": 640000,
+  "question_resolved": "Numeric interpretation of the E04 acceptance phrase no drift versus the v8 latency baseline.",
+  "rationale": "Use the repository's existing conservative 2x regression precedent rather than choose a tolerance after observing E04 candidate results.",
+  "baseline": {
+    "artifact": "results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json",
+    "open_p95_ms": 59.7,
+    "search_p95_ms": 53.1,
+    "concurrent_write_p95_ms": 29.0,
+    "concurrent_search_p95_ms": 100.9
+  },
+  "acceptance_maxima": {
+    "open_p95_ms": 119.4,
+    "search_p95_ms": 106.2,
+    "concurrent_write_p95_ms": 58.0,
+    "concurrent_search_p95_ms": 201.8
+  },
+  "multiplier": 2.0,
+  "applies_to": [
+    "results/2026-07-28-e04-B-soak.json",
+    "results/2026-07-28-e04-C-soak.json"
+  ],
+  "decision_rule": "Any candidate exceeding any listed 640,000-record p95 maximum is ineligible for E04 reasoning or acceptance even if the broader built-in performance profile passes.",
+  "not_a_claim": "This threshold does not establish statistical latency equivalence between serial soaks."
+}
