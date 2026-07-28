@@ -40,9 +40,12 @@ deltas) proven in real use.
   the 640K soak and reasoning draws were aborted.
 - Downstream E04–E08 runs therefore freeze `verbatim_spans=off`; none can
   rehabilitate D02. E09 is prerequisite-aborted by E03's failed Mode 2 and
-  missing quality backfill. E10 lacks an accepted launch flag manifest and
-  the E01/E04–E09 qualifications. E11 is prerequisite-aborted by D02's
-  rejection and the missing owner-authored, owner-signed-off case manifest.
+  missing quality backfill. E10 lacks an accepted immutable launch flag
+  manifest: E01 is complete, E05 rejected `lexical_single_scan`, and E04 plus
+  E06–E09 have not collectively resolved the launch feature set. E11 is
+  prerequisite-aborted by D02's rejection, the absent D06/`link_leads`
+  implementation, and the missing owner-authored, owner-signed-off case
+  manifest.
 - Reasoning is at parity-within-noise vs direct Markdown but unproven (n=1;
   single-draw suite scores swing ±3–5 claims). The native API on the simplified
   core scored 186/228 vs files 194/228; 21/22 disputed answers had the right
@@ -87,7 +90,7 @@ Infrastructure — no reasoning-quality risk (code, no experiment gate):
 |---|---|---|---|
 | [D09](mvp/D09-latency-contract-and-gates.md) | Latency contract: timings_ms, regression-tier gates, per-op query budgets, EXPLAIN assertions | Implemented in harness — isolated acceptance runs remain | Enabler for E03 mode 3; query budgets become measured only after the coordinated run |
 | [D08](mvp/D08-legacy-freeze-and-deletion.md) | Legacy freeze now; deletion later (needs gates 3–4 AND n≥3 parity); dream-retry fix now; MCP residue removal now | Proposed — not started | Dream-retry fix and MCP residue are immediate |
-| [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — not started | Deferred lexical consolidation needs [E05](mvp/E05-lexical-consolidation-guard.md) |
+| [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — safe subset not started | Deferred lexical consolidation rejected by [E05](mvp/E05-lexical-consolidation-guard.md) and closed |
 | [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Backfill guard implemented — remaining operational work not started | Kills the MinIO CVE release blocker |
 
 Features — flag + experiment gated:
@@ -112,10 +115,10 @@ Conditional — do not start until stated preconditions hold:
 
 | ID | Title | Status | Precondition |
 |---|---|---|---|
-| [D06](mvp/D06-wiki-link-leads.md) | Wiki-link neighbor leads | Conditional — E11 prerequisite-aborted | D01+D02 accepted; owner corpus imported; owner-authored and signed-off case manifest |
+| [D06](mvp/D06-wiki-link-leads.md) | Wiki-link neighbor leads | Conditional — not implemented; E11 prerequisite-aborted | D01+D02 accepted; owner corpus imported; owner-authored and signed-off case manifest |
 | [D07](mvp/D07-lesson-artifacts.md) | Lesson artifacts, role-scoped | Conditional | D01–D04 landed |
-| [E05](mvp/E05-lexical-consolidation-guard.md) | Lexical consolidation guard | Conditional | Only if the deferred D10 item is pursued |
-| [E10](mvp/E10-combined-preflight.md) | Combined all-flags-on preflight | Prerequisite abort — accepted launch manifest not qualified | E01 complete; E04–E08 accepted; E09 posture decided |
+| [E05](mvp/E05-lexical-consolidation-guard.md) | Lexical consolidation guard | Complete negative — zero SQL reduction in 795 paired search samples; treatment rejected | Deferred D10 item closed |
+| [E10](mvp/E10-combined-preflight.md) | Combined all-flags-on preflight | Prerequisite abort — accepted immutable launch manifest not qualified | E01 complete; E04 and E06–E08 resolved; E09 posture decided; rejected flags excluded |
 
 ## Sequencing
 
@@ -136,10 +139,9 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Immediate next steps
 
-1. Complete E01's paired-draw machinery, sidecar, and baseline matrix. E02 and
-   E03 now have definitive failures: repair D02 and the semantic timeout path,
-   then rerun their free deterministic prerequisites before any paid or
-   reasoning arms.
+1. Preserve E01's completed paired-draw baseline. E02 and E03 have definitive
+   failures: repair D02 and the semantic timeout path, then rerun their free
+   deterministic prerequisites before any paid or reasoning arms.
 2. Ship the immediate D08 items: dream-retry permanent-failure fix, MCP legacy
    residue removal, legacy cargo-feature freeze.
 3. Run D09's isolated 64K/640K acceptance and calibrate the fail-closed
@@ -159,9 +161,17 @@ touch only the harness; Tier A touches only deployment and data. Feature work
   [-111,508, -49,126]. Actual API/embedding spend was $0.
 - 2026-07-28: Froze the rejected D02 nuisance posture off for E04–E08.
   Recorded current prerequisite aborts for E09 (E03 Mode 2/backfill), E10
-  (incomplete accepted launch manifest and upstream qualifications), and E11
-  (D02 rejection and missing owner-authored, signed-off manifest). These are
-  prerequisite outcomes, not experiment verdicts.
+  (no accepted immutable launch manifest and unresolved E04/E06–E09
+  qualifications), and E11 (D02 rejection, absent D06 implementation, and
+  missing owner-authored, signed-off manifest). These are prerequisite
+  outcomes, not experiment verdicts; no E09–E11 service, reasoning, or
+  embedding run occurred. Machine-readable records and the cost ledger are in
+  `results/2026-07-28-e{09,10,11}-prerequisite-abort.json` and
+  `results/2026-07-28-e09-e11-prerequisite-aborts.md`.
+- 2026-07-28: E05 completed negative. Both 640K soaks passed, but all 795
+  paired search query-count deltas were zero, so the strict-improvement gate
+  blocked reasoning. `lexical_single_scan` is rejected and the deferred D10
+  item is closed.
 - 2026-07-28: E02 Stage 1 confirmed the 0/30 defect. Stage 2 flag-on
   returned only 4/30 at 1K, 10K, and 64K, so the 640K soak and reasoning
   draws were aborted and D02 remains default-off pending repair. E03 Mode 1

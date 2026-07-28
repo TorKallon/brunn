@@ -1,6 +1,6 @@
 # D11 — Semantic Lane Policy: Existence First, Then Bounded Acceleration
 
-Status: Implemented behind default-off flags — E09 not run
+Status: Implemented behind default-off flags — E09 prerequisite-aborted
 Date: 2026-07-27
 Depends on: D14 (D14-migration-and-authority-tiers.md)
 Gated by: E09 (E09-semantic-existence-experiment.md)

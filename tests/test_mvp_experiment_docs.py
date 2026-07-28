@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -77,21 +78,92 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
         self.assertIn("Status: Prerequisite abort", e09)
         self.assertIn("E03 Mode 2 failed", e09)
         self.assertIn("quality backfill was not run", e09)
+        self.assertIn("STRAYLIGHT_VERBATIM_SPANS=false", e09)
+        self.assertNotIn("verbatim_spans=on", e09)
 
         e10 = document("E10-combined-preflight.md")
         self.assertIn("Status: Prerequisite abort", e10)
-        self.assertIn("launch flag manifest is incomplete", e10)
-        self.assertIn("E01 is not yet complete", e10)
-        self.assertIn("E04–E08 have not produced accepted qualifications", e10)
+        self.assertIn("immutable launch flag manifest is incomplete", e10)
+        self.assertIn("E01 is\ncomplete", e10)
+        self.assertIn("E04 and\nE06–E08", e10)
         self.assertIn(
             "semantic posture because E03 Mode 2 failed",
+            e10,
+        )
+        self.assertIn("--expect-feature-flag verbatim_spans=off", e10)
+        self.assertIn("--expect-feature-flag lexical_single_scan=off", e10)
+        self.assertNotIn("verbatim_spans=on", e10)
+        self.assertNotIn("lexical_single_scan=on", e10)
+        self.assertIn(
+            "calibration artifacts intentionally fail acceptance",
+            e10,
+        )
+        self.assertIn(
+            "expected\n  ineligible verdict is not itself an abort",
             e10,
         )
 
         e11 = document("E11-wiki-link-leads-experiment.md")
         self.assertIn("Status: Prerequisite abort", e11)
         self.assertIn("E02 rejected", e11)
-        self.assertIn("owner-authored, owner-signed-off manifest", e11)
+        self.assertIn(
+            "D06 and its\n`link_leads` runtime surface are not implemented",
+            e11,
+        )
+        self.assertIn("owner-authored,", e11)
+        self.assertIn("owner-signed-off manifest", e11)
+
+    def test_e09_e11_abort_artifacts_are_zero_cost_nonverdicts(self) -> None:
+        expected = {
+            "E09": (351, 84.24),
+            "E10": (354, 84.96),
+            "E11": (168, 40.32),
+        }
+        for experiment, (case_runs, equivalent_usd) in expected.items():
+            with self.subTest(experiment=experiment):
+                artifact = json.loads(
+                    (
+                        ROOT
+                        / "results"
+                        / (
+                            "2026-07-28-"
+                            f"{experiment.lower()}-prerequisite-abort.json"
+                        )
+                    ).read_text(encoding="utf-8")
+                )
+                self.assertEqual(
+                    artifact["schema"],
+                    "straylight-experiment-prerequisite-abort@v1",
+                )
+                self.assertEqual(artifact["status"], "prerequisite_abort")
+                self.assertFalse(artifact["experiment_executed"])
+                self.assertEqual(
+                    artifact["experiment_verdict"],
+                    "not_evaluated",
+                )
+                self.assertEqual(
+                    artifact["execution"]["reasoning_case_runs"],
+                    0,
+                )
+                self.assertEqual(
+                    artifact["execution"]["embedding_requests"],
+                    0,
+                )
+                self.assertEqual(
+                    artifact["future_cost_preflight"]["reasoning"][
+                        "base_case_runs"
+                    ],
+                    case_runs,
+                )
+                self.assertEqual(
+                    artifact["future_cost_preflight"]["reasoning"][
+                        "base_subscription_equivalent_usd"
+                    ],
+                    equivalent_usd,
+                )
+                self.assertTrue(
+                    all(value == 0 for value in artifact["actual_cost"].values())
+                )
 
     def test_e02_uses_a_calibrated_mode_specific_query_contract(self) -> None:
         text = document("E02-verbatim-identifier-gate.md")

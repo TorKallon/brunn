@@ -1,0 +1,105 @@
+{
+  "schema": "straylight-experiment-prerequisite-abort@v1",
+  "experiment": "E10",
+  "title": "Combined all-flags launch preflight",
+  "recorded_at": "2026-07-28T07:22:47-07:00",
+  "source_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b",
+  "status": "prerequisite_abort",
+  "experiment_executed": false,
+  "experiment_verdict": "not_evaluated",
+  "decision": "do_not_run",
+  "reason": "No accepted immutable launch flag manifest exists at this evidence snapshot. The surviving E04 and E06-E08 feature qualifications are unresolved, and E09 has no decided semantic posture.",
+  "satisfied_prerequisites": [
+    {
+      "id": "e01_paired_draw_machinery",
+      "state": "complete",
+      "evidence": {
+        "path": "results/2026-07-28-e01-aggregate.json",
+        "sha256": "ae1bf01dfcb478b42edb7892ff1ddf38314a022180b0b7c065c502a35362d1db",
+        "fact": "The definitive E01 aggregate and five-suite paired-draw machinery exist; E01 is not an E10 blocker."
+      }
+    }
+  ],
+  "launch_manifest_constraints": [
+    {
+      "feature": "verbatim_spans",
+      "required_state": false,
+      "basis": "E02 rejected D02.",
+      "evidence": {
+        "path": "results/2026-07-27-e02-definitive-summary.json",
+        "sha256": "a5060af37aac41634ae68267906ffb4856e621fb97c5770e3939276951c62318"
+      }
+    },
+    {
+      "feature": "lexical_single_scan",
+      "required_state": false,
+      "basis": "E05 found zero strict SQL-statement reductions across 795 paired search samples and rejected the treatment.",
+      "evidence": {
+        "path": "results/2026-07-28-e05-definitive-summary.json",
+        "sha256": "f4c964d3dab3f18745a852c39879bcf4dde7378266e0c4edc0fbf51af7a5422a"
+      }
+    }
+  ],
+  "blockers": [
+    {
+      "id": "accepted_immutable_launch_manifest",
+      "state": "absent",
+      "blocking": true,
+      "fact": "A launch manifest can be frozen only after every candidate feature has an accepted ship-or-drop outcome."
+    },
+    {
+      "id": "feature_qualifications",
+      "state": "unresolved",
+      "blocking": true,
+      "experiments": [
+        "E04",
+        "E06",
+        "E07",
+        "E08"
+      ],
+      "fact": "At source revision d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b these experiments have not collectively produced the accepted feature set for the final launch manifest."
+    },
+    {
+      "id": "e09_semantic_posture",
+      "state": "prerequisite_abort",
+      "blocking": true,
+      "evidence": {
+        "path": "results/2026-07-28-e09-prerequisite-abort.json",
+        "fact": "E09 cannot run because E03 Mode 2 failed and its quality backfill was not run."
+      }
+    }
+  ],
+  "execution": {
+    "service_stacks_started": 0,
+    "docker_projects_started": 0,
+    "deterministic_runs": 0,
+    "reasoning_case_runs": 0,
+    "embedding_requests": 0,
+    "quality_draw_artifacts": 0,
+    "latency_artifacts": 0
+  },
+  "future_cost_preflight": {
+    "reasoning": {
+      "billing_route": "ChatGPT-authenticated Codex subscription only",
+      "base_case_runs": 354,
+      "base_subscription_equivalent_usd": 84.96,
+      "optional_draw_case_runs": 118,
+      "optional_draw_subscription_equivalent_usd": 28.32,
+      "maximum_planned_subscription_equivalent_usd": 113.28,
+      "hard_ceiling_usd": 120.0
+    },
+    "embeddings": {
+      "required_under_specified_semantic_off_posture_usd": 0.0,
+      "owner_notification_threshold_usd": 20.0,
+      "notification_required_by_preflight": false,
+      "note": "If E09 later changes the semantic posture, the E10 procedure and embedding preflight must be revised before execution."
+    }
+  },
+  "actual_cost": {
+    "usage_billed_reasoning_usd": 0.0,
+    "embedding_usd": 0.0,
+    "subscription_equivalent_usd": 0.0,
+    "embedding_warning_triggered": false
+  },
+  "conclusion": "E10 is not evaluated and supports no Tier C launch or cutover verdict. Keep the Tier C gate closed. Resolve E04 and E06-E09, exclude rejected features, then freeze and hash the exact accepted launch manifest before any E10 service or reasoning run."
+}

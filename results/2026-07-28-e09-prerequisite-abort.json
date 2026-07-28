@@ -1,0 +1,78 @@
+{
+  "schema": "straylight-experiment-prerequisite-abort@v1",
+  "experiment": "E09",
+  "title": "Semantic lane existence experiment",
+  "recorded_at": "2026-07-28T07:22:47-07:00",
+  "source_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b",
+  "status": "prerequisite_abort",
+  "experiment_executed": false,
+  "experiment_verdict": "not_evaluated",
+  "decision": "do_not_run",
+  "reason": "E03 Mode 2 failed its blocking zero-deferred-or-unavailable-lane gate, and the eval-corpus quality backfill was not run. E09 has no accepted semantic-ready prerequisite artifact.",
+  "blockers": [
+    {
+      "id": "e03_mode2_acceptance",
+      "state": "failed",
+      "blocking": true,
+      "evidence": {
+        "path": "results/2026-07-27-e03-definitive-summary.json",
+        "sha256": "52c9ff6835a3415a588828c2128d293b80b7ef61ddfb7dd6fd6588245da8cdf8",
+        "fact": "Mode 2 passed 63 of 64 gates but failed semantic_ready_runs_have_no_deferred_or_unavailable_lane, with four timeout-shaped observations near 2.5 seconds."
+      },
+      "repair": "Fix or redesign the synchronous semantic timeout path and rerun free Mode 2 successfully."
+    },
+    {
+      "id": "eval_corpus_quality_backfill",
+      "state": "not_run",
+      "blocking": true,
+      "evidence": {
+        "path": "results/2026-07-27-e03-definitive-summary.json",
+        "sha256": "52c9ff6835a3415a588828c2128d293b80b7ef61ddfb7dd6fd6588245da8cdf8",
+        "fact": "The E03 eval_corpus_quality_backfill record is not_run because the semantic lane was not stable enough to justify paid characterization."
+      },
+      "repair": "After Mode 2 passes, complete the quality-suite backfill and prove zero semantic_unavailable notices on warm probes."
+    }
+  ],
+  "resolved_nuisance_posture": {
+    "verbatim_spans": false,
+    "basis": "E02 rejected the current D02 implementation, so D02 remains fixed off and is not an E09 variable.",
+    "evidence": {
+      "path": "results/2026-07-27-e02-definitive-summary.json",
+      "sha256": "a5060af37aac41634ae68267906ffb4856e621fb97c5770e3939276951c62318"
+    }
+  },
+  "execution": {
+    "service_stacks_started": 0,
+    "docker_projects_started": 0,
+    "deterministic_runs": 0,
+    "reasoning_case_runs": 0,
+    "embedding_requests": 0,
+    "quality_draw_artifacts": 0,
+    "latency_artifacts": 0
+  },
+  "future_cost_preflight": {
+    "reasoning": {
+      "billing_route": "ChatGPT-authenticated Codex subscription only",
+      "base_case_runs": 351,
+      "base_subscription_equivalent_usd": 84.24,
+      "bounded_600ms_contingency_case_runs": 36,
+      "bounded_600ms_contingency_subscription_equivalent_usd": 8.64,
+      "maximum_automatic_subscription_equivalent_usd": 92.88,
+      "hard_ceiling_usd": 100.0
+    },
+    "embeddings": {
+      "billing_route": "usage-billed OpenAI embeddings exemption",
+      "expected_usd": 0.84,
+      "conservative_ceiling_usd": 2.0,
+      "owner_notification_threshold_usd": 20.0,
+      "notification_required_by_preflight": false
+    }
+  },
+  "actual_cost": {
+    "usage_billed_reasoning_usd": 0.0,
+    "embedding_usd": 0.0,
+    "subscription_equivalent_usd": 0.0,
+    "embedding_warning_triggered": false
+  },
+  "conclusion": "E09 is not evaluated and supports no ship, bound, or cut verdict for the semantic lane. Keep semantic_lane default-off. Repair and pass E03 Mode 2, then complete the quality backfill before reconsidering E09."
+}

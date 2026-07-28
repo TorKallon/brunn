@@ -1,6 +1,6 @@
 # D06 — Wiki-Link Leads: pointer-only link expansion in search responses
 
-Status: Proposed — not started
+Status: Conditional — not implemented; E11 prerequisite-aborted
 Date: 2026-07-27
 Depends on: D01, D02
 Gated by: E11

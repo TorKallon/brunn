@@ -1,9 +1,17 @@
 # E05 — Lexical Consolidation Guard
 
-Status: Executable prerequisites implemented — not run
-Date: 2026-07-27
+Status: Definitive result — lexical_single_scan rejected; deferred D10 item closed
+Date: 2026-07-28
 Gates: D10 (D10-read-path-roundtrip-reductions.md) — the deferred lexical-scan consolidation ONLY; the rest of D10 does not wait on this
 Phase: 1 (requires flagged feature build)
+
+**DEFINITIVE RESULT (2026-07-28):** Both 640K deterministic soaks passed, but
+all 795 paired search samples had an exact SQL-statement delta of zero. The
+blocking comparator required at least one strict reduction, so reasoning was
+prohibited. Drop `lexical_single_scan` permanently and close the deferred D10
+item. See
+[`results/2026-07-28-e05-definitive-summary.json`](../../results/2026-07-28-e05-definitive-summary.json)
+and [`results/2026-07-28-e05-report.md`](../../results/2026-07-28-e05-report.md).
 
 ## Question
 

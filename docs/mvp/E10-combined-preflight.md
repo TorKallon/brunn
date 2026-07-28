@@ -6,11 +6,12 @@ Gates: D01, D02, D03, D04, D05 in combination — the final pre-launch gate befo
 Phase: 1 (requires flagged feature build — all shipped Dxx flags landed)
 
 **CURRENT PREREQUISITE ABORT (2026-07-28):** Do not run E10. The accepted
-launch flag manifest is incomplete: E02 rejected D02; E01 is not yet complete;
-E04–E08 have not produced accepted qualifications; and E09 has no decided
-semantic posture because E03 Mode 2 failed before quality backfill. This abort
-does not change E10's future role or experimental intent. Rebuild the manifest
-only from accepted features after those gates resolve.
+immutable launch flag manifest is incomplete and not qualified. E01 is
+complete, but E02 rejected D02, E05 rejected `lexical_single_scan`, E04 and
+E06–E08 have not collectively produced the accepted launch feature set, and
+E09 has no decided semantic posture because E03 Mode 2 failed before quality
+backfill. This abort does not change E10's future role or experimental intent.
+Rebuild the manifest only from accepted features after those gates resolve.
 
 ## Question
 
@@ -22,8 +23,8 @@ This is the "stronger than MD" endgame gate: the claim was never that a database
 
 ## Preconditions and build items
 
-1. **NOT SATISFIED.** All of D01-D05 landed as shipped (flags on by default or explicitly enabled), each having individually passed its own Exx gate. Any Dxx that did not ship is simply absent from the flag set — E10 tests what will actually launch, and the run record says exactly what that was. D02 is currently rejected and E04–E08 have not supplied the accepted feature set.
-2. **NOT SATISFIED.** E01 machinery complete (E01-paired-draw-machinery-and-baseline.md): eval/aggregate_draws.py, `filesystem_sidecar` condition in agent_work_eval.py, and — required by this point, per the E01 deferral — the transitions sidecar seed extension (Medium) so the control arm covers all five suites.
+1. **NOT SATISFIED.** All surviving D01-D05 candidates have a completed ship-or-drop decision from their own Exx gate. Any Dxx that did not ship is absent from the flag set — E10 tests what will actually launch, and the run record says exactly what that was. D02 is currently rejected; E05 separately rejects the deferred D10 `lexical_single_scan` candidate; and E04 plus E06–E08 have not collectively supplied the accepted feature set.
+2. **SATISFIED.** E01 machinery is complete (E01-paired-draw-machinery-and-baseline.md): the definitive 531-case-run matrix includes `eval/aggregate_draws.py`, the `filesystem_sidecar` condition, and transitions-sidecar coverage across all five suites.
 3. One global budget: the combined context/char budget configuration (per D01) active as a single runtime config, not per-feature budgets summed implicitly. Target posture per Tier B: crude open/search char budget near legacy ~41.4K chars/case at entry.
 4. Flag-manifest snapshot (implemented): every service run stores an authenticated `/v1/status` runtime-feature/knob/build snapshot whose canonical hash is bound into the immutable run ledger.
 5. **NOT SATISFIED.** D09 (D09-latency-contract-and-gates.md) gates wired and green individually before this run; E03 semantic posture decided by E09 and reflected in the flag manifest (semantic remains off the Tier B critical path regardless). E09 is prerequisite-aborted until E03's failed Mode 2 and unrun quality backfill are repaired.
@@ -50,9 +51,13 @@ MM-DD is the run date.
 1. Use the isolated Nyx preamble and freeze the exact final launch-candidate
    revision—not an earlier experiment
    SHA—and the complete runtime manifest. Use one immutable image across all
-   stacks. For the currently proposed semantic-off launch posture:
-   `E10_RUNTIME=(--expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_top1_hydration=on --expect-feature-flag search_char_cap=on --expect-runtime-config search_section_demotion_top_n=8 --expect-feature-flag verbatim_spans=on --expect-feature-flag resume_deltas=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --expect-feature-flag intention_ledger=on --expect-feature-flag read_path_roundtrip_v1=on --expect-feature-flag lexical_single_scan=on)`.
-   Remove any rejected feature instead of pretending it shipped.
+   stacks. The current provisional semantic-off posture must already bind the
+   two rejected features off; the remaining feature values are illustrative
+   until E04 and E06–E09 resolve and therefore do not constitute an accepted
+   immutable launch manifest:
+   `E10_RUNTIME=(--expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_top1_hydration=on --expect-feature-flag search_char_cap=on --expect-runtime-config search_section_demotion_top_n=8 --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --expect-feature-flag intention_ledger=on --expect-feature-flag read_path_roundtrip_v1=on --expect-feature-flag lexical_single_scan=off)`.
+   Remove any rejected feature from the launch behavior instead of pretending
+   it shipped, while still asserting its authenticated off state.
 2. The default-safe query contract is forbidden for this combined shape.
    First run explicit count-capture calibrations with
    `--query-budget-profile calibration` for both the launch manifest and the
@@ -65,7 +70,7 @@ MM-DD is the run date.
    Repeat on the control stack with the same manifest except
    `resume_deltas=off` and a distinct label/output.
 3. Produce a passing, same-build 640K resume-off control:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile launch-resume-control --query-budget-contract "$LAUNCH_RESUME_CONTROL_BUDGET_CONTRACT" --exercise-resume-delta-fixture --label e10-resume-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag resume_deltas=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_top1_hydration=on --expect-feature-flag search_char_cap=on --expect-runtime-config search_section_demotion_top_n=8 --expect-feature-flag verbatim_spans=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --expect-feature-flag intention_ledger=on --expect-feature-flag read_path_roundtrip_v1=on --expect-feature-flag lexical_single_scan=on --out results/2026-MM-DD-e10-resume-control.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile launch-resume-control --query-budget-contract "$LAUNCH_RESUME_CONTROL_BUDGET_CONTRACT" --exercise-resume-delta-fixture --label e10-resume-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag resume_deltas=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_top1_hydration=on --expect-feature-flag search_char_cap=on --expect-runtime-config search_section_demotion_top_n=8 --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --expect-feature-flag intention_ledger=on --expect-feature-flag read_path_roundtrip_v1=on --expect-feature-flag lexical_single_scan=off --out results/2026-MM-DD-e10-resume-control.json`.
 4. Run the cheap launch candidate gates before reasoning. The 64K command is:
    `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile launch --query-budget-contract "$LAUNCH_QUERY_BUDGET_CONTRACT" --label e10-perf-64k --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" "${E10_RUNTIME[@]}" --out results/2026-MM-DD-e10-perf-64k.json`.
    Then run the 640K/D03 form:
@@ -117,7 +122,11 @@ Ceiling: **$120** hard. OWNER DECISION: explicit owner approval required before 
 
 ## Abort criteria
 
-- Any red gate in procedure step 2: stop before reasoning runs begin.
+- Any calibration integrity failure in procedure step 2, or any red
+  acceptance-eligible gate in steps 3–4: stop before reasoning runs begin.
+  Step 2 calibration artifacts intentionally fail acceptance; that expected
+  ineligible verdict is not itself an abort. Missing/inconsistent count
+  evidence or failure to freeze either runtime-bound contract is.
 - Any checkpoint-lineage incident in either arm during any draw: immediate abort, Markdown remains authority — this mirrors the Tier C shadow tripwire verbatim and is non-negotiable.
 - Cost tracker crosses $120: stop, aggregate complete draws only.
 - >10% harness/infra failures in a draw: stop, fix, rerun that draw under a fresh run-id.

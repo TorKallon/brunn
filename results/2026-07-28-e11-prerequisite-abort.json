@@ -1,0 +1,91 @@
+{
+  "schema": "straylight-experiment-prerequisite-abort@v1",
+  "experiment": "E11",
+  "title": "Wiki-link leads paired experiment",
+  "recorded_at": "2026-07-28T07:22:47-07:00",
+  "source_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b",
+  "status": "prerequisite_abort",
+  "experiment_executed": false,
+  "experiment_verdict": "not_evaluated",
+  "decision": "do_not_run",
+  "reason": "D02 is rejected, D06 and its link_leads runtime surface are not implemented, and the required owner-authored and owner-signed-off case manifest is absent.",
+  "blockers": [
+    {
+      "id": "d02_acceptance",
+      "state": "rejected",
+      "blocking": true,
+      "evidence": {
+        "path": "results/2026-07-27-e02-definitive-summary.json",
+        "sha256": "a5060af37aac41634ae68267906ffb4856e621fb97c5770e3939276951c62318",
+        "fact": "The current flag-on implementation returned only 4 of 30 identifiers at each measured scale and lost every deeper identifier."
+      },
+      "repair": "Repair D02 and pass E02 before D06 can be built or activated."
+    },
+    {
+      "id": "d06_link_leads_implementation",
+      "state": "absent",
+      "blocking": true,
+      "evidence": {
+        "inspection_scope": [
+          "apps/",
+          "eval/"
+        ],
+        "patterns": [
+          "link_leads",
+          "linked_leads"
+        ],
+        "matching_files": 0,
+        "source_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b",
+        "fact": "No product or evaluation implementation of the D06 runtime flag, response field, force-attach state, or lead-follow instrumentation exists in the inspected source snapshot."
+      },
+      "repair": "Only after D01 and repaired D02 are accepted, implement D06 behind authenticated runtime status and a default-off kill switch."
+    },
+    {
+      "id": "owner_link_case_manifest",
+      "state": "absent",
+      "blocking": true,
+      "evidence": {
+        "path": "eval/owner_link_cases.json",
+        "filesystem_exists": false,
+        "git_tracked": false,
+        "fact": "The required 8-10 owner-authored cases and explicit owner sign-off do not exist."
+      },
+      "repair": "After the independent product blockers clear, ask the owner to author and explicitly sign off the final case list."
+    }
+  ],
+  "owner_input": {
+    "solicited_for_this_abort": false,
+    "reason": "The rejected D02 dependency and absent D06 implementation independently prohibit E11, so owner manifest work cannot unblock the current run."
+  },
+  "execution": {
+    "service_stacks_started": 0,
+    "docker_projects_started": 0,
+    "deterministic_runs": 0,
+    "reasoning_case_runs": 0,
+    "embedding_requests": 0,
+    "quality_draw_artifacts": 0,
+    "latency_artifacts": 0
+  },
+  "future_cost_preflight": {
+    "reasoning": {
+      "billing_route": "ChatGPT-authenticated Codex subscription only",
+      "base_case_runs": 168,
+      "base_subscription_equivalent_usd": 40.32,
+      "hard_ceiling_usd": 50.0,
+      "retry_headroom_subscription_equivalent_usd": 9.68
+    },
+    "embeddings": {
+      "required_usd": 0.0,
+      "optional_owner_corpus_indexing_estimate_usd": 0.19,
+      "owner_notification_threshold_usd": 20.0,
+      "notification_required_by_preflight": false
+    }
+  },
+  "actual_cost": {
+    "usage_billed_reasoning_usd": 0.0,
+    "embedding_usd": 0.0,
+    "subscription_equivalent_usd": 0.0,
+    "embedding_warning_triggered": false
+  },
+  "conclusion": "E11 is not evaluated and supports no ship or kill verdict for wiki-link leads. Leave D06 unbuilt. Do not solicit or construct the owner manifest until repaired D02 and the other D06 product prerequisites make the experiment eligible."
+}

@@ -1,6 +1,6 @@
 # E11 — Wiki-Link Leads paired experiment (service_api ± link_leads vs filesystem)
 
-Status: Prerequisite abort — D02 rejected and owner manifest lacks sign-off
+Status: Prerequisite abort — D02 rejected; D06 and owner manifest absent
 Date: 2026-07-27
 Gates: D06
 Phase: 1 (requires flagged feature build)
@@ -8,12 +8,14 @@ Phase: 1 (requires flagged feature build)
 **CONDITIONAL EXPERIMENT. Hard precondition: the owner corpus is imported to the Nyx simplified core with a passed Tier A fidelity audit. The owner vault is link-rich; synthetic fixtures are not — running this on fixture corpora is invalid and its results must be discarded, not reported.**
 
 **CURRENT PREREQUISITE ABORT (2026-07-28):** Do not run E11. E02 rejected
-D02, so D06's hard `D01 + D02 landed` dependency is false. The required
-8–10-case manifest also has not been authored in the owner's words and signed
-off by the owner. Passing snapshot tooling or a Tier A fidelity audit cannot
-substitute for either gate. This abort is not a result against link leads; once
-D02 is accepted and the owner-authored, owner-signed-off manifest exists, the
-experimental intent below remains unchanged.
+D02, so D06's hard `D01 + D02 landed` dependency is false. D06 and its
+`link_leads` runtime surface are not implemented, and the required 8–10-case
+manifest also has not been authored in the owner's words and signed off by the
+owner. Passing snapshot tooling or a Tier A fidelity audit cannot substitute
+for these gates. This abort is not a result against link leads; once D02 is
+accepted, D06 is eligible and implemented, and the owner-authored,
+owner-signed-off manifest exists, the experimental intent below remains
+unchanged.
 
 ## Question
 
@@ -21,14 +23,16 @@ Does pointer-only `linked_leads` (D06-wiki-link-leads.md) improve paired claim o
 
 ## Preconditions and build items
 
-1. **NOT SATISFIED.** D06 implemented behind `link_leads` flag — Medium (apps/api/src/simple_core.rs: search response assembly + worker reindex link parser; derived link table). D06 must not be built or activated while its rejected D02 prerequisite remains false.
+1. **NOT SATISFIED.** D06 implemented behind `link_leads` flag — Medium (apps/api/src/simple_core.rs: search response assembly + worker reindex link parser; derived link table). At source revision `d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b`, exact source inspection under `apps/` and `eval/` finds no `link_leads`/`linked_leads` implementation. D06 must not be built or activated while its rejected D02 prerequisite remains false.
 2. Owner corpus imported to Nyx simplified core, Tier A fidelity audit passed (paths/bytes/sha256 identical; parent_checkpoint_id resolution) — Medium (imports/ tooling).
 3. Arm-aware n≥3 aggregator and authenticated runtime snapshot contract — implemented; see [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
 4. Lead-follow instrumentation: parse eval transcripts to match subsequent open/read calls against `linked_leads` returned earlier in the same case — Small (agent_work_eval.py transcript post-processing; no harness behavior change).
 5. **NOT SATISFIED.** Link-heavy owner case manifest
    `eval/owner_link_cases.json` (8–10 cases; selection procedure below) —
-   Small. It must contain questions authored in the owner's words and receive
-   explicit owner sign-off before draw 1.
+   Small. The file is currently absent and untracked. It must contain questions
+   authored in the owner's words and receive explicit owner sign-off before
+   draw 1. Do not solicit that input while the rejected D02 and absent D06
+   implementation independently prohibit the run.
 6. Reindex-churn hook for the soak: run link-parse worker jobs continuously during performance_eval write probes — Small (performance_eval.py).
 7. Treatment-arm activation plumbing — Small. D06 attaches leads only on request `expand_links: true` or the relational heuristic (an open OWNER DECISION), and agent_work_eval.py has no per-request flag plumbing; without this item the treatment arm returns zero leads and the experiment is vacuous. Use D06's evaluation-only runtime config `link_leads.force_attach=true` (D06-wiki-link-leads.md, Activation) for the treatment arm; verify with a pre-draw smoke search that a `linked_leads` array is actually present.
 

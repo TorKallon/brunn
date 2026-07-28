@@ -15,16 +15,18 @@ statement), hydration size and content are fetched together, checkpoint/change
 work overlaps retrieval dispatch, checkpoint sources resolve in one batched
 lookup, and the advisory lock gets one server-bounded 250ms wait. Flag off
 retains the prior response and sequential-query behavior. The separately
-default-off `lexical_single_scan` treatment also exists for E05.
+default-off `lexical_single_scan` treatment was evaluated by E05 and rejected;
+it remains off permanently.
 
 This is implementation readiness, not acceptance evidence. D09's
 request-scoped `query_count` counter and checked-in fail-closed budgets are now
 implemented, and the D10 generation-piggyback lexical wrapper shares its SQL
 constant with the D09 drift contract. Acceptance gate 1 and the query-count
-portions of gates 3/E05 still require the coordinated isolated-stack run:
-record both flag states, confirm the default-safe budget, and pin the lower
+portion of gate 3 still require the coordinated isolated-stack run: record both
+safe-subset flag states, confirm the default-safe budget, and pin the lower
 treatment count only from the resulting artifact. No substitute query-count
-claim is recorded.
+claim is recorded. E05 separately measured 795 paired
+`lexical_single_scan` search samples and observed zero reductions.
 
 ## Problem and evidence
 
@@ -48,7 +50,15 @@ Safe subset — no retrieval-semantics change, byte-identical responses, no expe
 4. **Batch checkpoint source resolution.** The ≤64 exact source refs ("path | version N | sha256:...") resolve via one `WHERE path = ANY($paths)` query instead of per-path lookups.
 5. **Bounded advisory-lock wait.** Wait up to 250ms for the lock before returning 409. 250ms is an order of magnitude above concurrent-write p95 (29.0ms, v8 soak) yet invisible against the 2,000ms checkpoint gate. The wait is a hard bound, never a queue.
 
-**DEFERRED — gated by E05 (E05-lexical-consolidation-guard.md):** consolidating the up-to-3 sequential lexical candidate scans into one. This is a retrieval-semantics change class: the v6 recent-first lexical change looked like a harmless efficiency win and collapsed Star Rupture to 0/3 by hiding older authoritative sources. Migration 0055's rule — "a sparse recent match is only a lead" — exists because of that failure. Not touched without E05 passing at the "provably free or drop it" bar.
+**REJECTED by E05 (E05-lexical-consolidation-guard.md):** consolidating the
+up-to-3 sequential lexical candidate scans into one. Both 640K soaks passed,
+but all 795 paired search query-count deltas were zero, so the blocking strict
+improvement gate failed before reasoning. Drop `lexical_single_scan`
+permanently. This is also a retrieval-semantics change class: the v6
+recent-first lexical change looked like a harmless efficiency win and
+collapsed Star Rupture to 0/3 by hiding older authoritative sources. Migration
+0055's rule — "a sparse recent match is only a lead" — exists because of that
+failure.
 
 **LEAVE ALONE:** chunk delete/reinsert on edit. Write p95 is 17.1ms (checkpoint) / 29.0ms (concurrent write) in the v8 soak, and the write path regressed twice in one day when touched (v5 unrelated-write p95 3,404ms, v7 3,170ms, per the v5/v7 future-soak JSONs) — and only the 640K soak caught it. There is no problem here to solve.
 
@@ -64,7 +74,9 @@ Safe subset — no retrieval-semantics change, byte-identical responses, no expe
 
 ## Failure-mode analysis
 
-- **v6 recent-first collapse:** the direct ancestor of the one deferred item; that item is fenced behind E05 and everything else avoids candidate-selection logic entirely.
+- **v6 recent-first collapse:** the direct ancestor of the rejected
+  `lexical_single_scan` item; E05 killed that item and everything else avoids
+  candidate-selection logic entirely.
 - **2026-07-22 dedup revert:** context reduction disguised as cleanup. The safe subset reduces queries, not context — enforced by the byte-identical response gate.
 - **07-26 bookkeeping collapse:** unbudgeted synchronous work. The 250ms lock wait is the only added latency anywhere, and it is bounded and asserted; parallelizing awaits removes wall-clock time without adding work.
 - **Write-path regressions (v5/v7):** the write path is explicitly out of scope; the per-release soak still runs the concurrent write/search probe to catch accidental coupling.
@@ -81,11 +93,17 @@ Deterministic (all must pass before enabling the flag by default):
 3. `python performance_eval.py run --label read-path-roundtrip-v1 --future-soak --out results/2026-MM-DD-read-path-roundtrip-v1-soak.json`, 30-sample definitive, scales 1k/10k/64k plus 640k: all p95s within the D09 regression-tier gates (D09-latency-contract-and-gates.md — open ≤500ms, search ≤500ms, exact read ≤100ms, checkpoint ≤200ms, resume ≤400ms, concurrent write ≤500ms / search ≤750ms) and showing no regression beyond run-to-run noise against the v8 baselines (open 59.7ms, search 53.1ms, broad 54.8ms, exact read 16.2ms, checkpoint 17.1ms, resume 35.2ms; concurrent write 29.0ms / search 100.9ms — reference points, not exact ceilings; the measured values are noise-level and an exact at-or-below gate would flake), correctness markers green, GIN idx_scan deltas via pg_stat_user_indexes unchanged, clean-git-tree fingerprint.
 4. Lock-wait test: contended writer observes ≤250ms added latency then 409; uncontended path adds zero.
 
-No reasoning experiment is required for the safe subset because responses are byte-identical; the deferred item's gate is E05 in full.
+No reasoning experiment is required for the safe subset because responses are
+byte-identical. E05 completed negative and permanently closes the separate
+lexical consolidation item.
 
 ## Rollout and kill switch
 
-Ship all five items behind `read_path_roundtrip_v1`, default off. Enable in dev, then on Nyx canaries, then default-on after one clean soak. The kill switch restores current behavior at runtime with no deploy. The deferred lexical consolidation, if E05 ever passes, ships behind its own flag (`lexical_single_scan`, per E05) — never bundled into this one.
+Ship all five safe-subset items behind `read_path_roundtrip_v1`, default off.
+Enable in dev, then on Nyx canaries, then default-on after one clean soak. The
+kill switch restores current behavior at runtime with no deploy. Do not ship
+the rejected `lexical_single_scan` flag; it remains off and is never bundled
+into the safe subset.
 
 ## References
 
