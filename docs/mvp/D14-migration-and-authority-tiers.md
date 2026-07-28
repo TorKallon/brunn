@@ -45,9 +45,15 @@ are documented in
 [Tier-A-legacy-fidelity-runbook.md](Tier-A-legacy-fidelity-runbook.md). Its
 aggregate preflight result is
 `results/2026-07-27-tier-a-legacy-fidelity-preflight.json`. The local composite
-has zero differences across 4,926 paths and 4,955 versions. This advances gate
-2 only to PARTIAL: no service or round-trip verdict has been run, and the owner
-capture's single checkpoint has no non-null parent reference.
+has zero differences across 4,926 paths and 4,955 versions. D14 gate 2 now
+passes: all six stages imported into a fresh isolated simplified workspace,
+the service audit matched all legacy versions and 5,079 native
+materializations, the checkpoint resumed, and the full-history byte audit
+matched 10,009 current paths plus 10,038 historical versions with zero
+differences. The owner capture's single checkpoint has no non-null parent
+reference, so parent-resolution evidence for this capture remains honestly
+vacuous. Release pinning and the D13 READ canaries are still required for full
+Tier A.
 
 ### Tier B — read/write daily driver (+3-4 days)
 

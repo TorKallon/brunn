@@ -1,6 +1,6 @@
 # Tier A legacy fidelity import
 
-Status: Local exact-composite preflight passed; isolated replay exposed and now guards an exact-history edge case; corrected service audit pending
+Status: D14 gate 2 passed; release pin and D13 READ canaries pending
 Date: 2026-07-27
 Supports: D14 gate 2
 
@@ -12,8 +12,6 @@ native-record capture. It fails closed on checksum drift, path collisions,
 missing historical bytes, an unpaired binary, a regenerated binary
 description, or an unresolved checkpoint parent.
 
-The aggregate result is
-[`results/2026-07-27-tier-a-legacy-fidelity-preflight.json`](../../results/2026-07-27-tier-a-legacy-fidelity-preflight.json).
 The private composite passed its local checksum/path/version/hash/size audit
 with zero differences:
 
@@ -26,9 +24,18 @@ with zero differences:
   Markdown contract;
 - one checkpoint and zero non-null parent references in this owner capture.
 
-This is a local preflight, not a Tier A pass. The isolated import, service
-manifest audit, downloaded-byte round trip, release pin, and D13 READ canaries
-remain required.
+The corrected isolated replay also passed all of D14 gate 2. From fresh empty
+volumes, all six stages imported into the exact `232e7c6` image; the service
+audit matched 4,926 legacy paths, all 4,955 legacy versions, and 5,079 native
+materializations with zero differences. The checkpoint imported and resumed.
+The full history export contained 20,047 manifest entries, and the byte audit
+matched all 10,009 current paths plus 10,038 historical versions with zero
+differences.
+
+The aggregate, content-free result remains
+[`results/2026-07-27-tier-a-legacy-fidelity-preflight.json`](../../results/2026-07-27-tier-a-legacy-fidelity-preflight.json).
+Full Tier A is not yet a pass: the exact release pin and D13 client READ
+canaries remain required.
 
 The first real isolated replay found eight legacy Markdown paths where two
 consecutive historical versions intentionally contain identical bytes. The
@@ -39,14 +46,14 @@ evaluation-only exact-history protocol below preserves those ordinals without
 changing normal production write semantics. No same-byte binary transition was
 present in the owner composite.
 
-A subsequent clean replay exposed a separate retry verifier mismatch after the
-atomic binary uploads had already committed. The binary API deliberately stores
-portable companion metadata in its canonical server form instead of retaining
-the full legacy and replay-marker objects supplied by the importer. The fetched
-manifest therefore had the correct companion path, version, bytes, portable
-fields, binary pointer, and byte-copy receipt, but the importer incorrectly
-required the discarded replay marker. That failure is evidence of an importer
-verification bug, not a service-fidelity difference.
+A subsequent diagnostic replay exposed a separate retry verifier mismatch
+after the atomic binary uploads had already committed. The binary API
+deliberately stores portable companion metadata in its canonical server form
+instead of retaining the full legacy and replay-marker objects supplied by the
+importer. The fetched manifest therefore had the correct companion path,
+version, bytes, portable fields, binary pointer, and byte-copy receipt, but the
+importer incorrectly required the discarded replay marker. That failure is
+evidence of an importer verification bug, not a service-fidelity difference.
 
 The corrected importer recognizes only that narrow canonical companion receipt.
 It requires the exact companion path/kind/hash/size/version and portable fields,

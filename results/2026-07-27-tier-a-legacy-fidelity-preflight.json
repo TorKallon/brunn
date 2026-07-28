@@ -1,6 +1,6 @@
 {
-  "schema": "straylight-tier-a-legacy-fidelity-preflight-result@v1",
-  "observed_at": "2026-07-28T00:51:24.274802Z",
+  "schema": "straylight-tier-a-legacy-fidelity-result@v2",
+  "observed_at": "2026-07-28T02:24:07Z",
   "privacy": {
     "committed_artifact": "aggregate_counts_and_fingerprints_only",
     "owner_paths_or_content_included": false,
@@ -49,14 +49,48 @@
     "native_record_materializations": "pass",
     "checkpoint_graph": "pass"
   },
+  "isolated_runtime": {
+    "source_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+    "api_image_id": "sha256:4e689c0428a929581dfea851220190bfd1589300e3f15cd5bf8a11b3dc488eac",
+    "api_image_revision_label": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+    "fresh_empty_volumes": true,
+    "evaluation_api_enabled": true,
+    "semantic_lane_enabled": false,
+    "embedding_worker_present": false,
+    "openai_api_key_present": false,
+    "requests_per_minute": 20000
+  },
   "isolated_service_audit": {
-    "verdict": "not_run",
-    "tier_a_gate": "blocked",
+    "verdict": "pass",
+    "d14_gate_2": "pass",
+    "differences": 0,
+    "replay_stages": 6,
+    "expected_legacy_paths": 4926,
+    "expected_legacy_versions": 4955,
+    "remote_manifest_versions": 10038,
+    "native_record_materializations": 5079,
+    "checkpoint_imports": 1,
+    "checkpoint_parent_references": 0,
+    "checkpoint_import_artifact_sha256": "sha256:7150536df22880972d602bf61e3d89036c1c375ded3780e42b961c4aaa8adef8",
+    "service_audit_artifact_sha256": "sha256:fb8e992e7c0aa8ed941ae414501daea728733a1f73dff5933e02e1a1c1e4725c",
+    "roundtrip_audit_artifact_sha256": "sha256:76fe9527e6ba8fa523677c51ea6517d94a06a54eaf1a3e5d8a9f4d48fb9c92e3",
+    "roundtrip": {
+      "differences": 0,
+      "expected_paths": 10009,
+      "expected_history_versions": 10038,
+      "export_current_files": 10009,
+      "export_history_versions": 10038,
+      "export_manifest_entries": 20047,
+      "export_bytes": 797775263
+    },
+    "excluded_diagnostics": [
+      "the original importer collapsed eight intentional same-byte Markdown history ordinals",
+      "the first corrected replay rejected canonical server-normalized binary companion receipts",
+      "the first full-export publish used a Docker Desktop bind mount whose hard-link staging operation returned ENOENT; the exact same binary completed the definitive export in its container filesystem"
+    ],
     "remaining_checks": [
-      "import all six replay stages into a fresh isolated simplified user",
-      "resolve and resume every native checkpoint in the service",
-      "export full simplified history and obtain zero byte-level round-trip differences",
-      "issue read-only pilot credentials and pass all D13 READ canaries"
+      "issue read-only pilot credentials and pass all D13 READ canaries",
+      "pin the exact release artifact used for the pilot"
     ],
     "checkpoint_lineage_note": "The owner capture has zero non-null parent references; service resolution is vacuous for this capture. Synthetic and live-contract coverage exercises unresolved-parent rejection and valid-parent acceptance."
   },
@@ -70,5 +104,5 @@
     "twice_conservative_estimate_usd": 3.52,
     "over_20_usd_flag": false
   },
-  "conclusion": "The exact local recovery/composition preflight passes. D14 Tier A is not passed until the isolated service import, service and round-trip audits, release pinning, and client READ canaries pass."
+  "conclusion": "D14 gate 2 passes: the exact owner composite imported through all six stages into a fresh isolated simplified workspace, the service manifest matched, the checkpoint resumed, and the full history round trip had zero byte differences. Full Tier A remains pending the exact release pin and D13 client READ canaries."
 }
