@@ -80,6 +80,13 @@ variable. An E06 pass cannot rehabilitate D02.
    mutation-plan set, and the mutation seed exactly equals that paired-draw ID.
    The aggregate records those checks under `mutation_provenance`.
 6. If the headline is inside the noise floor but straylight-api-gate-transition moves, run a targeted 5-draw repeat on that card, all three arms, adding `--case straylight-api-gate-transition` to every invocation and using targeted-specific paired-draw IDs.
+
+   **Predeclared for the 2026-07-28 execution:** do not invoke this optional
+   repeat. Neither "inside the noise floor" nor "moves" has a frozen numeric
+   definition, and the targeted paired-draw IDs, output ledger, and aggregate
+   are unspecified. The three-draw five-card main grid is definitive for this
+   run. Any targeted follow-up requires a new predeclared plan before looking
+   at regenerated evidence.
 7. Use `python3 transition_eval.py --manifest eval/transition_cases.json regrade ...` for rubric corrections; never regenerate answers to fix grading.
 
 The run JSON fingerprints the mutation script, embeds every per-card plan and
