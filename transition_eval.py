@@ -19,11 +19,14 @@ from typing import Any, Sequence
 from agent_work_eval import (
     DEFAULT_CODEX,
     NATIVE_PROVISIONING_STATE,
+    attach_response_character_metrics,
     build_run_ledger,
     canonical_json_sha256,
+    capture_service_image_fingerprint,
     ensure_run_binding,
     expected_runtime_features,
     experiment_provenance_lines,
+    fail_service_accounting,
     fetch_service_runtime_snapshot,
     git_source_fingerprint,
     grade_answer,
@@ -34,8 +37,10 @@ from agent_work_eval import (
     require_codex_subscription,
     require_stable_runtime_configuration,
     sha256_file,
+    stable_service_image_provenance,
     subscription_reasoning_environment,
     validate_experiment_identity,
+    validate_native_service_accounting,
     write_native_provisioning_state,
 )
 from native_eval import (
@@ -896,8 +901,50 @@ def attach_native_lineage(
 ) -> None:
     run_dir = Path(record["answer_path"]).parent
     state_path = run_dir / "native-session.json"
-    state = load_json(state_path) if state_path.exists() else {}
-    operations = state.get("operations", [])
+    record["service_accounting_valid"] = False
+    record["service_accounting_error"] = None
+    try:
+        if not state_path.exists():
+            raise ValueError("native-session.json is missing")
+        state = load_json(state_path)
+        operations = validate_native_service_accounting(
+            state,
+            allow_zero_calls=bool(
+                record.get("allow_zero_service_calls") is True
+                and record.get("zero_service_call_contract")
+            ),
+        )
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        record["service_operations"] = []
+        record["service_calls"] = 0
+        record["service_result_chars"] = 0
+        record["service_source_text_chars"] = 0
+        record["service_metadata_chars"] = 0
+        record["service_replay_weighted_chars"] = 0
+        record["service_latency_ms"] = 0.0
+        fail_service_accounting(record, str(exc))
+        record["lineage"] = {
+            "session_id": None,
+            "child_checkpoint": None,
+            "checkpoint_read_via_http": False,
+            "parent_match": False,
+            "revision_match": False,
+            "delta_source_preserved": False,
+            "prior_source_preserved": False,
+            "provenance_resolution_error": None,
+            "within_call_budget": False,
+            "operations": {
+                "completed_calls": 0,
+                "result_chars": 0,
+                "elapsed_ms": 0.0,
+                "operations": [],
+            },
+            "error": str(exc),
+        }
+        record["persisted_checkpoint"] = None
+        record["transition_pass"] = False
+        return
+    record["service_accounting_valid"] = True
     operation_summary = {
         "completed_calls": len(operations),
         "result_chars": sum(item.get("result_chars", 0) for item in operations),
@@ -1022,8 +1069,10 @@ def attach_native_lineage(
     }
     record["lineage"] = lineage
     record["persisted_checkpoint"] = child
+    grade = record.get("grade")
     record["transition_pass"] = bool(
-        record["grade"]["pass"]
+        isinstance(grade, dict)
+        and grade.get("pass")
         and lineage["checkpoint_read_via_http"]
         and lineage["parent_match"]
         and lineage["revision_match"]
@@ -1031,6 +1080,7 @@ def attach_native_lineage(
         and lineage["prior_source_preserved"]
         and lineage["within_call_budget"]
     )
+    attach_response_character_metrics(record)
 
 
 def attach_filesystem_sidecar_lineage(
@@ -1120,10 +1170,20 @@ def attach_results(
         "command_output_chars",
         0,
     )
+    attach_response_character_metrics(record)
     record["persisted_checkpoint"] = None
     if not answer_path.exists():
         record["grade"] = None
         record["transition_pass"] = False
+        if record["condition"] == "service_api_resume":
+            attach_native_lineage(
+                record,
+                case,
+                metadata["native"],
+                max_calls,
+                service_protocol,
+            )
+            record["transition_pass"] = False
         return
     try:
         answer = parse_json_answer(answer_path)
@@ -1133,6 +1193,15 @@ def attach_results(
         record["error"] = f"Invalid answer: {exc}"
         record["grade"] = None
         record["transition_pass"] = False
+        if record["condition"] == "service_api_resume":
+            attach_native_lineage(
+                record,
+                case,
+                metadata["native"],
+                max_calls,
+                service_protocol,
+            )
+            record["transition_pass"] = False
         return
     if record["condition"] == "filesystem_rebuild":
         record["lineage"] = None
@@ -1290,6 +1359,7 @@ def regrade_run(
         case for case in validated["manifest"]["cases"] if case["id"] in selected_case_ids
     ]
     for record in run["records"]:
+        attach_response_character_metrics(record)
         case = case_by_id.get(record["case_id"])
         answer = record.get("answer")
         if case is None or not answer:
@@ -1499,6 +1569,69 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         raise ValueError(
             "runtime/build expectations require service_api_resume"
         )
+    service_retrieval_modes = tuple(args.service_retrieval_modes or ())
+    if len(service_retrieval_modes) != len(set(service_retrieval_modes)):
+        raise ValueError(
+            "--service-retrieval-modes must not contain duplicates"
+        )
+    if (
+        service_retrieval_modes
+        and "service_api_resume" not in selected_conditions
+    ):
+        raise ValueError(
+            "--service-retrieval-modes requires service_api_resume"
+        )
+    if service_retrieval_modes and args.service_protocol != "simple":
+        raise ValueError(
+            "--service-retrieval-modes requires --service-protocol simple"
+        )
+    if (
+        expected_features.get("semantic_lane") is False
+        and "service_api_resume" in selected_conditions
+        and service_retrieval_modes != ("exact", "lexical")
+    ):
+        raise ValueError(
+            "semantic_lane=off service arms require "
+            "--service-retrieval-modes exact lexical"
+        )
+    source_fingerprint = git_source_fingerprint()
+    if args.api_container and "service_api_resume" not in selected_conditions:
+        raise ValueError(
+            "--api-container requires service_api_resume"
+        )
+    definitive_service_arm = bool(
+        experiment_arm is not None
+        and "service_api_resume" in selected_conditions
+    )
+    if definitive_service_arm:
+        if not args.api_container:
+            raise ValueError(
+                "explicit service_api_resume experiment arms require "
+                "--api-container"
+            )
+        if not args.expect_build_revision:
+            raise ValueError(
+                "explicit service_api_resume experiment arms require "
+                "--expect-build-revision"
+            )
+        if not source_fingerprint["clean"]:
+            raise ValueError(
+                "explicit service_api_resume experiment arms require clean "
+                f"source provenance: {source_fingerprint}"
+            )
+    if args.api_container and not args.expect_build_revision:
+        raise ValueError(
+            "--api-container requires --expect-build-revision"
+        )
+    service_image_before = (
+        capture_service_image_fingerprint(
+            args.api_container,
+            source_revision=source_fingerprint["revision"],
+            expected_build_revision=args.expect_build_revision,
+        )
+        if args.api_container
+        else None
+    )
     manifest_sha256 = sha256_file(args.manifest)
     mutation_script = validated.get("mutation_script")
     mutation_enabled = mutation_script is not None
@@ -1524,6 +1657,8 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
             if mutation_enabled
             else None
         ),
+        "service_retrieval_modes": list(service_retrieval_modes),
+        "service_image_fingerprint": service_image_before,
     }
     ensure_run_binding(
         run_root,
@@ -1615,6 +1750,10 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
                 "STRAYLIGHT_API_URL": os.environ["STRAYLIGHT_API_URL"],
                 "STRAYLIGHT_EVAL_TOKEN": native_metadata[case["id"]]["token"],
             }
+            if service_retrieval_modes:
+                environment[
+                    "STRAYLIGHT_EVAL_RETRIEVAL_MODES"
+                ] = ",".join(service_retrieval_modes)
         tasks.append(run_one(
             semaphore, args.codex, manifest["model"], args.schema,
             case, condition, run_dir, args.timeout,
@@ -1662,6 +1801,22 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
             manifest["workspace_max_completed_calls"],
             args.service_protocol,
         )
+    service_image_provenance: dict[str, Any] | None = None
+    if service_image_before is not None:
+        service_image_after = capture_service_image_fingerprint(
+            args.api_container,
+            source_revision=source_fingerprint["revision"],
+            expected_build_revision=args.expect_build_revision,
+        )
+        service_image_provenance = stable_service_image_provenance(
+            service_image_before,
+            service_image_after,
+        )
+    runtime_features = (
+        runtime_snapshot.get("runtime_features")
+        if isinstance(runtime_snapshot, dict)
+        else None
+    )
     run = {
         "benchmark_version": manifest["benchmark_version"],
         "run_id": run_id,
@@ -1681,11 +1836,13 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         },
         "records": records,
         "service_protocol": args.service_protocol,
+        "service_retrieval_modes": list(service_retrieval_modes),
         "feature_flags": {
-            "resume_deltas": os.environ.get(
-                "STRAYLIGHT_RESUME_DELTAS", "false"
-            ).casefold()
-            in {"1", "true", "yes", "on"}
+            "resume_deltas": (
+                runtime_features.get("resume_deltas")
+                if isinstance(runtime_features, dict)
+                else None
+            )
         },
         "mutation": (
             {
@@ -1710,6 +1867,8 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         "expected_runtime_features": expected_features,
         "expected_build_revision": args.expect_build_revision,
         "service_runtime_snapshot": runtime_snapshot,
+        "service_image_provenance": service_image_provenance,
+        "implementation_fingerprint": source_fingerprint,
         "experiment_parameters": experiment_parameters,
     }
     run["run_ledger"] = build_run_ledger(
@@ -1727,6 +1886,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         expected_runtime_features=expected_features,
         expected_build_revision=args.expect_build_revision,
         experiment_parameters=experiment_parameters,
+        service_image_provenance=service_image_provenance,
     )
     run["summary"] = summarize(records, manifest["conditions"])
     return run
@@ -1785,9 +1945,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="fail closed unless /v1/status reports this exact build revision",
     )
     run.add_argument(
+        "--api-container",
+        help=(
+            "running API container whose immutable image ID and OCI revision "
+            "label are captured before and after the run"
+        ),
+    )
+    run.add_argument(
         "--service-protocol",
         choices=("legacy", "simple"),
         default="simple",
+    )
+    run.add_argument(
+        "--service-retrieval-modes",
+        nargs="+",
+        choices=("exact", "lexical", "semantic"),
+        help=(
+            "immutable retrieval lanes injected into simple native service "
+            "requests"
+        ),
     )
     run.add_argument("--reuse-input", type=Path)
     run.add_argument("--mutation-script", type=Path)

@@ -14,6 +14,7 @@ from agent_work_eval import (  # noqa: E402
 )
 from performance_eval import (  # noqa: E402
     BOOLEAN_RUNTIME_FEATURES,
+    CONCURRENT_SEARCHES_PER_ROUND,
     CURRENT_RUNTIME_FEATURES,
     D03_RESUME_DELTAS_GATE_PROFILE,
     DEFAULT_THRESHOLDS,
@@ -35,6 +36,7 @@ from performance_eval import (  # noqa: E402
     evaluate_d03_resume_delta_gates,
     evaluate_query_budgets,
     evaluate_retrieval_plan,
+    expected_query_count_sample_cardinality,
     extract_sql_function_body,
     load_query_budgets,
     load_reused_flat_controls,
@@ -229,6 +231,10 @@ class PerformanceEvalTests(unittest.TestCase):
             "old_relevant_source_survives_many_newer_writes",
             LEXICAL_CONSOLIDATION_REQUIRED_GATES,
         )
+        self.assertIn(
+            "query_count_sample_cardinality_is_authoritative",
+            LEXICAL_CONSOLIDATION_REQUIRED_GATES,
+        )
 
     def test_query_count_summary_and_budget_reject_one_extra_statement(self):
         budgets = {
@@ -249,6 +255,44 @@ class PerformanceEvalTests(unittest.TestCase):
         }
         self.assertTrue(passing["query_budget_read"]["pass"])
         self.assertTrue(passing["query_budget_search"]["pass"])
+        self.assertEqual(
+            summary["by_sample_name"],
+            {
+                "broad_search": {
+                    "operation": "search",
+                    "expected_samples": 1,
+                    "observed_samples": 1,
+                    "missing_query_counts": 0,
+                    "samples": 1,
+                    "min": 22,
+                    "max": 22,
+                    "counts": [22],
+                },
+                "read": {
+                    "operation": "read",
+                    "expected_samples": 1,
+                    "observed_samples": 1,
+                    "missing_query_counts": 0,
+                    "samples": 1,
+                    "min": 11,
+                    "max": 11,
+                    "counts": [11],
+                },
+                "search": {
+                    "operation": "search",
+                    "expected_samples": 1,
+                    "observed_samples": 1,
+                    "missing_query_counts": 0,
+                    "samples": 1,
+                    "min": 23,
+                    "max": 23,
+                    "counts": [23],
+                },
+            },
+        )
+        self.assertEqual(summary["missing_by_sample_name"], {})
+        self.assertFalse(summary["sample_cardinality"]["authoritative"])
+        self.assertTrue(summary["sample_cardinality"]["pass"])
 
         summary["by_operation"]["search"]["counts"].append(24)
         failing = {
@@ -256,6 +300,73 @@ class PerformanceEvalTests(unittest.TestCase):
             for gate in evaluate_query_budgets(summary, budgets)
         }
         self.assertFalse(failing["query_budget_search"]["pass"])
+
+    def test_query_count_summary_enforces_authoritative_sample_cardinality(self):
+        expected = expected_query_count_sample_cardinality(
+            scale=PRODUCTION_RECORDS,
+            samples_per_retrieval=2,
+            verbatim_identifier_probes=3,
+            concurrent_rounds=2,
+            concurrent_searches_per_round=CONCURRENT_SEARCHES_PER_ROUND,
+        )
+        responses = [
+            (sample_name, {"query_count": 7})
+            for sample_name, cardinality in expected.items()
+            for _ in range(cardinality)
+        ]
+
+        complete = summarize_query_counts(
+            responses,
+            expected_cardinality=expected,
+        )
+
+        self.assertTrue(complete["sample_cardinality"]["authoritative"])
+        self.assertTrue(complete["sample_cardinality"]["pass"])
+        self.assertEqual(
+            complete["sample_cardinality"]["expected_by_sample_name"],
+            expected,
+        )
+        self.assertEqual(
+            complete["sample_cardinality"]["observed_by_sample_name"],
+            expected,
+        )
+        self.assertEqual(
+            complete["by_sample_name"]["max_batch_read"]["samples"],
+            1,
+        )
+        self.assertEqual(
+            complete["by_sample_name"][
+                "verbatim_identifier_search"
+            ]["samples"],
+            3,
+        )
+
+        missing_response = summarize_query_counts(
+            responses[:-1],
+            expected_cardinality=expected,
+        )
+        self.assertFalse(missing_response["sample_cardinality"]["pass"])
+        self.assertEqual(
+            missing_response["sample_cardinality"][
+                "missing_response_samples"
+            ],
+            {responses[-1][0]: 1},
+        )
+
+        missing_count_responses = list(responses)
+        missing_count_responses[0] = (responses[0][0], {})
+        missing_count = summarize_query_counts(
+            missing_count_responses,
+            expected_cardinality=expected,
+        )
+        self.assertFalse(missing_count["sample_cardinality"]["pass"])
+        self.assertEqual(
+            missing_count["missing_by_sample_name"],
+            {responses[0][0]: 1},
+        )
+
+        with self.assertRaisesRegex(ValueError, "unknown response sample"):
+            summarize_query_counts([("typo_search", {"query_count": 1})])
 
     def test_checked_in_query_budget_contract_covers_six_operations(self):
         contract = load_query_budgets()
@@ -651,6 +762,7 @@ class PerformanceEvalTests(unittest.TestCase):
                 })
 
         client = Client()
+        response_samples = []
         result = verbatim_identifier_probe(
             client,  # type: ignore[arg-type]
             protocol="simple",
@@ -661,10 +773,28 @@ class PerformanceEvalTests(unittest.TestCase):
                 "identifier": identifier,
                 "byte_offset": 2_500,
             }],
+            response_samples=response_samples,
         )
         self.assertEqual(result["returned"], 0)
         self.assertFalse(result["pass"])
         self.assertEqual(client.payloads[0]["queries"][0]["modes"], ["exact"])
+        self.assertEqual(
+            response_samples,
+            [(
+                "verbatim_identifier_search",
+                {
+                    "data": {
+                        "query": (
+                            client.payloads[0]["queries"][0]["query"]
+                        ),
+                        "results": [{
+                            "path": "Synthetic/a.md",
+                            "excerpt": "truncated",
+                        }],
+                    },
+                },
+            )],
+        )
         self.assertFalse(source_text_contains(
             {"query": identifier, "excerpt": "truncated"},
             identifier,

@@ -24,6 +24,18 @@ Can the up-to-3 sequential lexical candidate scans in the search path be consoli
    record them in the JSON artifact. Feature-state declarations are checked
    against `/v1/status` before measurements begin; they describe rather than
    mutate the already configured API.
+6. **(implemented) Paired query-count comparator** —
+   `eval/compare_query_counts.py` consumes two passing definitive v2
+   performance artifacts, requires the same clean source/build/image,
+   retrieval modes, scales, fixtures, and named-sample shape, and permits the
+   authenticated runtime configurations to differ only in one explicitly
+   declared false→true boolean feature.
+
+**Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E05
+service and performance stack must start with
+`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E05
+variable. An E05 pass cannot rehabilitate D02.
 
 ## Arms
 
@@ -48,7 +60,7 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
    `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json validate`.
 2. Deterministic guards on Arm B first (cheap kill), against a disposable API
    already started with `STRAYLIGHT_LEXICAL_SINGLE_SCAN=true`:
-   `python3 performance_eval.py run --label e05-armB-guards --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile not-applicable --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag lexical_single_scan=on --expect-build-revision "$REV" --run-tag E05 --run-tag armB-guards --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --out results/2026-MM-DD-e05-armB-guards-soak.json`.
+   `python3 performance_eval.py run --label e05-armB-guards --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile not-applicable --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag lexical_single_scan=on --expect-build-revision "$REV" --run-tag E05 --run-tag armB-guards --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --out results/2026-MM-DD-e05-armB-guards-soak.json`.
    Require `old_relevant_source_survives_many_newer_writes` 30/30 and
    `bounded_lexical_overflow_returns_late_relevant_source` pass. Any failure →
    drop the consolidation, stop the experiment, skip all reasoning runs.
@@ -56,28 +68,33 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
    stack with the same corpus/sample shape and provenance options, omitting
    `--gate-profile` and using
    `--query-budget-profile default-safe`,
+   `--expect-feature-flag verbatim_spans=off`, and
    `--expect-feature-flag lexical_single_scan=off`. This supplies the
    comparative latency and query-count control; it does not weaken the Arm B
-   cheap-kill gate.
+   cheap-kill gate. Before any reasoning, compare the matched artifacts:
+   `python3 eval/compare_query_counts.py --control results/2026-MM-DD-e05-armA-control-soak.json --treatment results/2026-MM-DD-e05-armB-guards-soak.json --feature lexical_single_scan --operation search --min-delta -2 --max-delta 0 --require-strict-improvement --out results/2026-MM-DD-e05-query-count-comparison.json`.
+   Every paired search sample must stay within `[-2,0]`, at least one must
+   strictly decrease, every non-search sample must be unchanged, and the
+   comparator must pass before reasoning starts.
 4. Paired draws, N = 1..3, alternating arms per draw to avoid drift:
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --condition service_api --experiment-arm e05-A --paired-draw-id "e05-work-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag lexical_single_scan=off --run-tag E05 --run-tag armA --concurrency 3 --timeout 360 --run-id "e05-armA-draw${N}" --out "results/2026-MM-DD-e05-lexical-armA-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-armA-draw${N}.md"` (flag off), then the same with `--experiment-arm e05-B`, `--expect-feature-flag lexical_single_scan=on`, and an API actually started with the treatment flag on. Both arms use the same paired-draw ID and distinct run IDs.
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e05-A --paired-draw-id "e05-work-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag lexical_single_scan=off --run-tag E05 --run-tag armA --concurrency 3 --timeout 360 --run-id "e05-armA-draw${N}" --out "results/2026-MM-DD-e05-lexical-armA-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-armA-draw${N}.md"` (flag off), then the same with `--experiment-arm e05-B`, `--expect-feature-flag lexical_single_scan=on`, and an API actually started with the treatment flag on. Both arms retain `--service-retrieval-modes exact lexical`, use `--api-container "$API_CONTAINER"`, use the same paired-draw ID, and use distinct run IDs.
 5. Targeted 5-draw repeats, N = 1..5, both arms:
    - Arm A:
-     `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json run --service-protocol simple --condition service_api --experiment-arm e05-A --paired-draw-id "e05-targeted-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag lexical_single_scan=off --run-tag E05 --run-tag targeted --run-tag armA --concurrency 3 --timeout 360 --run-id "e05-targeted-armA-draw${N}" --out "results/2026-MM-DD-e05-lexical-targeted-armA-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-targeted-armA-draw${N}.md"`.
+     `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e05-A --paired-draw-id "e05-targeted-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag lexical_single_scan=off --run-tag E05 --run-tag targeted --run-tag armA --concurrency 3 --timeout 360 --run-id "e05-targeted-armA-draw${N}" --out "results/2026-MM-DD-e05-lexical-targeted-armA-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-targeted-armA-draw${N}.md"`.
    - Arm B:
-     `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json run --service-protocol simple --condition service_api --experiment-arm e05-B --paired-draw-id "e05-targeted-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag lexical_single_scan=on --run-tag E05 --run-tag targeted --run-tag armB --concurrency 3 --timeout 360 --run-id "e05-targeted-armB-draw${N}" --out "results/2026-MM-DD-e05-lexical-targeted-armB-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-targeted-armB-draw${N}.md"`.
+     `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e05-B --paired-draw-id "e05-targeted-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag lexical_single_scan=on --run-tag E05 --run-tag targeted --run-tag armB --concurrency 3 --timeout 360 --run-id "e05-targeted-armB-draw${N}" --out "results/2026-MM-DD-e05-lexical-targeted-armB-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-targeted-armB-draw${N}.md"`.
    Both arms use the same `e05-targeted-draw${N}` paired-draw ID. Do not reuse
    the full-suite artifact names or run IDs.
 6. Aggregate exact arrays separately:
-   `E05_FULL=(results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E05_FULL[@]}" --expected-arm e05-B --expected-arm e05-A --out results/2026-MM-DD-e05-full-aggregate.json`.
+   `E05_FULL=(results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E05_FULL[@]}" --expected-arm e05-B --expected-arm e05-A --expected-arm-retrieval-modes e05-B=exact,lexical --expected-arm-retrieval-modes e05-A=exact,lexical --out results/2026-MM-DD-e05-full-aggregate.json`.
    The targeted aggregate is a separate command with its frozen five-draw
    filenames:
-   `E05_TARGETED=(results/2026-MM-DD-e05-lexical-targeted-arm{A,B}-draw{1,2,3,4,5}.json); python3 eval/aggregate_draws.py "${E05_TARGETED[@]}" --expected-arm e05-B --expected-arm e05-A --out results/2026-MM-DD-e05-targeted-aggregate.json`.
+   `E05_TARGETED=(results/2026-MM-DD-e05-lexical-targeted-arm{A,B}-draw{1,2,3,4,5}.json); python3 eval/aggregate_draws.py "${E05_TARGETED[@]}" --expected-arm e05-B --expected-arm e05-A --expected-arm-retrieval-modes e05-B=exact,lexical --expected-arm-retrieval-modes e05-A=exact,lexical --out results/2026-MM-DD-e05-targeted-aggregate.json`.
    Do not mix the full and targeted case sets.
-7. Record per-lane latency metrics and per-operation lexical query counts from both arms (the D09 assertion delta this would lock in if shipped).
-
-The query-count comparison remains a hard dependency on D09. The current
-execution harness does not infer counts from latency or logs.
+7. Record per-lane latency metrics and the fail-closed named-sample
+   query-count comparison from both arms (the D09 assertion delta this would
+   lock in if shipped). Counts come only from the request-scoped D09
+   instrumentation; the comparator never infers them from latency or logs.
 
 ## Metrics
 
@@ -91,7 +108,9 @@ Ship the consolidation only if ALL hold; otherwise drop it permanently and recor
 
 1. Deterministic guards clean:
    `old_relevant_source_survives_many_newer_writes` 30/30 and
-   `bounded_lexical_overflow_returns_late_relevant_source` pass with flag on.
+   `bounded_lexical_overflow_returns_late_relevant_source` pass with flag on;
+   `results/2026-MM-DD-e05-query-count-comparison.json` passes with all search
+   deltas in `[-2,0]`, at least one strict reduction, and no non-search change.
 2. n≥3 paired agent-work: McNemar shows no significant regression for Arm B (α = 0.05) AND the point estimate of the case-level difference is ≥ 0 or its CI comfortably includes 0. Single-draw deltas are noise (±3–5 claims observed: 40→47→44→43→47) and carry no weight.
 3. Targeted 5-draw: Arm B ≥ Arm A on both `star-rupture-plan-revision` and `warmind-parser-learning`; any B < A on `star-rupture-plan-revision` is an automatic drop regardless of aggregate stats.
 
@@ -122,7 +141,7 @@ The run record must contain: all artifact paths
 `results/2026-MM-DD-e05-lexical-targeted-arm{A,B}-draw{1,2,3,4,5}.json`,
 and the soak JSONs); both aggregate artifacts (full and targeted);
 win/loss/tie tables, McNemar p, and bootstrap CIs; guard results verbatim;
-per-lane latency and query-count deltas; git commit fingerprint and flag states
+per-lane latency and the paired named-sample query-count artifact/deltas; git commit fingerprint and flag states
 per run; actual spend vs the $23.52 preflight; and a one-line verdict —
 "provably free: ship behind `lexical_single_scan` per D10" or "not free:
 dropped, negative result recorded alongside v6 recent-first." If dropped,

@@ -97,6 +97,18 @@ Use `--expect-feature-flag NAME=on|off` for booleans,
 `--expect-build-revision REVISION` when pinning an isolated image. Any missing
 field or expected/actual mismatch aborts before reasoning.
 
+Native operation accounting keeps pre-HTTP CLI construction failures separate
+from measured service work. A definitive record may retain an
+`http_status=0` `failed:X` under `local_cli_failures` only when a later
+successful HTTP operation named `X` appears in the same record; the validator
+recomputes that summary and all service totals. These local failures and their
+characters remain diagnostic and stay in `model_visible_tool_output_chars`,
+but are excluded from service call/HTTP-call, result/source/metadata/replay
+character, and latency metrics. Any measured 4xx or `denied:*` operation, or
+any unrecovered local failure, invalidates definitive evidence. Agent-work
+service prompts provide the canonical shell-safe positional-JSON checkpoint
+invocation rather than leaving the wrapper syntax implicit.
+
 ## Aggregation
 
 The aggregator infers a complete arm set per suite and rejects an incomplete
@@ -110,16 +122,32 @@ ordering explicitly for feature experiments:
 python3 eval/aggregate_draws.py results/...json \
   --expected-arm treatment \
   --expected-arm control \
+  --expected-arm-retrieval-modes treatment=exact,lexical \
+  --expected-arm-retrieval-modes control=exact,lexical \
   --out results/...-aggregate.json
 ```
 
+For a definitive aggregate, repeat `--expected-arm-retrieval-modes` exactly
+once for every service-backed arm and omit filesystem-only arms. The saved
+top-level, experiment-binding, and ledger modes must agree with that mapping;
+all service artifacts must also share one source revision, runtime build
+revision, Docker image ID, and image revision. Separate container instances
+are allowed.
+
 One narrow exception exists for a predeclared longitudinal extension such as
-E04: `--allow-case-extension` permits a frozen subset to receive extra paired
-draws. Every included case must still have at least three complete draws, each
-case/draw must contain the full arm set, and all artifacts must retain one
-manifest fingerprint. Use the parent manifest with repeated `--case` selectors
-for the extra draws; do not substitute a separately fingerprinted subset
-manifest into the aggregate.
+E04. Supply both
+`--case-extension-plan eval/e04_case_extension_plan.json` and its frozen
+`--case-extension-plan-sha256
+3cf08c940c527d2eb309b2263a4ad2303b3c8aeede1bc7ce15076b6670373976`.
+The aggregator verifies the plan file hash, each exact parent-manifest hash and
+case list, the strict extension subset, and the declared base/extension draw
+counts. Every included case must still have at least three complete draws, each
+case/draw must contain the full arm set, and all artifacts for a suite must
+retain the parent manifest fingerprint. Use the parent manifest with repeated
+`--case` selectors for extra draws; do not substitute a separately
+fingerprinted subset manifest into the aggregate. A modified plan requires a
+new explicit owner-reviewed hash; computing the expected hash from the same
+modified file is not a predeclaration.
 
 Default McNemar output remains two-sided on majority-collapsed case outcomes.
 E06 additionally requests its directional claim-level statistic with:
@@ -143,6 +171,9 @@ python3 eval/audit_accepted_sources.py \
   results/2026-MM-DD-e04-A-*-draw*.json \
   results/2026-MM-DD-e04-B-*-draw*.json \
   results/2026-MM-DD-e04-C-*-draw*.json \
+  --expected-arm-retrieval-modes e04-A=exact,lexical \
+  --expected-arm-retrieval-modes e04-B=exact,lexical \
+  --expected-arm-retrieval-modes e04-C=exact,lexical \
   --out results/2026-MM-DD-e04-accepted-source-context.json
 ```
 

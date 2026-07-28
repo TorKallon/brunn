@@ -19,6 +19,12 @@ Transitions are 0/5 in every run to date; failures are claim-slot omissions, nev
 - B4 (implemented): the shared D09/performance harness reports definitive 30-sample resume p95 and query counts; the resume-delta gate is 150ms when the flag is on.
 - Note: transition_eval seeds currently accept only workspace checkpoints; the writable-sidecar extension (Medium) is NOT required here — filesystem_rebuild is an existing runnable condition — but B2's vault mirror is mandatory for arm fairness.
 
+**Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E06
+service and performance stack must start with
+`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E06
+variable. An E06 pass cannot rehabilitate D02.
+
 ## Arms
 
 - A: service_api_resume, resume_deltas off (current behavior — baseline).
@@ -43,17 +49,24 @@ Transitions are 0/5 in every run to date; failures are claim-slot omissions, nev
    `whole_pair`, and at least one larger source for `unified_diff`.
 3. Run the cheap paired 640K performance control/treatment before reasoning.
    On the resume-off stack:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e06-resume-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag resume_deltas=off --out results/2026-MM-DD-e06-resume-control.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e06-resume-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=off --out results/2026-MM-DD-e06-resume-control.json`.
    Then, against the same image revision on the isolated resume-on stack:
-   `python3 performance_eval.py run --gate-profile d03-resume-deltas --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile d03-resume-deltas --query-budget-contract eval/query_budgets.d03-resume-deltas.json --resume-control-from results/2026-MM-DD-e06-resume-control.json --label e06-resume-treatment --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag resume_deltas=on --out results/2026-MM-DD-e06-resume-treatment.json`.
+   `python3 performance_eval.py run --gate-profile d03-resume-deltas --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile d03-resume-deltas --query-budget-contract eval/query_budgets.d03-resume-deltas.json --resume-control-from results/2026-MM-DD-e06-resume-control.json --label e06-resume-treatment --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=on --out results/2026-MM-DD-e06-resume-treatment.json`.
    The treatment artifact must prove 640K resume p95 ≤150ms and exactly +1
    query in every paired resume sample. Any red gate stops the reasoning grid.
-4. For draw N in 1..3, run the three arms with identical mutation seeds per card:
-   - Arm A (isolated stack with `STRAYLIGHT_RESUME_DELTAS=false`): `python3 transition_eval.py --manifest eval/transition_cases.json run --condition service_api_resume --service-protocol simple --experiment-arm e06-A --paired-draw-id "e06-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag resume_deltas=off --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed "e06-draw${N}" --run-id "resume-deltas-a-draw${N}" --out "results/2026-MM-DD-resume-deltas-a-draw${N}.json" --report "results/2026-MM-DD-resume-deltas-a-draw${N}.md"`
-   - Arm B (separate isolated stack with `STRAYLIGHT_RESUME_DELTAS=true`): the same command with `--experiment-arm e06-B`, `--expect-feature-flag resume_deltas=on`, and a distinct B run ID. Never flip the flag on a stack serving another concurrent arm.
-   - Arm C: the same seed and `--mutation-script` with `--condition filesystem_rebuild --experiment-arm e06-C --paired-draw-id e06-draw<N>` and a distinct C run ID; omit runtime expectations because this arm does not use the service.
+4. For draw N in 1..3, run the three arms with identical mutation seeds per
+   card. Every service arm binds the actual running container and injects only
+   exact+lexical retrieval; the harness proves the container remains running
+   and unchanged before/after and that its OCI revision label equals `$REV`.
+   - Arm A (isolated stack with `STRAYLIGHT_RESUME_DELTAS=false`):
+     `python3 transition_eval.py --manifest eval/transition_cases.json run --condition service_api_resume --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --experiment-arm e06-A --paired-draw-id "e06-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=off --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed "e06-draw${N}" --run-id "resume-deltas-a-draw${N}" --out "results/2026-MM-DD-resume-deltas-a-draw${N}.json" --report "results/2026-MM-DD-resume-deltas-a-draw${N}.md"`.
+   - Arm B (separate isolated stack with `STRAYLIGHT_RESUME_DELTAS=true`):
+     `python3 transition_eval.py --manifest eval/transition_cases.json run --condition service_api_resume --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --experiment-arm e06-B --paired-draw-id "e06-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=on --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed "e06-draw${N}" --run-id "resume-deltas-b-draw${N}" --out "results/2026-MM-DD-resume-deltas-b-draw${N}.json" --report "results/2026-MM-DD-resume-deltas-b-draw${N}.md"`.
+     Never flip the flag on a stack serving another concurrent arm.
+   - Arm C (filesystem-only, so no service/image/runtime arguments):
+     `python3 transition_eval.py --manifest eval/transition_cases.json run --condition filesystem_rebuild --experiment-arm e06-C --paired-draw-id "e06-draw${N}" --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed "e06-draw${N}" --run-id "resume-deltas-c-draw${N}" --out "results/2026-MM-DD-resume-deltas-c-draw${N}.json" --report "results/2026-MM-DD-resume-deltas-c-draw${N}.md"`.
 5. Aggregate with B first because the directional alternative is load-bearing:
-   `E06_MAIN=(results/2026-MM-DD-resume-deltas-{a,b,c}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E06_MAIN[@]}" --expected-arm e06-B --expected-arm e06-A --expected-arm e06-C --claim-mcnemar-alternative a_greater --out results/2026-MM-DD-resume-deltas-aggregate.json`.
+   `E06_MAIN=(results/2026-MM-DD-resume-deltas-{a,b,c}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E06_MAIN[@]}" --expected-arm e06-B --expected-arm e06-A --expected-arm e06-C --expected-arm-retrieval-modes e06-B=exact,lexical --expected-arm-retrieval-modes e06-A=exact,lexical --claim-mcnemar-alternative a_greater --out results/2026-MM-DD-resume-deltas-aggregate.json`.
    This emits the required one-sided claim-level tests for B-vs-A and B-vs-C
    while retaining the default two-sided case-level McNemar and clustered
    bootstrap.

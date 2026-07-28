@@ -113,12 +113,12 @@ Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane
    `verbatim-identifier-stage2-soak`. Flag off must preserve the failure; flag
    on must reach 30/30 at every scale.
 9. Reasoning pass, paired draws. For `N` in `1 2 3`, flag off:
-   `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm verbatim-off --paired-draw-id "verbatim-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --concurrency 3 --timeout 360 --run-id "verbatim-off-run${N}" --out "results/2026-MM-DD-verbatim-off-draw${N}.json" --report "results/2026-MM-DD-verbatim-off-draw${N}.md"`.
+   `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm verbatim-off --paired-draw-id "verbatim-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --concurrency 3 --timeout 360 --run-id "verbatim-off-run${N}" --out "results/2026-MM-DD-verbatim-off-draw${N}.json" --report "results/2026-MM-DD-verbatim-off-draw${N}.md"`.
    Run the same draw against the isolated flag-on stack with
    `--experiment-arm verbatim-on`,
    `--expect-feature-flag verbatim_spans=on`, and unique on-arm paths.
 10. Aggregate only the six declared full-draw artifacts:
-   `VERBATIM_FULL=(results/2026-MM-DD-verbatim-{on,off}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${VERBATIM_FULL[@]}" --expected-arm verbatim-on --expected-arm verbatim-off --out results/2026-MM-DD-verbatim-aggregate.json`.
+   `VERBATIM_FULL=(results/2026-MM-DD-verbatim-{on,off}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${VERBATIM_FULL[@]}" --expected-arm verbatim-on --expected-arm verbatim-off --expected-arm-retrieval-modes verbatim-on=exact,lexical --expected-arm-retrieval-modes verbatim-off=exact,lexical --out results/2026-MM-DD-verbatim-aggregate.json`.
    Repeated draws remain clustered by case; McNemar is separate from the
    claim-difference bootstrap.
 11. If overall delta is inside the noise floor but identifier-tagged cases move, repeat step 9 for 5 draws with `--manifest eval/e02_identifier_cases.json`, using targeted-specific run and paired-draw IDs, and aggregate separately.

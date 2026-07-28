@@ -52,18 +52,18 @@ MM-DD below is the actual run date.
 2. Define the service runtime contract once:
    `E01_RUNTIME=(--expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag search_fair_share=off --expect-feature-flag search_top1_hydration=off --expect-feature-flag search_char_cap=off --expect-runtime-config search_section_demotion_top_n=null --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag read_path_roundtrip_v1=off --expect-feature-flag lexical_single_scan=off)`.
 3. For each draw `N` in `1 2 3`, invoke each real manifest explicitly:
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --condition service_api --condition filesystem --condition filesystem_sidecar "${E01_RUNTIME[@]}" --concurrency 3 --timeout 360 --run-id "e01-work-draw${N}" --out "results/2026-MM-DD-e01-work-draw${N}.json" --report "results/2026-MM-DD-e01-work-draw${N}.md"`.
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --condition filesystem --condition filesystem_sidecar "${E01_RUNTIME[@]}" --concurrency 3 --timeout 360 --run-id "e01-work-draw${N}" --out "results/2026-MM-DD-e01-work-draw${N}.json" --report "results/2026-MM-DD-e01-work-draw${N}.md"`.
    Repeat with manifest/slug pairs `recent_work_cases.json`/`recent`,
    `rupture_ops_cases.json`/`rupture`, and
    `personal_coordination_cases.json`/`personal`.
 4. For each draw:
-   `python3 transition_eval.py --manifest eval/transition_cases.json run --service-protocol simple --condition service_api_resume --condition filesystem_rebuild --condition filesystem_sidecar "${E01_RUNTIME[@]}" --embeddings none --run-id "e01-transitions-draw${N}" --out "results/2026-MM-DD-e01-transitions-draw${N}.json" --report "results/2026-MM-DD-e01-transitions-draw${N}.md"`.
+   `python3 transition_eval.py --manifest eval/transition_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api_resume --condition filesystem_rebuild --condition filesystem_sidecar "${E01_RUNTIME[@]}" --embeddings none --run-id "e01-transitions-draw${N}" --out "results/2026-MM-DD-e01-transitions-draw${N}.json" --report "results/2026-MM-DD-e01-transitions-draw${N}.md"`.
 5. Scoring iteration uses regrade only. For example:
    `python3 agent_work_eval.py --manifest eval/work_cases.json regrade --input results/2026-MM-DD-e01-work-draw1.json --out results/2026-MM-DD-e01-work-draw1-regraded.json`.
    Never regenerate to fix a rubric, and do not mix original and regraded
    versions of the same draw in aggregation.
 6. Build an explicit draw-only input array and aggregate:
-   `E01_ARTIFACTS=(results/2026-MM-DD-e01-{work,recent,rupture,personal,transitions}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E01_ARTIFACTS[@]}" --out results/2026-MM-DD-e01-aggregate.json`.
+   `E01_ARTIFACTS=(results/2026-MM-DD-e01-{work,recent,rupture,personal,transitions}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E01_ARTIFACTS[@]}" --expected-arm-retrieval-modes service_api=exact,lexical --expected-arm-retrieval-modes service_api_resume=exact,lexical --out results/2026-MM-DD-e01-aggregate.json`.
 
 ## Metrics
 

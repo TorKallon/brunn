@@ -20,6 +20,12 @@ Does surfacing ≤5 pointer-only pending intentions at open (D05-intention-ledge
 7. False-surfacing audit script scanning saved open responses in run artifacts against the case oracle — implemented as `eval/audit_intentions.py`.
 8. Adoption measurement — implemented and shared with E07 arm 4; do not duplicate.
 
+**Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E08
+service and performance stack must start with
+`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E08
+variable. An E08 pass cannot rehabilitate D02.
+
 ## Arms
 
 1. **service_api flag-off** (baseline).
@@ -30,7 +36,7 @@ Primary paired contrast is arm 1 vs arm 2; arm 3 is the reference control on the
 
 ## Corpus and fixtures
 
-Base corpus: recent-work-v0.3 (E07's v0.2 plus the two new cases) with personal-coordination fixtures available for the coord case.
+Base corpus: recent-work-v0.3 (E07's v0.3 plus the two new cases) with personal-coordination fixtures available for the coord case.
 
 Seeded intentions (6 total):
 - ≤2 relevant to any single prospective case.
@@ -52,7 +58,7 @@ Prospective cases (5, in eval/e08_prospective_cases.json):
    the clean immutable build revision, and confirm flags default off.
 2. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json validate` and `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json validate` — both must pass.
 3. Calibrate the flag-on query shape before its acceptance run:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile calibration --label e08-query-budget-calibration --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --out results/2026-MM-DD-e08-query-budget-calibration.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile calibration --label e08-query-budget-calibration --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag intention_ledger=on --out results/2026-MM-DD-e08-query-budget-calibration.json`.
    This command intentionally exits nonzero because calibration artifacts are
    never acceptance evidence. Review all 30 samples per operation. Author the
    contract only from those observed counts, use schema
@@ -65,31 +71,34 @@ Prospective cases (5, in eval/e08_prospective_cases.json):
    review decision. Any later contract change requires a new path, hash, and
    calibration review.
 4. Run both cheap 64K latency arms before reasoning. Flag off:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e08-open-latency-off --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=off --out results/2026-MM-DD-e08-open-latency-off.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e08-open-latency-off --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag intention_ledger=off --out results/2026-MM-DD-e08-open-latency-off.json`.
    Flag on, against its isolated stack:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile e08-intention-ledger --query-budget-contract "$E08_QUERY_BUDGET_CONTRACT" --label e08-open-latency-on --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --out results/2026-MM-DD-e08-open-latency-on.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile e08-intention-ledger --query-budget-contract "$E08_QUERY_BUDGET_CONTRACT" --label e08-open-latency-on --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag intention_ledger=on --out results/2026-MM-DD-e08-open-latency-on.json`.
    Confirm the on artifact's `query_budget_contract.sha256` equals
    `E08_QUERY_BUDGET_SHA256`. Any red gate or open p95 delta ≥10ms stops all
    reasoning.
 5. For draw N in 1..3:
    1. Full-suite base:
-      `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-base --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=off --concurrency 3 --timeout 360 --run-id "e08-base-full-run${N}" --out "results/2026-MM-DD-e08-intention-base-draw${N}.json" --report "results/2026-MM-DD-e08-intention-base-draw${N}.md"`.
+      `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e08-base --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=off --concurrency 3 --timeout 360 --run-id "e08-base-full-run${N}" --out "results/2026-MM-DD-e08-intention-base-draw${N}.json" --report "results/2026-MM-DD-e08-intention-base-draw${N}.md"`.
    2. Full-suite flag:
-      `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-flag --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --concurrency 3 --timeout 360 --run-id "e08-flag-full-run${N}" --out "results/2026-MM-DD-e08-intention-flag-draw${N}.json" --report "results/2026-MM-DD-e08-intention-flag-draw${N}.md"`.
+      `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e08-flag --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=on --expect-feature-flag resume_deltas=off --concurrency 3 --timeout 360 --run-id "e08-flag-full-run${N}" --out "results/2026-MM-DD-e08-intention-flag-draw${N}.json" --report "results/2026-MM-DD-e08-intention-flag-draw${N}.md"`.
    3. Prospective base:
-      `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-base --paired-draw-id "e08-prospective-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=off --concurrency 3 --timeout 360 --run-id "e08-base-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-base-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-base-draw${N}.md"`.
+      `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e08-base --paired-draw-id "e08-prospective-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=off --concurrency 3 --timeout 360 --run-id "e08-base-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-base-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-base-draw${N}.md"`.
    4. Prospective flag:
-      `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-flag --paired-draw-id "e08-prospective-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --concurrency 3 --timeout 360 --run-id "e08-flag-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-flag-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-flag-draw${N}.md"`.
+      `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e08-flag --paired-draw-id "e08-prospective-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=on --expect-feature-flag resume_deltas=off --concurrency 3 --timeout 360 --run-id "e08-flag-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-flag-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-flag-draw${N}.md"`.
    5. Prospective filesystem control, with no service runtime expectations:
       `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --condition filesystem --experiment-arm e08-filesystem --paired-draw-id "e08-prospective-draw${N}" --concurrency 3 --timeout 360 --run-id "e08-filesystem-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-filesystem-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-filesystem-draw${N}.md"`.
 6. False-surfacing audit uses only exact flag-on draw artifacts:
-   `E08_FLAG=(results/2026-MM-DD-e08-intention-flag-draw{1,2,3}.json results/2026-MM-DD-e08-prospective-flag-draw{1,2,3}.json); python3 eval/audit_intentions.py "${E08_FLAG[@]}" --out results/2026-MM-DD-e08-intention-audit.json`.
+   `E08_FLAG=(results/2026-MM-DD-e08-intention-flag-draw{1,2,3}.json results/2026-MM-DD-e08-prospective-flag-draw{1,2,3}.json); python3 eval/audit_intentions.py "${E08_FLAG[@]}" --full-manifest eval/recent_work_cases.json --prospective-manifest eval/e08_prospective_cases.json --expected-full-draw e08-full-draw1 --expected-full-draw e08-full-draw2 --expected-full-draw e08-full-draw3 --expected-prospective-draw e08-prospective-draw1 --expected-prospective-draw e08-prospective-draw2 --expected-prospective-draw e08-prospective-draw3 --out results/2026-MM-DD-e08-intention-audit.json`.
+   The audit hashes and reopens exactly six raw artifacts, validates their
+   manifest/source/build/image/runtime/feature/mode/arm/draw provenance, and
+   exits nonzero on either invalid evidence or a failed audit gate.
 7. Regrade disputed answers with the correct global `--manifest` before
    `regrade`. Never put original and regraded versions of one draw into the
    same aggregate. Aggregate the two case/arm sets separately:
-   `E08_FULL=(results/2026-MM-DD-e08-intention-{flag,base}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E08_FULL[@]}" --expected-arm e08-flag --expected-arm e08-base --out results/2026-MM-DD-e08-full-aggregate.json`.
+   `E08_FULL=(results/2026-MM-DD-e08-intention-{flag,base}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E08_FULL[@]}" --expected-arm e08-flag --expected-arm e08-base --expected-arm-retrieval-modes e08-flag=exact,lexical --expected-arm-retrieval-modes e08-base=exact,lexical --require-feature-family prospective --out results/2026-MM-DD-e08-full-aggregate.json`.
    Then aggregate the prospective subset:
-   `E08_PROSPECTIVE=(results/2026-MM-DD-e08-prospective-{flag,base,filesystem}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E08_PROSPECTIVE[@]}" --expected-arm e08-flag --expected-arm e08-base --expected-arm e08-filesystem --out results/2026-MM-DD-e08-prospective-aggregate.json`.
+   `E08_PROSPECTIVE=(results/2026-MM-DD-e08-prospective-{flag,base,filesystem}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E08_PROSPECTIVE[@]}" --expected-arm e08-flag --expected-arm e08-base --expected-arm e08-filesystem --expected-arm-retrieval-modes e08-flag=exact,lexical --expected-arm-retrieval-modes e08-base=exact,lexical --out results/2026-MM-DD-e08-prospective-aggregate.json`.
 
 ## Metrics
 
@@ -126,7 +135,7 @@ exact+lexical only, semantic lane explicitly disabled, and no worker. $0.00.
 ## Abort criteria
 
 - Draw 1 false-surfacing rate > 25%, or any `status: done` surfacing → stop, fix trigger matching or the projection, restart the experiment (do not keep partial draws).
-- Open p95 delta > 25ms at 64k → stop; latency design assumption is wrong.
+- Open p95 delta ≥10ms at 64k → stop; latency design assumption is wrong.
 - Any usage-billed reasoning call detected, or running total > $40 → abort immediately.
 - ≥2 harness failures in a draw → invalidate the draw, fix, rerun; never average a broken draw.
 

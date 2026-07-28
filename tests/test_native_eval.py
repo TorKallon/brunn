@@ -1812,6 +1812,57 @@ class NativeEvaluationTests(unittest.TestCase):
         self.assertEqual(args.command, "validate")
         self.assertEqual(args.mutation_seed, "e06-draw2")
 
+        run_args = build_transition_parser().parse_args([
+            "run",
+            "--condition",
+            "service_api_resume",
+            "--service-retrieval-modes",
+            "exact",
+            "lexical",
+            "--api-container",
+            "e06-api",
+            "--expect-build-revision",
+            "a" * 40,
+            "--out",
+            "result.json",
+        ])
+        self.assertEqual(
+            run_args.service_retrieval_modes,
+            ["exact", "lexical"],
+        )
+        self.assertEqual(run_args.api_container, "e06-api")
+
+    def test_transition_native_accounting_fails_closed_when_state_is_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            record = {
+                "answer_path": str(Path(temporary) / "answer.json"),
+                "condition": "service_api_resume",
+                "grade": {"pass": True},
+                "events": {"command_output_chars": 0},
+                "run_id": "run",
+            }
+            attach_native_lineage(
+                record,
+                {"id": "case", "delta_path": "delta.md"},
+                {
+                    "token": "case-token",
+                    "checkpoint_id": "checkpoint:parent",
+                    "corpus_revision": "generation:1",
+                    "seed_source_refs": ["prior.md"],
+                },
+                max_calls=4,
+                service_protocol="simple",
+            )
+            self.assertFalse(record["transition_pass"])
+            self.assertFalse(record["service_accounting_valid"])
+            self.assertIn("native-session.json is missing", record["error"])
+            self.assertEqual(
+                record["response_character_metrics"][
+                    "service_result_chars"
+                ],
+                0,
+            )
+
     def test_native_transition_reads_child_checkpoint_over_http(self):
         with tempfile.TemporaryDirectory() as temporary, fake_server() as (url, handler):
             old_url = os.environ.get("STRAYLIGHT_API_URL")
@@ -1834,8 +1885,22 @@ class NativeEvaluationTests(unittest.TestCase):
                     "checkpoint_id": handler.child["checkpoint_id"],
                     "checkpoint": handler.child,
                     "operations": [
-                        {"operation": "resume", "result_chars": 100, "elapsed_ms": 2.5},
-                        {"operation": "checkpoint", "result_chars": 80, "elapsed_ms": 3.5},
+                        {
+                            "operation": "resume",
+                            "result_chars": 100,
+                            "source_text_chars": 70,
+                            "metadata_chars": 30,
+                            "elapsed_ms": 2.5,
+                            "http_status": 200,
+                        },
+                        {
+                            "operation": "checkpoint",
+                            "result_chars": 80,
+                            "source_text_chars": 20,
+                            "metadata_chars": 60,
+                            "elapsed_ms": 3.5,
+                            "http_status": 200,
+                        },
                     ],
                 }))
                 record = {
@@ -1881,8 +1946,22 @@ class NativeEvaluationTests(unittest.TestCase):
                     "checkpoint": handler.child,
                     "corpus_revision": "generation:43",
                     "operations": [
-                        {"operation": "resume", "result_chars": 100, "elapsed_ms": 2.5},
-                        {"operation": "checkpoint", "result_chars": 80, "elapsed_ms": 3.5},
+                        {
+                            "operation": "resume",
+                            "result_chars": 100,
+                            "source_text_chars": 70,
+                            "metadata_chars": 30,
+                            "elapsed_ms": 2.5,
+                            "http_status": 200,
+                        },
+                        {
+                            "operation": "checkpoint",
+                            "result_chars": 80,
+                            "source_text_chars": 20,
+                            "metadata_chars": 60,
+                            "elapsed_ms": 3.5,
+                            "http_status": 200,
+                        },
                     ],
                 }))
                 record = {
@@ -1951,8 +2030,22 @@ class NativeEvaluationTests(unittest.TestCase):
                     "checkpoint_id": handler.child["checkpoint_id"],
                     "checkpoint": handler.child,
                     "operations": [
-                        {"operation": "resume", "result_chars": 100, "elapsed_ms": 2.5},
-                        {"operation": "checkpoint", "result_chars": 80, "elapsed_ms": 3.5},
+                        {
+                            "operation": "resume",
+                            "result_chars": 100,
+                            "source_text_chars": 70,
+                            "metadata_chars": 30,
+                            "elapsed_ms": 2.5,
+                            "http_status": 200,
+                        },
+                        {
+                            "operation": "checkpoint",
+                            "result_chars": 80,
+                            "source_text_chars": 20,
+                            "metadata_chars": 60,
+                            "elapsed_ms": 3.5,
+                            "http_status": 200,
+                        },
                     ],
                 }))
                 record = {

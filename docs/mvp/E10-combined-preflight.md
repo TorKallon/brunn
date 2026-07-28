@@ -1,9 +1,16 @@
 # E10 — Combined Preflight
 
-Status: Deterministic D09 preflight implemented — not run
+Status: Prerequisite abort — accepted launch manifest is not qualified
 Date: 2026-07-27
 Gates: D01, D02, D03, D04, D05 in combination — the final pre-launch gate before Tier C sole authority (D14-migration-and-authority-tiers.md, which lists E10 in gate 5 and the Tier C entry requirements); no cutover proceeds without it
 Phase: 1 (requires flagged feature build — all shipped Dxx flags landed)
+
+**CURRENT PREREQUISITE ABORT (2026-07-28):** Do not run E10. The accepted
+launch flag manifest is incomplete: E02 rejected D02; E01 is not yet complete;
+E04–E08 have not produced accepted qualifications; and E09 has no decided
+semantic posture because E03 Mode 2 failed before quality backfill. This abort
+does not change E10's future role or experimental intent. Rebuild the manifest
+only from accepted features after those gates resolve.
 
 ## Question
 
@@ -15,11 +22,11 @@ This is the "stronger than MD" endgame gate: the claim was never that a database
 
 ## Preconditions and build items
 
-1. All of D01-D05 landed as shipped (flags on by default or explicitly enabled), each having individually passed its own Exx gate. Any Dxx that did not ship is simply absent from the flag set — E10 tests what will actually launch, and the run record says exactly what that was.
-2. E01 machinery complete (E01-paired-draw-machinery-and-baseline.md): eval/aggregate_draws.py, `filesystem_sidecar` condition in agent_work_eval.py, and — required by this point, per the E01 deferral — the transitions sidecar seed extension (Medium) so the control arm covers all five suites.
+1. **NOT SATISFIED.** All of D01-D05 landed as shipped (flags on by default or explicitly enabled), each having individually passed its own Exx gate. Any Dxx that did not ship is simply absent from the flag set — E10 tests what will actually launch, and the run record says exactly what that was. D02 is currently rejected and E04–E08 have not supplied the accepted feature set.
+2. **NOT SATISFIED.** E01 machinery complete (E01-paired-draw-machinery-and-baseline.md): eval/aggregate_draws.py, `filesystem_sidecar` condition in agent_work_eval.py, and — required by this point, per the E01 deferral — the transitions sidecar seed extension (Medium) so the control arm covers all five suites.
 3. One global budget: the combined context/char budget configuration (per D01) active as a single runtime config, not per-feature budgets summed implicitly. Target posture per Tier B: crude open/search char budget near legacy ~41.4K chars/case at entry.
 4. Flag-manifest snapshot (implemented): every service run stores an authenticated `/v1/status` runtime-feature/knob/build snapshot whose canonical hash is bound into the immutable run ledger.
-5. D09 (D09-latency-contract-and-gates.md) gates wired and green individually before this run; E03 semantic posture decided by E09 and reflected in the flag manifest (semantic remains off the Tier B critical path regardless).
+5. **NOT SATISFIED.** D09 (D09-latency-contract-and-gates.md) gates wired and green individually before this run; E03 semantic posture decided by E09 and reflected in the flag manifest (semantic remains off the Tier B critical path regardless). E09 is prerequisite-aborted until E03's failed Mode 2 and unrun quality backfill are repaired.
 
 ## Arms
 
@@ -66,16 +73,16 @@ MM-DD is the run date.
    This runs every generic D09 gate plus D03's ≤150ms and paired exact +1
    query gates. Any red gate stops before reasoning.
 5. For each draw `N` in `1 2 3`, invoke each real agent manifest explicitly:
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --condition service_api --condition filesystem_sidecar "${E10_RUNTIME[@]}" --concurrency 3 --timeout 360 --run-id "e10-work-draw${N}" --out "results/2026-MM-DD-e10-work-draw${N}.json" --report "results/2026-MM-DD-e10-work-draw${N}.md"`.
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --condition filesystem_sidecar "${E10_RUNTIME[@]}" --concurrency 3 --timeout 360 --run-id "e10-work-draw${N}" --out "results/2026-MM-DD-e10-work-draw${N}.json" --report "results/2026-MM-DD-e10-work-draw${N}.md"`.
    Repeat with manifest/slug pairs `recent_work_cases.json`/`recent`,
    `rupture_ops_cases.json`/`rupture`, and
    `personal_coordination_cases.json`/`personal`.
 6. For each draw:
-   `python3 transition_eval.py --manifest eval/transition_cases.json run --service-protocol simple --condition service_api_resume --condition filesystem_sidecar "${E10_RUNTIME[@]}" --embeddings none --run-id "e10-transitions-draw${N}" --out "results/2026-MM-DD-e10-transitions-draw${N}.json" --report "results/2026-MM-DD-e10-transitions-draw${N}.md"`.
+   `python3 transition_eval.py --manifest eval/transition_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api_resume --condition filesystem_sidecar "${E10_RUNTIME[@]}" --embeddings none --run-id "e10-transitions-draw${N}" --out "results/2026-MM-DD-e10-transitions-draw${N}.json" --report "results/2026-MM-DD-e10-transitions-draw${N}.md"`.
 7. Scoring iteration uses regrade only with the correct global manifest; no
    regeneration to chase rubric issues.
 8. Aggregate only the declared draw artifacts:
-   `E10_DRAWS=(results/2026-MM-DD-e10-{work,recent,rupture,personal,transitions}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E10_DRAWS[@]}" --out results/2026-MM-DD-e10-aggregate.json`.
+   `E10_DRAWS=(results/2026-MM-DD-e10-{work,recent,rupture,personal,transitions}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E10_DRAWS[@]}" --expected-arm-retrieval-modes service_api=exact,lexical --expected-arm-retrieval-modes service_api_resume=exact,lexical --out results/2026-MM-DD-e10-aggregate.json`.
 9. If corpus-wide non-inferiority holds but no suite reaches superiority, one additional draw (N=4) may be run to resolve it, inside the ceiling; the aggregate then reports n=4 everywhere (no cherry-picking draws).
 
 ## Metrics

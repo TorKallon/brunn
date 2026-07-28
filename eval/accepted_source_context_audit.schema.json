@@ -8,6 +8,7 @@
     "created_at",
     "source_revision",
     "grading_revision",
+    "service_provenance",
     "input_artifacts",
     "summary",
     "claims"
@@ -26,6 +27,69 @@
     "grading_revision": {
       "type": "string",
       "minLength": 1
+    },
+    "service_provenance": {
+      "type": "object",
+      "required": [
+        "schema",
+        "status",
+        "expected_arm_retrieval_modes",
+        "service_arms",
+        "source_revision",
+        "build_revision",
+        "api_image_id",
+        "api_image_revision",
+        "distinct_container_instances_allowed"
+      ],
+      "properties": {
+        "schema": {
+          "const": "straylight-aggregate-service-provenance-summary@v1"
+        },
+        "status": {
+          "const": "complete"
+        },
+        "expected_arm_retrieval_modes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": ["exact", "lexical", "semantic"]
+            }
+          }
+        },
+        "service_arms": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "source_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "build_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "api_image_id": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "api_image_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "distinct_container_instances_allowed": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
     },
     "input_artifacts": {
       "type": "array",

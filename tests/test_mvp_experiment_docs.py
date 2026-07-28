@@ -13,6 +13,86 @@ def document(name: str) -> str:
 
 
 class ExecutableExperimentDocsTests(unittest.TestCase):
+    def test_shared_infrastructure_freezes_local_cli_failure_accounting(
+        self,
+    ) -> None:
+        text = document("Experiment-run-infrastructure.md")
+        for contract in (
+            "`http_status=0` `failed:X`",
+            "`local_cli_failures`",
+            "only when a later",
+            "successful HTTP operation named `X`",
+            "`model_visible_tool_output_chars`",
+            "excluded from service call/HTTP-call",
+            "Any measured 4xx or `denied:*` operation",
+            "any unrecovered local failure",
+            "canonical shell-safe positional-JSON checkpoint",
+        ):
+            self.assertIn(contract, text)
+
+    def test_e04_through_e08_freeze_rejected_d02_posture(self) -> None:
+        names = (
+            "E04-result-budget-experiment.md",
+            "E05-lexical-consolidation-guard.md",
+            "E06-resume-delta-experiment.md",
+            "E07-supersession-experiment.md",
+            "E08-intention-ledger-experiment.md",
+        )
+        for name in names:
+            with self.subTest(name=name):
+                text = document(name)
+                self.assertIn("E02 rejected D02", text)
+                self.assertIn("STRAYLIGHT_VERBATIM_SPANS=false", text)
+                self.assertIn(
+                    "--expect-feature-flag verbatim_spans=off",
+                    text,
+                )
+                self.assertIn("cannot rehabilitate D02", text)
+                self.assertNotIn("verbatim_spans=on", text)
+
+                measured_commands = [
+                    line
+                    for line in text.splitlines()
+                    if (
+                        "performance_eval.py run" in line
+                        or (
+                            "agent_work_eval.py" in line
+                            and "--condition service_api" in line
+                        )
+                        or (
+                            "transition_eval.py" in line
+                            and "--condition service_api_resume" in line
+                        )
+                    )
+                ]
+                self.assertTrue(measured_commands)
+                for command in measured_commands:
+                    self.assertIn(
+                        "--expect-feature-flag verbatim_spans=off",
+                        command,
+                    )
+
+    def test_e09_through_e11_record_current_prerequisite_aborts(self) -> None:
+        e09 = document("E09-semantic-existence-experiment.md")
+        self.assertIn("Status: Prerequisite abort", e09)
+        self.assertIn("E03 Mode 2 failed", e09)
+        self.assertIn("quality backfill was not run", e09)
+
+        e10 = document("E10-combined-preflight.md")
+        self.assertIn("Status: Prerequisite abort", e10)
+        self.assertIn("launch flag manifest is incomplete", e10)
+        self.assertIn("E01 is not yet complete", e10)
+        self.assertIn("E04–E08 have not produced accepted qualifications", e10)
+        self.assertIn(
+            "semantic posture because E03 Mode 2 failed",
+            e10,
+        )
+
+        e11 = document("E11-wiki-link-leads-experiment.md")
+        self.assertIn("Status: Prerequisite abort", e11)
+        self.assertIn("E02 rejected", e11)
+        self.assertIn("owner-authored, owner-signed-off manifest", e11)
+
     def test_e02_uses_a_calibrated_mode_specific_query_contract(self) -> None:
         text = document("E02-verbatim-identifier-gate.md")
         self.assertIn("--query-budget-profile e02-verbatim", text)
@@ -46,8 +126,94 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
         )
         self.assertNotIn("analogous targeted-only array", text)
 
+    def test_e04_e05_bind_service_modes_and_pair_query_counts(self) -> None:
+        for name in (
+            "E04-result-budget-experiment.md",
+            "E05-lexical-consolidation-guard.md",
+        ):
+            with self.subTest(name=name):
+                text = document(name)
+                service_commands = [
+                    line
+                    for line in text.splitlines()
+                    if (
+                        "agent_work_eval.py" in line
+                        and "--condition service_api" in line
+                    )
+                ]
+                self.assertTrue(service_commands)
+                for command in service_commands:
+                    self.assertIn(
+                        "--service-retrieval-modes exact lexical",
+                        command,
+                    )
+                    self.assertIn(
+                        '--api-container "$API_CONTAINER"',
+                        command,
+                    )
+                self.assertIn("eval/compare_query_counts.py", text)
+
+        e04 = document("E04-result-budget-experiment.md")
+        self.assertIn("--feature search_top1_hydration", e04)
+        self.assertIn("--min-delta 0 --max-delta 1", e04)
+        self.assertIn(
+            "e04-hydration-query-count-comparison.json",
+            e04,
+        )
+        self.assertIn("fresh definitive E01 personal artifact", e04)
+        self.assertIn("exactly 60 graded claims", e04)
+
+        e05 = document("E05-lexical-consolidation-guard.md")
+        self.assertIn("--feature lexical_single_scan", e05)
+        self.assertIn("--min-delta -2 --max-delta 0", e05)
+        self.assertIn("--require-strict-improvement", e05)
+        self.assertIn("e05-query-count-comparison.json", e05)
+
+    def test_e02_e11_explicit_service_examples_bind_current_runtime(
+        self,
+    ) -> None:
+        for name in (
+            "E02-verbatim-identifier-gate.md",
+            "E11-wiki-link-leads-experiment.md",
+        ):
+            with self.subTest(name=name):
+                service_commands = [
+                    line
+                    for line in document(name).splitlines()
+                    if (
+                        "agent_work_eval.py" in line
+                        and "--condition service_api" in line
+                    )
+                ]
+                self.assertTrue(service_commands)
+                for command in service_commands:
+                    self.assertIn(
+                        '--api-container "$API_CONTAINER"',
+                        command,
+                    )
+                    self.assertIn(
+                        '--expect-build-revision "$REV"',
+                        command,
+                    )
+                    self.assertIn(
+                        "--expect-feature-flag semantic_lane=off",
+                        command,
+                    )
+
+        e11 = document("E11-wiki-link-leads-experiment.md")
+        self.assertIn("--expect-feature-flag verbatim_spans=on", e11)
+        self.assertIn(
+            "remain ineligible until D06 exposes authenticated runtime "
+            "status keys",
+            e11,
+        )
+
     def test_e07_keeps_three_arm_and_service_extension_separate(self) -> None:
         text = document("E07-supersession-experiment.md")
+        self.assertEqual(
+            text.count("--require-feature-family supersession_dedup"),
+            2,
+        )
         self.assertIn(
             "E07_MAIN=(results/2026-MM-DD-e07-supersession-"
             "{flag,base,filesystem}-draw{1,2,3}.json)",
@@ -73,6 +239,53 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
         )
         self.assertIn("e07-supersession-filesystem-draw${N}.json", filesystem_command)
         self.assertNotIn("--expect-", filesystem_command)
+
+    def test_e06_e08_bind_service_image_and_exact_lexical_modes(self) -> None:
+        for name in (
+            "E06-resume-delta-experiment.md",
+            "E07-supersession-experiment.md",
+            "E08-intention-ledger-experiment.md",
+        ):
+            with self.subTest(name=name):
+                text = document(name)
+                service_commands = [
+                    line
+                    for line in text.splitlines()
+                    if (
+                        (
+                            "agent_work_eval.py" in line
+                            and "--condition service_api" in line
+                        )
+                        or (
+                            "transition_eval.py" in line
+                            and "--condition service_api_resume" in line
+                        )
+                    )
+                ]
+                self.assertTrue(service_commands)
+                for command in service_commands:
+                    self.assertIn(
+                        "--service-retrieval-modes exact lexical",
+                        command,
+                    )
+                    self.assertIn(
+                        '--api-container "$API_CONTAINER"',
+                        command,
+                    )
+                    self.assertIn(
+                        '--expect-build-revision "$REV"',
+                        command,
+                    )
+
+        e07 = document("E07-supersession-experiment.md")
+        self.assertIn("--experiment-arm e07-adoption", e07)
+        self.assertIn(
+            '--paired-draw-id "e07-adoption-draw${N}"',
+            e07,
+        )
+        self.assertIn("aggregate-adoption", e07)
+        self.assertIn("--expected-draw e07-adoption-draw3", e07)
+        self.assertIn("both supersession and intention adoption", e07)
 
     def test_e07_names_measurable_write_latency_preflight(self) -> None:
         text = document("E07-supersession-experiment.md")
@@ -122,11 +335,40 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
             "{flag,base,filesystem}-draw{1,2,3}.json)",
             text,
         )
+        full_aggregate_command = next(
+            line for line in text.splitlines() if "E08_FULL=" in line
+        )
+        prospective_aggregate_command = next(
+            line for line in text.splitlines() if "E08_PROSPECTIVE=" in line
+        )
         self.assertIn(
-            "--expected-arm e08-filesystem "
+            "--require-feature-family prospective",
+            full_aggregate_command,
+        )
+        self.assertNotIn(
+            "--require-feature-family prospective",
+            prospective_aggregate_command,
+        )
+        self.assertIn(
+            "--expected-arm e08-filesystem",
+            text,
+        )
+        self.assertIn(
             "--out results/2026-MM-DD-e08-prospective-aggregate.json",
             text,
         )
+        self.assertIn("--full-manifest eval/recent_work_cases.json", text)
+        self.assertIn(
+            "--prospective-manifest eval/e08_prospective_cases.json",
+            text,
+        )
+        self.assertIn("--expected-full-draw e08-full-draw3", text)
+        self.assertIn(
+            "--expected-prospective-draw e08-prospective-draw3",
+            text,
+        )
+        self.assertIn("exits nonzero", text)
+        self.assertNotIn("Open p95 delta > 25ms", text)
 
         filesystem_command = next(
             line
@@ -134,6 +376,102 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
             if "run --condition filesystem" in line
         )
         self.assertNotIn("--expect-", filesystem_command)
+
+    def test_definitive_aggregates_bind_exact_service_retrieval_modes(
+        self,
+    ) -> None:
+        required_bindings = {
+            "E01-paired-draw-machinery-and-baseline.md": {
+                "service_api=exact,lexical": 1,
+                "service_api_resume=exact,lexical": 1,
+            },
+            "E02-verbatim-identifier-gate.md": {
+                "verbatim-on=exact,lexical": 1,
+                "verbatim-off=exact,lexical": 1,
+            },
+            "E05-lexical-consolidation-guard.md": {
+                "e05-B=exact,lexical": 2,
+                "e05-A=exact,lexical": 2,
+            },
+            "E06-resume-delta-experiment.md": {
+                "e06-B=exact,lexical": 1,
+                "e06-A=exact,lexical": 1,
+            },
+            "E07-supersession-experiment.md": {
+                "e07-flag=exact,lexical": 2,
+                "e07-base=exact,lexical": 2,
+            },
+            "E08-intention-ledger-experiment.md": {
+                "e08-flag=exact,lexical": 2,
+                "e08-base=exact,lexical": 2,
+            },
+            "E09-semantic-existence-experiment.md": {
+                "e09-deadline-cache=exact,lexical,semantic": 2,
+                "e09-unbounded-semantic=exact,lexical,semantic": 1,
+                "e09-no-semantic=exact,lexical": 1,
+                "e09-deadline-cache-600=exact,lexical,semantic": 1,
+            },
+            "E10-combined-preflight.md": {
+                "service_api=exact,lexical": 1,
+                "service_api_resume=exact,lexical": 1,
+            },
+            "E11-wiki-link-leads-experiment.md": {
+                "e11-treatment=exact,lexical": 1,
+                "e11-control=exact,lexical": 1,
+            },
+        }
+        for name, bindings in required_bindings.items():
+            with self.subTest(name=name):
+                text = document(name)
+                for binding, minimum_count in bindings.items():
+                    rendered = (
+                        "--expected-arm-retrieval-modes "
+                        f"{binding}"
+                    )
+                    self.assertGreaterEqual(
+                        text.count(rendered),
+                        minimum_count,
+                    )
+
+        for name, filesystem_arm in (
+            ("E06-resume-delta-experiment.md", "e06-C"),
+            ("E07-supersession-experiment.md", "e07-filesystem"),
+            ("E08-intention-ledger-experiment.md", "e08-filesystem"),
+        ):
+            with self.subTest(name=name, filesystem_arm=filesystem_arm):
+                self.assertNotIn(
+                    f"--expected-arm-retrieval-modes {filesystem_arm}=",
+                    document(name),
+                )
+
+    def test_nonsemantic_run_examples_bind_exact_lexical_modes(self) -> None:
+        for name in (
+            "E01-paired-draw-machinery-and-baseline.md",
+            "E02-verbatim-identifier-gate.md",
+            "E11-wiki-link-leads-experiment.md",
+        ):
+            with self.subTest(name=name):
+                service_commands = [
+                    line
+                    for line in document(name).splitlines()
+                    if (
+                        " run " in line
+                        and (
+                            "--condition service_api" in line
+                            or "--condition service_api_resume" in line
+                        )
+                    )
+                ]
+                self.assertTrue(service_commands)
+                for command in service_commands:
+                    self.assertIn(
+                        "--service-retrieval-modes exact lexical",
+                        command,
+                    )
+                    self.assertIn(
+                        '--api-container "$API_CONTAINER"',
+                        command,
+                    )
 
 
 if __name__ == "__main__":

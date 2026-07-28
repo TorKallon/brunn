@@ -17,9 +17,15 @@ Does explicit `supersedes` frontmatter with demotion-plus-annotation (D04-supers
 4. Arm-aware n≥3 paired-draw aggregator and runtime snapshot contract — implemented; see [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
 5. Adoption-arm harness: scripted unprompted agent-work write sessions where the authoring contract is documented in workspace docs but never stated in the task prompt; an eligibility oracle labels which sessions *should* have emitted `supersedes` (session writes a note that factually corrects an existing one) — **M**.
 
+**Resolved nuisance posture (2026-07-28):** E02 rejected D02, so every E07
+service and performance stack must start with
+`STRAYLIGHT_VERBATIM_SPANS=false` and every measured service arm must assert
+`--expect-feature-flag verbatim_spans=off`. Verbatim spans are not an E07
+variable. An E07 pass cannot rehabilitate D02.
+
 ## Arms
 
-1. **service_api-baseline** — simplified core, flag off, v0.2 corpus (frontmatter present in source text but mechanically inert).
+1. **service_api-baseline** — simplified core, flag off, v0.3 corpus (frontmatter present in source text but mechanically inert).
 2. **service_api-supersession** — identical, flag on.
 3. **filesystem** — instruction-restricted read-only filesystem condition, same corpus. Natural control: the frontmatter is visible as raw text, so this arm tests whether the declaration alone (without demotion/annotation machinery) is enough.
 4. **adoption (measurement arm, not claim-scored)** — 12 unprompted write sessions per draw against a live workspace; contract documented, never prompted; record eligible sessions and emitted frontmatter.
@@ -37,10 +43,10 @@ recent-work-v0.3: the recent suite (14 cases / 56 claims) with correction notes 
 2. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json validate` — must pass on v0.3.
 3. Make the write-latency abort rule executable before reasoning. First run a
    definitive 64K flag-off control:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e07-base-write-latency --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag supersession_demotion=off --expect-runtime-config supersession_demotion_weight=1.5 --out results/2026-MM-DD-e07-base-write-latency.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e07-base-write-latency --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-runtime-config supersession_demotion_weight=1.5 --out results/2026-MM-DD-e07-base-write-latency.json`.
    The treatment is a non-default query shape, so calibrate it rather than
    borrowing the default-safe contract:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile calibration --label e07-supersession-write-calibration --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --out results/2026-MM-DD-e07-supersession-write-calibration.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile calibration --label e07-supersession-write-calibration --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --out results/2026-MM-DD-e07-supersession-write-calibration.json`.
    That calibration intentionally exits nonzero and is not acceptance evidence.
    Review its 30-sample counts, freeze a runtime-bound contract with profile
    `e07-supersession`, and do not invent unmeasured headroom. Freeze and
@@ -48,32 +54,37 @@ recent-work-v0.3: the recent suite (14 cases / 56 claims) with correction notes 
    `E07_QUERY_BUDGET_CONTRACT="results/2026-MM-DD-e07-supersession-query-budgets.json"; test -s "$E07_QUERY_BUDGET_CONTRACT"; python3 -m json.tool "$E07_QUERY_BUDGET_CONTRACT" >/dev/null; python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["schema"]=="straylight-query-budgets@v1"; assert p["profile"]=="e07-supersession"; assert p["runtime_features"]["supersession_demotion"] is True; assert p["operations"]' "$E07_QUERY_BUDGET_CONTRACT"; E07_QUERY_BUDGET_SHA256="$(shasum -a 256 "$E07_QUERY_BUDGET_CONTRACT" | awk '{print $1}')"; test -n "$E07_QUERY_BUDGET_SHA256"; chmod 0444 "$E07_QUERY_BUDGET_CONTRACT"`.
    Record the reviewer, calibration hash, contract hash, and decision, then run
    the treatment acceptance artifact:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile e07-supersession --query-budget-contract "$E07_QUERY_BUDGET_CONTRACT" --label e07-supersession-write-latency --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --out results/2026-MM-DD-e07-supersession-write-latency.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile e07-supersession --query-budget-contract "$E07_QUERY_BUDGET_CONTRACT" --label e07-supersession-write-latency --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --out results/2026-MM-DD-e07-supersession-write-latency.json`.
    Confirm the treatment artifact's `query_budget_contract.sha256` equals
    `E07_QUERY_BUDGET_SHA256`. Both definitive artifacts must pass. Its
    `scales[].concurrent_probe.write_p95_ms` must be ≤58.0ms, exactly twice the
    v8 29.0ms reference; otherwise stop before reasoning.
 4. For draw N in 1..3, complete all three claim-scored arms:
-   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e07-base --paired-draw-id "e07-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag supersession_demotion=off --expect-runtime-config supersession_demotion_weight=1.5 --concurrency 3 --timeout 360 --run-id "e07-base-run${N}" --out "results/2026-MM-DD-e07-supersession-base-draw${N}.json" --report "results/2026-MM-DD-e07-supersession-base-draw${N}.md"`.
+   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e07-base --paired-draw-id "e07-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=off --expect-runtime-config supersession_demotion_weight=1.5 --concurrency 3 --timeout 360 --run-id "e07-base-run${N}" --out "results/2026-MM-DD-e07-supersession-base-draw${N}.json" --report "results/2026-MM-DD-e07-supersession-base-draw${N}.md"`.
    2. Flag arm:
-      `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e07-flag --paired-draw-id "e07-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --concurrency 3 --timeout 360 --run-id "e07-flag-run${N}" --out "results/2026-MM-DD-e07-supersession-flag-draw${N}.json" --report "results/2026-MM-DD-e07-supersession-flag-draw${N}.md"`.
+      `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e07-flag --paired-draw-id "e07-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=on --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=off --expect-runtime-config supersession_demotion_weight=1.5 --concurrency 3 --timeout 360 --run-id "e07-flag-run${N}" --out "results/2026-MM-DD-e07-supersession-flag-draw${N}.json" --report "results/2026-MM-DD-e07-supersession-flag-draw${N}.md"`.
    3. Filesystem arm, with no service runtime expectations:
       `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --condition filesystem --experiment-arm e07-filesystem --paired-draw-id "e07-draw${N}" --concurrency 3 --timeout 360 --run-id "e07-filesystem-run${N}" --out "results/2026-MM-DD-e07-supersession-filesystem-draw${N}.json" --report "results/2026-MM-DD-e07-supersession-filesystem-draw${N}.md"`.
    4. Adoption runs are pinned to the isolated flag-on stack:
-      `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json run --service-protocol simple --condition service_api --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --concurrency 3 --timeout 360 --run-id "e07-adoption-run${N}" --out "results/2026-MM-DD-e07-adoption-raw-draw${N}.json"`;
+      `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json run --service-protocol simple --service-retrieval-modes exact lexical --api-container "$API_CONTAINER" --condition service_api --experiment-arm e07-adoption --paired-draw-id "e07-adoption-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag supersession_demotion=on --expect-feature-flag intention_ledger=off --expect-feature-flag resume_deltas=off --expect-runtime-config supersession_demotion_weight=1.5 --concurrency 3 --timeout 360 --run-id "e07-adoption-run${N}" --out "results/2026-MM-DD-e07-adoption-raw-draw${N}.json"`;
       then
       `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json measure-adoption --input "results/2026-MM-DD-e07-adoption-raw-draw${N}.json" --out "results/2026-MM-DD-e07-adoption-draw${N}.json"`.
-5. Regrade disputed artifacts with the manifest before the subcommand, for
+5. After all three measurements exist, aggregate only those exact artifacts:
+   `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json aggregate-adoption --input results/2026-MM-DD-e07-adoption-draw1.json --input results/2026-MM-DD-e07-adoption-draw2.json --input results/2026-MM-DD-e07-adoption-draw3.json --expected-draw e07-adoption-draw1 --expected-draw e07-adoption-draw2 --expected-draw e07-adoption-draw3 --minimum-rate 0.5 --out results/2026-MM-DD-e07-adoption-aggregate.json`.
+   This fails closed on duplicate/missing draws; raw-input hash drift; manifest,
+   source, build, image, runtime, feature, or retrieval-mode drift; and exits
+   nonzero unless both supersession and intention adoption are at least 50%.
+6. Regrade disputed artifacts with the manifest before the subcommand, for
    example
    `python3 agent_work_eval.py --manifest eval/recent_work_cases.json regrade --input "$INPUT" --out "$OUTPUT"`.
-6. Aggregate the three-arm main result only from draws 1-3:
-   `E07_MAIN=(results/2026-MM-DD-e07-supersession-{flag,base,filesystem}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E07_MAIN[@]}" --expected-arm e07-flag --expected-arm e07-base --expected-arm e07-filesystem --out results/2026-MM-DD-e07-aggregate.json`.
-7. Only if the three-draw flag-vs-base result is borderline, extend the two
+7. Aggregate the three-arm main result only from draws 1-3:
+   `E07_MAIN=(results/2026-MM-DD-e07-supersession-{flag,base,filesystem}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E07_MAIN[@]}" --expected-arm e07-flag --expected-arm e07-base --expected-arm e07-filesystem --expected-arm-retrieval-modes e07-flag=exact,lexical --expected-arm-retrieval-modes e07-base=exact,lexical --require-feature-family supersession_dedup --out results/2026-MM-DD-e07-aggregate.json`.
+8. Only if the three-draw flag-vs-base result is borderline, extend the two
    service arms—not filesystem or adoption—through draws 4-5 using the same
    commands, filenames, arm identities, and `e07-draw${N}` IDs. Do not add
    these partial-arm draws to `E07_MAIN`. Produce a separate five-draw
    service-only aggregate:
-   `E07_SERVICE5=(results/2026-MM-DD-e07-supersession-{flag,base}-draw{1,2,3,4,5}.json); python3 eval/aggregate_draws.py "${E07_SERVICE5[@]}" --expected-arm e07-flag --expected-arm e07-base --out results/2026-MM-DD-e07-service-five-draw-aggregate.json`.
+   `E07_SERVICE5=(results/2026-MM-DD-e07-supersession-{flag,base}-draw{1,2,3,4,5}.json); python3 eval/aggregate_draws.py "${E07_SERVICE5[@]}" --expected-arm e07-flag --expected-arm e07-base --expected-arm-retrieval-modes e07-flag=exact,lexical --expected-arm-retrieval-modes e07-base=exact,lexical --require-feature-family supersession_dedup --out results/2026-MM-DD-e07-service-five-draw-aggregate.json`.
 
 ## Metrics
 

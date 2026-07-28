@@ -1,0 +1,60 @@
+{
+  "schema": "straylight-case-extension-plan@v1",
+  "experiment_id": "E04",
+  "suites": [
+    {
+      "suite": "0.2",
+      "parent_manifest": "eval/work_cases.json",
+      "parent_manifest_sha256": "6bc361cd94ec77b45b1a2525500c71710da8744d9d719acd4bfb50cee0f25112",
+      "parent_case_ids": [
+        "warmind-parser-learning",
+        "warmind-final-validation-handoff",
+        "charlemagne-storage-current-state",
+        "charlemagne-performance-priority",
+        "warmind-production-cpu-mitigation",
+        "charlemagne-index-artifact-review",
+        "star-rupture-rail-and-heat-plan",
+        "star-rupture-source-authority",
+        "star-rupture-plan-revision",
+        "switzerland-resume-truth",
+        "switzerland-itinerary-revision",
+        "switzerland-authority-and-next-actions",
+        "straylight-product-resume",
+        "straylight-trust-handoff"
+      ],
+      "extension_case_ids": [
+        "warmind-parser-learning",
+        "star-rupture-plan-revision"
+      ],
+      "base_draws": 3,
+      "extension_draws": 2
+    },
+    {
+      "suite": "rupture-ops-v0.1",
+      "parent_manifest": "eval/rupture_ops_cases.json",
+      "parent_manifest_sha256": "b596519119b7d9a1b3f50bcd017ceed5a67a5557dff22baa84df095697ccf9cf",
+      "parent_case_ids": [
+        "ruptureops-archive-import-reconciliation",
+        "ruptureops-prompt-history-reconciliation",
+        "ruptureops-save-state-truth",
+        "ruptureops-live-poi-advice",
+        "ruptureops-geo-scanner-learning",
+        "ruptureops-spatial-evidence",
+        "ruptureops-flowworks-campaign-revision",
+        "ruptureops-multi-goal-field-plan",
+        "ruptureops-watch-session-design",
+        "ruptureops-interrupted-ios-continuation",
+        "ruptureops-private-public-artifact-boundary",
+        "ruptureops-forked-agent-idempotency"
+      ],
+      "extension_case_ids": [
+        "ruptureops-archive-import-reconciliation",
+        "ruptureops-spatial-evidence",
+        "ruptureops-flowworks-campaign-revision",
+        "ruptureops-forked-agent-idempotency"
+      ],
+      "base_draws": 3,
+      "extension_draws": 2
+    }
+  ]
+}

@@ -38,6 +38,11 @@ deltas) proven in real use.
   The D02 flag-on arm recovered only the four byte-2,600 probes at each scale
   and lost every deeper identifier. D02 remains default-off pending repair;
   the 640K soak and reasoning draws were aborted.
+- Downstream E04–E08 runs therefore freeze `verbatim_spans=off`; none can
+  rehabilitate D02. E09 is prerequisite-aborted by E03's failed Mode 2 and
+  missing quality backfill. E10 lacks an accepted launch flag manifest and
+  the E01/E04–E09 qualifications. E11 is prerequisite-aborted by D02's
+  rejection and the missing owner-authored, owner-signed-off case manifest.
 - Reasoning is at parity-within-noise vs direct Markdown but unproven (n=1;
   single-draw suite scores swing ±3–5 claims). The native API on the simplified
   core scored 186/228 vs files 194/228; 21/22 disputed answers had the right
@@ -94,7 +99,7 @@ Features — flag + experiment gated:
 | [D03](mvp/D03-resume-delta-packets.md) | Resume delta packets ("changes since your checkpoint") | Proposed — not started | [E06](mvp/E06-resume-delta-experiment.md) |
 | [D04](mvp/D04-supersession-current-truth.md) | Supersession / current-truth (Markdown frontmatter round-trip) | Proposed — not started | [E07](mvp/E07-supersession-experiment.md) |
 | [D05](mvp/D05-intention-ledger.md) | Intention ledger at open | Proposed — not started | [E08](mvp/E08-intention-ledger-experiment.md) |
-| [D11](mvp/D11-semantic-lane-policy.md) | Semantic lane policy: existence question, embed cache + deadline | Implemented behind default-off flags — E09 not run | [E09](mvp/E09-semantic-existence-experiment.md) — may conclude "cut the lane" |
+| [D11](mvp/D11-semantic-lane-policy.md) | Semantic lane policy: existence question, embed cache + deadline | Implemented behind default-off flags — E09 prerequisite-aborted | Repair E03 Mode 2 and complete quality backfill before [E09](mvp/E09-semantic-existence-experiment.md) |
 
 Readiness — clients, migration, authority:
 
@@ -107,10 +112,10 @@ Conditional — do not start until stated preconditions hold:
 
 | ID | Title | Status | Precondition |
 |---|---|---|---|
-| [D06](mvp/D06-wiki-link-leads.md) | Wiki-link neighbor leads | Conditional | D01+D02 landed; owner corpus imported; [E11](mvp/E11-wiki-link-leads-experiment.md) |
+| [D06](mvp/D06-wiki-link-leads.md) | Wiki-link neighbor leads | Conditional — E11 prerequisite-aborted | D01+D02 accepted; owner corpus imported; owner-authored and signed-off case manifest |
 | [D07](mvp/D07-lesson-artifacts.md) | Lesson artifacts, role-scoped | Conditional | D01–D04 landed |
 | [E05](mvp/E05-lexical-consolidation-guard.md) | Lexical consolidation guard | Conditional | Only if the deferred D10 item is pursued |
-| [E10](mvp/E10-combined-preflight.md) | Combined all-flags-on preflight | Specified — not run | Final gate before any launch/superiority claim |
+| [E10](mvp/E10-combined-preflight.md) | Combined all-flags-on preflight | Prerequisite abort — accepted launch manifest not qualified | E01 complete; E04–E08 accepted; E09 posture decided |
 
 ## Sequencing
 
@@ -146,6 +151,11 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Change log
 
+- 2026-07-28: Froze the rejected D02 nuisance posture off for E04–E08.
+  Recorded current prerequisite aborts for E09 (E03 Mode 2/backfill), E10
+  (incomplete accepted launch manifest and upstream qualifications), and E11
+  (D02 rejection and missing owner-authored, signed-off manifest). These are
+  prerequisite outcomes, not experiment verdicts.
 - 2026-07-28: E02 Stage 1 confirmed the 0/30 defect. Stage 2 flag-on
   returned only 4/30 at 1K, 10K, and 64K, so the 640K soak and reasoning
   draws were aborted and D02 remains default-off pending repair. E03 Mode 1

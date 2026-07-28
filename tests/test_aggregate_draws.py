@@ -8,12 +8,47 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eval.aggregate_draws import aggregate  # noqa: E402
+from eval.aggregate_draws import (  # noqa: E402
+    aggregate as aggregate_draws,
+    load_case_extension_plan,
+)
 from eval.e09_step_authorization import canonical_json_sha256  # noqa: E402
 
 
 REVISION = "a" * 40
 REGRADING_REVISION = "e" * 40
+IMAGE_ID = "sha256:" + "f" * 64
+
+
+def aggregate(paths, *args, **kwargs):
+    if "expected_arm_retrieval_modes" not in kwargs:
+        service_arms = set()
+        for path in paths:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+            manifest = payload.get("manifest", {})
+            conditions = manifest.get("conditions", [])
+            if any(
+                condition in {"service_api", "service_api_resume"}
+                for condition in conditions
+            ):
+                service_arms.add(
+                    payload.get("experiment_arm") or "service_api"
+                )
+        kwargs["expected_arm_retrieval_modes"] = [
+            f"{arm}=exact,lexical" for arm in sorted(service_arms)
+        ]
+    return aggregate_draws(paths, *args, **kwargs)
+
+
+def response_character_metrics(characters):
+    return {
+        "schema": "straylight-agent-response-character-metrics@v1",
+        "service_result_chars": characters + 50,
+        "service_source_text_chars": characters,
+        "service_metadata_chars": 50,
+        "service_replay_weighted_chars": characters * 2,
+        "model_visible_tool_output_chars": characters,
+    }
 
 
 def draw_payload(run_id, rows):
@@ -21,6 +56,7 @@ def draw_payload(run_id, rows):
     case_ids = sorted({row[0] for row in rows})
     records = []
     for case_id, condition, claims, case_pass, characters in rows:
+        metrics = response_character_metrics(characters)
         records.append({
             "case_id": case_id,
             "condition": condition,
@@ -29,20 +65,78 @@ def draw_payload(run_id, rows):
                 "claims_passed": claims,
                 "claims_total": 4,
                 "pass": case_pass,
+                "claims": [
+                    {
+                        "id": f"c{index}",
+                        "pass": index <= claims,
+                        "tags": [],
+                        "exact_value": False,
+                    }
+                    for index in range(1, 5)
+                ],
+                "forbidden_hits": [],
             },
-            "model_visible_tool_output_chars": characters,
+            "response_character_metrics": metrics,
+            **{
+                key: value
+                for key, value in metrics.items()
+                if key != "schema"
+            },
             "persisted_checkpoint": {"objective": "resume"},
         })
+    runtime_snapshot = {
+        "schema": "straylight-service-runtime-snapshot@v1",
+        "captured_at": "2026-07-27T12:00:30-07:00",
+        "status": "ready",
+        "build_revision": REVISION,
+        "runtime_features": {},
+    }
+    image = {
+        "schema": "straylight-service-image-fingerprint@v1",
+        "api_container": f"api-{run_id}",
+        "api_container_id": f"container-{run_id}",
+        "api_container_started_at": "2026-07-27T12:00:20-07:00",
+        "api_container_running": True,
+        "api_image_id": IMAGE_ID,
+        "api_image_revision": REVISION,
+    }
+    image_provenance = {
+        "schema": "straylight-service-image-provenance@v1",
+        "stable": True,
+        "before": image,
+        "after": dict(image),
+    }
+    experiment_parameters = {
+        "service_retrieval_modes": ["exact", "lexical"],
+        "service_image_fingerprint": image,
+    }
     return {
         "benchmark_version": "synthetic-v1",
         "run_id": run_id,
         "manifest_sha256": "b" * 64,
         "harness_sha256": "c" * 64,
+        "service_protocol": "simple",
+        "service_retrieval_modes": ["exact", "lexical"],
+        "service_runtime_snapshot": runtime_snapshot,
+        "service_image_provenance": image_provenance,
+        "expected_runtime_features": {},
+        "expected_build_revision": REVISION,
+        "experiment_parameters": experiment_parameters,
         "manifest": {
             "benchmark_version": "synthetic-v1",
             "model": "gpt-test",
             "conditions": conditions,
-            "cases": [{"id": case_id} for case_id in case_ids],
+            "cases": [
+                {
+                    "id": case_id,
+                    "rubric": [
+                        {"id": f"c{index}", "tags": []}
+                        for index in range(1, 5)
+                    ],
+                    "forbidden": [],
+                }
+                for case_id in case_ids
+            ],
         },
         "reasoning_billing": {
             "route": "chatgpt_subscription",
@@ -71,11 +165,28 @@ def draw_payload(run_id, rows):
                 "model": "gpt-test",
                 "conditions": conditions,
                 "service_protocol": "simple",
+                "expected_runtime_features": {},
+                "expected_build_revision": REVISION,
+                "experiment_parameters": experiment_parameters,
             },
             "artifacts": {
                 "manifest_sha256": "b" * 64,
                 "schema_sha256": "d" * 64,
                 "harness_sha256": "c" * 64,
+                "runtime_snapshot_sha256": hashlib.sha256(
+                    json.dumps(
+                        runtime_snapshot,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+                "service_image_provenance_sha256": hashlib.sha256(
+                    json.dumps(
+                        image_provenance,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
             },
         },
         "records": records,
@@ -91,6 +202,40 @@ def explicit_arm_payload(run_id, paired_draw_id, experiment_arm, rows):
     payload["run_ledger"]["configuration"]["experiment_arm"] = experiment_arm
     payload["run_ledger"]["configuration"]["paired_draw_id"] = paired_draw_id
     return payload
+
+
+def set_service_modes(payload, modes):
+    normalized = list(modes)
+    payload["service_retrieval_modes"] = normalized
+    payload["experiment_parameters"]["service_retrieval_modes"] = normalized
+    payload["run_ledger"]["configuration"]["experiment_parameters"][
+        "service_retrieval_modes"
+    ] = normalized
+
+
+def set_service_image(payload, image_id):
+    image = dict(payload["service_image_provenance"]["before"])
+    image["api_image_id"] = image_id
+    provenance = {
+        "schema": "straylight-service-image-provenance@v1",
+        "stable": True,
+        "before": image,
+        "after": dict(image),
+    }
+    payload["service_image_provenance"] = provenance
+    payload["experiment_parameters"]["service_image_fingerprint"] = image
+    payload["run_ledger"]["configuration"]["experiment_parameters"][
+        "service_image_fingerprint"
+    ] = image
+    payload["run_ledger"]["artifacts"][
+        "service_image_provenance_sha256"
+    ] = hashlib.sha256(
+        json.dumps(
+            provenance,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def step_policy_payload(selected_case_ids):
@@ -138,13 +283,17 @@ def step_policy_payload(selected_case_ids):
 
 
 class AggregateDrawTests(unittest.TestCase):
-    def write_draw(self, root, draw, rows):
-        path = root / f"{draw}.json"
-        path.write_text(
-            json.dumps(draw_payload(draw, rows)) + "\n",
-            encoding="utf-8",
-        )
+    def write_payload(self, root, name, payload):
+        path = root / f"{name}.json"
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
         return path
+
+    def write_draw(self, root, draw, rows):
+        return self.write_payload(
+            root,
+            draw,
+            draw_payload(draw, rows),
+        )
 
     def test_self_vs_self_has_exact_p_one_and_zero_centered_ci(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -183,6 +332,99 @@ class AggregateDrawTests(unittest.TestCase):
                 {"lower": 0.0, "upper": 0.0},
             )
             self.assertTrue(pair["non_inferiority"]["declared"])
+
+    def test_service_api_resume_preserves_service_provenance(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                payload = draw_payload(f"resume-{draw}", [
+                    ("case-a", "service_api", 4, True, 100),
+                    ("case-a", "filesystem_sidecar", 4, True, 100),
+                ])
+                payload["manifest"]["conditions"][0] = "service_api_resume"
+                payload["run_ledger"]["configuration"]["conditions"][
+                    0
+                ] = "service_api_resume"
+                payload["records"][0]["condition"] = "service_api_resume"
+                paths.append(self.write_payload(
+                    root,
+                    f"resume-{draw}",
+                    payload,
+                ))
+            result = aggregate(paths)
+            self.assertEqual(
+                result["service_provenance"]["service_arms"],
+                ["service_api"],
+            )
+            self.assertEqual(
+                result["input_artifacts"][0]["service_retrieval_modes"],
+                ["exact", "lexical"],
+            )
+            self.assertEqual(
+                result["conditions"],
+                ["service_api", "filesystem_sidecar"],
+            )
+
+    def test_mixed_agent_and_transition_suites_share_service_arm(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                paths.append(self.write_payload(
+                    root,
+                    f"agent-{draw}",
+                    draw_payload(f"agent-{draw}", [
+                        ("case-a", "service_api", 4, True, 100),
+                        (
+                            "case-a",
+                            "filesystem_sidecar",
+                            4,
+                            True,
+                            100,
+                        ),
+                    ]),
+                ))
+                transition = draw_payload(f"transition-{draw}", [
+                    ("case-a", "service_api", 4, True, 100),
+                    ("case-a", "filesystem_sidecar", 4, True, 100),
+                ])
+                transition["benchmark_version"] = "transition-v1"
+                transition["manifest"][
+                    "benchmark_version"
+                ] = "transition-v1"
+                transition["manifest"]["conditions"] = [
+                    "service_api_resume",
+                    "filesystem_rebuild",
+                ]
+                transition["run_ledger"]["configuration"]["conditions"] = [
+                    "service_api_resume",
+                    "filesystem_rebuild",
+                ]
+                transition["records"][0][
+                    "condition"
+                ] = "service_api_resume"
+                transition["records"][1][
+                    "condition"
+                ] = "filesystem_rebuild"
+                paths.append(self.write_payload(
+                    root,
+                    f"transition-{draw}",
+                    transition,
+                ))
+            result = aggregate(paths)
+            self.assertIn(
+                "service_api__vs__filesystem_sidecar",
+                result["pairings"],
+            )
+            self.assertIn(
+                "service_api__vs__filesystem",
+                result["pairings"],
+            )
+            self.assertEqual(
+                result["service_provenance"]["service_arms"],
+                ["service_api"],
+            )
 
     def test_repeated_draws_are_collapsed_inside_case_clusters(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -229,6 +471,473 @@ class AggregateDrawTests(unittest.TestCase):
             ])
             with self.assertRaisesRegex(ValueError, "at least 3 complete draws"):
                 aggregate([path])
+
+    def test_definitive_aggregate_rejects_missing_or_malformed_character_envelope(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload = draw_payload("missing-envelope", [
+                ("case-a", "service_api", 4, True, 100),
+                ("case-a", "filesystem_sidecar", 4, True, 100),
+            ])
+            payload["records"][0].pop("response_character_metrics")
+            path = self.write_payload(root, "missing-envelope", payload)
+            with self.assertRaisesRegex(
+                ValueError,
+                "canonical response_character_metrics",
+            ):
+                aggregate([path])
+
+            payload = draw_payload("malformed-envelope", [
+                ("case-a", "service_api", 4, True, 100),
+                ("case-a", "filesystem_sidecar", 4, True, 100),
+            ])
+            payload["records"][0]["response_character_metrics"][
+                "service_result_chars"
+            ] = True
+            path = self.write_payload(root, "malformed-envelope", payload)
+            with self.assertRaisesRegex(
+                ValueError,
+                "malformed response character metric service_result_chars",
+            ):
+                aggregate([path])
+
+    def test_legacy_fields_require_explicit_non_definitive_opt_out(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                payload = draw_payload(f"legacy-{draw}", [
+                    ("case-a", "service_api", 4, True, 100),
+                    ("case-a", "filesystem_sidecar", 4, True, 100),
+                ])
+                for record in payload["records"]:
+                    record.pop("response_character_metrics")
+                    record["grade"].pop("claims")
+                    record["grade"].pop("forbidden_hits")
+                paths.append(
+                    self.write_payload(root, f"legacy-{draw}", payload)
+                )
+            with self.assertRaisesRegex(
+                ValueError,
+                "canonical response_character_metrics",
+            ):
+                aggregate(paths)
+            result = aggregate(paths, definitive=False)
+            self.assertFalse(result["definitive"])
+            self.assertEqual(
+                result["input_artifacts"][0]["legacy_derivations"],
+                {
+                    "response_character_metrics": 2,
+                    "claim_metadata": 0,
+                    "forbidden_hits": 2,
+                },
+            )
+
+    def test_exact_value_claim_tags_are_summarized_by_arm_and_suite(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                for arm, claims in (("treatment", 4), ("control", 3)):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        [("case-a", "service_api", claims, True, 100)],
+                    )
+                    payload["manifest"]["cases"][0]["rubric"][3][
+                        "tags"
+                    ] = ["exact_value"]
+                    payload["records"][0]["grade"]["claims"][3].update({
+                        "tags": ["exact_value"],
+                        "exact_value": True,
+                    })
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            result = aggregate(
+                paths,
+                expected_arms=["treatment", "control"],
+                required_claim_tags=["exact_value"],
+            )
+            tags = result["claim_tags"]["by_arm"]
+            self.assertEqual(
+                tags["treatment"]["overall"]["by_tag"]["exact_value"][
+                    "tagged"
+                ],
+                {"passed": 3, "total": 3, "rate": 1.0},
+            )
+            self.assertEqual(
+                tags["control"]["by_suite"]["synthetic-v1"]["by_tag"][
+                    "exact_value"
+                ]["tagged"],
+                {"passed": 0, "total": 3, "rate": 0.0},
+            )
+            self.assertEqual(
+                tags["treatment"]["overall"]["by_tag"]["exact_value"][
+                    "untagged"
+                ]["total"],
+                9,
+            )
+            self.assertEqual(
+                result["required_strata"]["required_claim_tags"][
+                    "exact_value"
+                ]["by_arm"]["control"],
+                {
+                    "tagged_claim_instances": 3,
+                    "untagged_claim_instances": 9,
+                },
+            )
+
+    def test_exact_value_tag_requires_a_real_matching_boolean(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload = draw_payload("bad-exact-value", [
+                ("case-a", "service_api", 4, True, 100),
+                ("case-a", "filesystem_sidecar", 4, True, 100),
+            ])
+            payload["manifest"]["cases"][0]["rubric"][0]["tags"] = [
+                "exact_value"
+            ]
+            payload["records"][0]["grade"]["claims"][0].update({
+                "tags": ["exact_value"],
+                "exact_value": 1,
+            })
+            path = self.write_payload(root, "bad-exact-value", payload)
+            with self.assertRaisesRegex(ValueError, "inconsistent exact_value"):
+                aggregate([path])
+
+    def test_supersession_family_reports_raw_net_and_complement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                for arm, family_claims, complement_claims in (
+                    ("treatment", 4, 2),
+                    ("control", 2, 3),
+                ):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        [
+                            (
+                                "case-family",
+                                "service_api",
+                                family_claims,
+                                family_claims == 4,
+                                100,
+                            ),
+                            (
+                                "case-complement",
+                                "service_api",
+                                complement_claims,
+                                False,
+                                90,
+                            ),
+                        ],
+                    )
+                    payload["manifest"]["feature_families"] = {
+                        "supersession_dedup": [
+                            "case-family",
+                            "unselected-parent-case",
+                        ],
+                    }
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            result = aggregate(
+                paths,
+                expected_arms=["treatment", "control"],
+                required_feature_families=["supersession_dedup"],
+            )
+            family_pair = result["pairings"][
+                "treatment__vs__control"
+            ]["by_feature_family"]["supersession_dedup"]
+            self.assertEqual(
+                family_pair["family"]["paired_draw_instances"][
+                    "claim_net_a_minus_b"
+                ],
+                6,
+            )
+            self.assertEqual(
+                family_pair["complement"]["paired_draw_instances"][
+                    "claim_net_a_minus_b"
+                ],
+                -3,
+            )
+            self.assertEqual(
+                family_pair["family"]["paired_draw_instances"]["by_draw"][0][
+                    "a_wins"
+                ],
+                1,
+            )
+
+    def test_prospective_family_exposes_a_paired_complement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                for arm, prospective_claims in (
+                    ("treatment", 4),
+                    ("control", 2),
+                ):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        [
+                            (
+                                "prospective-case",
+                                "service_api",
+                                prospective_claims,
+                                prospective_claims == 4,
+                                100,
+                            ),
+                            (
+                                "ordinary-case",
+                                "service_api",
+                                4,
+                                True,
+                                90,
+                            ),
+                        ],
+                    )
+                    payload["manifest"]["feature_families"] = {
+                        "prospective": ["prospective-case"],
+                    }
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            result = aggregate(
+                paths,
+                expected_arms=["treatment", "control"],
+                required_feature_families=["prospective"],
+            )
+            prospective = result["pairings"][
+                "treatment__vs__control"
+            ]["by_feature_family"]["prospective"]
+            self.assertEqual(prospective["family"]["case_clusters"], 1)
+            self.assertEqual(prospective["complement"]["case_clusters"], 1)
+            self.assertEqual(
+                prospective["complement"]["per_case"][0]["case_id"],
+                "ordinary-case",
+            )
+
+    def test_required_strata_fail_closed_without_each_complement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                for arm in ("treatment", "control"):
+                    payload = explicit_arm_payload(
+                        f"{arm}-family-{draw}",
+                        f"family-draw-{draw}",
+                        arm,
+                        [("case-family", "service_api", 4, True, 100)],
+                    )
+                    payload["manifest"]["feature_families"] = {
+                        "prospective": ["case-family"],
+                    }
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-family-{draw}",
+                        payload,
+                    ))
+            with self.assertRaisesRegex(
+                ValueError,
+                "lacks a nonempty family or complement population",
+            ):
+                aggregate(
+                    paths,
+                    expected_arms=["treatment", "control"],
+                    required_feature_families=["prospective"],
+                )
+
+            paths = []
+            for draw in range(3):
+                for arm in ("treatment", "control"):
+                    payload = explicit_arm_payload(
+                        f"{arm}-tag-{draw}",
+                        f"tag-draw-{draw}",
+                        arm,
+                        [("case-tagged", "service_api", 4, True, 100)],
+                    )
+                    for rubric in payload["manifest"]["cases"][0]["rubric"]:
+                        rubric["tags"] = ["exact_value"]
+                    for claim in payload["records"][0]["grade"]["claims"]:
+                        claim["tags"] = ["exact_value"]
+                        claim["exact_value"] = True
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-tag-{draw}",
+                        payload,
+                    ))
+            with self.assertRaisesRegex(
+                ValueError,
+                "lacks a nonempty tagged or untagged population",
+            ):
+                aggregate(
+                    paths,
+                    expected_arms=["treatment", "control"],
+                    required_claim_tags=["exact_value"],
+                )
+
+    def test_feature_family_membership_must_stay_stable_within_suite(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                for arm in ("treatment", "control"):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        [
+                            ("case-a", "service_api", 4, True, 100),
+                            ("case-b", "service_api", 4, True, 100),
+                        ],
+                    )
+                    payload["manifest"]["feature_families"] = {
+                        "prospective": [
+                            "case-a" if draw != 2 else "case-b"
+                        ],
+                    }
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            with self.assertRaisesRegex(
+                ValueError,
+                "feature_families changed",
+            ):
+                aggregate(
+                    paths,
+                    expected_arms=["treatment", "control"],
+                )
+
+    def test_forbidden_hits_are_stratified_and_paired(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                for arm in ("treatment", "control"):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        [
+                            ("case-family", "service_api", 4, True, 100),
+                            ("case-complement", "service_api", 4, True, 90),
+                        ],
+                    )
+                    payload["manifest"]["feature_families"] = {
+                        "supersession_dedup": ["case-family"],
+                    }
+                    for case in payload["manifest"]["cases"]:
+                        case["forbidden"] = ["bad-family", "bad-complement"]
+                    if arm == "treatment":
+                        payload["records"][0]["grade"]["forbidden_hits"] = [
+                            "bad-family"
+                        ]
+                    else:
+                        payload["records"][1]["grade"]["forbidden_hits"] = [
+                            "bad-complement"
+                        ]
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            result = aggregate(
+                paths,
+                expected_arms=["treatment", "control"],
+            )
+            treatment = result["forbidden_hits"]["by_arm"]["treatment"]
+            self.assertEqual(treatment["overall"]["hit_instances"], 3)
+            self.assertEqual(
+                treatment["by_suite"]["synthetic-v1"]["hit_instances"],
+                3,
+            )
+            strata = treatment["by_feature_family"][
+                "supersession_dedup"
+            ]
+            self.assertEqual(strata["family"]["hit_instances"], 3)
+            self.assertEqual(strata["complement"]["hit_instances"], 0)
+            paired = result["pairings"][
+                "treatment__vs__control"
+            ]["by_feature_family"]["supersession_dedup"]["family"]
+            self.assertEqual(paired["forbidden_hits"]["new_in_a_count"], 3)
+            self.assertEqual(
+                paired["forbidden_hits"]["new_in_a_instances"][0]["hit"],
+                "bad-family",
+            )
+
+    def test_all_character_metrics_are_paired_per_case_and_overall(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                for arm, characters in (
+                    ("treatment", 100),
+                    ("control", 80),
+                ):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        [(
+                            "case-a",
+                            "service_api",
+                            4,
+                            True,
+                            characters,
+                        )],
+                    )
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            result = aggregate(
+                paths,
+                expected_arms=["treatment", "control"],
+            )
+            pair = result["pairings"]["treatment__vs__control"]["overall"]
+            metrics = pair["response_character_metrics"]
+            self.assertEqual(
+                metrics["service_result_chars"]["mean_difference"],
+                20.0,
+            )
+            self.assertEqual(
+                metrics["service_source_text_chars"]["mean_difference"],
+                20.0,
+            )
+            self.assertEqual(
+                metrics["service_metadata_chars"]["mean_difference"],
+                0.0,
+            )
+            self.assertEqual(
+                metrics["service_replay_weighted_chars"]["mean_difference"],
+                40.0,
+            )
+            self.assertEqual(
+                metrics["model_visible_tool_output_chars"]["mean_difference"],
+                20.0,
+            )
+            self.assertEqual(
+                pair["per_case"][0]["response_character_metrics"][
+                    "service_source_text_chars"
+                ]["mean_a"],
+                100.0,
+            )
 
     def test_regrade_keeps_execution_ledger_and_records_grader_revision(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -296,6 +1005,130 @@ class AggregateDrawTests(unittest.TestCase):
             self.assertEqual(result["arms"], ["treatment", "control"])
             self.assertEqual(pair["draws_per_case"], [3])
             self.assertEqual(pair["case_claim_outcomes"]["a_wins"], 1)
+            case = pair["per_case"][0]
+            self.assertEqual(case["case_pass_votes_a"], 3)
+            self.assertEqual(case["case_pass_votes_b"], 0)
+            self.assertEqual(len(case["paired_draw_outcomes"]), 3)
+            self.assertEqual(
+                case["paired_draw_outcomes"][0],
+                {
+                    "draw": "draw-0",
+                    "case_pass_a": True,
+                    "case_pass_b": False,
+                    "claims_passed_a": 4,
+                    "claims_passed_b": 2,
+                },
+            )
+
+    def test_service_provenance_allows_distinct_containers_not_images(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                for arm in ("treatment", "control"):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        [("case-a", "service_api", 4, True, 100)],
+                    )
+                    if arm == "control":
+                        set_service_modes(payload, ["exact", "semantic"])
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            with self.assertRaisesRegex(
+                ValueError,
+                "exactly cover every definitive service-backed arm",
+            ):
+                aggregate_draws(
+                    paths,
+                    expected_arms=["treatment", "control"],
+                )
+            result = aggregate_draws(
+                paths,
+                expected_arms=["treatment", "control"],
+                expected_arm_retrieval_modes={
+                    "treatment": ["exact", "lexical"],
+                    "control": ["exact", "semantic"],
+                },
+            )
+            provenance = result["service_provenance"]
+            self.assertEqual(provenance["status"], "complete")
+            self.assertEqual(provenance["api_image_id"], IMAGE_ID)
+            self.assertTrue(
+                provenance["distinct_container_instances_allowed"]
+            )
+            self.assertEqual(
+                provenance["expected_arm_retrieval_modes"]["control"],
+                ["exact", "semantic"],
+            )
+            containers = {
+                artifact["service_image_provenance"]["before"][
+                    "api_container_id"
+                ]
+                for artifact in result["input_artifacts"]
+            }
+            self.assertEqual(len(containers), 6)
+
+    def test_service_provenance_detects_mode_and_image_tampering(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload = draw_payload("tampered-modes", [
+                ("case-a", "service_api", 4, True, 100),
+                ("case-a", "filesystem_sidecar", 4, True, 100),
+            ])
+            payload["service_retrieval_modes"] = ["exact", "semantic"]
+            path = self.write_payload(root, "tampered-modes", payload)
+            with self.assertRaisesRegex(
+                ValueError,
+                "retrieval modes disagree",
+            ):
+                aggregate([path])
+
+            payload = draw_payload("tampered-image", [
+                ("case-a", "service_api", 4, True, 100),
+                ("case-a", "filesystem_sidecar", 4, True, 100),
+            ])
+            payload["service_image_provenance"]["after"][
+                "api_image_id"
+            ] = "sha256:" + "1" * 64
+            path = self.write_payload(root, "tampered-image", payload)
+            with self.assertRaisesRegex(
+                ValueError,
+                "image fingerprint is malformed, unstable",
+            ):
+                aggregate([path])
+
+            paths = []
+            for draw in range(3):
+                for arm in ("treatment", "control"):
+                    payload = explicit_arm_payload(
+                        f"{arm}-image-{draw}",
+                        f"image-draw-{draw}",
+                        arm,
+                        [("case-a", "service_api", 4, True, 100)],
+                    )
+                    if arm == "control" and draw == 2:
+                        set_service_image(
+                            payload,
+                            "sha256:" + "1" * 64,
+                        )
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-image-{draw}",
+                        payload,
+                    ))
+            with self.assertRaisesRegex(
+                ValueError,
+                "do not share one api_image_id",
+            ):
+                aggregate(
+                    paths,
+                    expected_arms=["treatment", "control"],
+                )
 
     def test_explicit_arm_aggregate_rejects_an_incomplete_draw(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -324,26 +1157,90 @@ class AggregateDrawTests(unittest.TestCase):
     def test_predeclared_case_extension_is_explicit_and_arm_complete(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            project_root = Path(__file__).resolve().parents[1]
+            parent_path = project_root / "eval/work_cases.json"
+            parent_body = parent_path.read_bytes()
+            parent = json.loads(parent_body)
+            parent_case_ids = [
+                case["id"] for case in parent["cases"]
+            ]
+            extension_case_ids = [
+                "warmind-parser-learning",
+                "star-rupture-plan-revision",
+            ]
+            parent_sha256 = hashlib.sha256(parent_body).hexdigest()
+            plan = {
+                "schema": "straylight-case-extension-plan@v1",
+                "experiment_id": "E04-test",
+                "suites": [{
+                    "suite": parent["benchmark_version"],
+                    "parent_manifest": "eval/work_cases.json",
+                    "parent_manifest_sha256": parent_sha256,
+                    "parent_case_ids": parent_case_ids,
+                    "extension_case_ids": extension_case_ids,
+                    "base_draws": 3,
+                    "extension_draws": 2,
+                }],
+            }
+            plan_path = root / "case-extension-plan.json"
+            plan_path.write_text(
+                json.dumps(plan, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            plan_sha256 = hashlib.sha256(plan_path.read_bytes()).hexdigest()
             paths = []
             for draw in range(5):
-                case_ids = ("case-a", "case-b") if draw < 3 else ("case-b",)
+                case_ids = (
+                    parent_case_ids
+                    if draw < 3
+                    else extension_case_ids
+                )
                 for arm in ("treatment", "control"):
                     rows = [
                         (case_id, "service_api", 4, True, 100)
                         for case_id in case_ids
                     ]
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        f"draw-{draw}",
+                        arm,
+                        rows,
+                    )
+                    payload["benchmark_version"] = parent[
+                        "benchmark_version"
+                    ]
+                    payload["manifest"]["benchmark_version"] = parent[
+                        "benchmark_version"
+                    ]
+                    payload["manifest_sha256"] = parent_sha256
+                    payload["run_ledger"]["artifacts"][
+                        "manifest_sha256"
+                    ] = parent_sha256
                     path = root / f"{arm}-{draw}.json"
                     path.write_text(
-                        json.dumps(explicit_arm_payload(
-                            f"{arm}-run-{draw}",
-                            f"draw-{draw}",
-                            arm,
-                            rows,
-                        )) + "\n",
+                        json.dumps(payload) + "\n",
                         encoding="utf-8",
                     )
                     paths.append(path)
-            with self.assertRaisesRegex(ValueError, "allow-case-extension"):
+            for draw in range(3):
+                for arm in ("treatment", "control"):
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-unextended-{draw}",
+                        explicit_arm_payload(
+                            f"{arm}-unextended-run-{draw}",
+                            f"unextended-draw-{draw}",
+                            arm,
+                            [(
+                                "unextended-case",
+                                "service_api",
+                                4,
+                                True,
+                                100,
+                            )],
+                        ),
+                    ))
+            with self.assertRaisesRegex(ValueError, "case-extension-plan"):
                 aggregate(
                     paths,
                     expected_arms=["treatment", "control"],
@@ -351,11 +1248,46 @@ class AggregateDrawTests(unittest.TestCase):
             result = aggregate(
                 paths,
                 expected_arms=["treatment", "control"],
-                allow_case_extension=True,
+                case_extension_plan=plan_path,
+                case_extension_plan_sha256=plan_sha256,
             )
             pair = result["pairings"]["treatment__vs__control"]["overall"]
             self.assertEqual(pair["draws_per_case"], [3, 5])
             self.assertTrue(result["case_extension"]["enabled"])
+            self.assertEqual(
+                result["case_extension"]["suites"][
+                    parent["benchmark_version"]
+                ]["base_draw_ids"],
+                ["draw-0", "draw-1", "draw-2"],
+            )
+
+    def test_checked_in_e04_extension_plan_is_frozen_to_parent_manifests(self):
+        project_root = Path(__file__).resolve().parents[1]
+        plan_path = project_root / "eval/e04_case_extension_plan.json"
+        expected_sha256 = (
+            "3cf08c940c527d2eb309b2263a4ad2303"
+            "b3c8aeede1bc7ce15076b6670373976"
+        )
+        self.assertEqual(
+            hashlib.sha256(plan_path.read_bytes()).hexdigest(),
+            expected_sha256,
+        )
+        plan = load_case_extension_plan(
+            plan_path,
+            expected_sha256,
+        )
+        self.assertEqual(plan["experiment_id"], "E04")
+        self.assertEqual(
+            set(plan["suites"]),
+            {"0.2", "rupture-ops-v0.1"},
+        )
+        self.assertEqual(
+            plan["suites"]["0.2"]["extension_case_ids"],
+            [
+                "warmind-parser-learning",
+                "star-rupture-plan-revision",
+            ],
+        )
 
     def test_runtime_snapshot_is_ledger_bound_and_tamper_evident(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -425,7 +1357,12 @@ class AggregateDrawTests(unittest.TestCase):
                         )],
                     )
                     payload["records"][0]["grade"]["claims"] = [
-                        {"id": f"c{index}", "pass": outcome}
+                        {
+                            "id": f"c{index}",
+                            "pass": outcome,
+                            "tags": [],
+                            "exact_value": False,
+                        }
                         for index in range(1, 5)
                     ]
                     path = root / f"{arm}-{draw}.json"
@@ -484,11 +1421,9 @@ class AggregateDrawTests(unittest.TestCase):
                         arm,
                         rows,
                     )
-                    parameters = (
-                        {"e09_step_authorization": binding}
-                        if arm == "e09-deadline-cache-600"
-                        else {}
-                    )
+                    parameters = dict(payload["experiment_parameters"])
+                    if arm == "e09-deadline-cache-600":
+                        parameters["e09_step_authorization"] = binding
                     payload["experiment_parameters"] = parameters
                     payload["run_ledger"]["configuration"][
                         "experiment_parameters"

@@ -14,17 +14,23 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agent_work_eval import (  # noqa: E402
+    aggregate_adoption_measurements,
     attach_workspace_metrics,
     build_run_ledger,
     build_codex_command,
     candidate_matches,
+    capture_service_image_fingerprint,
     capture_service_runtime_snapshot,
+    canonical_json_sha256,
+    definitive_service_run_provenance,
     ensure_run_binding,
+    evaluation_source_fingerprint,
     experiment_provenance_lines,
     forbidden_is_asserted,
     expected_feature_flags,
     expected_runtime_features,
     grade_answer,
+    git_source_fingerprint,
     normalize,
     parse_feature_states,
     parse_event_metrics,
@@ -34,10 +40,15 @@ from agent_work_eval import (  # noqa: E402
     read_sidecar_checkpoint,
     response_reports_semantic_gap,
     resolve_codex_path,
+    resolve_service_retrieval_modes,
     select_cases,
     summarize,
+    stable_service_image_provenance,
     subscription_reasoning_environment,
+    summarize_local_cli_failures,
+    summarize_service_accounting,
     validate_experiment_identity,
+    validate_native_service_accounting,
     load_native_provisioning_state,
     measure_adoption,
     validate,
@@ -53,7 +64,458 @@ from transition_eval import select_transition_cases  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def definitive_service_run_fixture(
+    *,
+    run_id="run-1",
+    arm="e07-adoption",
+    draw="e07-adoption-draw1",
+    benchmark="frontmatter-adoption-v0.1",
+    manifest_sha256="b" * 64,
+    case_ids=("case-a",),
+    runtime_features=None,
+):
+    revision = "a" * 40
+    features = runtime_features or {
+        "semantic_lane": False,
+        "verbatim_spans": False,
+        "supersession_demotion": True,
+        "intention_ledger": False,
+        "resume_deltas": False,
+    }
+    expected_features = dict(features)
+    runtime_snapshot = {
+        "schema": "straylight-service-runtime-snapshot@v1",
+        "captured_at": "2026-07-28T12:00:00-07:00",
+        "status": "ready",
+        "build_revision": revision,
+        "corpus_revision": "generation:1",
+        "revision_sequence": 1,
+        "read_only": False,
+        "runtime_features": features,
+        "embeddings": {"enabled": False},
+    }
+    image = {
+        "schema": "straylight-service-image-fingerprint@v1",
+        "api_container": "api-container",
+        "api_container_id": "container-id",
+        "api_container_started_at": "2026-07-28T11:00:00Z",
+        "api_container_running": True,
+        "api_image_id": "sha256:" + "c" * 64,
+        "api_image_revision": revision,
+    }
+    image_provenance = {
+        "schema": "straylight-service-image-provenance@v1",
+        "stable": True,
+        "before": image,
+        "after": dict(image),
+    }
+    parameters = {
+        "declared_feature_states": {},
+        "e09_arm": None,
+        "e09_step_authorization": None,
+        "run_tags": [],
+        "service_retrieval_modes": ["exact", "lexical"],
+        "service_image_fingerprint": image,
+    }
+    billing = {
+        "route": "chatgpt_subscription",
+        "api_fallback": "forbidden",
+        "codex_path": "/opt/codex",
+        "codex_version": "codex-test",
+        "auth_checked_at": "2026-07-28T11:30:00-07:00",
+        "auth_status": "Logged in using ChatGPT",
+    }
+    artifacts = {
+        "manifest_sha256": manifest_sha256,
+        "schema_sha256": "d" * 64,
+        "harness_sha256": "e" * 64,
+        "runtime_snapshot_sha256": canonical_json_sha256(runtime_snapshot),
+        "service_image_provenance_sha256": canonical_json_sha256(
+            image_provenance
+        ),
+    }
+    operation = {
+        "operation": "open",
+        "result_chars": 20,
+        "source_text_chars": 10,
+        "metadata_chars": 10,
+        "elapsed_ms": 2.0,
+        "http_status": 200,
+    }
+    return {
+        "benchmark_version": benchmark,
+        "run_id": run_id,
+        "experiment_arm": arm,
+        "paired_draw_id": draw,
+        "manifest_sha256": manifest_sha256,
+        "schema_sha256": artifacts["schema_sha256"],
+        "harness_sha256": artifacts["harness_sha256"],
+        "manifest": {
+            "benchmark_version": benchmark,
+            "conditions": ["service_api"],
+            "cases": [{"id": case_id} for case_id in case_ids],
+        },
+        "service_protocol": "simple",
+        "service_retrieval_modes": ["exact", "lexical"],
+        "experiment_parameters": parameters,
+        "reasoning_billing": billing,
+        "implementation_fingerprint": {
+            "source_revision": revision,
+            "tracked_source_clean": True,
+            "untracked_source_files": [],
+            "reproducible_source": True,
+        },
+        "expected_runtime_features": expected_features,
+        "expected_build_revision": revision,
+        "service_runtime_snapshot": runtime_snapshot,
+        "service_image_provenance": image_provenance,
+        "records": [
+            {
+                "case_id": case_id,
+                "condition": "service_api",
+                "error": None,
+                "grade": {"pass": True},
+                "service_accounting_valid": True,
+                "service_operations": [dict(operation)],
+                "local_cli_failures": (
+                    summarize_local_cli_failures([operation])
+                ),
+                **summarize_service_accounting([operation]),
+            }
+            for case_id in case_ids
+        ],
+        "run_ledger": {
+            "schema": "straylight-eval-run-ledger@v1",
+            "run_id": run_id,
+            "source": {
+                "revision": revision,
+                "tracked_source_clean": True,
+                "untracked_source_files": [],
+                "clean": True,
+            },
+            "codex": {
+                "auth_route": billing["route"],
+                "api_fallback": billing["api_fallback"],
+                "auth_status": billing["auth_status"],
+            },
+            "configuration": {
+                "conditions": ["service_api"],
+                "service_protocol": "simple",
+                "experiment_arm": arm,
+                "paired_draw_id": draw,
+                "expected_runtime_features": expected_features,
+                "expected_build_revision": revision,
+                "experiment_parameters": parameters,
+            },
+            "artifacts": artifacts,
+        },
+    }
+
+
 class AgentWorkEvalTests(unittest.TestCase):
+    def test_service_image_fingerprint_is_running_source_bound_and_stable(self):
+        revision = "a" * 40
+        values = {
+            "{{.Id}}": "container-id",
+            "{{.State.StartedAt}}": "2026-07-28T11:00:00Z",
+            "{{.State.Running}}": "true",
+            "{{.Image}}": "sha256:" + "b" * 64,
+            (
+                '{{index .Config.Labels '
+                '"org.opencontainers.image.revision"}}'
+            ): revision,
+        }
+
+        def inspect(command, **kwargs):
+            template = command[2].removeprefix("--format=")
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=values[template] + "\n",
+                stderr="",
+            )
+
+        with patch("agent_work_eval.subprocess.run", side_effect=inspect):
+            fingerprint = capture_service_image_fingerprint(
+                "api-container",
+                source_revision=revision,
+                expected_build_revision=revision,
+            )
+        self.assertTrue(fingerprint["api_container_running"])
+        self.assertEqual(
+            fingerprint["api_image_id"],
+            "sha256:" + "b" * 64,
+        )
+        provenance = stable_service_image_provenance(
+            fingerprint,
+            dict(fingerprint),
+        )
+        self.assertTrue(provenance["stable"])
+        changed = dict(fingerprint)
+        changed["api_container_id"] = "replacement-container"
+        with self.assertRaisesRegex(ValueError, "drifted"):
+            stable_service_image_provenance(fingerprint, changed)
+
+    def test_definitive_service_provenance_rejects_image_or_ledger_drift(self):
+        run = definitive_service_run_fixture()
+        provenance = definitive_service_run_provenance(run)
+        self.assertEqual(provenance["experiment_arm"], "e07-adoption")
+        self.assertEqual(provenance["service_retrieval_modes"], [
+            "exact",
+            "lexical",
+        ])
+
+        drifted = json.loads(json.dumps(run))
+        drifted["service_image_provenance"]["after"][
+            "api_container_id"
+        ] = "replacement"
+        with self.assertRaisesRegex(ValueError, "drifted"):
+            definitive_service_run_provenance(drifted)
+
+    def test_definitive_service_provenance_rejects_measured_failures(self):
+        run = definitive_service_run_fixture()
+        failed_operation = {
+            "operation": "denied:checkpoint",
+            "result_chars": 30,
+            "source_text_chars": 0,
+            "metadata_chars": 30,
+            "elapsed_ms": 2.0,
+            "http_status": 403,
+            "service_status": "capability_denied",
+        }
+        run["records"][0]["service_operations"] = [failed_operation]
+        with self.assertRaisesRegex(ValueError, "measured failed or denied"):
+            definitive_service_run_provenance(run)
+
+        run["manifest"]["cases"][0]["native_failure_contract"] = {
+            "schema": "straylight-native-failure-contract@v1",
+            "expected_failures": [{
+                "operation": "denied:checkpoint",
+                "http_status": 403,
+                "service_status": "capability_denied",
+                "occurrences": 1,
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "measured failed or denied"):
+            definitive_service_run_provenance(run)
+
+    def test_definitive_service_provenance_allows_only_recovered_local_failures(
+        self,
+    ):
+        run = definitive_service_run_fixture()
+        local_failure = {
+            "operation": "failed:open",
+            "result_chars": 30,
+            "source_text_chars": 0,
+            "metadata_chars": 30,
+            "elapsed_ms": 0,
+            "http_status": 0,
+            "service_status": "invalid_request",
+        }
+        record = run["records"][0]
+        successful_open = record["service_operations"][0]
+        record["service_operations"] = [
+            local_failure,
+            successful_open,
+        ]
+        record["local_cli_failures"] = summarize_local_cli_failures(
+            record["service_operations"]
+        )
+        provenance = definitive_service_run_provenance(run)
+        self.assertEqual(provenance["run_id"], run["run_id"])
+
+        tampered = json.loads(json.dumps(run))
+        tampered["records"][0]["local_cli_failures"]["result_chars"] += 1
+        with self.assertRaisesRegex(
+            ValueError,
+            "inconsistent local_cli_failures",
+        ):
+            definitive_service_run_provenance(tampered)
+
+        inflated_service_calls = json.loads(json.dumps(run))
+        inflated_service_calls["records"][0]["service_calls"] += 1
+        with self.assertRaisesRegex(
+            ValueError,
+            "local-failure-excluding service accounting",
+        ):
+            definitive_service_run_provenance(inflated_service_calls)
+
+        unrecovered = json.loads(json.dumps(run))
+        unrecovered_record = unrecovered["records"][0]
+        unrecovered_record["service_operations"] = [local_failure]
+        unrecovered_record["local_cli_failures"] = (
+            summarize_local_cli_failures([local_failure])
+        )
+        with self.assertRaisesRegex(ValueError, "unrecovered local CLI"):
+            definitive_service_run_provenance(unrecovered)
+
+        out_of_order = json.loads(json.dumps(run))
+        out_of_order_record = out_of_order["records"][0]
+        out_of_order_record["service_operations"] = [
+            successful_open,
+            local_failure,
+        ]
+        out_of_order_record["local_cli_failures"] = (
+            summarize_local_cli_failures(
+                out_of_order_record["service_operations"]
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "unrecovered local CLI"):
+            definitive_service_run_provenance(out_of_order)
+
+        missing_summary = json.loads(json.dumps(run))
+        del missing_summary["records"][0]["local_cli_failures"]
+        with self.assertRaisesRegex(
+            ValueError,
+            "missing or inconsistent local_cli_failures",
+        ):
+            definitive_service_run_provenance(missing_summary)
+
+    def test_git_source_provenance_fails_closed_on_probe_errors(self):
+        revision = subprocess.CompletedProcess(
+            ["git", "rev-parse", "HEAD"],
+            0,
+            stdout="a" * 40 + "\n",
+            stderr="",
+        )
+        tracked = subprocess.CompletedProcess(
+            ["git", "diff", "--quiet", "HEAD", "--"],
+            0,
+            stdout="",
+            stderr="",
+        )
+        failed_untracked = subprocess.CompletedProcess(
+            ["git", "ls-files"],
+            128,
+            stdout="",
+            stderr="index unreadable",
+        )
+        with patch(
+            "agent_work_eval.subprocess.run",
+            side_effect=[revision, tracked, failed_untracked],
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "untracked source state",
+            ):
+                git_source_fingerprint()
+
+        with patch(
+            "agent_work_eval.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(
+                ["git", "rev-parse", "HEAD"],
+                15,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                "git source provenance",
+            ):
+                git_source_fingerprint()
+
+        source = {
+            "revision": "b" * 40,
+            "tracked_source_clean": True,
+            "untracked_source_files": [],
+            "clean": True,
+        }
+        with patch(
+            "agent_work_eval.git_source_fingerprint",
+            return_value=source,
+        ):
+            self.assertEqual(
+                evaluation_source_fingerprint(),
+                {
+                    "source_revision": "b" * 40,
+                    "tracked_source_clean": True,
+                    "untracked_source_files": [],
+                    "reproducible_source": True,
+                },
+            )
+
+    def test_service_retrieval_modes_are_explicit_validated_and_parsed(self):
+        args = build_agent_parser().parse_args([
+            "run",
+            "--condition",
+            "service_api",
+            "--service-protocol",
+            "simple",
+            "--service-retrieval-modes",
+            "exact",
+            "lexical",
+            "--out",
+            "result.json",
+        ])
+        self.assertEqual(
+            args.service_retrieval_modes,
+            ["exact", "lexical"],
+        )
+        self.assertEqual(
+            resolve_service_retrieval_modes(
+                args.service_retrieval_modes,
+                conditions=["service_api"],
+                service_protocol="simple",
+            ),
+            ("exact", "lexical"),
+        )
+        with self.assertRaisesRegex(ValueError, "must not contain duplicates"):
+            resolve_service_retrieval_modes(
+                ["exact", "exact"],
+                conditions=["service_api"],
+                service_protocol="simple",
+            )
+        with self.assertRaisesRegex(ValueError, "requires the service_api"):
+            resolve_service_retrieval_modes(
+                ["exact", "lexical"],
+                conditions=["filesystem"],
+                service_protocol="simple",
+            )
+        with self.assertRaisesRegex(ValueError, "requires --service-protocol"):
+            resolve_service_retrieval_modes(
+                ["exact", "lexical"],
+                conditions=["service_api"],
+                service_protocol="legacy",
+            )
+        with self.assertRaisesRegex(
+            ValueError,
+            "explicit semantic_lane=off",
+        ):
+            resolve_service_retrieval_modes(
+                None,
+                conditions=["service_api"],
+                service_protocol="simple",
+                experiment_arm="e08-flag",
+                expected_runtime_features={"semantic_lane": False},
+            )
+        self.assertEqual(
+            resolve_service_retrieval_modes(
+                ["exact", "lexical"],
+                conditions=["service_api"],
+                service_protocol="simple",
+                experiment_arm="e08-flag",
+                expected_runtime_features={"semantic_lane": False},
+            ),
+            ("exact", "lexical"),
+        )
+
+    def test_service_retrieval_modes_preserve_e09_fail_closed_policy(self):
+        self.assertEqual(
+            resolve_service_retrieval_modes(
+                None,
+                conditions=["service_api"],
+                service_protocol="simple",
+                e09_arm="no_semantic",
+            ),
+            ("exact", "lexical"),
+        )
+        with self.assertRaisesRegex(ValueError, "conflicts with"):
+            resolve_service_retrieval_modes(
+                ["exact"],
+                conditions=["service_api"],
+                service_protocol="simple",
+                e09_arm="no_semantic",
+            )
+
     def test_agent_parser_exposes_only_the_policy_gated_600ms_step(self):
         args = build_agent_parser().parse_args([
             "--manifest",
@@ -172,6 +634,7 @@ class AgentWorkEvalTests(unittest.TestCase):
                 "  - Projects/Old.md\n"
                 "kind: intention\n"
                 "trigger: [gmail, oauth-scopes]\n"
+                "due: 2026-08-03\n"
                 "status: pending\n---\n# Correction"
             )
         })
@@ -179,42 +642,220 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertEqual(frontmatter["trigger"], ["gmail", "oauth-scopes"])
         self.assertEqual(authored_frontmatter({"content": "---\nkind: intention\n"}), {})
 
-        measurement = measure_adoption({
-            "run_id": "adoption-draw-1",
-            "benchmark_version": "frontmatter-adoption-v0.1",
-            "manifest": {
-                "cases": [{
-                    "id": "correction",
-                    "adoption_eligibility": {
-                        "feature": "supersession",
-                        "supersedes_path": "Projects/Old.md",
-                    },
-                }, {
-                    "id": "intention",
-                    "adoption_eligibility": {"feature": "intention"},
-                }],
-            },
-            "records": [{
-                "case_id": "correction",
+        cases = []
+        records = []
+        for index in range(6):
+            case_id = f"correction-{index}"
+            cases.append({
+                "id": case_id,
+                "adoption_eligibility": {
+                    "feature": "supersession",
+                    "supersedes_path": "Projects/Old.md",
+                },
+            })
+            records.append({
+                "case_id": case_id,
                 "condition": "service_api",
                 "service_operations": [{
                     "operation": "save",
                     "write_path": "Projects/New.md",
                     "authored_frontmatter": frontmatter,
                 }],
-            }, {
-                "case_id": "intention",
+            })
+        for index in range(6):
+            case_id = f"intention-{index}"
+            cases.append({
+                "id": case_id,
+                "adoption_eligibility": {"feature": "intention"},
+            })
+            records.append({
+                "case_id": case_id,
                 "condition": "service_api",
-                "service_operations": [],
-            }],
-        })
-        self.assertEqual(measurement["eligible_sessions"], 2)
-        self.assertEqual(measurement["emitted_sessions"], 1)
-        self.assertEqual(measurement["adoption_rate"], 0.5)
+                "service_operations": [{
+                    "operation": "save",
+                    "write_path": "Intentions/New.md",
+                    "authored_frontmatter": frontmatter,
+                }],
+            })
+        run = {
+            "run_id": "adoption-run-1",
+            "benchmark_version": "frontmatter-adoption-v0.1",
+            "manifest": {"cases": cases},
+            "records": records,
+        }
+        provenance = {
+            "experiment_arm": "e07-adoption",
+            "paired_draw_id": "e07-adoption-draw1",
+            "manifest_sha256": "b" * 64,
+        }
+        with patch(
+            "agent_work_eval.definitive_service_run_provenance",
+            return_value=provenance,
+        ):
+            measurement = measure_adoption(
+                run,
+                source_artifact_path="/tmp/adoption-raw.json",
+                source_artifact_sha256="a" * 64,
+                expected_manifest_sha256="b" * 64,
+                expected_case_ids=[case["id"] for case in cases],
+            )
+        self.assertEqual(measurement["eligible_sessions"], 12)
+        self.assertEqual(measurement["emitted_sessions"], 12)
+        self.assertEqual(measurement["adoption_rate"], 1.0)
         self.assertEqual(
             measurement["by_feature"]["supersession"]["adoption_rate"],
             1.0,
         )
+
+    def test_adoption_aggregate_requires_exact_three_stable_feature_draws(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            measurement_paths = []
+            expected_draws = []
+            expected_case_ids = [
+                f"{feature}-{index}"
+                for feature in ("supersession", "intention")
+                for index in range(6)
+            ]
+            for number in range(1, 4):
+                draw = f"e07-adoption-draw{number}"
+                expected_draws.append(draw)
+                run = definitive_service_run_fixture(
+                    run_id=f"e07-adoption-run{number}",
+                    draw=draw,
+                    case_ids=expected_case_ids,
+                )
+                for case, record in zip(
+                    run["manifest"]["cases"],
+                    run["records"],
+                    strict=True,
+                ):
+                    feature, raw_index = case["id"].rsplit("-", 1)
+                    index = int(raw_index)
+                    if feature == "supersession":
+                        case["adoption_eligibility"] = {
+                            "feature": feature,
+                            "supersedes_path": "Projects/Old.md",
+                        }
+                        frontmatter = {
+                            "supersedes": ["Projects/Old.md"],
+                        }
+                    else:
+                        case["adoption_eligibility"] = {
+                            "feature": feature,
+                        }
+                        frontmatter = {
+                            "kind": "intention",
+                            "status": "pending",
+                            "trigger": ["gmail"],
+                            "due": "2026-08-03",
+                        }
+                    operation = {
+                        "operation": "save",
+                        "result_chars": 20,
+                        "source_text_chars": 0,
+                        "metadata_chars": 20,
+                        "elapsed_ms": 2.0,
+                        "http_status": 200,
+                        "write_path": f"Notes/{case['id']}.md",
+                    }
+                    if index < 3:
+                        operation["authored_frontmatter"] = frontmatter
+                    record["service_operations"] = [operation]
+                    record.update(
+                        summarize_service_accounting([operation])
+                    )
+                raw_path = root / f"raw-{number}.json"
+                raw_path.write_text(
+                    json.dumps(run) + "\n",
+                    encoding="utf-8",
+                )
+                measurement = measure_adoption(
+                    run,
+                    source_artifact_path=str(raw_path.resolve()),
+                    source_artifact_sha256=hashlib.sha256(
+                        raw_path.read_bytes()
+                    ).hexdigest(),
+                    expected_manifest_sha256="b" * 64,
+                    expected_case_ids=expected_case_ids,
+                )
+                measurement_path = root / f"measurement-{number}.json"
+                measurement_path.write_text(
+                    json.dumps(measurement) + "\n",
+                    encoding="utf-8",
+                )
+                measurement_paths.append(measurement_path)
+
+            aggregate = aggregate_adoption_measurements(
+                measurement_paths,
+                expected_manifest_sha256="b" * 64,
+                expected_case_ids=expected_case_ids,
+                expected_draws=expected_draws,
+            )
+            self.assertTrue(aggregate["pass"])
+            self.assertEqual(
+                aggregate["by_feature"]["supersession"][
+                    "eligible_sessions"
+                ],
+                18,
+            )
+            self.assertEqual(
+                aggregate["by_feature"]["intention"]["adoption_rate"],
+                0.5,
+            )
+
+            original_measurement = measurement_paths[0].read_text(
+                encoding="utf-8"
+            )
+            type_tampered = json.loads(original_measurement)
+            type_tampered["eligible_sessions"] = 12.0
+            measurement_paths[0].write_text(
+                json.dumps(type_tampered) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "canonically match",
+            ):
+                aggregate_adoption_measurements(
+                    measurement_paths,
+                    expected_manifest_sha256="b" * 64,
+                    expected_case_ids=expected_case_ids,
+                    expected_draws=expected_draws,
+                )
+
+            measurement_paths[0].write_text(
+                original_measurement,
+                encoding="utf-8",
+            )
+            tampered = json.loads(original_measurement)
+            session = next(
+                item
+                for item in tampered["sessions"]
+                if (
+                    item["feature"] == "intention"
+                    and not item["emitted_valid_frontmatter"]
+                )
+            )
+            session["emitted_valid_frontmatter"] = True
+            tampered["by_feature"]["intention"]["emitted_sessions"] += 1
+            tampered["by_feature"]["intention"]["adoption_rate"] = 4 / 6
+            tampered["emitted_sessions"] += 1
+            tampered["adoption_rate"] = 7 / 12
+            measurement_paths[0].write_text(
+                json.dumps(tampered) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "canonically match",
+            ):
+                aggregate_adoption_measurements(
+                    measurement_paths,
+                    expected_manifest_sha256="b" * 64,
+                    expected_case_ids=expected_case_ids,
+                    expected_draws=expected_draws,
+                )
 
     def test_feature_flag_preflight_is_explicit_and_fail_closed(self):
         self.assertEqual(
@@ -345,6 +986,9 @@ class AgentWorkEvalTests(unittest.TestCase):
                 "model": "gpt-test",
                 "service_protocol": "simple",
                 "manifest_sha256": "b" * 64,
+                "experiment_parameters": {
+                    "service_retrieval_modes": ["exact", "lexical"],
+                },
             }
             ensure_run_binding(root, resume=False, **binding)
             ensure_run_binding(root, resume=True, **binding)
@@ -353,6 +997,17 @@ class AgentWorkEvalTests(unittest.TestCase):
                     root,
                     resume=True,
                     **{**binding, "experiment_arm": "flag-off"},
+                )
+            with self.assertRaisesRegex(ValueError, "immutable experiment binding"):
+                ensure_run_binding(
+                    root,
+                    resume=True,
+                    **{
+                        **binding,
+                        "experiment_parameters": {
+                            "service_retrieval_modes": ["exact"],
+                        },
+                    },
                 )
 
     def test_transition_case_selection_is_exact_and_ordered(self):
@@ -495,6 +1150,9 @@ class AgentWorkEvalTests(unittest.TestCase):
                 manifest_sha256="b" * 64,
                 schema_sha256="c" * 64,
                 harness_sha256="d" * 64,
+                experiment_parameters={
+                    "service_retrieval_modes": ["exact", "lexical"],
+                },
             )
         self.assertEqual(ledger["schema"], "straylight-eval-run-ledger@v1")
         self.assertEqual(ledger["source"], source)
@@ -502,6 +1160,12 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertEqual(
             ledger["codex"]["auth_checked_at"],
             "2026-07-27T12:00:00-07:00",
+        )
+        self.assertEqual(
+            ledger["configuration"]["experiment_parameters"][
+                "service_retrieval_modes"
+            ],
+            ["exact", "lexical"],
         )
 
     def test_filesystem_sidecar_prompt_and_checkpoint_accounting(self):
@@ -533,6 +1197,237 @@ class AgentWorkEvalTests(unittest.TestCase):
             attach_workspace_metrics(record, run_dir)
             self.assertEqual(record["persisted_checkpoint"], checkpoint)
             self.assertEqual(record["sidecar_checkpoint"], checkpoint)
+            self.assertEqual(
+                record["response_character_metrics"],
+                {
+                    "schema": (
+                        "straylight-agent-response-character-metrics@v1"
+                    ),
+                    "service_result_chars": 0,
+                    "service_source_text_chars": 0,
+                    "service_metadata_chars": 0,
+                    "service_replay_weighted_chars": 0,
+                    "model_visible_tool_output_chars": 123,
+                },
+            )
+
+    def test_native_response_character_metrics_are_canonical(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            (run_dir / "native-session.json").write_text(
+                json.dumps({
+                    "operations": [
+                        {
+                            "operation": "open",
+                            "result_chars": 100,
+                            "source_text_chars": 70,
+                            "metadata_chars": 30,
+                            "elapsed_ms": 2.5,
+                            "http_status": 200,
+                        },
+                        {
+                            "operation": "read",
+                            "result_chars": 40,
+                            "source_text_chars": 25,
+                            "metadata_chars": 15,
+                            "elapsed_ms": 1.0,
+                            "http_status": 200,
+                        },
+                    ],
+                    "checkpoint": {"objective": "Preserve progress"},
+                })
+                + "\n",
+                encoding="utf-8",
+            )
+            record = {
+                "condition": "service_api",
+                "events": {"command_output_chars": 180},
+                "model_visible_tool_output_chars": 180,
+            }
+            attach_workspace_metrics(record, run_dir)
+            self.assertTrue(record["service_accounting_valid"])
+            self.assertEqual(
+                record["response_character_metrics"],
+                {
+                    "schema": (
+                        "straylight-agent-response-character-metrics@v1"
+                    ),
+                    "service_result_chars": 140,
+                    "service_source_text_chars": 95,
+                    "service_metadata_chars": 45,
+                    "service_replay_weighted_chars": 240,
+                    "model_visible_tool_output_chars": 180,
+                },
+            )
+
+    def test_native_accounting_retains_local_failure_and_rejects_fake_http(self):
+        local_failure = {
+            "operation": "failed:checkpoint",
+            "result_chars": 30,
+            "source_text_chars": 0,
+            "metadata_chars": 30,
+            "elapsed_ms": 0,
+            "http_status": 0,
+            "service_status": "invalid_request",
+        }
+        success = {
+            "operation": "checkpoint",
+            "result_chars": 50,
+            "source_text_chars": 10,
+            "metadata_chars": 40,
+            "elapsed_ms": 4.0,
+            "http_status": 200,
+        }
+        self.assertEqual(
+            validate_native_service_accounting({
+                "operations": [local_failure, success],
+            }),
+            [local_failure, success],
+        )
+        ordinary_zero = {**local_failure, "operation": "open"}
+        with self.assertRaisesRegex(ValueError, "invalid http_status"):
+            validate_native_service_accounting({
+                "operations": [ordinary_zero],
+            })
+        server_failure = {
+            **local_failure,
+            "operation": "failed:open",
+            "http_status": 503,
+            "service_status": "unavailable",
+        }
+        with self.assertRaisesRegex(ValueError, "invalid http_status"):
+            validate_native_service_accounting({
+                "operations": [server_failure],
+            })
+
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            (run_dir / "native-session.json").write_text(
+                json.dumps({"operations": [local_failure, success]}) + "\n",
+                encoding="utf-8",
+            )
+            record = {
+                "condition": "service_api",
+                "events": {"command_output_chars": 80},
+            }
+            attach_workspace_metrics(record, run_dir)
+            self.assertTrue(record["service_accounting_valid"])
+            self.assertEqual(record["service_operations"], [
+                local_failure,
+                success,
+            ])
+            self.assertEqual(
+                record["local_cli_failures"],
+                {
+                    "schema": (
+                        "straylight-local-cli-failure-summary@v1"
+                    ),
+                    "count": 1,
+                    "operation_counts": {
+                        "failed:checkpoint": 1,
+                    },
+                    "result_chars": 30,
+                    "source_text_chars": 0,
+                    "metadata_chars": 30,
+                    "operations": [local_failure],
+                },
+            )
+            self.assertEqual(record["service_calls"], 1)
+            self.assertEqual(record["service_http_calls"], 1)
+            self.assertEqual(record["service_result_chars"], 50)
+            self.assertEqual(record["service_source_text_chars"], 10)
+            self.assertEqual(record["service_metadata_chars"], 40)
+            self.assertEqual(record["service_replay_weighted_chars"], 50)
+            self.assertEqual(record["service_latency_ms"], 4.0)
+            self.assertEqual(record["workspace_result_chars"], 50)
+            self.assertEqual(
+                record["response_character_metrics"],
+                {
+                    "schema": (
+                        "straylight-agent-response-character-metrics@v1"
+                    ),
+                    "service_result_chars": 50,
+                    "service_source_text_chars": 10,
+                    "service_metadata_chars": 40,
+                    "service_replay_weighted_chars": 50,
+                    "model_visible_tool_output_chars": 80,
+                },
+            )
+
+            (run_dir / "native-session.json").write_text(
+                json.dumps({"operations": [local_failure]}) + "\n",
+                encoding="utf-8",
+            )
+            failed_record = {
+                "condition": "service_api",
+                "events": {"command_output_chars": 30},
+            }
+            attach_workspace_metrics(failed_record, run_dir)
+            self.assertFalse(failed_record["service_accounting_valid"])
+            self.assertEqual(
+                failed_record["local_cli_failures"]["operations"],
+                [local_failure],
+            )
+            self.assertEqual(failed_record["service_calls"], 0)
+            self.assertEqual(failed_record["service_result_chars"], 0)
+            self.assertEqual(
+                failed_record["response_character_metrics"][
+                    "model_visible_tool_output_chars"
+                ],
+                30,
+            )
+
+    def test_service_record_rejects_missing_or_uncontracted_zero_accounting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            record = {
+                "condition": "service_api",
+                "events": {"command_output_chars": 0},
+            }
+            attach_workspace_metrics(record, run_dir)
+            self.assertFalse(record["service_accounting_valid"])
+            self.assertIn("native-session.json is missing", record["error"])
+
+            (run_dir / "native-session.json").write_text(
+                json.dumps({"operations": []}) + "\n",
+                encoding="utf-8",
+            )
+            record = {
+                "condition": "service_api",
+                "events": {"command_output_chars": 0},
+            }
+            attach_workspace_metrics(record, run_dir)
+            self.assertFalse(record["service_accounting_valid"])
+            self.assertIn("zero service calls", record["error"])
+
+    def test_response_character_metrics_survive_invalid_native_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            (run_dir / "native-session.json").write_text(
+                "{invalid",
+                encoding="utf-8",
+            )
+            record = {
+                "condition": "service_api",
+                "events": {"command_output_chars": 19},
+            }
+            attach_workspace_metrics(record, run_dir)
+            self.assertIsNotNone(record["workspace_state_error"])
+            self.assertFalse(record["service_accounting_valid"])
+            self.assertIn(
+                "Invalid native service accounting",
+                record["error"],
+            )
+            self.assertEqual(
+                record["response_character_metrics"]["schema"],
+                "straylight-agent-response-character-metrics@v1",
+            )
+            self.assertEqual(
+                record["response_character_metrics"][
+                    "model_visible_tool_output_chars"
+                ],
+                19,
+            )
 
     def test_filesystem_sidecar_is_checkpoint_eligible_for_read_only_cases(self):
         manifest = {
@@ -613,6 +1508,35 @@ class AgentWorkEvalTests(unittest.TestCase):
         self.assertIn("exactly from authoritative evidence", service_prompt)
         self.assertIn("Build a facet checklist", service_prompt)
         self.assertIn("repeat a fact when it is needed in more than one slot", service_prompt)
+
+    def test_service_prompt_has_shell_safe_checkpoint_contract(self):
+        case = self.manifest["cases"][0]
+        invocation = (
+            "`./memory checkpoint "
+            "'{\"state\":{\"objective\":\"...\",\"current_state\":[],"
+            "\"decisions\":[],\"open_questions\":[],\"next_actions\":[],"
+            "\"artifacts\":[]},\"source_refs\":[\"exact/source/path\"]}'`"
+        )
+        for protocol in ("simple", "legacy"):
+            prompt = render_prompt(case, "service_api", protocol)
+            self.assertEqual(prompt.count(invocation), 1)
+            self.assertIn(
+                "Pass the JSON directly as the single-quoted shell literal",
+                prompt,
+            )
+            self.assertIn(
+                r"encode any apostrophe inside a JSON string as `\u0027`",
+                prompt,
+            )
+            for forbidden_shape in (
+                "Do not use raw prose",
+                "`--text`",
+                "stdin or a pipe",
+                "`--json-stdin`",
+                "shell-variable indirection",
+                "including an unset variable",
+            ):
+                self.assertIn(forbidden_shape, prompt)
 
     def test_e02_identifier_subset_is_frozen_at_five_cases_twenty_claims(self):
         full = json.loads(

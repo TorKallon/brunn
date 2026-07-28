@@ -42,8 +42,7 @@
     "recent-aether-gmail-actions": ["Intentions/Gmail ambiguous payment.md"],
     "recent-aether-morning-brief": ["Intentions/Morning briefing delivery receipt.md"],
     "recent-cross-agent-intention": ["Intentions/OAuth scope review.md"],
-    "recent-intention-expiry-negative": ["Intentions/Overdue renewal inspection.md"],
-    "coord-deadline-readiness": ["Intentions/Overdue renewal inspection.md"]
+    "recent-intention-expiry-negative": ["Intentions/Overdue renewal inspection.md"]
   },
   "fixed_pack_chars": 22000,
   "fixed_pack_chunks": 18,

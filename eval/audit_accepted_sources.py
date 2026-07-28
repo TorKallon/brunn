@@ -8,12 +8,18 @@ import json
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 try:
-    from .aggregate_draws import load_draw
+    from .aggregate_draws import (
+        load_draw,
+        validate_service_provenance_pairing,
+    )
 except ImportError:
-    from aggregate_draws import load_draw
+    from aggregate_draws import (
+        load_draw,
+        validate_service_provenance_pairing,
+    )
 
 
 SCHEMA = "straylight-accepted-source-context-audit@v1"
@@ -189,6 +195,10 @@ def _claim_rows(
         "suite": artifact["suite"],
         "source_revision": artifact["source_revision"],
         "grading_revision": artifact["grading_revision"],
+        "service_retrieval_modes": artifact["service_retrieval_modes"],
+        "service_image_provenance": artifact["service_image_provenance"],
+        "service_arms": artifact["service_arms"],
+        "service_provenance": artifact["service_provenance"],
     }, rows
 
 
@@ -201,7 +211,13 @@ def _rate(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def audit(paths: Sequence[Path]) -> dict[str, Any]:
+def audit(
+    paths: Sequence[Path],
+    *,
+    expected_arm_retrieval_modes: (
+        Sequence[str] | Mapping[str, Sequence[str]] | None
+    ) = None,
+) -> dict[str, Any]:
     if not paths:
         raise ValueError("at least one result artifact is required")
     artifacts = []
@@ -221,6 +237,11 @@ def audit(paths: Sequence[Path]) -> dict[str, Any]:
         )
         artifacts.append(artifact)
         rows.extend(artifact_rows)
+    service_provenance = validate_service_provenance_pairing(
+        artifacts,
+        expected_arm_retrieval_modes,
+        definitive=True,
+    )
     revisions = {artifact["source_revision"] for artifact in artifacts}
     grading_revisions = {artifact["grading_revision"] for artifact in artifacts}
     if len(revisions) != 1 or len(grading_revisions) != 1:
@@ -236,6 +257,7 @@ def audit(paths: Sequence[Path]) -> dict[str, Any]:
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "source_revision": next(iter(revisions)),
         "grading_revision": next(iter(grading_revisions)),
+        "service_provenance": service_provenance,
         "input_artifacts": artifacts,
         "summary": {
             "all_claims": _rate(rows),
@@ -269,8 +291,20 @@ def main() -> int:
     )
     parser.add_argument("inputs", nargs="+", type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument(
+        "--expected-arm-retrieval-modes",
+        action="append",
+        metavar="ARM=MODE,...",
+        help=(
+            "declare exact modes for one service-backed arm; repeat for every "
+            "arm in the audit"
+        ),
+    )
     args = parser.parse_args()
-    result = audit(args.inputs)
+    result = audit(
+        args.inputs,
+        expected_arm_retrieval_modes=args.expected_arm_retrieval_modes,
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({

@@ -11,7 +11,7 @@ import re
 import statistics
 import subprocess
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Sequence
@@ -61,9 +61,29 @@ REASONING_BILLING_POLICY = {
     "api_fallback": "forbidden",
 }
 RUN_LEDGER_SCHEMA = "straylight-eval-run-ledger@v1"
+SERVICE_IMAGE_FINGERPRINT_SCHEMA = (
+    "straylight-service-image-fingerprint@v1"
+)
+SERVICE_IMAGE_PROVENANCE_SCHEMA = (
+    "straylight-service-image-provenance@v1"
+)
+RESPONSE_CHARACTER_METRICS_SCHEMA = (
+    "straylight-agent-response-character-metrics@v1"
+)
+LOCAL_CLI_FAILURE_SUMMARY_SCHEMA = (
+    "straylight-local-cli-failure-summary@v1"
+)
+CANONICAL_SERVICE_CHECKPOINT_INVOCATION = (
+    "`./memory checkpoint "
+    "'{\"state\":{\"objective\":\"...\",\"current_state\":[],"
+    "\"decisions\":[],\"open_questions\":[],\"next_actions\":[],"
+    "\"artifacts\":[]},\"source_refs\":[\"exact/source/path\"]}'`"
+)
 SIDECAR_CHECKPOINT_RELATIVE_PATH = Path("sidecar") / "checkpoint.json"
 RUN_BINDING_STATE = ".experiment-run-binding.json"
 EXPERIMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+DOCKER_IMAGE_ID_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 BOOLEAN_RUNTIME_FEATURES = {
     "allow_degraded_embeddings",
     "embed_cache",
@@ -97,43 +117,12 @@ SERVICE_BOOLEAN_FEATURE_FLAGS = frozenset(BOOLEAN_RUNTIME_FEATURES)
 
 
 def evaluation_source_fingerprint() -> dict[str, Any]:
-    def command_output(command: list[str]) -> str | None:
-        completed = subprocess.run(
-            command,
-            cwd=PROJECT_ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            return None
-        value = completed.stdout.strip()
-        return value or None
-
-    revision = command_output(["git", "rev-parse", "HEAD"])
-    tracked_clean = subprocess.run(
-        ["git", "diff", "--quiet", "HEAD", "--"],
-        cwd=PROJECT_ROOT,
-        check=False,
-    ).returncode == 0
-    untracked = command_output([
-        "git",
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-    ])
-    untracked_source = [
-        path
-        for path in (untracked or "").splitlines()
-        if not path.startswith(("results/", "runs/"))
-    ]
+    source = git_source_fingerprint()
     return {
-        "source_revision": revision,
-        "tracked_source_clean": tracked_clean,
-        "untracked_source_files": untracked_source,
-        "reproducible_source": bool(
-            revision and tracked_clean and not untracked_source
-        ),
+        "source_revision": source["revision"],
+        "tracked_source_clean": source["tracked_source_clean"],
+        "untracked_source_files": source["untracked_source_files"],
+        "reproducible_source": source["clean"],
     }
 
 
@@ -304,34 +293,51 @@ def require_codex_subscription(codex: Path) -> dict[str, str]:
 
 
 def git_source_fingerprint(repository: Path = PROJECT_ROOT) -> dict[str, Any]:
-    def output(command: list[str]) -> str | None:
-        completed = subprocess.run(
-            command,
-            cwd=repository,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            return None
-        rendered = completed.stdout.strip()
-        return rendered or None
+    def run(command: list[str]) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(
+                command,
+                cwd=repository,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError(
+                f"could not capture git source provenance: {exc}"
+            ) from exc
 
-    revision = output(["git", "rev-parse", "HEAD"])
-    tracked = subprocess.run(
-        ["git", "diff", "--quiet", "HEAD", "--"],
-        cwd=repository,
-        check=False,
-    )
-    untracked = output([
+    revision_result = run(["git", "rev-parse", "HEAD"])
+    revision = revision_result.stdout.strip()
+    if revision_result.returncode != 0 or not revision:
+        detail = revision_result.stderr.strip() or "empty revision"
+        raise ValueError(
+            f"could not capture git source revision: {detail}"
+        )
+
+    tracked = run(["git", "diff", "--quiet", "HEAD", "--"])
+    if tracked.returncode not in {0, 1}:
+        detail = tracked.stderr.strip() or "git diff failed"
+        raise ValueError(
+            f"could not capture tracked source state: {detail}"
+        )
+
+    untracked_result = run([
         "git",
         "ls-files",
         "--others",
         "--exclude-standard",
     ])
+    if untracked_result.returncode != 0:
+        detail = untracked_result.stderr.strip() or "git ls-files failed"
+        raise ValueError(
+            f"could not capture untracked source state: {detail}"
+        )
+    untracked = untracked_result.stdout.strip()
     untracked_source_files = [
         path
-        for path in (untracked or "").splitlines()
+        for path in untracked.splitlines()
         if not path.startswith(("results/", "runs/"))
     ]
     clean = bool(
@@ -347,6 +353,129 @@ def git_source_fingerprint(repository: Path = PROJECT_ROOT) -> dict[str, Any]:
     }
 
 
+def capture_service_image_fingerprint(
+    api_container: str,
+    *,
+    source_revision: str,
+    expected_build_revision: str,
+) -> dict[str, Any]:
+    if not isinstance(api_container, str) or not api_container.strip():
+        raise ValueError("--api-container must identify one running container")
+    if not isinstance(source_revision, str) or not source_revision:
+        raise ValueError("service image provenance requires a source revision")
+    if (
+        not isinstance(expected_build_revision, str)
+        or not expected_build_revision
+    ):
+        raise ValueError(
+            "service image provenance requires --expect-build-revision"
+        )
+
+    def inspect_value(template: str, field: str) -> str:
+        completed = subprocess.run(
+            [
+                "docker",
+                "inspect",
+                f"--format={template}",
+                api_container,
+            ],
+            cwd=PROJECT_ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        value = completed.stdout.strip()
+        if (
+            completed.returncode != 0
+            or not value
+            or value in {"<no value>", "null"}
+        ):
+            detail = completed.stderr.strip() or "empty inspect result"
+            raise ValueError(
+                f"could not inspect service container {field}: {detail}"
+            )
+        return value
+
+    container_id = inspect_value("{{.Id}}", "container ID")
+    started_at = inspect_value("{{.State.StartedAt}}", "start time")
+    running = inspect_value("{{.State.Running}}", "running state")
+    image_id = inspect_value("{{.Image}}", "image ID")
+    image_revision = inspect_value(
+        (
+            '{{index .Config.Labels '
+            '"org.opencontainers.image.revision"}}'
+        ),
+        "image revision label",
+    )
+    if running != "true":
+        raise ValueError(
+            f"service container {api_container} is not running"
+        )
+    if image_revision != source_revision:
+        raise ValueError(
+            "service image revision does not match source revision: "
+            f"{image_revision} != {source_revision}"
+        )
+    if image_revision != expected_build_revision:
+        raise ValueError(
+            "service image revision does not match expected build revision: "
+            f"{image_revision} != {expected_build_revision}"
+        )
+    return {
+        "schema": SERVICE_IMAGE_FINGERPRINT_SCHEMA,
+        "api_container": api_container,
+        "api_container_id": container_id,
+        "api_container_started_at": started_at,
+        "api_container_running": True,
+        "api_image_id": image_id,
+        "api_image_revision": image_revision,
+    }
+
+
+def stable_service_image_provenance(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> dict[str, Any]:
+    required_fields = (
+        "schema",
+        "api_container",
+        "api_container_id",
+        "api_container_started_at",
+        "api_container_running",
+        "api_image_id",
+        "api_image_revision",
+    )
+    malformed = [
+        field
+        for field in required_fields
+        if field not in before or field not in after
+    ]
+    if malformed:
+        raise ValueError(
+            f"service image fingerprint is incomplete: {malformed}"
+        )
+    if (
+        before.get("schema") != SERVICE_IMAGE_FINGERPRINT_SCHEMA
+        or after.get("schema") != SERVICE_IMAGE_FINGERPRINT_SCHEMA
+    ):
+        raise ValueError("service image fingerprint schema is invalid")
+    drift = {
+        field: {"before": before.get(field), "after": after.get(field)}
+        for field in required_fields
+        if before.get(field) != after.get(field)
+    }
+    if drift:
+        raise ValueError(
+            f"service container or image drifted during the run: {drift}"
+        )
+    return {
+        "schema": SERVICE_IMAGE_PROVENANCE_SCHEMA,
+        "stable": True,
+        "before": before,
+        "after": after,
+    }
+
+
 def canonical_json_sha256(value: Any) -> str:
     rendered = json.dumps(
         value,
@@ -355,6 +484,435 @@ def canonical_json_sha256(value: Any) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
+def is_local_cli_failure(operation: dict[str, Any]) -> bool:
+    http_status = operation.get("http_status")
+    return bool(
+        type(http_status) is int
+        and http_status == 0
+        and str(operation.get("operation", "")).startswith("failed:")
+    )
+
+
+def summarize_local_cli_failures(
+    operations: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    failures = [
+        operation
+        for operation in operations
+        if is_local_cli_failure(operation)
+    ]
+    operation_counts = Counter(
+        str(operation["operation"])
+        for operation in failures
+    )
+    return {
+        "schema": LOCAL_CLI_FAILURE_SUMMARY_SCHEMA,
+        "count": len(failures),
+        "operation_counts": dict(sorted(operation_counts.items())),
+        "result_chars": sum(
+            int(operation["result_chars"])
+            for operation in failures
+        ),
+        "source_text_chars": sum(
+            int(operation["source_text_chars"])
+            for operation in failures
+        ),
+        "metadata_chars": sum(
+            int(operation["metadata_chars"])
+            for operation in failures
+        ),
+        "operations": [dict(operation) for operation in failures],
+    }
+
+
+def summarize_service_accounting(
+    operations: Sequence[dict[str, Any]],
+) -> dict[str, int | float]:
+    service_operations = [
+        operation
+        for operation in operations
+        if not is_local_cli_failure(operation)
+    ]
+    return {
+        "service_calls": len(service_operations),
+        "service_http_calls": sum(
+            int(operation.get("http_calls", 1))
+            for operation in service_operations
+        ),
+        "service_binary_bytes": sum(
+            int(operation.get("binary_bytes", 0))
+            for operation in service_operations
+        ),
+        "service_result_chars": sum(
+            int(operation.get("result_chars", 0))
+            for operation in service_operations
+        ),
+        "service_source_text_chars": sum(
+            int(operation.get("source_text_chars", 0))
+            for operation in service_operations
+        ),
+        "service_metadata_chars": sum(
+            int(operation.get("metadata_chars", 0))
+            for operation in service_operations
+        ),
+        "service_replay_weighted_chars": sum(
+            int(operation.get("result_chars", 0))
+            * (len(service_operations) - index)
+            for index, operation in enumerate(service_operations)
+        ),
+        "service_latency_ms": round(
+            sum(
+                float(operation.get("elapsed_ms", 0))
+                for operation in service_operations
+            ),
+            3,
+        ),
+    }
+
+
+def validate_definitive_native_failures(
+    case: dict[str, Any],
+    record: dict[str, Any],
+    operations: Sequence[dict[str, Any]],
+) -> None:
+    expected_summary = summarize_local_cli_failures(operations)
+    if record.get("local_cli_failures") != expected_summary:
+        raise ValueError(
+            f"definitive service case {case.get('id')} has a missing or "
+            "inconsistent local_cli_failures summary"
+        )
+
+    for index, operation in enumerate(operations):
+        name = str(operation["operation"])
+        http_status = int(operation["http_status"])
+        if is_local_cli_failure(operation):
+            recovered_operation = name.removeprefix("failed:")
+            recovered = any(
+                later.get("operation") == recovered_operation
+                and type(later.get("http_status")) is int
+                and 200 <= later["http_status"] <= 399
+                and int(later.get("http_calls", 1)) >= 1
+                for later in operations[index + 1:]
+            )
+            if not recovered_operation or not recovered:
+                raise ValueError(
+                    f"definitive service case {case.get('id')} contains "
+                    f"unrecovered local CLI failure {name}"
+                )
+            continue
+        if (
+            http_status >= 400
+            or name.startswith(("failed:", "denied:"))
+        ):
+            raise ValueError(
+                f"definitive service case {case.get('id')} contains "
+                "a measured failed or denied native operation"
+            )
+
+
+def definitive_service_run_provenance(
+    run: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(run, dict):
+        raise ValueError("definitive service artifact must be an object")
+    run_id = run.get("run_id")
+    experiment_arm = run.get("experiment_arm")
+    paired_draw_id = run.get("paired_draw_id")
+    if (
+        not isinstance(run_id, str)
+        or not run_id
+        or not isinstance(experiment_arm, str)
+        or not EXPERIMENT_ID_PATTERN.fullmatch(experiment_arm)
+        or not isinstance(paired_draw_id, str)
+        or not EXPERIMENT_ID_PATTERN.fullmatch(paired_draw_id)
+    ):
+        raise ValueError(
+            "definitive service artifact lacks explicit arm/draw identity"
+        )
+
+    manifest = run.get("manifest")
+    if not isinstance(manifest, dict):
+        raise ValueError("definitive service artifact lacks its manifest")
+    benchmark_version = run.get("benchmark_version")
+    if (
+        not isinstance(benchmark_version, str)
+        or not benchmark_version
+        or manifest.get("benchmark_version") != benchmark_version
+        or manifest.get("conditions") != ["service_api"]
+    ):
+        raise ValueError(
+            "definitive service artifact has an invalid benchmark or "
+            "condition selection"
+        )
+    raw_cases = manifest.get("cases")
+    if not isinstance(raw_cases, list) or not raw_cases:
+        raise ValueError(
+            "definitive service artifact lacks selected manifest cases"
+        )
+    cases_by_id = {
+        case.get("id"): case
+        for case in raw_cases
+        if isinstance(case, dict)
+        and isinstance(case.get("id"), str)
+        and case["id"]
+    }
+    if len(cases_by_id) != len(raw_cases):
+        raise ValueError(
+            "definitive service artifact has malformed or duplicate "
+            "manifest cases"
+        )
+    if run.get("service_protocol") != "simple":
+        raise ValueError(
+            "definitive service artifact must use the simple protocol"
+        )
+    retrieval_modes = run.get("service_retrieval_modes")
+    if retrieval_modes != ["exact", "lexical"]:
+        raise ValueError(
+            "definitive non-semantic service artifact must bind exactly "
+            "exact and lexical retrieval"
+        )
+
+    billing = run.get("reasoning_billing")
+    if (
+        not isinstance(billing, dict)
+        or billing.get("route") != "chatgpt_subscription"
+        or billing.get("api_fallback") != "forbidden"
+        or billing.get("auth_status") != "Logged in using ChatGPT"
+    ):
+        raise ValueError(
+            "definitive service artifact lacks verified subscription reasoning"
+        )
+
+    implementation = run.get("implementation_fingerprint")
+    ledger = run.get("run_ledger")
+    ledger_source = ledger.get("source") if isinstance(ledger, dict) else None
+    if (
+        not isinstance(implementation, dict)
+        or implementation.get("reproducible_source") is not True
+        or implementation.get("tracked_source_clean") is not True
+        or implementation.get("untracked_source_files") != []
+        or not isinstance(implementation.get("source_revision"), str)
+        or not implementation["source_revision"]
+        or not isinstance(ledger_source, dict)
+        or ledger_source.get("clean") is not True
+        or ledger_source.get("tracked_source_clean") is not True
+        or ledger_source.get("untracked_source_files") != []
+        or ledger_source.get("revision")
+        != implementation["source_revision"]
+    ):
+        raise ValueError(
+            "definitive service artifact lacks clean, stable source provenance"
+        )
+    source_revision = implementation["source_revision"]
+
+    if (
+        not isinstance(ledger, dict)
+        or ledger.get("schema") != RUN_LEDGER_SCHEMA
+        or ledger.get("run_id") != run_id
+    ):
+        raise ValueError("definitive service artifact has an invalid run ledger")
+    configuration = ledger.get("configuration")
+    artifacts = ledger.get("artifacts")
+    experiment_parameters = run.get("experiment_parameters")
+    if (
+        not isinstance(configuration, dict)
+        or configuration.get("conditions") != ["service_api"]
+        or configuration.get("service_protocol") != "simple"
+        or configuration.get("experiment_arm") != experiment_arm
+        or configuration.get("paired_draw_id") != paired_draw_id
+        or configuration.get("experiment_parameters")
+        != experiment_parameters
+        or not isinstance(experiment_parameters, dict)
+        or experiment_parameters.get("service_retrieval_modes")
+        != retrieval_modes
+        or not isinstance(artifacts, dict)
+    ):
+        raise ValueError(
+            "definitive service artifact ledger configuration disagrees "
+            "with the run"
+        )
+    for field in ("manifest_sha256", "schema_sha256", "harness_sha256"):
+        value = run.get(field)
+        if (
+            not isinstance(value, str)
+            or not SHA256_PATTERN.fullmatch(value)
+            or artifacts.get(field) != value
+        ):
+            raise ValueError(
+                f"definitive service artifact has invalid {field} provenance"
+            )
+
+    runtime_snapshot = run.get("service_runtime_snapshot")
+    expected_features = run.get("expected_runtime_features")
+    expected_build_revision = run.get("expected_build_revision")
+    if (
+        not isinstance(runtime_snapshot, dict)
+        or runtime_snapshot.get("schema")
+        != "straylight-service-runtime-snapshot@v1"
+        or runtime_snapshot.get("status") != "ready"
+        or not isinstance(runtime_snapshot.get("runtime_features"), dict)
+        or not isinstance(runtime_snapshot.get("embeddings"), dict)
+        or not isinstance(expected_features, dict)
+        or expected_build_revision != source_revision
+        or runtime_snapshot.get("build_revision") != source_revision
+        or configuration.get("expected_build_revision") != source_revision
+        or configuration.get("expected_runtime_features")
+        != expected_features
+    ):
+        raise ValueError(
+            "definitive service artifact lacks matching source/build/runtime "
+            "provenance"
+        )
+    runtime_features = runtime_snapshot["runtime_features"]
+    runtime_mismatches = {
+        name: {"expected": expected, "actual": runtime_features.get(name)}
+        for name, expected in expected_features.items()
+        if (
+            name not in runtime_features
+            or type(runtime_features[name]) is not type(expected)
+            or runtime_features[name] != expected
+        )
+    }
+    if runtime_mismatches:
+        raise ValueError(
+            "definitive service artifact runtime violates its expectations: "
+            f"{runtime_mismatches}"
+        )
+    if (
+        artifacts.get("runtime_snapshot_sha256")
+        != canonical_json_sha256(runtime_snapshot)
+    ):
+        raise ValueError(
+            "definitive service artifact ledger does not bind its runtime "
+            "snapshot"
+        )
+
+    image_provenance = run.get("service_image_provenance")
+    if (
+        not isinstance(image_provenance, dict)
+        or image_provenance.get("schema")
+        != SERVICE_IMAGE_PROVENANCE_SCHEMA
+        or image_provenance.get("stable") is not True
+        or not isinstance(image_provenance.get("before"), dict)
+        or not isinstance(image_provenance.get("after"), dict)
+    ):
+        raise ValueError(
+            "definitive service artifact lacks stable image provenance"
+        )
+    stable_service_image_provenance(
+        image_provenance["before"],
+        image_provenance["after"],
+    )
+    image = image_provenance["before"]
+    if (
+        image.get("api_container_running") is not True
+        or not isinstance(image.get("api_container_id"), str)
+        or not image["api_container_id"]
+        or not isinstance(image.get("api_container_started_at"), str)
+        or not image["api_container_started_at"]
+        or not isinstance(image.get("api_image_id"), str)
+        or not DOCKER_IMAGE_ID_PATTERN.fullmatch(image["api_image_id"])
+        or image.get("api_image_revision") != source_revision
+        or experiment_parameters.get("service_image_fingerprint") != image
+        or artifacts.get("service_image_provenance_sha256")
+        != canonical_json_sha256(image_provenance)
+    ):
+        raise ValueError(
+            "definitive service artifact image does not match its source, "
+            "binding, or ledger"
+        )
+
+    codex = ledger.get("codex")
+    if (
+        not isinstance(codex, dict)
+        or codex.get("auth_route") != billing["route"]
+        or codex.get("api_fallback") != billing["api_fallback"]
+        or codex.get("auth_status") != billing["auth_status"]
+    ):
+        raise ValueError(
+            "definitive service artifact run ledger lacks matching Codex auth"
+        )
+    records = run.get("records")
+    if not isinstance(records, list) or not records:
+        raise ValueError("definitive service artifact has no records")
+    seen_records: set[str] = set()
+    for record in records:
+        case_id = record.get("case_id") if isinstance(record, dict) else None
+        if (
+            not isinstance(record, dict)
+            or not isinstance(case_id, str)
+            or not case_id
+            or case_id not in cases_by_id
+            or case_id in seen_records
+            or record.get("condition") != "service_api"
+            or record.get("error")
+            or not isinstance(record.get("grade"), dict)
+            or record.get("service_accounting_valid") is not True
+        ):
+            raise ValueError(
+                "definitive service artifact has an incomplete, duplicate, "
+                "or invalid record"
+            )
+        seen_records.add(case_id)
+        operations = validate_native_service_accounting({
+            "operations": record.get("service_operations"),
+        })
+        validate_definitive_native_failures(
+            cases_by_id[case_id],
+            record,
+            operations,
+        )
+        expected_accounting = summarize_service_accounting(operations)
+        accounting_mismatches = {
+            field: {
+                "expected": expected,
+                "actual": record.get(field),
+            }
+            for field, expected in expected_accounting.items()
+            if (
+                type(record.get(field)) is not type(expected)
+                or record.get(field) != expected
+            )
+        }
+        if accounting_mismatches:
+            raise ValueError(
+                f"definitive service case {case_id} has inconsistent "
+                "local-failure-excluding service accounting: "
+                f"{accounting_mismatches}"
+            )
+    if seen_records != set(cases_by_id):
+        raise ValueError(
+            "definitive service artifact does not contain exactly one record "
+            "per selected manifest case"
+        )
+
+    return {
+        "schema": "straylight-definitive-service-run-provenance@v1",
+        "run_id": run_id,
+        "experiment_arm": experiment_arm,
+        "paired_draw_id": paired_draw_id,
+        "benchmark_version": benchmark_version,
+        "manifest_sha256": run["manifest_sha256"],
+        "schema_sha256": run["schema_sha256"],
+        "harness_sha256": run["harness_sha256"],
+        "source_revision": source_revision,
+        "build_revision": runtime_snapshot["build_revision"],
+        "api_image_id": image["api_image_id"],
+        "api_image_revision": image["api_image_revision"],
+        "service_image_provenance": image_provenance,
+        "runtime_snapshot": runtime_snapshot,
+        "runtime_snapshot_sha256": artifacts["runtime_snapshot_sha256"],
+        "runtime_features": runtime_features,
+        "expected_runtime_features": expected_features,
+        "service_retrieval_modes": retrieval_modes,
+        "reasoning_billing": {
+            "route": billing["route"],
+            "api_fallback": billing["api_fallback"],
+            "auth_status": billing["auth_status"],
+        },
+    }
 
 
 def validate_experiment_identity(
@@ -382,6 +940,55 @@ def validate_experiment_identity(
             "same-invocation controls already use condition names as arms"
         )
     return experiment_arm, paired_draw_id
+
+
+def resolve_service_retrieval_modes(
+    requested: Sequence[str] | None,
+    *,
+    conditions: Sequence[str],
+    service_protocol: str,
+    experiment_arm: str | None = None,
+    expected_runtime_features: dict[str, Any] | None = None,
+    e09_arm: str | None = None,
+    step_authorization: dict[str, Any] | None = None,
+) -> tuple[str, ...]:
+    modes = tuple(requested or ())
+    if len(modes) != len(set(modes)):
+        raise ValueError("--service-retrieval-modes must not contain duplicates")
+    if any(mode not in {"exact", "lexical", "semantic"} for mode in modes):
+        raise ValueError(
+            "--service-retrieval-modes must be a subset of "
+            "exact lexical semantic"
+        )
+    if modes and "service_api" not in conditions:
+        raise ValueError(
+            "--service-retrieval-modes requires the service_api condition"
+        )
+    if modes and service_protocol != "simple":
+        raise ValueError(
+            "--service-retrieval-modes requires --service-protocol simple"
+        )
+    e09_modes = enforced_retrieval_modes(
+        e09_arm,
+        step_authorization=step_authorization,
+    )
+    if modes and e09_modes and modes != e09_modes:
+        raise ValueError(
+            "--service-retrieval-modes conflicts with the selected E09 arm"
+        )
+    resolved = modes or e09_modes
+    if (
+        experiment_arm is not None
+        and "service_api" in conditions
+        and isinstance(expected_runtime_features, dict)
+        and expected_runtime_features.get("semantic_lane") is False
+        and resolved != ("exact", "lexical")
+    ):
+        raise ValueError(
+            "explicit semantic_lane=off service experiment arms require "
+            "--service-retrieval-modes exact lexical"
+        )
+    return resolved
 
 
 def ensure_run_binding(
@@ -445,6 +1052,7 @@ def build_run_ledger(
     expected_runtime_features: dict[str, Any] | None = None,
     expected_build_revision: str | None = None,
     experiment_parameters: dict[str, Any] | None = None,
+    service_image_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ledger = {
         "schema": RUN_LEDGER_SCHEMA,
@@ -479,6 +1087,10 @@ def build_run_ledger(
         ledger["artifacts"]["runtime_snapshot_sha256"] = canonical_json_sha256(
             runtime_snapshot
         )
+    if service_image_provenance is not None:
+        ledger["artifacts"][
+            "service_image_provenance_sha256"
+        ] = canonical_json_sha256(service_image_provenance)
     return ledger
 
 
@@ -777,8 +1389,11 @@ def render_prompt(
             "excerpt is a source lead, not proof that the displayed section is complete: if its path clearly owns an unresolved "
             "claim, read that exact path before searching globally again. A single read call can repeat `--path` or `--ref` to "
             "fetch several exact sources or ranges together. "
-            f"{service_compute_guidance}Before answering, persist one checkpoint through "
-            "./memory checkpoint. Keep the whole run to four service calls when the evidence permits. Do not browse or use "
+            f"{service_compute_guidance}Before answering, persist one checkpoint with this exact command shape: "
+            f"{CANONICAL_SERVICE_CHECKPOINT_INVOCATION}. Pass the JSON directly as the single-quoted shell literal shown; "
+            "encode any apostrophe inside a JSON string as `\\u0027` so it cannot terminate that literal. Do not use raw prose, "
+            "`--text`, stdin or a pipe, `--json-stdin`, or shell-variable indirection, including an unset variable. "
+            "Keep the whole run to four service calls when the evidence permits. Do not browse or use "
             "filesystem search outside this service surface."
         )
     elif case.get("workspace_access") == "read_only":
@@ -1126,8 +1741,145 @@ def grade_answer(case: dict, answer: dict, corpus_paths: set[str]) -> dict:
     return result
 
 
+def attach_response_character_metrics(record: dict) -> None:
+    events = record.get("events")
+    event_chars = (
+        events.get("command_output_chars", 0)
+        if isinstance(events, dict)
+        else 0
+    )
+    record["response_character_metrics"] = {
+        "schema": RESPONSE_CHARACTER_METRICS_SCHEMA,
+        "service_result_chars": int(
+            record.get("service_result_chars", 0) or 0
+        ),
+        "service_source_text_chars": int(
+            record.get("service_source_text_chars", 0) or 0
+        ),
+        "service_metadata_chars": int(
+            record.get("service_metadata_chars", 0) or 0
+        ),
+        "service_replay_weighted_chars": int(
+            record.get("service_replay_weighted_chars", 0) or 0
+        ),
+        "model_visible_tool_output_chars": int(
+            record.get("model_visible_tool_output_chars", event_chars) or 0
+        ),
+    }
+
+
+def validate_native_service_accounting(
+    native: dict[str, Any],
+    *,
+    allow_zero_calls: bool = False,
+) -> list[dict[str, Any]]:
+    if not isinstance(native, dict):
+        raise ValueError("native-session state must be an object")
+    operations = native.get("operations")
+    if not isinstance(operations, list):
+        raise ValueError("native-session operations must be a list")
+    if not operations and not allow_zero_calls:
+        raise ValueError(
+            "native-session recorded zero service calls without an explicit "
+            "zero-call contract"
+        )
+    for index, operation in enumerate(operations):
+        if not isinstance(operation, dict):
+            raise ValueError(
+                f"native-session operation {index} must be an object"
+            )
+        name = operation.get("operation")
+        if not isinstance(name, str) or not name:
+            raise ValueError(
+                f"native-session operation {index} lacks an operation name"
+            )
+        for field in (
+            "result_chars",
+            "source_text_chars",
+            "metadata_chars",
+        ):
+            value = operation.get(field)
+            if type(value) is not int or value < 0:
+                raise ValueError(
+                    f"native-session operation {index} has invalid {field}"
+                )
+        if (
+            operation["source_text_chars"] + operation["metadata_chars"]
+            != operation["result_chars"]
+        ):
+            raise ValueError(
+                f"native-session operation {index} character accounting "
+                "does not sum to result_chars"
+            )
+        elapsed_ms = operation.get("elapsed_ms")
+        if (
+            isinstance(elapsed_ms, bool)
+            or not isinstance(elapsed_ms, (int, float))
+            or elapsed_ms < 0
+        ):
+            raise ValueError(
+                f"native-session operation {index} has invalid elapsed_ms"
+            )
+        http_status = operation.get("http_status")
+        local_failure = bool(
+            http_status == 0
+            and name.startswith("failed:")
+            and isinstance(operation.get("service_status"), str)
+            and operation["service_status"]
+        )
+        measured_client_failure = bool(
+            type(http_status) is int
+            and 400 <= http_status <= 499
+            and name.startswith(("failed:", "denied:"))
+            and isinstance(operation.get("service_status"), str)
+            and operation["service_status"]
+        )
+        if (
+            type(http_status) is not int
+            or (
+                not 100 <= http_status <= 399
+                and not local_failure
+                and not measured_client_failure
+            )
+        ):
+            raise ValueError(
+                f"native-session operation {index} has invalid http_status"
+            )
+        expected_minimum_http_calls = 0 if local_failure else 1
+        http_calls = operation.get(
+            "http_calls",
+            expected_minimum_http_calls,
+        )
+        if (
+            type(http_calls) is not int
+            or http_calls < expected_minimum_http_calls
+            or (local_failure and http_calls != 0)
+        ):
+            raise ValueError(
+                f"native-session operation {index} has invalid http_calls"
+            )
+    return operations
+
+
+def fail_service_accounting(
+    record: dict[str, Any],
+    message: str,
+) -> None:
+    rendered = f"Invalid native service accounting: {message}"
+    record["service_accounting_valid"] = False
+    record["service_accounting_error"] = rendered
+    if not record.get("error"):
+        record["error"] = rendered
+    grade = record.get("grade")
+    if isinstance(grade, dict):
+        grade["service_accounting_valid"] = False
+        grade["pass"] = False
+    attach_response_character_metrics(record)
+
+
 def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     record["service_operations"] = []
+    record["local_cli_failures"] = summarize_local_cli_failures([])
     record["service_calls"] = 0
     record["service_result_chars"] = 0
     record["service_source_text_chars"] = 0
@@ -1139,6 +1891,11 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     record["service_checkpoint"] = None
     record["service_session_id"] = None
     record["service_corpus_revision"] = None
+    record["service_accounting_valid"] = (
+        False if record.get("condition") == "service_api" else None
+    )
+    record["service_accounting_error"] = None
+    attach_response_character_metrics(record)
     session_path = run_dir / "workspace-session.json"
     record["workspace_operations"] = []
     record["workspace_result_chars"] = 0
@@ -1192,36 +1949,52 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
 
     native_path = run_dir / "native-session.json"
     if not native_path.exists():
+        if record.get("condition") == "service_api":
+            fail_service_accounting(
+                record,
+                "native-session.json is missing",
+            )
         return
     try:
         native = load_json(native_path)
     except (json.JSONDecodeError, OSError) as exc:
         record["workspace_state_error"] = str(exc)
+        if record.get("condition") == "service_api":
+            fail_service_accounting(record, str(exc))
         return
-    operations = native.get("operations", [])
+    try:
+        operations = validate_native_service_accounting(
+            native,
+            allow_zero_calls=bool(
+                record.get("allow_zero_service_calls") is True
+                and record.get("zero_service_call_contract")
+            ),
+        )
+    except ValueError as exc:
+        record["workspace_state_error"] = str(exc)
+        if record.get("condition") == "service_api":
+            fail_service_accounting(record, str(exc))
+        return
+    record["service_accounting_valid"] = True
     record["service_operations"] = operations
-    record["service_calls"] = len(operations)
-    record["service_http_calls"] = sum(
-        int(operation.get("http_calls", 1)) for operation in operations
+    record["local_cli_failures"] = summarize_local_cli_failures(
+        operations
     )
-    record["service_binary_bytes"] = sum(
-        int(operation.get("binary_bytes", 0)) for operation in operations
-    )
-    record["service_result_chars"] = sum(operation.get("result_chars", 0) for operation in operations)
-    record["service_source_text_chars"] = sum(
-        operation.get("source_text_chars", 0) for operation in operations
-    )
-    record["service_metadata_chars"] = sum(
-        operation.get("metadata_chars", 0) for operation in operations
-    )
-    record["service_replay_weighted_chars"] = sum(
-        operation.get("result_chars", 0) * (len(operations) - index)
-        for index, operation in enumerate(operations)
-    )
-    record["service_latency_ms"] = round(
-        sum(float(operation.get("elapsed_ms", 0)) for operation in operations),
-        3,
-    )
+    service_accounting = summarize_service_accounting(operations)
+    if (
+        service_accounting["service_calls"] == 0
+        and not (
+            record.get("allow_zero_service_calls") is True
+            and record.get("zero_service_call_contract")
+        )
+    ):
+        fail_service_accounting(
+            record,
+            "native-session recorded zero service calls without an explicit "
+            "zero-call contract",
+        )
+        return
+    record.update(service_accounting)
     record["service_checkpoint"] = native.get("checkpoint")
     record["service_session_id"] = native.get("session_id")
     record["service_corpus_revision"] = native.get("corpus_revision")
@@ -1229,6 +2002,7 @@ def attach_workspace_metrics(record: dict, run_dir: Path) -> None:
     record["workspace_result_chars"] = record["service_result_chars"]
     record["workspace_checkpoint"] = native.get("checkpoint")
     record["persisted_checkpoint"] = native.get("checkpoint")
+    attach_response_character_metrics(record)
 
 
 def load_existing_record(
@@ -2128,6 +2902,39 @@ async def run_all(args: argparse.Namespace) -> dict:
             "runtime/build expectations require the service_api condition"
         )
     source_fingerprint = evaluation_source_fingerprint()
+    if args.api_container and "service_api" not in selected_conditions:
+        raise ValueError("--api-container requires the service_api condition")
+    definitive_service_arm = bool(
+        experiment_arm is not None and "service_api" in selected_conditions
+    )
+    if definitive_service_arm:
+        if not args.api_container:
+            raise ValueError(
+                "explicit service_api experiment arms require --api-container"
+            )
+        if not args.expect_build_revision:
+            raise ValueError(
+                "explicit service_api experiment arms require "
+                "--expect-build-revision"
+            )
+        if not source_fingerprint["reproducible_source"]:
+            raise ValueError(
+                "explicit service_api experiment arms require clean source "
+                f"provenance: {source_fingerprint}"
+            )
+    if args.api_container and not args.expect_build_revision:
+        raise ValueError(
+            "--api-container requires --expect-build-revision"
+        )
+    service_image_before = (
+        capture_service_image_fingerprint(
+            args.api_container,
+            source_revision=str(source_fingerprint["source_revision"]),
+            expected_build_revision=args.expect_build_revision,
+        )
+        if args.api_container
+        else None
+    )
     manifest_sha256 = sha256_file(args.manifest)
     step_authorization: dict[str, Any] | None = None
     if args.e09_arm:
@@ -2215,12 +3022,23 @@ async def run_all(args: argparse.Namespace) -> dict:
                 "step-policy arguments require "
                 "--e09-arm deadline_cache_600"
             )
+    service_retrieval_modes = resolve_service_retrieval_modes(
+        args.service_retrieval_modes,
+        conditions=selected_conditions,
+        service_protocol=args.service_protocol,
+        experiment_arm=experiment_arm,
+        expected_runtime_features=expected_features,
+        e09_arm=args.e09_arm,
+        step_authorization=step_authorization,
+    )
     selected_model = args.model or manifest["model"]
     experiment_parameters = {
         "declared_feature_states": feature_states,
         "e09_arm": args.e09_arm,
         "e09_step_authorization": step_authorization,
         "run_tags": sorted(set(args.run_tag)),
+        "service_retrieval_modes": list(service_retrieval_modes),
+        "service_image_fingerprint": service_image_before,
     }
     ensure_run_binding(
         run_root,
@@ -2350,13 +3168,9 @@ async def run_all(args: argparse.Namespace) -> dict:
                     "STRAYLIGHT_API_URL": os.environ["STRAYLIGHT_API_URL"],
                     "STRAYLIGHT_EVAL_TOKEN": metadata["token"],
                 }
-                enforced_modes = enforced_retrieval_modes(
-                    args.e09_arm,
-                    step_authorization=step_authorization,
-                )
-                if enforced_modes:
+                if service_retrieval_modes:
                     environment["STRAYLIGHT_EVAL_RETRIEVAL_MODES"] = ",".join(
-                        enforced_modes
+                        service_retrieval_modes
                     )
             tasks.append(run_one(
                 semaphore,
@@ -2374,7 +3188,7 @@ async def run_all(args: argparse.Namespace) -> dict:
     completed = await asyncio.gather(*tasks, return_exceptions=True)
     for item in completed:
         if isinstance(item, Exception):
-            records.append({
+            failed_record = {
                 "case_id": "unknown",
                 "condition": "unknown",
                 "error": f"Unhandled run error: {item}",
@@ -2383,7 +3197,9 @@ async def run_all(args: argparse.Namespace) -> dict:
                 "fixed_context_chars": 0,
                 "workspace_result_chars": 0,
                 "events": {"events": 0, "commands": 0, "tokens": {}},
-            })
+            }
+            attach_response_character_metrics(failed_record)
+            records.append(failed_record)
         else:
             records.append(item)
     selected_manifest = dict(manifest)
@@ -2440,6 +3256,17 @@ async def run_all(args: argparse.Namespace) -> dict:
             "counter_delta": counter_delta,
             "rates": semantic_rates(counter_delta),
         }
+    service_image_provenance: dict[str, Any] | None = None
+    if service_image_before is not None:
+        service_image_after = capture_service_image_fingerprint(
+            args.api_container,
+            source_revision=str(source_fingerprint["source_revision"]),
+            expected_build_revision=args.expect_build_revision,
+        )
+        service_image_provenance = stable_service_image_provenance(
+            service_image_before,
+            service_image_after,
+        )
     run = {
         "benchmark_version": manifest["benchmark_version"],
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -2465,6 +3292,7 @@ async def run_all(args: argparse.Namespace) -> dict:
             for case_id, metadata in native_metadata.items()
         },
         "service_protocol": args.service_protocol,
+        "service_retrieval_modes": list(service_retrieval_modes),
         "declared_feature_states": feature_states,
         "run_tags": sorted(set(args.run_tag)),
         "experiment_parameters": experiment_parameters,
@@ -2479,6 +3307,7 @@ async def run_all(args: argparse.Namespace) -> dict:
         "expected_runtime_features": expected_features,
         "expected_build_revision": args.expect_build_revision,
         "service_runtime_snapshot": runtime_snapshot,
+        "service_image_provenance": service_image_provenance,
         "records": records,
     }
     run["run_ledger"] = build_run_ledger(
@@ -2496,26 +3325,78 @@ async def run_all(args: argparse.Namespace) -> dict:
         expected_runtime_features=expected_features,
         expected_build_revision=args.expect_build_revision,
         experiment_parameters=experiment_parameters,
+        service_image_provenance=service_image_provenance,
     )
     run["summary"] = summarize(selected_manifest, records)
     return run
 
 
-def measure_adoption(run: dict[str, Any]) -> dict[str, Any]:
+def measure_adoption(
+    run: dict[str, Any],
+    *,
+    source_artifact_path: str,
+    source_artifact_sha256: str,
+    expected_manifest_sha256: str,
+    expected_case_ids: Sequence[str],
+) -> dict[str, Any]:
+    provenance = definitive_service_run_provenance(run)
+    if provenance["experiment_arm"] != "e07-adoption":
+        raise ValueError(
+            "adoption measurement requires experiment arm e07-adoption"
+        )
+    if provenance["manifest_sha256"] != expected_manifest_sha256:
+        raise ValueError(
+            "adoption source artifact does not match the selected manifest"
+        )
+    if (
+        not isinstance(source_artifact_path, str)
+        or not source_artifact_path
+        or not SHA256_PATTERN.fullmatch(source_artifact_sha256)
+    ):
+        raise ValueError(
+            "adoption measurement requires source artifact path/hash provenance"
+        )
+
+    raw_cases = run.get("manifest", {}).get("cases")
+    if not isinstance(raw_cases, list):
+        raise ValueError("adoption source artifact has no selected cases")
     cases = {
         case["id"]: case
-        for case in run.get("manifest", {}).get("cases", [])
+        for case in raw_cases
         if isinstance(case, dict) and isinstance(case.get("id"), str)
     }
+    if (
+        len(cases) != len(raw_cases)
+        or list(cases) != list(expected_case_ids)
+    ):
+        raise ValueError(
+            "adoption source artifact case selection does not exactly match "
+            "the accepted manifest"
+        )
+    records = {
+        record["case_id"]: record
+        for record in run.get("records", [])
+        if isinstance(record, dict)
+        and isinstance(record.get("case_id"), str)
+    }
+    if set(records) != set(cases):
+        raise ValueError(
+            "adoption source artifact lacks exactly one record per case"
+        )
+
     sessions = []
-    for record in run.get("records", []):
-        if not isinstance(record, dict) or record.get("condition") != "service_api":
-            continue
-        case = cases.get(record.get("case_id"))
-        eligibility = case.get("adoption_eligibility") if case else None
+    for case_id, case in cases.items():
+        record = records[case_id]
+        eligibility = case.get("adoption_eligibility")
         if not isinstance(eligibility, dict):
-            continue
+            raise ValueError(
+                f"adoption case {case_id} lacks adoption eligibility"
+            )
         feature = eligibility.get("feature")
+        if feature not in {"supersession", "intention"}:
+            raise ValueError(
+                f"adoption case {case_id} has an invalid feature"
+            )
         authored = [
             {
                 "write_path": operation.get("write_path"),
@@ -2527,21 +3408,32 @@ def measure_adoption(run: dict[str, Any]) -> dict[str, Any]:
         ]
         if feature == "supersession":
             expected_path = eligibility.get("supersedes_path")
+            if not isinstance(expected_path, str) or not expected_path:
+                raise ValueError(
+                    f"adoption case {case_id} lacks supersedes_path"
+                )
             emitted = any(
-                expected_path in block["frontmatter"].get("supersedes", [])
-                for block in authored
-            )
-        elif feature == "intention":
-            emitted = any(
-                block["frontmatter"].get("kind") == "intention"
-                and block["frontmatter"].get("status") == "pending"
-                and bool(block["frontmatter"].get("trigger"))
+                isinstance(block["frontmatter"].get("supersedes"), list)
+                and expected_path
+                in block["frontmatter"]["supersedes"]
                 for block in authored
             )
         else:
-            emitted = False
+            emitted = any(
+                block["frontmatter"].get("kind") == "intention"
+                and block["frontmatter"].get("status") == "pending"
+                and isinstance(block["frontmatter"].get("trigger"), list)
+                and bool(block["frontmatter"]["trigger"])
+                and all(
+                    isinstance(term, str) and term
+                    for term in block["frontmatter"]["trigger"]
+                )
+                and isinstance(block["frontmatter"].get("due"), str)
+                and bool(block["frontmatter"]["due"])
+                for block in authored
+            )
         sessions.append({
-            "case_id": record.get("case_id"),
+            "case_id": case_id,
             "feature": feature,
             "eligible": True,
             "emitted_valid_frontmatter": emitted,
@@ -2564,16 +3456,398 @@ def measure_adoption(run: dict[str, Any]) -> dict[str, Any]:
                 emitted / len(feature_sessions) if feature_sessions else None
             ),
         }
+    if any(
+        by_feature[feature]["eligible_sessions"] != 6
+        for feature in ("supersession", "intention")
+    ):
+        raise ValueError(
+            "adoption manifest must contribute exactly six eligible sessions "
+            "per feature"
+        )
     emitted = sum(bool(session["emitted_valid_frontmatter"]) for session in sessions)
     return {
-        "schema": "straylight-frontmatter-adoption@v1",
+        "schema": "straylight-frontmatter-adoption@v2",
         "run_id": run.get("run_id"),
         "benchmark_version": run.get("benchmark_version"),
+        "experiment_arm": provenance["experiment_arm"],
+        "paired_draw_id": provenance["paired_draw_id"],
+        "source_artifact": {
+            "path": source_artifact_path,
+            "sha256": source_artifact_sha256,
+        },
+        "provenance": provenance,
         "eligible_sessions": len(sessions),
         "emitted_sessions": emitted,
         "adoption_rate": emitted / len(sessions) if sessions else None,
         "by_feature": by_feature,
         "sessions": sessions,
+    }
+
+
+def aggregate_adoption_measurements(
+    paths: Sequence[Path],
+    *,
+    expected_manifest_sha256: str,
+    expected_case_ids: Sequence[str],
+    expected_draws: Sequence[str],
+    minimum_rate: float = 0.5,
+) -> dict[str, Any]:
+    if len(paths) != 3:
+        raise ValueError(
+            "E07 adoption aggregation requires exactly three measurements"
+        )
+    if (
+        not isinstance(expected_manifest_sha256, str)
+        or not SHA256_PATTERN.fullmatch(expected_manifest_sha256)
+    ):
+        raise ValueError("E07 adoption requires an exact manifest hash")
+    if (
+        not expected_case_ids
+        or len(expected_case_ids) != len(set(expected_case_ids))
+        or not all(
+            isinstance(case_id, str) and case_id
+            for case_id in expected_case_ids
+        )
+    ):
+        raise ValueError(
+            "E07 adoption requires the exact unique manifest case IDs"
+        )
+    if (
+        len(expected_draws) != 3
+        or len(set(expected_draws)) != 3
+        or not all(
+            isinstance(draw, str)
+            and EXPERIMENT_ID_PATTERN.fullmatch(draw)
+            for draw in expected_draws
+        )
+    ):
+        raise ValueError(
+            "E07 adoption aggregation requires exactly three unique expected "
+            "draw IDs"
+        )
+    if (
+        isinstance(minimum_rate, bool)
+        or not isinstance(minimum_rate, (int, float))
+        or not 0 <= minimum_rate <= 1
+    ):
+        raise ValueError("--minimum-rate must be between zero and one")
+
+    loaded = []
+    measurement_hashes: set[str] = set()
+    source_hashes: set[str] = set()
+    run_ids: set[str] = set()
+    observed_draws: set[str] = set()
+    for path in paths:
+        try:
+            measurement = load_json(path)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"{path}: could not load adoption measurement: {exc}"
+            ) from exc
+        measurement_sha256 = sha256_file(path)
+        source_artifact = measurement.get("source_artifact")
+        provenance = measurement.get("provenance")
+        if (
+            measurement.get("schema")
+            != "straylight-frontmatter-adoption@v2"
+            or not isinstance(source_artifact, dict)
+            or not isinstance(provenance, dict)
+            or provenance.get("schema")
+            != "straylight-definitive-service-run-provenance@v1"
+        ):
+            raise ValueError(
+                f"{path}: not a definitive adoption measurement"
+            )
+        source_hash = source_artifact.get("sha256")
+        source_path = Path(str(source_artifact.get("path", "")))
+        run_id = measurement.get("run_id")
+        draw = measurement.get("paired_draw_id")
+        if (
+            not isinstance(source_artifact.get("path"), str)
+            or not source_artifact["path"]
+            or not isinstance(source_hash, str)
+            or not SHA256_PATTERN.fullmatch(source_hash)
+            or not source_path.is_absolute()
+            or not source_path.is_file()
+            or sha256_file(source_path) != source_hash
+            or not isinstance(run_id, str)
+            or not run_id
+            or measurement.get("experiment_arm") != "e07-adoption"
+            or not isinstance(draw, str)
+            or draw not in set(expected_draws)
+            or provenance.get("run_id") != run_id
+            or provenance.get("experiment_arm") != "e07-adoption"
+            or provenance.get("paired_draw_id") != draw
+            or provenance.get("benchmark_version")
+            != "frontmatter-adoption-v0.1"
+            or measurement.get("benchmark_version")
+            != provenance.get("benchmark_version")
+            or provenance.get("manifest_sha256")
+            != expected_manifest_sha256
+            or provenance.get("service_retrieval_modes")
+            != ["exact", "lexical"]
+        ):
+            raise ValueError(
+                f"{path}: adoption identity, manifest, or retrieval binding "
+                "is invalid"
+            )
+        try:
+            raw_run = load_json(source_path)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"{path}: could not reopen raw adoption artifact: {exc}"
+            ) from exc
+        recomputed = measure_adoption(
+            raw_run,
+            source_artifact_path=source_artifact["path"],
+            source_artifact_sha256=source_hash,
+            expected_manifest_sha256=expected_manifest_sha256,
+            expected_case_ids=expected_case_ids,
+        )
+        if canonical_json_sha256(measurement) != canonical_json_sha256(
+            recomputed
+        ):
+            raise ValueError(
+                f"{path}: adoption measurement does not canonically match "
+                "its hashed raw artifact"
+            )
+        measurement = recomputed
+        source_artifact = measurement["source_artifact"]
+        provenance = measurement["provenance"]
+        if (
+            measurement_sha256 in measurement_hashes
+            or source_hash in source_hashes
+            or run_id in run_ids
+            or draw in observed_draws
+        ):
+            raise ValueError(
+                f"{path}: duplicate measurement, source, run, or draw"
+            )
+        measurement_hashes.add(measurement_sha256)
+        source_hashes.add(source_hash)
+        run_ids.add(run_id)
+        observed_draws.add(draw)
+
+        runtime_snapshot = provenance.get("runtime_snapshot")
+        runtime_features = provenance.get("runtime_features")
+        image_provenance = provenance.get("service_image_provenance")
+        if (
+            not isinstance(runtime_snapshot, dict)
+            or canonical_json_sha256(runtime_snapshot)
+            != provenance.get("runtime_snapshot_sha256")
+            or runtime_snapshot.get("runtime_features") != runtime_features
+            or not isinstance(runtime_features, dict)
+            or not isinstance(image_provenance, dict)
+            or image_provenance.get("schema")
+            != SERVICE_IMAGE_PROVENANCE_SCHEMA
+            or image_provenance.get("stable") is not True
+            or not isinstance(image_provenance.get("before"), dict)
+            or not isinstance(image_provenance.get("after"), dict)
+        ):
+            raise ValueError(
+                f"{path}: adoption runtime or image provenance is malformed"
+            )
+        stable_service_image_provenance(
+            image_provenance["before"],
+            image_provenance["after"],
+        )
+        image = image_provenance["before"]
+        if (
+            image.get("api_container_running") is not True
+            or image.get("api_image_id") != provenance.get("api_image_id")
+            or image.get("api_image_revision")
+            != provenance.get("api_image_revision")
+            or image.get("api_image_revision")
+            != provenance.get("source_revision")
+            or provenance.get("build_revision")
+            != provenance.get("source_revision")
+            or provenance.get("reasoning_billing")
+            != {
+                "route": "chatgpt_subscription",
+                "api_fallback": "forbidden",
+                "auth_status": "Logged in using ChatGPT",
+            }
+        ):
+            raise ValueError(
+                f"{path}: adoption source/build/image/auth provenance is "
+                "invalid"
+            )
+        required_features = {
+            "semantic_lane": False,
+            "verbatim_spans": False,
+            "supersession_demotion": True,
+            "intention_ledger": False,
+            "resume_deltas": False,
+        }
+        mismatches = {
+            name: {
+                "expected": expected,
+                "actual": runtime_features.get(name),
+            }
+            for name, expected in required_features.items()
+            if (
+                name not in runtime_features
+                or runtime_features[name] is not expected
+            )
+        }
+        if mismatches:
+            raise ValueError(
+                f"{path}: adoption runtime feature mismatch: {mismatches}"
+            )
+
+        sessions = measurement.get("sessions")
+        if (
+            not isinstance(sessions, list)
+            or len(sessions) != 12
+            or len({
+                session.get("case_id")
+                for session in sessions
+                if isinstance(session, dict)
+            }) != 12
+        ):
+            raise ValueError(
+                f"{path}: adoption measurement lacks twelve unique sessions"
+            )
+        recomputed_by_feature = {}
+        for feature in ("supersession", "intention"):
+            feature_sessions = [
+                session
+                for session in sessions
+                if isinstance(session, dict)
+                and session.get("feature") == feature
+                and session.get("eligible") is True
+                and type(
+                    session.get("emitted_valid_frontmatter")
+                ) is bool
+            ]
+            emitted = sum(
+                session["emitted_valid_frontmatter"]
+                for session in feature_sessions
+            )
+            recomputed_by_feature[feature] = {
+                "eligible_sessions": len(feature_sessions),
+                "emitted_sessions": emitted,
+                "adoption_rate": (
+                    emitted / len(feature_sessions)
+                    if feature_sessions
+                    else None
+                ),
+            }
+        if (
+            any(
+                recomputed_by_feature[feature]["eligible_sessions"] != 6
+                for feature in recomputed_by_feature
+            )
+            or measurement.get("by_feature") != recomputed_by_feature
+            or measurement.get("eligible_sessions") != 12
+            or measurement.get("emitted_sessions")
+            != sum(
+                value["emitted_sessions"]
+                for value in recomputed_by_feature.values()
+            )
+            or measurement.get("adoption_rate")
+            != measurement["emitted_sessions"] / 12
+        ):
+            raise ValueError(
+                f"{path}: adoption totals disagree with session evidence"
+            )
+        loaded.append({
+            "path": str(path),
+            "sha256": measurement_sha256,
+            "source_artifact": source_artifact,
+            "provenance": provenance,
+            "by_feature": recomputed_by_feature,
+        })
+
+    if observed_draws != set(expected_draws):
+        raise ValueError(
+            "E07 adoption measurements do not match the exact expected draws"
+        )
+    stable_fields = (
+        "manifest_sha256",
+        "schema_sha256",
+        "harness_sha256",
+        "source_revision",
+        "build_revision",
+        "api_image_id",
+        "api_image_revision",
+        "runtime_features",
+        "service_retrieval_modes",
+    )
+    drift = {
+        field: [
+            item["provenance"].get(field)
+            for item in loaded
+        ]
+        for field in stable_fields
+        if len({
+            canonical_json_sha256(item["provenance"].get(field))
+            for item in loaded
+        }) != 1
+    }
+    runtime_projection_fields = (
+        "schema",
+        "status",
+        "build_revision",
+        "read_only",
+        "runtime_features",
+        "embeddings",
+    )
+    runtime_projections = [
+        {
+            field: item["provenance"]["runtime_snapshot"].get(field)
+            for field in runtime_projection_fields
+        }
+        for item in loaded
+    ]
+    if len({
+        canonical_json_sha256(projection)
+        for projection in runtime_projections
+    }) != 1:
+        drift["runtime_projection"] = runtime_projections
+    if drift:
+        raise ValueError(
+            f"E07 adoption provenance drifted across draws: {drift}"
+        )
+
+    by_feature = {}
+    for feature in ("supersession", "intention"):
+        eligible = sum(
+            item["by_feature"][feature]["eligible_sessions"]
+            for item in loaded
+        )
+        emitted = sum(
+            item["by_feature"][feature]["emitted_sessions"]
+            for item in loaded
+        )
+        rate = emitted / eligible
+        by_feature[feature] = {
+            "eligible_sessions": eligible,
+            "emitted_sessions": emitted,
+            "adoption_rate": rate,
+            "minimum_rate": minimum_rate,
+            "pass": rate >= minimum_rate,
+        }
+    eligible_sessions = sum(
+        value["eligible_sessions"] for value in by_feature.values()
+    )
+    emitted_sessions = sum(
+        value["emitted_sessions"] for value in by_feature.values()
+    )
+    return {
+        "schema": "straylight-frontmatter-adoption-aggregate@v1",
+        "experiment_arm": "e07-adoption",
+        "expected_draws": list(expected_draws),
+        "inputs": loaded,
+        "provenance": {
+            field: loaded[0]["provenance"].get(field)
+            for field in stable_fields
+        },
+        "eligible_sessions": eligible_sessions,
+        "emitted_sessions": emitted_sessions,
+        "adoption_rate": emitted_sessions / eligible_sessions,
+        "by_feature": by_feature,
+        "pass": all(value["pass"] for value in by_feature.values()),
     }
 
 
@@ -2650,9 +3924,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="fail closed unless /v1/status reports this exact build revision",
     )
     run_parser.add_argument(
+        "--api-container",
+        help=(
+            "running API container whose immutable image ID and OCI revision "
+            "label are captured before and after the run"
+        ),
+    )
+    run_parser.add_argument(
         "--service-protocol",
         choices=("legacy", "simple"),
         default="simple",
+    )
+    run_parser.add_argument(
+        "--service-retrieval-modes",
+        nargs="+",
+        choices=("exact", "lexical", "semantic"),
+        help=(
+            "immutable retrieval lanes injected into simple service_api "
+            "requests; recorded in the run binding, ledger, and result"
+        ),
     )
     run_parser.add_argument(
         "--e09-arm",
@@ -2692,6 +3982,24 @@ def build_parser() -> argparse.ArgumentParser:
     adoption_parser = subparsers.add_parser("measure-adoption")
     adoption_parser.add_argument("--input", type=Path, required=True)
     adoption_parser.add_argument("--out", type=Path, required=True)
+    adoption_aggregate = subparsers.add_parser("aggregate-adoption")
+    adoption_aggregate.add_argument(
+        "--input",
+        action="append",
+        type=Path,
+        required=True,
+    )
+    adoption_aggregate.add_argument(
+        "--expected-draw",
+        action="append",
+        required=True,
+    )
+    adoption_aggregate.add_argument(
+        "--minimum-rate",
+        type=float,
+        default=0.5,
+    )
+    adoption_aggregate.add_argument("--out", type=Path, required=True)
     return parser
 
 
@@ -2775,7 +4083,17 @@ def main() -> None:
         return
 
     if args.command == "measure-adoption":
-        measurement = measure_adoption(load_json(args.input))
+        if validated["errors"]:
+            raise ValueError("\n".join(validated["errors"]))
+        measurement = measure_adoption(
+            load_json(args.input),
+            source_artifact_path=str(args.input.resolve()),
+            source_artifact_sha256=sha256_file(args.input),
+            expected_manifest_sha256=sha256_file(args.manifest),
+            expected_case_ids=[
+                case["id"] for case in validated["manifest"]["cases"]
+            ],
+        )
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(measurement, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({
@@ -2785,6 +4103,35 @@ def main() -> None:
             "emitted_sessions": measurement["emitted_sessions"],
             "adoption_rate": measurement["adoption_rate"],
         }, indent=2))
+        return
+
+    if args.command == "aggregate-adoption":
+        if validated["errors"]:
+            raise ValueError("\n".join(validated["errors"]))
+        aggregate = aggregate_adoption_measurements(
+            args.input,
+            expected_manifest_sha256=sha256_file(args.manifest),
+            expected_case_ids=[
+                case["id"] for case in validated["manifest"]["cases"]
+            ],
+            expected_draws=args.expected_draw,
+            minimum_rate=args.minimum_rate,
+        )
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(
+            json.dumps(aggregate, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(json.dumps({
+            "status": "ok" if aggregate["pass"] else "failed",
+            "out": str(args.out),
+            "eligible_sessions": aggregate["eligible_sessions"],
+            "emitted_sessions": aggregate["emitted_sessions"],
+            "adoption_rate": aggregate["adoption_rate"],
+            "by_feature": aggregate["by_feature"],
+        }, indent=2))
+        if not aggregate["pass"]:
+            raise SystemExit(2)
         return
 
     run = asyncio.run(run_all(args))

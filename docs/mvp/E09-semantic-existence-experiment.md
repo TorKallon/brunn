@@ -1,9 +1,16 @@
 # E09 — Semantic Lane Existence Experiment: Ship, Bound, or Cut
 
-Status: Specified — not run
+Status: Prerequisite abort — E03 Mode 2 failed and quality backfill was not run
 Date: 2026-07-27
 Gates: D11 (D11-semantic-lane-policy.md)
 Phase: 1 (requires the D11 flag build and E03 semantic-ready corpus; not run)
+
+**CURRENT PREREQUISITE ABORT (2026-07-28):** Do not run E09. E03's fully
+indexed Mode 2 failed its blocking zero-deferred-lane gate, and the quality
+backfill was therefore not run. There is no accepted semantic-ready
+prerequisite artifact for these draws. This abort is not an E09 semantic-lane
+verdict; after the E03 defect is repaired and its quality backfill passes, the
+experimental intent below remains unchanged.
 
 ## Question
 
@@ -11,7 +18,12 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 
 ## Preconditions and build items
 
-1. E03 complete (E03-semantic-ready-latency-profile.md, including its build item 6 eval-corpus backfill): the eval corpus fully embedded, verified by zero semantic_unavailable notices on a warm probe query in semantic arms. (L, already scoped under E03 — not counted here.)
+1. **NOT SATISFIED.** E03 complete
+   (E03-semantic-ready-latency-profile.md, including its build item 6
+   eval-corpus backfill): the eval corpus fully embedded, verified by zero
+   semantic_unavailable notices on a warm probe query in semantic arms. E03
+   Mode 2 failed and the quality backfill was not run. (L, already scoped
+   under E03 — not counted here.)
 2. D11 cache + deadline behind flags: embed_cache, semantic_deadline_ms, wired at the query-embed call (simple_core.rs:3005) and lane dispatch under RETRIEVAL_LANE_TIMEOUT. (M — apps/api/src/simple_core.rs.)
 3. No-semantic arm: `semantic_lane=off` is the mechanical server-side kill
    switch for both `open` and `search`. The harness additionally forces
@@ -55,7 +67,7 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
    {no_semantic, unbounded_semantic, deadline_cache}, each suite manifest ∈
    {work, rupture_ops, recent_work}, each draw N ∈ {1,2,3}:
 
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --service-protocol simple --e09-arm "$ARM" --experiment-arm "$EXPERIMENT_ARM" --paired-draw-id "e09-work-draw${N}" --expect-build-revision "$REV" --expect-feature-flag verbatim_spans=on --concurrency 3 --timeout 360 --run-id "e09-${ARM}-work-draw${N}" --out "results/2026-MM-DD-e09-${ARM}-work-draw${N}.json" --report "results/2026-MM-DD-e09-${ARM}-work-draw${N}.md"`
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --service-protocol simple --api-container "$API_CONTAINER" --e09-arm "$ARM" --experiment-arm "$EXPERIMENT_ARM" --paired-draw-id "e09-work-draw${N}" --expect-build-revision "$REV" --expect-feature-flag verbatim_spans=on --concurrency 3 --timeout 360 --run-id "e09-${ARM}-work-draw${N}" --out "results/2026-MM-DD-e09-${ARM}-work-draw${N}.json" --report "results/2026-MM-DD-e09-${ARM}-work-draw${N}.md"`
 
    The exact arm identities are `e09-no-semantic`, `e09-unbounded-semantic`, and `e09-deadline-cache`. `--e09-arm` derives and validates the full semantic policy before reasoning: no-semantic = lane off/cache on/deadline 300ms/backfill guard on; unbounded-semantic = lane on/cache off/no embedding deadline/backfill guard on; deadline-cache = lane on/cache on/deadline 300ms/backfill guard on. Conflicting explicit runtime expectations fail closed.
 
@@ -73,7 +85,7 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
    The failure and restore commands must target only the current stack's
    proxy.
 6. Aggregate an explicit quality-only array:
-   `E09_QUALITY=(results/2026-MM-DD-e09-{no_semantic,unbounded_semantic,deadline_cache}-{work,rupture,recent}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E09_QUALITY[@]}" --expected-arm e09-deadline-cache --expected-arm e09-unbounded-semantic --expected-arm e09-no-semantic --out results/2026-MM-DD-e09-aggregate.json`.
+   `E09_QUALITY=(results/2026-MM-DD-e09-{no_semantic,unbounded_semantic,deadline_cache}-{work,rupture,recent}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E09_QUALITY[@]}" --expected-arm e09-deadline-cache --expected-arm e09-unbounded-semantic --expected-arm e09-no-semantic --expected-arm-retrieval-modes e09-deadline-cache=exact,lexical,semantic --expected-arm-retrieval-modes e09-unbounded-semantic=exact,lexical,semantic --expected-arm-retrieval-modes e09-no-semantic=exact,lexical --out results/2026-MM-DD-e09-aggregate.json`.
 7. Deadline stepping: only if C loses to B with McNemar significance, generate
    `python3 eval/e09_step_policy.py --losing-suite <suite> --out
    results/2026-MM-DD-e09-step-policy.json`, supplying actual base spend when
@@ -98,7 +110,7 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 
    Aggregate only C versus C600:
 
-   `python3 eval/aggregate_draws.py <base-C-jsons> <C600-jsons> --expected-arm e09-deadline-cache --expected-arm e09-deadline-cache-600 --e09-step-policy <policy.json> --e09-step-policy-sha256 <sha256> --out results/2026-MM-DD-e09-step-aggregate.json`
+   `python3 eval/aggregate_draws.py <base-C-jsons> <C600-jsons> --expected-arm e09-deadline-cache --expected-arm e09-deadline-cache-600 --expected-arm-retrieval-modes e09-deadline-cache=exact,lexical,semantic --expected-arm-retrieval-modes e09-deadline-cache-600=exact,lexical,semantic --e09-step-policy <policy.json> --e09-step-policy-sha256 <sha256> --out results/2026-MM-DD-e09-step-aggregate.json`
 
    The aggregator uses only the authorized subset from the immutable full-suite
    300ms draws, requires arm-complete three-draw pairing, and rejects any C600

@@ -21,7 +21,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Sequence
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence
 
 from native_eval import (
     NativeApiClient,
@@ -52,6 +52,7 @@ DEFINITIVE_SAMPLES = 30
 QUICK_SAMPLES = 3
 VERBATIM_IDENTIFIER_PROBES = 30
 VERBATIM_IDENTIFIER_MIN_OFFSET = 2_401
+CONCURRENT_SEARCHES_PER_ROUND = 5
 BROAD_QUERY = "deterministic performance-fixture material"
 OLD_SOURCE_QUERY = (
     "Reconcile the meridian continuity doctrine with a new request and explain "
@@ -103,6 +104,7 @@ E03_COMMON_RUNTIME_EXPECTATIONS: dict[str, Any] = {
 LEXICAL_CONSOLIDATION_REQUIRED_GATES = frozenset({
     "all_required_scales_completed",
     "retrieval_sample_count_is_definitive",
+    "query_count_sample_cardinality_is_authoritative",
     "bounded_lexical_overflow_returns_late_relevant_source",
     "old_relevant_source_survives_many_newer_writes",
     "no_exact_or_lexical_lane_failures",
@@ -433,32 +435,183 @@ def response_query_count(value: Any) -> int | None:
     return None
 
 
+QUERY_COUNT_SAMPLE_OPERATIONS = {
+    "open": "open",
+    "search": "search",
+    "broad_search": "search",
+    "bounded_overflow_search": "search",
+    "old_source_search": "search",
+    "verbatim_identifier_search": "search",
+    "concurrent_search": "search",
+    "read": "read",
+    "max_batch_read": "read",
+    "write": "write",
+    "checkpoint": "checkpoint",
+    "max_checkpoint_sources": "checkpoint",
+    "resume": "resume",
+}
+
+
+def expected_query_count_sample_cardinality(
+    *,
+    scale: int,
+    samples_per_retrieval: int,
+    verbatim_identifier_probes: int,
+    concurrent_rounds: int,
+    concurrent_searches_per_round: int,
+) -> dict[str, int]:
+    integer_fields = {
+        "scale": scale,
+        "samples_per_retrieval": samples_per_retrieval,
+        "verbatim_identifier_probes": verbatim_identifier_probes,
+        "concurrent_rounds": concurrent_rounds,
+        "concurrent_searches_per_round": concurrent_searches_per_round,
+    }
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 0
+        for value in integer_fields.values()
+    ):
+        raise ValueError(
+            "query-count sample cardinality inputs must be non-negative integers"
+        )
+    if (
+        scale < 1
+        or samples_per_retrieval < 1
+        or concurrent_rounds < 1
+        or concurrent_searches_per_round < 1
+    ):
+        raise ValueError(
+            "query-count scale, retrieval samples, concurrent rounds, and "
+            "searches per round must be positive"
+        )
+    expected = {
+        "open": samples_per_retrieval,
+        "search": samples_per_retrieval,
+        "broad_search": samples_per_retrieval,
+        "bounded_overflow_search": samples_per_retrieval,
+        "old_source_search": samples_per_retrieval,
+        "verbatim_identifier_search": verbatim_identifier_probes,
+        "read": samples_per_retrieval,
+        "checkpoint": 1,
+        "resume": samples_per_retrieval,
+        "write": concurrent_rounds,
+        "concurrent_search": (
+            concurrent_rounds * concurrent_searches_per_round
+        ),
+    }
+    if scale >= PRODUCTION_RECORDS:
+        expected.update({
+            "max_batch_read": 1,
+            "max_checkpoint_sources": 1,
+        })
+    return dict(sorted(expected.items()))
+
+
 def summarize_query_counts(
     samples: Sequence[tuple[str, dict[str, Any]]],
+    *,
+    expected_cardinality: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
-    operation_aliases = {
-        "open": "open",
-        "search": "search",
-        "broad_search": "search",
-        "bounded_overflow_search": "search",
-        "old_source_search": "search",
-        "concurrent_search": "search",
-        "read": "read",
-        "write": "write",
-        "checkpoint": "checkpoint",
-        "resume": "resume",
-    }
+    authoritative = expected_cardinality is not None
+    normalized_expected: dict[str, int] = {}
+    if expected_cardinality is not None:
+        for sample_name, cardinality in expected_cardinality.items():
+            if sample_name not in QUERY_COUNT_SAMPLE_OPERATIONS:
+                raise ValueError(
+                    f"unknown expected query-count sample {sample_name!r}"
+                )
+            if (
+                not isinstance(cardinality, int)
+                or isinstance(cardinality, bool)
+                or cardinality < 0
+            ):
+                raise ValueError(
+                    f"invalid expected cardinality for {sample_name!r}"
+                )
+            normalized_expected[sample_name] = cardinality
     by_operation: dict[str, list[int]] = {}
+    by_sample_name: dict[str, dict[str, Any]] = {
+        sample_name: {
+            "operation": QUERY_COUNT_SAMPLE_OPERATIONS[sample_name],
+            "counts": [],
+        }
+        for sample_name in normalized_expected
+    }
+    observed_by_sample_name: dict[str, int] = {}
     missing: dict[str, int] = {}
+    missing_by_sample_name: dict[str, int] = {}
     for sample_name, body in samples:
-        operation = operation_aliases.get(sample_name)
+        operation = QUERY_COUNT_SAMPLE_OPERATIONS.get(sample_name)
         if operation is None:
-            continue
+            raise ValueError(
+                f"unknown response sample name {sample_name!r}"
+            )
+        observed_by_sample_name[sample_name] = (
+            observed_by_sample_name.get(sample_name, 0) + 1
+        )
+        sample_summary = by_sample_name.setdefault(
+            sample_name,
+            {"operation": operation, "counts": []},
+        )
+        if sample_summary["operation"] != operation:
+            raise ValueError(
+                f"query-count sample {sample_name!r} changed operations"
+            )
         count = response_query_count(body)
         if count is None:
             missing[operation] = missing.get(operation, 0) + 1
+            missing_by_sample_name[sample_name] = (
+                missing_by_sample_name.get(sample_name, 0) + 1
+            )
             continue
         by_operation.setdefault(operation, []).append(count)
+        sample_summary["counts"].append(count)
+
+    def count_summary(values: Sequence[int]) -> dict[str, Any]:
+        return {
+            "samples": len(values),
+            "min": min(values) if values else None,
+            "max": max(values) if values else None,
+            "counts": list(values),
+        }
+
+    if not authoritative:
+        normalized_expected = dict(observed_by_sample_name)
+    all_sample_names = sorted(
+        set(normalized_expected) | set(observed_by_sample_name)
+    )
+    missing_response_samples = {
+        sample_name: normalized_expected[sample_name]
+        - observed_by_sample_name.get(sample_name, 0)
+        for sample_name in sorted(normalized_expected)
+        if (
+            normalized_expected[sample_name]
+            > observed_by_sample_name.get(sample_name, 0)
+        )
+    }
+    extra_response_samples = {
+        sample_name: observed_by_sample_name[sample_name]
+        - normalized_expected.get(sample_name, 0)
+        for sample_name in sorted(observed_by_sample_name)
+        if (
+            observed_by_sample_name[sample_name]
+            > normalized_expected.get(sample_name, 0)
+        )
+    }
+    counted_by_sample_name = {
+        sample_name: len(by_sample_name[sample_name]["counts"])
+        for sample_name in all_sample_names
+    }
+    cardinality_pass = bool(
+        not missing_response_samples
+        and not extra_response_samples
+        and not missing_by_sample_name
+        and all(
+            counted_by_sample_name[sample_name]
+            == normalized_expected[sample_name]
+            for sample_name in normalized_expected
+        )
+    )
     return {
         "definition": (
             "completed sqlx::query events within the request scope; includes "
@@ -466,15 +619,39 @@ def summarize_query_counts(
             "COMMIT; excludes SQLx's unlogged protocol-level BEGIN"
         ),
         "by_operation": {
-            operation: {
-                "samples": len(values),
-                "min": min(values),
-                "max": max(values),
-                "counts": values,
-            }
+            operation: count_summary(values)
             for operation, values in sorted(by_operation.items())
         },
+        "by_sample_name": {
+            sample_name: {
+                "operation": summary["operation"],
+                "expected_samples": normalized_expected.get(sample_name, 0),
+                "observed_samples": observed_by_sample_name.get(sample_name, 0),
+                "missing_query_counts": missing_by_sample_name.get(
+                    sample_name,
+                    0,
+                ),
+                **count_summary(summary["counts"]),
+            }
+            for sample_name, summary in sorted(by_sample_name.items())
+        },
         "missing_by_operation": dict(sorted(missing.items())),
+        "missing_by_sample_name": dict(sorted(missing_by_sample_name.items())),
+        "sample_cardinality": {
+            "schema": "straylight-query-count-sample-cardinality@v1",
+            "authoritative": authoritative,
+            "expected_by_sample_name": dict(sorted(normalized_expected.items())),
+            "observed_by_sample_name": dict(
+                sorted(observed_by_sample_name.items())
+            ),
+            "counted_by_sample_name": counted_by_sample_name,
+            "missing_response_samples": missing_response_samples,
+            "extra_response_samples": extra_response_samples,
+            "missing_query_count_samples": dict(
+                sorted(missing_by_sample_name.items())
+            ),
+            "pass": cardinality_pass,
+        },
     }
 
 
@@ -3470,6 +3647,7 @@ def verbatim_identifier_probe(
     authorization_scope: str,
     session_id: str,
     probes: Sequence[dict[str, Any]],
+    response_samples: list[tuple[str, dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     if protocol != "simple":
         return {
@@ -3496,6 +3674,8 @@ def verbatim_identifier_probe(
                 }],
             },
         )
+        if response_samples is not None:
+            response_samples.append(("verbatim_identifier_search", response))
         present = source_text_contains(response, str(probe["identifier"]))
         results.append({
             **probe,
@@ -4250,6 +4430,7 @@ def benchmark_scale(
         authorization_scope=authorization_scope,
         session_id=latest_session_id,
         probes=fixture_manifest["verbatim_identifiers"],
+        response_samples=response_samples,
     )
     status_url = provisioning.get("status_url")
     mode3_paired_query = (
@@ -4411,6 +4592,7 @@ def benchmark_scale(
         marker=marker,
         run_id=run_id,
         retrieval_modes=retrieval_modes,
+        searches=CONCURRENT_SEARCHES_PER_ROUND,
         rounds=concurrent_rounds,
         response_samples=response_samples,
     )
@@ -4537,7 +4719,24 @@ def benchmark_scale(
             "rows": sum(checkpoint_growth.values()),
             "tables": checkpoint_growth,
         }
-    query_counts = summarize_query_counts(response_samples)
+    query_counts = summarize_query_counts(
+        response_samples,
+        expected_cardinality=(
+            expected_query_count_sample_cardinality(
+                scale=scale,
+                samples_per_retrieval=samples,
+                verbatim_identifier_probes=len(
+                    fixture_manifest["verbatim_identifiers"]
+                ),
+                concurrent_rounds=concurrent_rounds,
+                concurrent_searches_per_round=(
+                    CONCURRENT_SEARCHES_PER_ROUND
+                ),
+            )
+            if protocol == "simple"
+            else None
+        ),
+    )
     plan_assertions = (
         retrieval_plan_assertions(
             db_container,
@@ -4902,10 +5101,37 @@ def evaluate_gates(
                 True,
             ),
         ])
+    simple_scales = [
+        item for item in scales if item.get("protocol") == "simple"
+    ]
+    if simple_scales:
+        gates.append((
+            "query_count_sample_cardinality_is_authoritative",
+            all(
+                item.get("query_counts", {})
+                .get("sample_cardinality", {})
+                .get("authoritative") is True
+                and item.get("query_counts", {})
+                .get("sample_cardinality", {})
+                .get("pass") is True
+                for item in simple_scales
+            ),
+            [
+                item.get("query_counts", {}).get("sample_cardinality")
+                for item in simple_scales
+            ],
+            {
+                "authoritative": True,
+                "pass": True,
+                "missing_response_samples": {},
+                "extra_response_samples": {},
+                "missing_query_count_samples": {},
+            },
+        ))
     query_count_scales = [
         item
-        for item in scales
-        if item.get("protocol") == "simple" and "query_counts" in item
+        for item in simple_scales
+        if "query_counts" in item
     ]
     if query_count_scales:
         if query_budgets is None:
