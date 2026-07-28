@@ -1,0 +1,175 @@
+{
+  "schema": "straylight-e03-definitive-summary@v1",
+  "recorded_at": "2026-07-28T02:00:10-07:00",
+  "experiment": "E03",
+  "verdict": "fail",
+  "decision": "reject_current_semantic_ready_path",
+  "source_revision": "8e40d63fe3cf7f288d9c5067330ed0b191032f26",
+  "images": {
+    "api_and_worker": "sha256:5893a916a8c6b0a4804a29933ec9d20c119243c501802a8bba897e878600938a",
+    "database": "sha256:73d6ab84bdd4877be75633cf272a606897f2a7e0780110b289d702b70aec8dad"
+  },
+  "artifacts": {
+    "mode1": {
+      "path": "results/2026-07-27-e03-mode1-64k.json",
+      "sha256": "b849a18ad4bbf81daa599106f16e29143f0a541960f44c37e0b1bc4e23768dd6"
+    },
+    "mode2": {
+      "path": "results/2026-07-27-e03-mode2-64k.json",
+      "sha256": "8a8cfdf08d03e6b94c787ce342adb29213b163c3cd7f75cab26b0f044ee7b613"
+    },
+    "checkpoint_query_diagnostic": {
+      "path": "results/2026-07-27-e03-checkpoint-query-diagnostic-summary.json",
+      "semantic_posture_statement_sequence_sha256": "bd7a11cbafcd9bd367b02e320198800a29a1cb52267f2e5bc095dd79aa347ba8"
+    }
+  },
+  "mode1": {
+    "posture": "exact_lexical_pending",
+    "verdict": "pass",
+    "gates": {
+      "passed": 62,
+      "failed": 0
+    },
+    "documents": 64000,
+    "samples": 30,
+    "import_ms": 12867.085,
+    "total_ms": 93317.871,
+    "latency_ms": {
+      "open_p50": 55.129,
+      "open_p95": 113.998,
+      "search_p50": 51.721,
+      "search_p95": 105.64,
+      "broad_search_p95": 254.828,
+      "old_source_search_p95": 83.562,
+      "bounded_overflow_search_p95": 72.714,
+      "checkpoint": 38.773,
+      "resume": 113.747
+    },
+    "query_counts": {
+      "checkpoint": 28,
+      "open": 17,
+      "read": 11,
+      "resume": 32,
+      "search": 11,
+      "write": 14
+    },
+    "semantic_posture_proof": {
+      "worker_present": false,
+      "provider": "hashing",
+      "provider_credential_present": false,
+      "pending_chunks_before_samples": 128091,
+      "pending_chunks_after_samples": 128142,
+      "semantic_ready_chunks_before_samples": 0,
+      "semantic_ready_chunks_after_samples": 0,
+      "provider_call_path_absent": true
+    },
+    "embedding_cost_usd": 0.0
+  },
+  "mode2": {
+    "posture": "semantic_ready_owned_mock",
+    "verdict": "fail",
+    "gates": {
+      "passed": 63,
+      "failed": 1,
+      "failed_gate": "semantic_ready_runs_have_no_deferred_or_unavailable_lane"
+    },
+    "documents": 64000,
+    "samples": 30,
+    "import_ms": 3321774.299,
+    "total_ms": 3405457.706,
+    "semantic_coverage_at_end": {
+      "status": "ready",
+      "pending_jobs": 0,
+      "failed_jobs": 0
+    },
+    "latency_ms": {
+      "open_p50": 22.849,
+      "open_p95": 42.537,
+      "search_p50": 21.209,
+      "search_p95": 48.826,
+      "broad_search_p95": 92.738,
+      "old_source_search_p95": 49.602,
+      "bounded_overflow_search_p95": 46.258,
+      "checkpoint": 11.905,
+      "resume": 23.763
+    },
+    "timeout_shaped_outliers_ms": [
+      {
+        "operation": "search",
+        "latency": 2512.762
+      },
+      {
+        "operation": "bounded_overflow_search",
+        "latency": 2512.285
+      },
+      {
+        "operation": "old_source_search",
+        "latency": 2520.935
+      },
+      {
+        "operation": "concurrent_search",
+        "latency": 2511.169
+      }
+    ],
+    "query_counts": {
+      "checkpoint": 28,
+      "open": 27,
+      "read": 11,
+      "resume": 42,
+      "search_histogram": [
+        {
+          "count": 16,
+          "frequency": 4
+        },
+        {
+          "count": 21,
+          "frequency": 256
+        },
+        {
+          "count": 22,
+          "frequency": 10
+        }
+      ],
+      "write": 14
+    },
+    "outlier_correlation_note": "The four 16-statement search samples match the number of timeout-shaped outliers, but the artifact does not retain per-response query-count-to-latency pairing; the correspondence is an inference.",
+    "failure_probe": {
+      "verdict": "pass",
+      "baseline_semantic_ms": 122.342,
+      "injected_semantic_ms": 12.4,
+      "injected_exact_lexical_ms": 100.524,
+      "injected_mixed_ms": 18.211,
+      "restored_semantic_ms": 112.466,
+      "target_found_before_failure": true,
+      "exact_lexical_target_found_during_failure": true,
+      "target_found_after_restore": true,
+      "cleanup_passed": true,
+      "entries_removed": 1,
+      "search_chunks_removed": 1,
+      "credentials_revoked": 1
+    },
+    "owned_mock_proof": {
+      "owned": true,
+      "stopped_after_run": true,
+      "provider_billing": "owned_mock_free"
+    },
+    "embedding_cost_usd": 0.0
+  },
+  "aborted_arms": {
+    "mode3": {
+      "status": "not_run",
+      "reason": "Mode 2 failed the blocking zero-deferred-lane prerequisite; paid provider characterization cannot repair or supersede that product-path failure."
+    },
+    "eval_corpus_quality_backfill": {
+      "status": "not_run",
+      "reason": "Deferred until the semantic lane is stable enough to justify paid quality characterization."
+    }
+  },
+  "cost": {
+    "reasoning_api_usd": 0.0,
+    "embedding_api_usd": 0.0,
+    "owner_notification_threshold_usd": 20.0,
+    "notification_required": false
+  },
+  "conclusion": "Exact and lexical retrieval meet the E03 gates, and the semantic database path is normally fast when the owned mock responds. However, four ordinary semantic-ready requests fell into timeout-shaped degraded behavior after full coverage was reached. Fix or redesign the synchronous semantic lane and rerun free Mode 2 before authorizing paid Mode 3 or using E03 as a positive E09 input."
+}

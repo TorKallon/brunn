@@ -1,13 +1,103 @@
 # E03 — Semantic-Ready Latency Profile
 
-Status: Harness ready — checkpoint query-count diagnostic complete; definitive E03 latency run not complete
-Date: 2026-07-27
+Status: Definitive result — Mode 1 passed; Mode 2 failed; paid Mode 3 and quality backfill aborted
+Date: 2026-07-28
 Gates: `--gate-profile e03-semantic-ready` with explicit `--e03-arm`; measurement baseline and the primary decision input to E09
 Phase: 0 (measurement; no product code — D09(a) instrumentation is a measurement enabler, not a behavior change)
 
 ## Question
 
-Every latency number we cite — the entire v8 640K soak (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json) and the clean 3,340-record fixture (results/2026-07-27-3340-clean-30-sample.json) — is exact+lexical with embeddings pending. NO semantic-ready profile exists. Once any semantic coverage exists, every search pays a synchronous, uncached OpenAI embedding call (apps/api/src/simple_core.rs:3005) plus an HNSW probe (`iterative_scan=relaxed_order`). What do open and search look like then, phase by phase, and do the SLO gates hold?
+The earlier latency evidence — the entire v8 640K soak
+(results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json)
+and the clean 3,340-record fixture
+(results/2026-07-27-3340-clean-30-sample.json) — was exact+lexical with
+embeddings pending. This experiment asks what happens once all semantic
+coverage exists and every search pays a synchronous query-embedding call plus
+an HNSW probe (`iterative_scan=relaxed_order`).
+
+## Definitive result
+
+**E03 rejects the current semantic-ready path.** Mode 1 passed all 62 gates.
+Mode 2 reached complete semantic coverage and passed 63 of 64 gates, but failed
+the blocking
+`semantic_ready_runs_have_no_deferred_or_unavailable_lane` gate. Paid Mode 3
+and the paid eval-corpus backfill were therefore not run. Actual reasoning API
+cost and embedding API cost were both **$0**.
+
+Both completed arms used clean source revision
+`8e40d63fe3cf7f288d9c5067330ed0b191032f26`, API/worker image
+`sha256:5893a916a8c6b0a4804a29933ec9d20c119243c501802a8bba897e878600938a`,
+and DB image
+`sha256:73d6ab84bdd4877be75633cf272a606897f2a7e0780110b289d702b70aec8dad`.
+Their isolated Compose stacks and the owned mock were removed after the run.
+
+| Arm | Result | Gates | Import / total | Blocking observation |
+| --- | --- | ---: | ---: | --- |
+| Mode 1, exact+lexical pending | PASS | 62/62 | 12.867s / 93.318s | None |
+| Mode 2, semantic-ready owned mock | FAIL | 63/64 | 55m21.774s / 56m45.458s | Four ordinary search-family responses had timeout-shaped latency at about 2.5s and the run did not maintain zero deferred/unavailable lanes |
+| Mode 3, real provider | NOT RUN | — | — | Aborted because Mode 2 failed its blocking prerequisite |
+| Eval-corpus quality backfill | NOT RUN | — | — | Deferred until the semantic lane is stable enough to justify paid characterization |
+
+### Primary latency
+
+All values are milliseconds. Each measured operation has 30 samples except the
+single checkpoint.
+
+| Posture | Open p50 / p95 | Search p50 / p95 | Broad p95 | Old-source p95 | Overflow p95 | Checkpoint | Resume |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Mode 1 | 55.129 / 113.998 | 51.721 / 105.640 | 254.828 | 83.562 | 72.714 | 38.773 | 113.747 |
+| Mode 2 | 22.849 / 42.537 | 21.209 / 48.826 | 92.738 | 49.602 | 46.258 | 11.905 | 23.763 |
+
+Mode 2 ended with zero pending jobs, zero failed jobs, and semantic status
+`ready`. Its HNSW plan, exact revision, container topology, API-to-DB route,
+owned-mock identity, sample count, cleanup, and all latency SLO gates passed.
+The failure is therefore not an incomplete-backfill or fixture-provisioning
+result.
+
+The four timeout-shaped observations were:
+
+- primary search: 2,512.762ms
+- bounded-overflow search: 2,512.285ms
+- old-source search: 2,520.935ms
+- concurrent search: 2,511.169ms
+
+The Mode 2 search query-count histogram was 16 statements four times, 21
+statements 256 times, and 22 statements ten times. The four reduced-query
+samples match the number of timeout-shaped observations and are consistent
+with a semantic lane that stopped before its normal database work. The raw
+artifact aggregates query counts and latencies separately, however, so this
+correspondence is an inference rather than retained per-response pairing.
+
+### Failure and recovery behavior
+
+The separate planted-target probe passed. It found the exact path and marker
+through semantic retrieval before injection (122.342ms), observed an empty
+semantic-only result during injection (12.400ms), retained the target through
+exact+lexical fallback (100.524ms) and mixed retrieval (18.211ms), then found
+the target semantically after restoration (112.466ms). Atomic cleanup removed
+the one entry and one chunk and revoked the one scoped credential.
+
+### Query budget and decision
+
+The definitive checkpoint used exactly 28 statements in both Modes 1 and 2,
+confirming the earlier 60-sample correlated diagnostic. Other fixed counts
+were Mode 1 open/read/resume/search/write = 17/11/32/11/14 and Mode 2
+open/read/resume/write = 27/11/42/14.
+
+Do not run paid Mode 3 or treat the normally low Mode 2 percentiles as a
+positive E09 input. First fix or redesign the synchronous semantic lane around
+the approximately 2.5-second timeout behavior, then rerun free Mode 2 and
+require zero degraded samples.
+
+Immutable evidence:
+
+- [Mode 1 raw artifact](../../results/2026-07-27-e03-mode1-64k.json),
+  SHA-256
+  `b849a18ad4bbf81daa599106f16e29143f0a541960f44c37e0b1bc4e23768dd6`
+- [Mode 2 raw artifact](../../results/2026-07-27-e03-mode2-64k.json),
+  SHA-256
+  `8a8cfdf08d03e6b94c787ce342adb29213b163c3cd7f75cab26b0f044ee7b613`
+- [Compact definitive summary](../../results/2026-07-27-e03-definitive-summary.json)
 
 ## Preconditions and build items
 
@@ -42,7 +132,8 @@ forbidden because it would change HNSW/table cardinality. `eval/e03_quality_back
 imports through the ordinary rate-limited worker path, verifies that the
 cross-process foreground guard is configured, and requires a semantic-only
 warm probe with candidates and no semantic gap. These harnesses are unit
-tested; no definitive experiment has been run.
+tested. Modes 1 and 2 have now been run definitively as recorded above; the
+blocking Mode 2 failure stopped the remaining paid arms.
 
 Current-build execution hardening adds
 `eval/openai_embedding_fault_proxy.py` for real-provider modes. The proxy is
