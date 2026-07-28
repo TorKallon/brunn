@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://straylight.local/schemas/tier_a_checkpoint_import.schema.json",
+  "title": "Straylight Tier-A checkpoint import receipts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "created_at",
+    "composite_sha256",
+    "verdict",
+    "checkpoint_count",
+    "parent_reference_count",
+    "receipts"
+  ],
+  "properties": {
+    "schema": {"const": "straylight-tier-a-checkpoint-import@v1"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "composite_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "verdict": {"const": "pass"},
+    "checkpoint_count": {"type": "integer", "minimum": 0},
+    "parent_reference_count": {"type": "integer", "minimum": 0},
+    "receipts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "checkpoint_ref",
+          "parent_checkpoint_ref",
+          "path",
+          "content_hash",
+          "receipt_version",
+          "resume_verified"
+        ],
+        "properties": {
+          "checkpoint_ref": {
+            "type": "string",
+            "pattern": "^checkpoint:[0-9a-f-]{36}$"
+          },
+          "parent_checkpoint_ref": {
+            "type": ["string", "null"]
+          },
+          "path": {"type": "string", "minLength": 1},
+          "content_hash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "receipt_version": {"type": "integer", "minimum": 1},
+          "resume_verified": {"const": true}
+        }
+      }
+    }
+  }
+}

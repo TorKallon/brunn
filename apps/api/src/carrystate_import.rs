@@ -25,6 +25,7 @@ use crate::carrystate_cli::{ApiClient, strip_sha256, unwrap_data};
 
 const IMPORT_MANIFEST_FORMAT: &str = "straylight-workspace-import-manifest@v1";
 const EXPORT_MANIFEST_FORMAT: &str = "straylight-workspace-export@v1";
+const TIER_A_PORTABLE_COMPANION_FORMAT: &str = "straylight-tier-a-portable-companion@v1";
 const MAX_TEXT_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_MULTIPART_BINARY_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_STREAMED_BINARY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -266,11 +267,11 @@ impl ImportPhase {
     fn includes(self, entry: &InventoryEntry) -> bool {
         match self {
             Self::Markdown => {
-                entry.kind == EntryKind::Markdown && !is_binary_companion_path(&entry.path)
+                entry.kind == EntryKind::Markdown && !is_binary_companion_entry(entry)
             }
             Self::Binary => entry.kind == EntryKind::Binary,
             Self::BinaryCompanion => {
-                entry.kind == EntryKind::Markdown && is_binary_companion_path(&entry.path)
+                entry.kind == EntryKind::Markdown && is_binary_companion_entry(entry)
             }
         }
     }
@@ -285,6 +286,7 @@ impl ImportPhase {
 
 struct ImportPlan<'a> {
     entry: &'a InventoryEntry,
+    portable_companion: Option<&'a InventoryEntry>,
     current: Option<RemoteEntry>,
     upload: bool,
     expected_version: i64,
@@ -313,6 +315,7 @@ async fn import_phase(
 ) -> Result<ImportCounts> {
     let mut plans = Vec::new();
     for entry in entries.iter().filter(|entry| phase.includes(entry)) {
+        let portable_companion = portable_companion_entry(entry, entries)?;
         let key = collision_key(&entry.path);
         let current = remote.get(&key).cloned();
         if let Some(current) = &current {
@@ -329,6 +332,7 @@ async fn import_phase(
         });
         plans.push(ImportPlan {
             entry,
+            portable_companion,
             expected_version: current.as_ref().map_or(0, |value| value.version),
             current,
             upload: !(matching_hash && companion_ready),
@@ -358,6 +362,7 @@ async fn import_phase(
                         client,
                         root,
                         plan.entry,
+                        plan.portable_companion,
                         describe_binaries,
                         plan.expected_version,
                     )
@@ -695,6 +700,7 @@ async fn upload_binary(
     client: &ApiClient,
     root: &Path,
     entry: &InventoryEntry,
+    portable_companion: Option<&InventoryEntry>,
     describe: bool,
     expected_version: i64,
 ) -> Result<(RemoteEntry, RemoteEntry)> {
@@ -743,7 +749,25 @@ async fn upload_binary(
             form = form.text("mode", value.to_string());
         }
         form = form.part("file", part);
-        if describe {
+        if let Some(companion) = portable_companion {
+            let content = read_unchanged_file(root, companion)?;
+            let description = String::from_utf8(content)
+                .context("portable binary companion is not valid UTF-8")?;
+            form = form
+                .text("description", description)
+                .text(
+                    "portable_companion_format",
+                    TIER_A_PORTABLE_COMPANION_FORMAT,
+                )
+                .text("portable_companion_path", companion.path.clone())
+                .text("portable_companion_sha256", companion.content_hash.clone());
+            if let Some(value) = companion.portable.modified_unix_ns {
+                form = form.text("portable_companion_mtime_ns", value.to_string());
+            }
+            if let Some(value) = companion.portable.mode {
+                form = form.text("portable_companion_mode", value.to_string());
+            }
+        } else if describe {
             form = form.text("description", binary_description(entry));
         }
         client.post_multipart("/v1/workspace/binaries", form).await
@@ -806,9 +830,13 @@ async fn upload_binary(
             .get("version")
             .and_then(Value::as_i64)
             .ok_or_else(|| anyhow!("binary upload response lacks companion version"))?,
-        content_hash: String::new(),
-        size_bytes: 0,
-        metadata: json!({"kind": "binary_description", "binary_path": entry.path}),
+        content_hash: portable_companion
+            .map(|value| value.content_hash.clone())
+            .unwrap_or_default(),
+        size_bytes: portable_companion.map_or(0, |value| value.size_bytes),
+        metadata: portable_companion
+            .map(|value| markdown_metadata(value))
+            .unwrap_or_else(|| json!({"kind": "binary_description", "binary_path": entry.path})),
     };
     let remote = RemoteEntry {
         entry_ref: required_str(data, "entry_ref")?.to_owned(),
@@ -1493,8 +1521,81 @@ fn collision_key(path: &str) -> String {
     path.nfc().collect::<String>().to_lowercase()
 }
 
-fn is_binary_companion_path(path: &str) -> bool {
-    path.starts_with(".straylight/binaries/") && path.ends_with(".md")
+fn tier_a_metadata(entry: &InventoryEntry) -> Option<&Value> {
+    entry
+        .source_metadata
+        .get("_straylight_tier_a")
+        .filter(|value| {
+            value.get("format").and_then(Value::as_str) == Some(TIER_A_PORTABLE_COMPANION_FORMAT)
+        })
+}
+
+fn is_binary_companion_entry(entry: &InventoryEntry) -> bool {
+    (entry.path.starts_with(".straylight/binaries/") && entry.path.ends_with(".md"))
+        || (entry.source_metadata.get("kind").and_then(Value::as_str) == Some("binary_description")
+            && tier_a_metadata(entry).is_some())
+}
+
+fn portable_companion_entry<'a>(
+    binary: &InventoryEntry,
+    entries: &'a [InventoryEntry],
+) -> Result<Option<&'a InventoryEntry>> {
+    if binary.kind != EntryKind::Binary {
+        return Ok(None);
+    }
+    let Some(metadata) = tier_a_metadata(binary) else {
+        return Ok(None);
+    };
+    let Some(path) = metadata
+        .get("binary_description_path")
+        .and_then(Value::as_str)
+    else {
+        return Ok(None);
+    };
+    validate_relative_path(path)?;
+    if binary.size_bytes > MAX_MULTIPART_BINARY_BYTES {
+        bail!(
+            "{} requires an exact portable companion, but paired binary imports \
+             currently support at most {} bytes",
+            binary.path,
+            MAX_MULTIPART_BINARY_BYTES
+        );
+    }
+    let expected_hash = metadata
+        .get("binary_description_hash")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("{} omits binary_description_hash", binary.path))?;
+    let normalized_hash = strip_sha256(expected_hash);
+    if normalized_hash.len() != 64 || !normalized_hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        bail!("{} has an invalid binary_description_hash", binary.path);
+    }
+    let companion = entries
+        .iter()
+        .find(|entry| collision_key(&entry.path) == collision_key(path))
+        .ok_or_else(|| anyhow!("{} omits exact companion {path}", binary.path))?;
+    if companion.path != path
+        || companion.kind != EntryKind::Markdown
+        || companion.size_bytes > 256_000
+        || strip_sha256(&companion.content_hash) != strip_sha256(expected_hash)
+        || companion
+            .source_metadata
+            .get("kind")
+            .and_then(Value::as_str)
+            != Some("binary_description")
+        || companion
+            .source_metadata
+            .get("binary_path")
+            .and_then(Value::as_str)
+            != Some(binary.path.as_str())
+        || tier_a_metadata(companion).is_none()
+    {
+        bail!(
+            "{} does not have a valid one-to-one exact portable companion",
+            binary.path
+        );
+    }
+    Ok(Some(companion))
 }
 
 fn required_str<'a>(value: &'a Value, field: &str) -> Result<&'a str> {
@@ -1803,6 +1904,63 @@ mod tests {
         assert!(ImportPhase::Binary.includes(&binary));
         assert!(ImportPhase::BinaryCompanion.includes(&companion));
         assert!(!ImportPhase::Markdown.includes(&companion));
+    }
+
+    #[test]
+    fn tier_a_companions_are_one_to_one_exact_and_run_after_binary_upload() {
+        let observed = ObservedFile::default();
+        let description_hash = format!("sha256:{}", "a".repeat(64));
+        let binary = InventoryEntry {
+            path: "sources/receipt.png".to_owned(),
+            kind: EntryKind::Binary,
+            content_hash: format!("sha256:{}", "b".repeat(64)),
+            size_bytes: 10,
+            media_type: "image/png".to_owned(),
+            portable: PortableMetadata::default(),
+            attachment_context: vec![],
+            source_metadata: json!({
+                "_straylight_tier_a": {
+                    "format": TIER_A_PORTABLE_COMPANION_FORMAT,
+                    "binary_description_path": "workspace/assets/receipt.png.md",
+                    "binary_description_hash": description_hash
+                }
+            }),
+            observed: observed.clone(),
+        };
+        let companion = InventoryEntry {
+            path: "workspace/assets/receipt.png.md".to_owned(),
+            kind: EntryKind::Markdown,
+            content_hash: description_hash,
+            size_bytes: 20,
+            media_type: "text/markdown".to_owned(),
+            portable: PortableMetadata::default(),
+            attachment_context: vec![],
+            source_metadata: json!({
+                "kind": "binary_description",
+                "binary_path": "sources/receipt.png",
+                "_straylight_tier_a": {
+                    "format": TIER_A_PORTABLE_COMPANION_FORMAT,
+                    "copy_method": "exact_legacy_bytes"
+                }
+            }),
+            observed,
+        };
+        let entries = vec![binary, companion];
+
+        assert!(ImportPhase::Binary.includes(&entries[0]));
+        assert!(ImportPhase::BinaryCompanion.includes(&entries[1]));
+        assert!(!ImportPhase::Markdown.includes(&entries[1]));
+        assert_eq!(
+            portable_companion_entry(&entries[0], &entries)
+                .unwrap()
+                .unwrap()
+                .path,
+            "workspace/assets/receipt.png.md"
+        );
+
+        let mut mismatched = entries;
+        mismatched[1].content_hash = format!("sha256:{}", "c".repeat(64));
+        assert!(portable_companion_entry(&mismatched[0], &mismatched).is_err());
     }
 
     #[test]

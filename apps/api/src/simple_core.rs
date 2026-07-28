@@ -140,6 +140,8 @@ const RESUME_DELTA_TOTAL_CHARS: usize = 6_000;
 const RESUME_DELTA_SOURCE_CHARS: usize = 2_000;
 const RESUME_DELTA_WHOLE_PAIR_CHARS: usize = 2_400;
 const MAX_STREAMED_BINARY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const WORKSPACE_IMPORT_FORMAT: &str = "straylight-workspace-import-manifest@v1";
+const TIER_A_PORTABLE_COMPANION_FORMAT: &str = "straylight-tier-a-portable-companion@v1";
 const RETRIEVAL_LANE_TIMEOUT: Duration = Duration::from_millis(2_500);
 const CHUNK_INSERT_BATCH_SIZE: usize = 256;
 
@@ -267,6 +269,15 @@ pub struct StreamingBinaryQuery {
     pub mode: Option<u32>,
     pub provenance: Option<String>,
     pub expected_version: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+struct PortableBinaryCompanion {
+    path: String,
+    content: String,
+    content_sha256: String,
+    modified_unix_ns: Option<i64>,
+    mode: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -2036,6 +2047,11 @@ pub async fn upload_binary(
     let mut mode = None;
     let mut expected_version = None;
     let mut expected_content_hash = None;
+    let mut portable_companion_format = None;
+    let mut portable_companion_path = None;
+    let mut portable_companion_sha256 = None;
+    let mut portable_companion_mtime_ns = None;
+    let mut portable_companion_mode = None;
     let mut bytes: Option<Bytes> = None;
     while let Some(field) = multipart
         .next_field()
@@ -2098,6 +2114,30 @@ pub async fn upload_binary(
                 expected_content_hash =
                     Some(read_small_field(field, "expected_content_hash", 80).await?);
             }
+            "portable_companion_format" => {
+                portable_companion_format =
+                    Some(read_small_field(field, "portable_companion_format", 120).await?)
+            }
+            "portable_companion_path" => {
+                portable_companion_path =
+                    Some(read_small_field(field, "portable_companion_path", 1_024).await?)
+            }
+            "portable_companion_sha256" => {
+                portable_companion_sha256 =
+                    Some(read_small_field(field, "portable_companion_sha256", 80).await?)
+            }
+            "portable_companion_mtime_ns" => {
+                let value = read_small_field(field, "portable_companion_mtime_ns", 32).await?;
+                portable_companion_mtime_ns = Some(value.parse::<i64>().map_err(|_| {
+                    ApiError::invalid("portable_companion_mtime_ns must be an integer")
+                })?);
+            }
+            "portable_companion_mode" => {
+                let value = read_small_field(field, "portable_companion_mode", 16).await?;
+                portable_companion_mode = Some(value.parse::<u32>().map_err(|_| {
+                    ApiError::invalid("portable_companion_mode must be an integer")
+                })?);
+            }
             _ => {
                 return Err(ApiError::invalid(format!(
                     "unsupported binary upload field {name}"
@@ -2121,6 +2161,16 @@ pub async fn upload_binary(
                 .essence_str()
                 .to_owned()
         });
+    let portable_companion = prepare_portable_binary_companion(
+        state.config.evaluation_api_enabled,
+        &path,
+        description.as_deref(),
+        portable_companion_format.as_deref(),
+        portable_companion_path.as_deref(),
+        portable_companion_sha256.as_deref(),
+        portable_companion_mtime_ns,
+        portable_companion_mode,
+    )?;
     let stored = state
         .object_store
         .put_user_blob(auth.user_id, Some(&media_type), bytes)
@@ -2152,6 +2202,7 @@ pub async fn upload_binary(
         limitations.as_deref(),
         portable_metadata,
         expected_version,
+        portable_companion,
     )
     .await?;
     let mut envelope = WorkspaceEnvelope::complete(receipt.clone());
@@ -2261,6 +2312,7 @@ pub async fn upload_binary_stream(
         None,
         Some(portable_metadata),
         query.expected_version,
+        None,
     )
     .await?;
     let mut envelope = WorkspaceEnvelope::complete(receipt.clone());
@@ -2437,6 +2489,70 @@ async fn read_small_field(field: Field<'_>, name: &str, limit: usize) -> ApiResu
 }
 
 #[allow(clippy::too_many_arguments)]
+fn prepare_portable_binary_companion(
+    evaluation_api_enabled: bool,
+    binary_path: &str,
+    description: Option<&str>,
+    format: Option<&str>,
+    path: Option<&str>,
+    content_sha256: Option<&str>,
+    modified_unix_ns: Option<i64>,
+    mode: Option<u32>,
+) -> ApiResult<Option<PortableBinaryCompanion>> {
+    let requested = format.is_some()
+        || path.is_some()
+        || content_sha256.is_some()
+        || modified_unix_ns.is_some()
+        || mode.is_some();
+    if !requested {
+        return Ok(None);
+    }
+    if !evaluation_api_enabled {
+        return Err(ApiError::invalid(
+            "exact portable binary companions require an evaluation-only stack",
+        ));
+    }
+    if format != Some(TIER_A_PORTABLE_COMPANION_FORMAT) {
+        return Err(ApiError::invalid(
+            "portable_companion_format is missing or unsupported",
+        ));
+    }
+    let path = path.ok_or_else(|| ApiError::invalid("portable_companion_path is required"))?;
+    validate_public_path(path)?;
+    if portable_path_key(path) == portable_path_key(binary_path) {
+        return Err(ApiError::invalid(
+            "portable binary and companion paths must be different",
+        ));
+    }
+    let content = description
+        .ok_or_else(|| ApiError::invalid("exact portable companion content is required"))?
+        .to_owned();
+    let expected = validate_sha256(
+        content_sha256.ok_or_else(|| ApiError::invalid("portable_companion_sha256 is required"))?,
+    )?;
+    let actual = hex::encode(Sha256::digest(content.as_bytes()));
+    if actual != expected {
+        return Err(ApiError::conflict(
+            "portable_companion_hash_mismatch",
+            "portable companion bytes do not match their pinned SHA-256",
+            json!({"path": path}),
+        ));
+    }
+    if mode.is_some_and(|value| value > 0o777) {
+        return Err(ApiError::invalid(
+            "portable_companion_mode may contain only portable permission bits",
+        ));
+    }
+    Ok(Some(PortableBinaryCompanion {
+        path: path.to_owned(),
+        content,
+        content_sha256: actual,
+        modified_unix_ns,
+        mode,
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn commit_binary_with_companion(
     state: &AppState,
     auth: &AuthContext,
@@ -2451,13 +2567,17 @@ async fn commit_binary_with_companion(
     limitations: Option<&str>,
     portable_metadata: Option<Value>,
     expected_version: Option<i64>,
+    portable_companion: Option<PortableBinaryCompanion>,
 ) -> ApiResult<Value> {
     let object_version_id = object_version_id.ok_or_else(|| {
         ApiError::Internal("versioned object upload returned no exact version ID".to_owned())
     })?;
     let content_sha256 = stored_hash.trim_start_matches("sha256:").to_owned();
     let companion_key = hex::encode(Sha256::digest(portable_path_key(path).as_bytes()));
-    let companion_path = format!(".straylight/binaries/{}.md", &companion_key[..32]);
+    let companion_path = portable_companion.as_ref().map_or_else(
+        || format!(".straylight/binaries/{}.md", &companion_key[..32]),
+        |companion| companion.path.clone(),
+    );
     validate_path(&companion_path)?;
     let title = std::path::Path::new(path)
         .file_name()
@@ -2482,25 +2602,46 @@ async fn commit_binary_with_companion(
         .unwrap_or(
             "The immutable binary bytes are authoritative. This Markdown companion is for retrieval and may be incomplete.",
         );
-    let companion_content = format!(
-        "---\nstraylight_kind: binary_description\nbinary_path: {}\n\
-         content_hash: {}\nmedia_type: {}\nsize_bytes: {}\n\
-         description_status: {}\n---\n\n# Binary: {}\n\n\
-         ## Description\n\n{}\n\n## Provenance\n\n{}\n\n\
-         ## Limitations\n\n{}\n",
-        serde_json::to_string(path)?,
-        serde_json::to_string(&format!("sha256:{content_sha256}"))?,
-        serde_json::to_string(media_type)?,
-        size_bytes,
-        if supplied_description.is_some() {
-            "provided"
-        } else {
-            "pending"
+    let companion_content = portable_companion.as_ref().map_or_else(
+        || {
+            Ok::<_, ApiError>(format!(
+                "---\nstraylight_kind: binary_description\nbinary_path: {}\n\
+                 content_hash: {}\nmedia_type: {}\nsize_bytes: {}\n\
+                 description_status: {}\n---\n\n# Binary: {}\n\n\
+                 ## Description\n\n{}\n\n## Provenance\n\n{}\n\n\
+                 ## Limitations\n\n{}\n",
+                serde_json::to_string(path)?,
+                serde_json::to_string(&format!("sha256:{content_sha256}"))?,
+                serde_json::to_string(media_type)?,
+                size_bytes,
+                if supplied_description.is_some() {
+                    "provided"
+                } else {
+                    "pending"
+                },
+                title,
+                description_text,
+                provenance_text,
+                limitations_text
+            ))
         },
-        title,
-        description_text,
-        provenance_text,
-        limitations_text
+        |companion| Ok(companion.content.clone()),
+    )?;
+    let description_status = if portable_companion.is_some() {
+        "byte_copied"
+    } else if supplied_description.is_some() {
+        "provided"
+    } else {
+        "pending"
+    };
+    let companion_portable_metadata = portable_companion.as_ref().map_or_else(
+        || portable_metadata.clone(),
+        |companion| {
+            Some(json!({
+                "modified_unix_ns": companion.modified_unix_ns,
+                "mode": companion.mode
+            }))
+        },
     );
     let companion = prepare_markdown(
         state,
@@ -2514,12 +2655,13 @@ async fn commit_binary_with_companion(
                 "kind": "binary_description",
                 "binary_path": path,
                 "content_hash": format!("sha256:{content_sha256}"),
-                "portable": portable_metadata.clone(),
-                "description_status": if supplied_description.is_some() {
-                    "provided"
-                } else {
-                    "pending"
-                }
+                "portable": companion_portable_metadata,
+                "description_status": description_status,
+                "_straylight_import": portable_companion.as_ref().map(|companion| json!({
+                    "format": WORKSPACE_IMPORT_FORMAT,
+                    "portable_companion_format": TIER_A_PORTABLE_COMPANION_FORMAT,
+                    "content_sha256": format!("sha256:{}", companion.content_sha256)
+                }))
             }),
         },
     )
@@ -2602,6 +2744,10 @@ async fn commit_binary_with_companion(
             if let Some(portable) = &portable_metadata {
                 values.insert("portable".to_owned(), portable.clone());
             }
+            values.insert(
+                "description_status".to_owned(),
+                Value::String(description_status.to_owned()),
+            );
             if provenance.is_some() {
                 values.insert(
                     "provenance".to_owned(),
@@ -2715,11 +2861,7 @@ async fn commit_binary_with_companion(
         .bind(i64::try_from(size_bytes).unwrap_or(i64::MAX))
         .bind(json!({
             "companion_path": companion_path,
-            "description_status": if supplied_description.is_some() {
-                "provided"
-            } else {
-                "pending"
-            },
+            "description_status": description_status,
             "portable": portable_metadata,
             "provenance": provenance_text,
             "limitations": limitations_text
@@ -2762,9 +2904,10 @@ async fn commit_binary_with_companion(
         (entry_id, version, Some(generation))
     };
 
-    let retained_companion = if binary_no_op && supplied_description.is_none() {
-        sqlx::query(
-            r#"
+    let retained_companion =
+        if binary_no_op && supplied_description.is_none() && portable_companion.is_none() {
+            sqlx::query(
+                r#"
             SELECT entry.id,entry.current_version,version.id AS version_id
             FROM straylight.entries AS entry
             JOIN straylight.entry_versions AS version
@@ -2776,24 +2919,25 @@ async fn commit_binary_with_companion(
               AND entry.kind='markdown'
               AND entry.deleted_at IS NULL
             "#,
-        )
-        .bind(auth.user_id.0)
-        .bind(portable_path_key(&companion_path))
-        .fetch_optional(&mut *tx)
-        .await?
-        .map(|row| MarkdownUpsertResult {
-            entry_id: row.get("id"),
-            version: row.get("current_version"),
-            version_id: Some(row.get("version_id")),
-            generation: None,
-            no_op: true,
-            metadata_only: false,
-        })
-    } else {
-        None
-    };
-    let should_queue_description =
-        supplied_description.is_none() && (!binary_no_op || retained_companion.is_none());
+            )
+            .bind(auth.user_id.0)
+            .bind(portable_path_key(&companion_path))
+            .fetch_optional(&mut *tx)
+            .await?
+            .map(|row| MarkdownUpsertResult {
+                entry_id: row.get("id"),
+                version: row.get("current_version"),
+                version_id: Some(row.get("version_id")),
+                generation: None,
+                no_op: true,
+                metadata_only: false,
+            })
+        } else {
+            None
+        };
+    let should_queue_description = portable_companion.is_none()
+        && supplied_description.is_none()
+        && (!binary_no_op || retained_companion.is_none());
     let companion_result = match retained_companion {
         Some(result) => result,
         None => {
@@ -2841,11 +2985,7 @@ async fn commit_binary_with_companion(
             "version": companion_result.version
         },
         "workspace_generation": generation,
-        "description_status": if supplied_description.is_some() {
-            "provided"
-        } else {
-            "pending"
-        },
+        "description_status": description_status,
         "metadata_only": binary_no_op && binary_annotation_changed,
         "no_op": binary_no_op && !binary_annotation_changed && companion_result.no_op
     }))
@@ -5360,6 +5500,10 @@ async fn upsert_markdown_in_tx(
     prepared: PreparedMarkdown,
 ) -> ApiResult<MarkdownUpsertResult> {
     let checkpoint_import = is_portable_checkpoint_import(&prepared.path, &prepared.metadata);
+    if checkpoint_import {
+        validate_imported_checkpoint_parent_in_tx(tx, user_id, &prepared.path, &prepared.metadata)
+            .await?;
+    }
     let proposed_entry_id = prepared.entry_id_hint.unwrap_or_else(Uuid::now_v7);
     let inserted_entry_id = sqlx::query_scalar::<_, Uuid>(
         r#"
@@ -7025,6 +7169,93 @@ fn is_portable_checkpoint_import(path: &str, metadata: &Value) -> bool {
         == Some("checkpoint")
 }
 
+fn checkpoint_client_metadata(metadata: &Value) -> &Value {
+    metadata
+        .get("client")
+        .filter(|value| value.is_object())
+        .unwrap_or(metadata)
+}
+
+fn imported_checkpoint_parent(metadata: &Value) -> ApiResult<Option<Uuid>> {
+    let Some(value) = checkpoint_client_metadata(metadata).get("parent_checkpoint_ref") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let reference = value.as_str().ok_or_else(|| {
+        ApiError::invalid("imported checkpoint parent_checkpoint_ref must be a string or null")
+    })?;
+    let raw = reference.strip_prefix("checkpoint:").ok_or_else(|| {
+        ApiError::invalid("imported checkpoint parent must use checkpoint:<uuid>")
+    })?;
+    Uuid::parse_str(raw)
+        .map(Some)
+        .map_err(|_| ApiError::invalid("imported checkpoint parent reference is invalid"))
+}
+
+async fn validate_imported_checkpoint_parent_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    child_path: &str,
+    metadata: &Value,
+) -> ApiResult<()> {
+    let Some(parent_id) = imported_checkpoint_parent(metadata)? else {
+        return Ok(());
+    };
+    let child_id = child_path
+        .strip_prefix(".straylight/checkpoints/")
+        .and_then(|value| value.strip_suffix(".md"))
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| ApiError::invalid("imported checkpoint path is invalid"))?;
+    if parent_id == child_id {
+        return Err(ApiError::conflict(
+            "checkpoint_parent_cycle",
+            "an imported checkpoint cannot parent itself",
+            json!({"checkpoint_ref": format!("checkpoint:{child_id}")}),
+        ));
+    }
+    let parent_path = format!(".straylight/checkpoints/{parent_id}.md");
+    let parent_metadata = sqlx::query_scalar::<_, Value>(
+        r#"
+        SELECT version.metadata
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND lower(normalize(entry.path, NFC))=$2
+          AND entry.kind='markdown'
+          AND entry.deleted_at IS NULL
+        "#,
+    )
+    .bind(user_id)
+    .bind(portable_path_key(&parent_path))
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(parent_metadata) = parent_metadata else {
+        return Err(ApiError::conflict(
+            "checkpoint_parent_unresolved",
+            "imported checkpoint parent must already exist for the same user",
+            json!({"parent_checkpoint_ref": format!("checkpoint:{parent_id}")}),
+        ));
+    };
+    let parent = checkpoint_client_metadata(&parent_metadata);
+    let expected_parent_ref = format!("checkpoint:{parent_id}");
+    if parent.get("kind").and_then(Value::as_str) != Some("checkpoint")
+        || parent.get("checkpoint_ref").and_then(Value::as_str)
+            != Some(expected_parent_ref.as_str())
+    {
+        return Err(ApiError::conflict(
+            "checkpoint_parent_unresolved",
+            "imported checkpoint parent does not resolve to a checkpoint entry",
+            json!({"parent_checkpoint_ref": format!("checkpoint:{parent_id}")}),
+        ));
+    }
+    Ok(())
+}
+
 fn rebase_imported_checkpoint_metadata(mut metadata: Value, generation: i64) -> Value {
     let target = if metadata.get("client").is_some_and(Value::is_object) {
         metadata
@@ -7836,6 +8067,78 @@ mod tests {
         let hash = "a".repeat(64);
         assert_eq!(validate_sha256(&format!("sha256:{hash}")).unwrap(), hash);
         assert!(validate_sha256("not-a-hash").is_err());
+    }
+
+    #[test]
+    fn exact_portable_companions_are_eval_only_and_preserve_exact_bytes() {
+        let content = "\r\n# Byte copied\r\n";
+        let hash = hex::encode(Sha256::digest(content.as_bytes()));
+        assert!(
+            prepare_portable_binary_companion(
+                false,
+                "sources/file.png",
+                Some(content),
+                Some(TIER_A_PORTABLE_COMPANION_FORMAT),
+                Some("workspace/assets/file.png.md"),
+                Some(&format!("sha256:{hash}")),
+                Some(123),
+                Some(0o600),
+            )
+            .is_err()
+        );
+        let companion = prepare_portable_binary_companion(
+            true,
+            "sources/file.png",
+            Some(content),
+            Some(TIER_A_PORTABLE_COMPANION_FORMAT),
+            Some("workspace/assets/file.png.md"),
+            Some(&format!("sha256:{hash}")),
+            Some(123),
+            Some(0o600),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(companion.content, content);
+        assert_eq!(companion.content_sha256, hash);
+        assert_eq!(companion.path, "workspace/assets/file.png.md");
+        assert_eq!(companion.modified_unix_ns, Some(123));
+        assert_eq!(companion.mode, Some(0o600));
+        assert!(
+            prepare_portable_binary_companion(
+                true,
+                "sources/file.png",
+                Some(content),
+                Some(TIER_A_PORTABLE_COMPANION_FORMAT),
+                Some("workspace/assets/file.png.md"),
+                Some(&format!("sha256:{}", "0".repeat(64))),
+                None,
+                None,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn imported_checkpoint_parent_references_are_strict() {
+        let parent = Uuid::now_v7();
+        let metadata = json!({
+            "_straylight_import": {"format": WORKSPACE_IMPORT_FORMAT},
+            "client": {
+                "kind": "checkpoint",
+                "parent_checkpoint_ref": format!("checkpoint:{parent}")
+            }
+        });
+        assert_eq!(imported_checkpoint_parent(&metadata).unwrap(), Some(parent));
+        assert_eq!(
+            imported_checkpoint_parent(&json!({"parent_checkpoint_ref": null})).unwrap(),
+            None
+        );
+        assert!(
+            imported_checkpoint_parent(&json!({
+                "parent_checkpoint_ref": format!("entry:{parent}")
+            }))
+            .is_err()
+        );
     }
 
     #[test]

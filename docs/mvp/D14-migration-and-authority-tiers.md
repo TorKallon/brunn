@@ -1,6 +1,6 @@
 # D14 — Migration and Authority Tiers
 
-Status: Proposed — not started
+Status: In progress — local exact-composite preflight passed; service gate pending
 Date: 2026-07-27
 Depends on: D13 (D13-client-integration-and-canaries.md)
 Gated by: E01 (n≥3 paired-draw aggregator machinery; E01-paired-draw-machinery-and-baseline.md), E04 (result-budget experiment; E04-result-budget-experiment.md), and E10 (combined preflight, the final pre-launch gate; E10-combined-preflight.md) — Tier C only; Tiers A and B are gated by deterministic checks in this doc
@@ -15,7 +15,7 @@ The Markdown vault remains authority and fallback until launch gates pass. The s
 ### Six launch gates (current status)
 
 1. Release pinning — tag v8 at commit c3a5420 and retain the image digests. Status: PARTIAL; the release candidate exists, tag-plus-digest retention must be completed and recorded.
-2. Fidelity import — owner corpus exported from legacy and imported to Nyx simplified with a zero-diff fidelity audit (spec below). Status: not started.
+2. Fidelity import — owner corpus exported from legacy and imported to Nyx simplified with a zero-diff fidelity audit (spec below). Status: PARTIAL; the exact current+history+delta composite passed its local zero-diff audit, including 710 byte-copied binary-description pairs and 5,079 native-record materializations. The isolated simplified import, service audit, and downloaded-byte round trip remain pending; see [Tier-A-legacy-fidelity-runbook.md](Tier-A-legacy-fidelity-runbook.md).
 3. Client canaries — all three clients pass the READ set (Tier A) and later the WRITE set (Tier B) per D13 (D13-client-integration-and-canaries.md). Status: not started.
 4. Restore proof — restore drill with fidelity re-audit (Tier B), then Railway cutover PITR drill (Tier C). Status: not started.
 5. Parity evidence — E01 machinery built and used for n≥3 paired draws; E04 (the result-budget experiment, E04-result-budget-experiment.md) passed; writable-sidecar comparisons run two-sided; E10 combined preflight passed (all shipped flags on under one global budget, E10-combined-preflight.md — the final pre-launch gate; no cutover proceeds without it). Status: not started (E01 aggregator and writable-sidecar control are known build items, Small/Medium).
@@ -39,6 +39,15 @@ That bridge can prove exact supported-text import for a disposable evaluation
 user and select E11 candidates, but it explicitly cannot satisfy this full gate:
 binary publication, `history=true` lineage, and checkpoint-table parent
 resolution remain required.
+
+The full legacy recovery/replay implementation and honest current gate record
+are documented in
+[Tier-A-legacy-fidelity-runbook.md](Tier-A-legacy-fidelity-runbook.md). Its
+aggregate preflight result is
+`results/2026-07-27-tier-a-legacy-fidelity-preflight.json`. The local composite
+has zero differences across 4,926 paths and 4,955 versions. This advances gate
+2 only to PARTIAL: no service or round-trip verdict has been run, and the owner
+capture's single checkpoint has no non-null parent reference.
 
 ### Tier B — read/write daily driver (+3-4 days)
 
@@ -94,4 +103,5 @@ The kill switch is the tier structure itself: at any tier, abort returns authori
 - results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json; results/2026-07-27-3340-clean-30-sample.json; v5/v7 future-soak JSONs in results/.
 - D13-client-integration-and-canaries.md; E01-paired-draw-machinery-and-baseline.md (aggregator machinery); E04-result-budget-experiment.md (result-budget experiment); E10-combined-preflight.md (final combined pre-launch gate).
 - Tier-A-owner-snapshot-tooling.md (read-only current-snapshot preflight, scoped audit, and honest gate boundary).
+- Tier-A-legacy-fidelity-runbook.md and results/2026-07-27-tier-a-legacy-fidelity-preflight.json (full-history recovery, exact binary companion contract, native-record materialization, replay, and current partial gate record).
 - Decisions.md (cost rules); Operations.md (credential storage); vault notes on the 07-10, 07-22 dedup, 07-26, and v6 recent-first incidents.

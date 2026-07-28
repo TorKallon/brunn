@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://straylight.local/schemas/tier_a_legacy_audit.schema.json",
+  "title": "Straylight Tier-A legacy fidelity audit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "created_at",
+    "scope",
+    "composite_sha256",
+    "verdict",
+    "checks",
+    "counts",
+    "differences",
+    "tier_a_assessment"
+  ],
+  "properties": {
+    "schema": {"const": "straylight-tier-a-legacy-audit@v1"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "scope": {
+      "enum": ["composite_local", "isolated_simplified_service"]
+    },
+    "composite_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "verdict": {"enum": ["pass", "fail"]},
+    "checks": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "differences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "tier_a_assessment": {
+      "enum": [
+        "local_composite_ready_for_isolated_import",
+        "blocked_by_local_fidelity_failure",
+        "fidelity_gate_pass",
+        "blocked_by_service_fidelity_failure"
+      ]
+    }
+  }
+}

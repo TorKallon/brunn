@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://straylight.local/schemas/tier_a_legacy_composite.schema.json",
+  "title": "Straylight Tier-A legacy composite",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "created_at",
+    "source",
+    "requirements",
+    "totals",
+    "entries",
+    "native",
+    "composite_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "straylight-tier-a-legacy-composite@v1"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "stable_import_id",
+        "corpus_revision",
+        "history_manifest_sha256",
+        "current_manifest_sha256",
+        "delta_manifest_sha256",
+        "native_records_sha256",
+        "history_included",
+        "lineage_order"
+      ],
+      "properties": {
+        "stable_import_id": {"type": "string", "minLength": 1},
+        "corpus_revision": {"type": "string", "minLength": 1},
+        "history_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "current_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "delta_manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "native_records_sha256": {"$ref": "#/$defs/sha256"},
+        "predecessor_composite_sha256": {"$ref": "#/$defs/sha256"},
+        "history_included": {"const": true},
+        "lineage_order": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "requirements": {
+      "type": "object",
+      "required": [
+        "binary_description_copy",
+        "description_regeneration_allowed",
+        "semantic_index_required",
+        "checkpoint_parent_policy",
+        "unsupported_condition_policy"
+      ],
+      "properties": {
+        "binary_description_copy": {"const": "exact_legacy_bytes"},
+        "description_regeneration_allowed": {"const": false},
+        "semantic_index_required": {"const": false},
+        "checkpoint_parent_policy": {
+          "const": "all_parents_present_and_service_resolved"
+        },
+        "unsupported_condition_policy": {"const": "fail_closed"}
+      },
+      "additionalProperties": false
+    },
+    "totals": {
+      "type": "object",
+      "required": [
+        "logical_paths",
+        "versions",
+        "active_versions",
+        "inactive_versions",
+        "bytes_across_versions",
+        "max_versions_per_path",
+        "binary_descriptions",
+        "content_origins"
+      ],
+      "properties": {
+        "logical_paths": {"type": "integer", "minimum": 1},
+        "versions": {"type": "integer", "minimum": 1},
+        "active_versions": {"type": "integer", "minimum": 1},
+        "inactive_versions": {"type": "integer", "minimum": 0},
+        "bytes_across_versions": {"type": "integer", "minimum": 0},
+        "max_versions_per_path": {"type": "integer", "minimum": 1},
+        "binary_descriptions": {"type": "integer", "minimum": 0},
+        "content_origins": {
+          "type": "object",
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        }
+      },
+      "additionalProperties": false
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/entry"}
+    },
+    "native": {"type": "object"},
+    "composite_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "entry": {
+      "type": "object",
+      "required": [
+        "path",
+        "asset_ref",
+        "asset_version",
+        "content_hash",
+        "size_bytes",
+        "media_type",
+        "source_kind",
+        "source_ref",
+        "legacy_manifest_ordinal",
+        "active",
+        "workspace_kind",
+        "lineage_ordinal",
+        "lineage_length",
+        "archive_path",
+        "content_origin"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "asset_ref": {"type": "string", "minLength": 1},
+        "asset_version": {"type": "integer", "minimum": 1},
+        "content_hash": {"$ref": "#/$defs/sha256"},
+        "size_bytes": {"type": "integer", "minimum": 0},
+        "media_type": {"type": "string", "minLength": 1},
+        "source_kind": {"type": "string", "minLength": 1},
+        "source_ref": {"type": "string", "minLength": 1},
+        "legacy_manifest_ordinal": {"type": "integer", "minimum": 1},
+        "active": {"type": "boolean"},
+        "workspace_kind": {"enum": ["markdown", "binary"]},
+        "lineage_ordinal": {"type": "integer", "minimum": 1},
+        "lineage_length": {"type": "integer", "minimum": 1},
+        "archive_path": {"type": "string", "minLength": 1},
+        "content_origin": {"enum": ["base_current", "delta"]}
+      },
+      "additionalProperties": true
+    }
+  }
+}

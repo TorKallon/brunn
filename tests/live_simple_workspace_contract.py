@@ -615,6 +615,67 @@ def run(base_url: str, env: dict[str, str], carrystate: Path) -> dict[str, Any]:
         replayed_import.get("status") == "no_op",
         "identical checkpoint restore replay was not a no-op",
     )
+    unresolved_import_id = uuid.uuid4()
+    unresolved_parent_id = uuid.uuid4()
+    write(
+        isolated,
+        f".straylight/checkpoints/{unresolved_import_id}.md",
+        (
+            "---\nstraylight_kind: checkpoint\n"
+            f"checkpoint_id: {unresolved_import_id}\n"
+            f"parent_checkpoint_id: checkpoint:{unresolved_parent_id}\n"
+            "---\n\nUnresolved portable child.\n"
+        ),
+        expected_version=0,
+        metadata={
+            "kind": "checkpoint",
+            "checkpoint_ref": f"checkpoint:{unresolved_import_id}",
+            "parent_checkpoint_ref": f"checkpoint:{unresolved_parent_id}",
+            "_straylight_import": {
+                "format": "straylight-workspace-import-manifest@v1"
+            },
+        },
+        expected=409,
+    )
+    imported_child_id = uuid.uuid4()
+    imported_child_ref = f"checkpoint:{imported_child_id}"
+    imported_child_path = f".straylight/checkpoints/{imported_child_id}.md"
+    imported_child = write(
+        isolated,
+        imported_child_path,
+        (
+            "---\nstraylight_kind: checkpoint\n"
+            f"checkpoint_id: {imported_child_id}\n"
+            f"parent_checkpoint_id: {imported_checkpoint_ref}\n"
+            "---\n\nPortable child checkpoint.\n"
+        ),
+        expected_version=0,
+        metadata={
+            "kind": "checkpoint",
+            "checkpoint_ref": imported_child_ref,
+            "parent_checkpoint_ref": imported_checkpoint_ref,
+            "workspace_generation": origin_generation + 1,
+            "_straylight_import": {
+                "format": "straylight-workspace-import-manifest@v1"
+            },
+        },
+    )
+    require(
+        imported_child.get("status") == "committed",
+        "portable checkpoint child did not resolve its imported parent",
+    )
+    opened_child, _ = isolated.request(
+        "POST",
+        "/v1/workspace/open",
+        body={
+            "task": "Resume the imported portable child.",
+            "resume_checkpoint_ref": imported_child_ref,
+        },
+    )
+    require(
+        "Portable child checkpoint" in json.dumps(opened_child),
+        "imported checkpoint child was not resumable",
+    )
     write(
         isolated,
         imported_checkpoint_path,

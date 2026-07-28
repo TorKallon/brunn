@@ -1,6 +1,6 @@
 # Tier A owner-snapshot tooling
 
-Status: Tooling ready; no owner import or Tier A gate claimed
+Status: Current-snapshot tooling ready; superseded for full D14 fidelity by the legacy runbook
 Date: 2026-07-27
 Supports: D14 fidelity preflight and E11 owner link-case selection
 
@@ -32,6 +32,15 @@ evaluation corpus, but it does not satisfy E11's hard Tier A precondition and
 must not be reported as D14's full legacy export-with-history and binary
 fidelity gate. The audit emits both verdicts separately and keeps the full D14
 verdict blocked until the omitted capabilities are supplied.
+
+Those omitted capabilities are now implemented by
+[Tier-A-legacy-fidelity-runbook.md](Tier-A-legacy-fidelity-runbook.md):
+current+`history=true`+delta composition, exact binary companion publication,
+deterministic native-record materialization, bounded lineage replay, actual
+checkpoint import, and service/export audits. Its local aggregate preflight
+passes, but its isolated service and round-trip gates remain pending. This
+current-snapshot bridge remains useful only for E11 selection and scoped
+source-vault checks.
 
 ## Private artifact location
 

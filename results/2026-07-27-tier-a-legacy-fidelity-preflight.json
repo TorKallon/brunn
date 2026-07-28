@@ -1,0 +1,74 @@
+{
+  "schema": "straylight-tier-a-legacy-fidelity-preflight-result@v1",
+  "observed_at": "2026-07-28T00:51:24.274802Z",
+  "privacy": {
+    "committed_artifact": "aggregate_counts_and_fingerprints_only",
+    "owner_paths_or_content_included": false,
+    "private_artifacts": "ignored operator-output only"
+  },
+  "composite": {
+    "predecessor_composite_sha256": "sha256:c522ccb26b7269df3d48db8154d91b49b0447c97f5760fb11edca01e7d1b567f",
+    "composite_sha256": "sha256:4e55b2582aa56944a3e1bf1f076faef426131afb91309716820f65c11b313ffd",
+    "history_included": true,
+    "logical_paths": 4926,
+    "versions": 4955,
+    "active_versions": 4926,
+    "inactive_versions": 29,
+    "bytes_across_versions": 300711284,
+    "max_versions_per_path": 6,
+    "content_origins": {
+      "base_current": 4924,
+      "exact_delta": 31
+    }
+  },
+  "binary_fidelity": {
+    "binary_entries": 710,
+    "exact_legacy_description_pairs": 710,
+    "unpaired_binary_entries": 0,
+    "description_regeneration_calls": 0
+  },
+  "native_records": {
+    "captured": 5079,
+    "materialized": 5079,
+    "materialized_bytes": 48166249,
+    "kind_counts": {
+      "checkpoint": 1,
+      "claim": 5,
+      "evidence": 5071,
+      "object": 2
+    },
+    "checkpoints": 1,
+    "checkpoint_parent_references": 0
+  },
+  "local_audit": {
+    "verdict": "pass",
+    "differences": 0,
+    "checksum_ledger": "pass",
+    "path_version_hash_size": "pass",
+    "binary_description_byte_copy_pairs": "pass",
+    "native_record_materializations": "pass",
+    "checkpoint_graph": "pass"
+  },
+  "isolated_service_audit": {
+    "verdict": "not_run",
+    "tier_a_gate": "blocked",
+    "remaining_checks": [
+      "import all six replay stages into a fresh isolated simplified user",
+      "resolve and resume every native checkpoint in the service",
+      "export full simplified history and obtain zero byte-level round-trip differences",
+      "issue read-only pilot credentials and pass all D13 READ canaries"
+    ],
+    "checkpoint_lineage_note": "The owner capture has zero non-null parent references; service resolution is vacuous for this capture. Synthetic and live-contract coverage exercises unresolved-parent rejection and valid-parent acceptance."
+  },
+  "billing": {
+    "codex_or_chatgpt_inference_calls": 0,
+    "openai_embedding_calls": 0,
+    "openai_api_spend_usd": 0.0,
+    "estimated_importable_text_bytes": 88534925,
+    "embedding_cost_reference_usd_per_9_6m_tokens": 0.19,
+    "conservative_byte_as_token_estimate_usd": 1.76,
+    "twice_conservative_estimate_usd": 3.52,
+    "over_20_usd_flag": false
+  },
+  "conclusion": "The exact local recovery/composition preflight passes. D14 Tier A is not passed until the isolated service import, service and round-trip audits, release pinning, and client READ canaries pass."
+}
