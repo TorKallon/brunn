@@ -1,0 +1,21 @@
+{
+  "schema": "straylight-paired-query-count-comparison@v1",
+  "created_at": "2026-07-28T06:50:09.924314-07:00",
+  "pass": false,
+  "errors": [
+    {
+      "type": "ValueError",
+      "message": "strict improvement requires at least one negative delta"
+    }
+  ],
+  "inputs": {
+    "control": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e05-run/results/2026-07-28-e05-armA-control-soak.json",
+      "sha256": "81d967826f181edbfe327a2171ce9909f9b107c752279e077651694cbe166c67"
+    },
+    "treatment": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e05-run/results/2026-07-28-e05-armB-guards-soak.json",
+      "sha256": "97e8ecf7bf0660edebb95dc6ced062ef0968753afe3100b6c2faaa39df1df857"
+    }
+  }
+}

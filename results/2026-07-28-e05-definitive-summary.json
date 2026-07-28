@@ -1,0 +1,106 @@
+{
+  "schema": "straylight-experiment-summary@v1",
+  "experiment": "E05",
+  "title": "Lexical consolidation guard",
+  "completed_at": "2026-07-28T06:50:18.980935-07:00",
+  "status": "complete_negative",
+  "experiment_verdict": "rejected",
+  "decision": "drop lexical_single_scan permanently and close the deferred D10 item",
+  "reason": "The treatment preserved all deterministic retrieval guards but reduced completed SQL statements in zero of 795 paired search samples. The blocking comparator required at least one strict reduction, so reasoning was prohibited.",
+  "provenance": {
+    "source_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+    "api_image_id": "sha256:48328f547bafec436d5b4065c6926905ec6398a90894c66c880d0aac2640f4b9",
+    "api_image_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+    "retrieval_modes": [
+      "exact",
+      "lexical"
+    ],
+    "semantic_lane": false,
+    "verbatim_spans": false,
+    "embedding_provider": "hashing",
+    "worker_started": false
+  },
+  "artifacts": {
+    "control": {
+      "path": "results/2026-07-28-e05-armA-control-soak.json",
+      "sha256": "81d967826f181edbfe327a2171ce9909f9b107c752279e077651694cbe166c67",
+      "pass": true
+    },
+    "treatment": {
+      "path": "results/2026-07-28-e05-armB-guards-soak.json",
+      "sha256": "97e8ecf7bf0660edebb95dc6ced062ef0968753afe3100b6c2faaa39df1df857",
+      "pass": true
+    },
+    "blocking_query_comparison": {
+      "path": "results/2026-07-28-e05-query-count-comparison.json",
+      "sha256": "535eaf5da55bd6f191192083debd88512f1ef58d4406b1e21fb8d10ee29242c5",
+      "pass": false,
+      "error": "strict improvement requires at least one negative delta"
+    },
+    "paired_count_diagnostic": {
+      "path": "results/2026-07-28-e05-query-count-diagnostic.json",
+      "sha256": "d40190a7b779489df607f3b7d93214f28dc1ad22ec8032ba55689a3fed0359da",
+      "pass_without_strict_improvement_requirement": true
+    }
+  },
+  "deterministic_results": {
+    "future_soak_records": 640000,
+    "treatment_old_relevant_source_survives_many_newer_writes": {
+      "passed": 30,
+      "total": 30
+    },
+    "treatment_bounded_lexical_overflow_returns_late_relevant_source": {
+      "passed": 30,
+      "total": 30
+    },
+    "control_640k": {
+      "open_p95_ms": 37.508,
+      "search_p95_ms": 14.567,
+      "unrelated_write_p95_ms": 11.616
+    },
+    "treatment_640k": {
+      "open_p95_ms": 31.954,
+      "search_p95_ms": 12.828,
+      "unrelated_write_p95_ms": 13.683
+    },
+    "unrelated_write_gate_ms": 58.0,
+    "paired_query_counts": {
+      "selected_operation": "search",
+      "selected_samples": 795,
+      "allowed_delta_range": [
+        -2,
+        0
+      ],
+      "observed_unique_deltas": [
+        0
+      ],
+      "strict_reductions": 0,
+      "unselected_operation_nonzero_deltas": 0,
+      "blocking_requirement_met": false
+    }
+  },
+  "reasoning": {
+    "eligible": false,
+    "executed_case_runs": 0,
+    "skipped_artifacts": [
+      "results/2026-07-28-e05-lexical-arm{A,B}-draw{1,2,3}.json",
+      "results/2026-07-28-e05-lexical-targeted-arm{A,B}-draw{1,2,3,4,5}.json"
+    ],
+    "skip_reason": "Procedure step 3 and abort criterion 1 prohibit reasoning after the strict paired query-count comparator fails."
+  },
+  "cost": {
+    "actual_usage_billed_reasoning_usd": 0.0,
+    "actual_embedding_usd": 0.0,
+    "actual_subscription_equivalent_usd": 0.0,
+    "unincurred_reasoning_preflight_usd": 23.52,
+    "hard_ceiling_usd": 40.0,
+    "embedding_warning_threshold_usd": 20.0,
+    "embedding_warning_triggered": false
+  },
+  "excluded_attempt": {
+    "reason": "An earlier bf60ee6 pair used mismatched harness sample contracts and is not definitive evidence.",
+    "control_sha256": "5f267b5c8dce4dc542584154bd7022e3e8d7b4384485f71d9c85b14b3bf7124d",
+    "treatment_sha256": "6027609f4ed048fec85b8d222bbefca5bb086c0b90e9c651006477ef82ee4b35",
+    "committed": false
+  }
+}
