@@ -302,6 +302,7 @@ impl ImportPhase {
 struct ImportPlan<'a> {
     entry: &'a InventoryEntry,
     portable_companion: Option<&'a InventoryEntry>,
+    companion_binary: Option<&'a InventoryEntry>,
     current: Option<RemoteEntry>,
     upload: bool,
     expected_version: i64,
@@ -337,6 +338,7 @@ async fn import_phase(
     let mut plans = Vec::new();
     for entry in entries.iter().filter(|entry| phase.includes(entry)) {
         let portable_companion = portable_companion_entry(entry, entries)?;
+        let companion_binary = tier_a_binary_for_companion(entry, entries)?;
         let key = collision_key(&entry.path);
         let current = remote.get(&key).cloned();
         if let Some(current) = &current {
@@ -346,10 +348,12 @@ async fn import_phase(
             || current
                 .as_ref()
                 .is_some_and(|value| binary_companion_is_present(value, remote));
-        let decision = plan_import_entry(entry, current.as_ref(), companion_ready)?;
+        let decision =
+            plan_import_entry(entry, current.as_ref(), companion_ready, companion_binary)?;
         plans.push(ImportPlan {
             entry,
             portable_companion,
+            companion_binary,
             expected_version: decision.expected_version,
             current,
             upload: decision.upload,
@@ -371,7 +375,14 @@ async fn import_phase(
             }
             let (server_entry, generated_companion) = match plan.entry.kind {
                 EntryKind::Markdown => (
-                    write_markdown(client, root, plan.entry, plan.expected_version).await?,
+                    write_markdown(
+                        client,
+                        root,
+                        plan.entry,
+                        plan.companion_binary,
+                        plan.expected_version,
+                    )
+                    .await?,
                     None,
                 ),
                 EntryKind::Binary => {
@@ -671,6 +682,7 @@ async fn write_markdown(
     client: &ApiClient,
     root: &Path,
     entry: &InventoryEntry,
+    companion_binary: Option<&InventoryEntry>,
     expected_version: i64,
 ) -> Result<RemoteEntry> {
     let bytes = read_unchanged_file(root, entry)?;
@@ -718,7 +730,7 @@ async fn write_markdown(
         size_bytes: entry.size_bytes,
         metadata,
     };
-    verify_upload_receipt(entry, &remote)?;
+    verify_upload_receipt(entry, &remote, companion_binary)?;
     Ok(remote)
 }
 
@@ -861,7 +873,7 @@ async fn upload_binary(
             .unwrap_or_default(),
         size_bytes: portable_companion.map_or(0, |value| value.size_bytes),
         metadata: portable_companion
-            .map(|value| markdown_metadata(value))
+            .map(|value| normalized_portable_companion_metadata(entry, value))
             .unwrap_or_else(|| json!({"kind": "binary_description", "binary_path": entry.path})),
     };
     let remote = RemoteEntry {
@@ -879,7 +891,7 @@ async fn upload_binary(
             "limitations": limitations
         }),
     };
-    verify_upload_receipt(entry, &remote)?;
+    verify_upload_receipt(entry, &remote, None)?;
     let metadata_response = client
         .get_json(&format!("/v1/workspace/binaries/{}", remote.entry_ref), &[])
         .await?;
@@ -892,6 +904,24 @@ async fn upload_binary(
         bail!("binary metadata verification failed for {}", entry.path);
     }
     Ok((remote, companion_entry))
+}
+
+fn normalized_portable_companion_metadata(
+    binary: &InventoryEntry,
+    companion: &InventoryEntry,
+) -> Value {
+    json!({
+        "_straylight_import": {
+            "format": IMPORT_MANIFEST_FORMAT,
+            "portable_companion_format": TIER_A_PORTABLE_COMPANION_FORMAT,
+            "content_sha256": companion.content_hash,
+        },
+        "binary_path": binary.path,
+        "content_hash": binary.content_hash,
+        "description_status": "byte_copied",
+        "kind": "binary_description",
+        "portable": companion.portable,
+    })
 }
 
 fn markdown_metadata(entry: &InventoryEntry) -> Value {
@@ -1077,22 +1107,69 @@ fn content_identity_matches(local: &InventoryEntry, remote: &RemoteEntry) -> boo
         && remote.size_bytes == local.size_bytes
 }
 
+fn normalized_portable_companion_identity_matches(
+    companion: &InventoryEntry,
+    binary: &InventoryEntry,
+    remote: &RemoteEntry,
+) -> bool {
+    let Some(portable) = remote
+        .metadata
+        .get("portable")
+        .filter(|value| value.is_object())
+        .cloned()
+        .and_then(|value| serde_json::from_value::<PortableMetadata>(value).ok())
+    else {
+        return false;
+    };
+    let Some(import) = remote
+        .metadata
+        .get("_straylight_import")
+        .filter(|value| value.is_object())
+    else {
+        return false;
+    };
+    companion.path == remote.path
+        && companion.kind.server_name() == remote.kind
+        && content_identity_matches(companion, remote)
+        && portable == companion.portable
+        && remote.metadata.get("kind").and_then(Value::as_str) == Some("binary_description")
+        && remote.metadata.get("binary_path").and_then(Value::as_str) == Some(binary.path.as_str())
+        && remote
+            .metadata
+            .get("description_status")
+            .and_then(Value::as_str)
+            == Some("byte_copied")
+        && remote
+            .metadata
+            .get("content_hash")
+            .and_then(Value::as_str)
+            .is_some_and(|value| strip_sha256(value) == strip_sha256(&binary.content_hash))
+        && import.get("format").and_then(Value::as_str) == Some(IMPORT_MANIFEST_FORMAT)
+        && import
+            .get("portable_companion_format")
+            .and_then(Value::as_str)
+            == Some(TIER_A_PORTABLE_COMPANION_FORMAT)
+        && import
+            .get("content_sha256")
+            .and_then(Value::as_str)
+            .is_some_and(|value| strip_sha256(value) == strip_sha256(&companion.content_hash))
+}
+
 fn remote_history_identity_matches(
     local: &InventoryEntry,
     remote: &RemoteEntry,
     stage: TierAHistoryStage,
 ) -> Result<bool> {
-    if let Some(remote_stage) = tier_a_history_stage(&remote.metadata)? {
-        return Ok(remote_stage == stage);
-    }
     let local_legacy = local.source_metadata.get("legacy");
     let remote_legacy = remote.metadata.get("legacy");
-    Ok(local_legacy.is_some()
+    let legacy_matches = local_legacy.is_some()
         && local_legacy == remote_legacy
         && remote_legacy
             .and_then(|value| value.get("lineage_ordinal"))
             .and_then(Value::as_i64)
-            == Some(stage.target_lineage_ordinal))
+            == Some(stage.target_lineage_ordinal);
+    Ok(legacy_matches
+        && tier_a_history_stage(&remote.metadata)?.is_none_or(|remote_stage| remote_stage == stage))
 }
 
 fn complete_current_identity_matches(
@@ -1111,8 +1188,59 @@ fn plan_import_entry(
     entry: &InventoryEntry,
     current: Option<&RemoteEntry>,
     companion_ready: bool,
+    companion_binary: Option<&InventoryEntry>,
 ) -> Result<ImportDecision> {
-    let Some(stage) = tier_a_history_stage(&entry.source_metadata)? else {
+    let stage = tier_a_history_stage(&entry.source_metadata)?;
+    if let Some(binary) = companion_binary {
+        let target = stage.map_or(1, |value| value.target_lineage_ordinal);
+        if stage.is_some_and(|value| {
+            value.semantics == TierAHistorySemantics::PreserveIntentionalExactBytesVersion
+        }) {
+            bail!(
+                "same-byte binary companion history is unsupported for {:?}; \
+                 refusing to collapse or synthesize a companion version",
+                entry.path
+            );
+        }
+        let Some(current) = current else {
+            bail!(
+                "Tier-A binary companion {:?} is absent at target {}; \
+                 it must be imported atomically with its binary",
+                entry.path,
+                target
+            );
+        };
+        if current.version < target {
+            bail!(
+                "Tier-A binary companion {:?} remains at predecessor ordinal {}; \
+                 target {} must be advanced atomically with its binary",
+                entry.path,
+                current.version,
+                target
+            );
+        }
+        if current.version > target {
+            bail!(
+                "Tier-A binary companion history is ahead for {:?}: \
+                 current ordinal {} exceeds target {}",
+                entry.path,
+                current.version,
+                target
+            );
+        }
+        if !normalized_portable_companion_identity_matches(entry, binary, current) {
+            bail!(
+                "Tier-A binary companion target identity differs for {:?} at ordinal {}",
+                entry.path,
+                target
+            );
+        }
+        return Ok(ImportDecision {
+            upload: false,
+            expected_version: target,
+        });
+    }
+    let Some(stage) = stage else {
         let matching_identity = current.is_some_and(|value| {
             content_identity_matches(entry, value)
                 && remote_portable_metadata(value) == entry.portable
@@ -1219,7 +1347,11 @@ fn ensure_remote_identity(local: &InventoryEntry, remote: &RemoteEntry) -> Resul
     Ok(())
 }
 
-fn verify_upload_receipt(local: &InventoryEntry, remote: &RemoteEntry) -> Result<()> {
+fn verify_upload_receipt(
+    local: &InventoryEntry,
+    remote: &RemoteEntry,
+    companion_binary: Option<&InventoryEntry>,
+) -> Result<()> {
     ensure_remote_identity(local, remote)?;
     if strip_sha256(&remote.content_hash) != strip_sha256(&local.content_hash)
         || remote.size_bytes != local.size_bytes
@@ -1233,7 +1365,34 @@ fn verify_upload_receipt(local: &InventoryEntry, remote: &RemoteEntry) -> Result
             remote.size_bytes
         );
     }
-    if let Some(stage) = tier_a_history_stage(&local.source_metadata)? {
+    let stage = tier_a_history_stage(&local.source_metadata)?;
+    if let Some(binary) = companion_binary {
+        let target = stage.map_or(1, |value| value.target_lineage_ordinal);
+        if stage.is_some_and(|value| {
+            value.semantics == TierAHistorySemantics::PreserveIntentionalExactBytesVersion
+        }) {
+            bail!(
+                "same-byte binary companion history is unsupported for {}",
+                local.path
+            );
+        }
+        if remote.version != target {
+            bail!(
+                "server history receipt does not match {}: expected ordinal {}, received {}",
+                local.path,
+                target,
+                remote.version
+            );
+        }
+        if !normalized_portable_companion_identity_matches(local, binary, remote) {
+            bail!(
+                "server companion receipt does not retain the Tier-A stable identity for {}",
+                local.path
+            );
+        }
+        return Ok(());
+    }
+    if let Some(stage) = stage {
         if remote.version != stage.target_lineage_ordinal {
             bail!(
                 "server history receipt does not match {}: expected ordinal {}, received {}",
@@ -1260,7 +1419,8 @@ fn verify_complete_import(
         let server = remote
             .get(&collision_key(&entry.path))
             .ok_or_else(|| anyhow!("server manifest is missing {}", entry.path))?;
-        verify_upload_receipt(entry, server)?;
+        let companion_binary = tier_a_binary_for_companion(entry, local)?;
+        verify_upload_receipt(entry, server, companion_binary)?;
         if entry.kind == EntryKind::Binary && !binary_companion_is_present(server, remote) {
             bail!(
                 "server manifest is missing the companion for {}",
@@ -1732,8 +1892,12 @@ fn tier_a_metadata(entry: &InventoryEntry) -> Option<&Value> {
 
 fn is_binary_companion_entry(entry: &InventoryEntry) -> bool {
     (entry.path.starts_with(".straylight/binaries/") && entry.path.ends_with(".md"))
-        || (entry.source_metadata.get("kind").and_then(Value::as_str) == Some("binary_description")
-            && tier_a_metadata(entry).is_some())
+        || is_tier_a_portable_companion_entry(entry)
+}
+
+fn is_tier_a_portable_companion_entry(entry: &InventoryEntry) -> bool {
+    entry.source_metadata.get("kind").and_then(Value::as_str) == Some("binary_description")
+        && tier_a_metadata(entry).is_some()
 }
 
 fn portable_companion_entry<'a>(
@@ -1796,6 +1960,38 @@ fn portable_companion_entry<'a>(
         );
     }
     Ok(Some(companion))
+}
+
+fn tier_a_binary_for_companion<'a>(
+    companion: &InventoryEntry,
+    entries: &'a [InventoryEntry],
+) -> Result<Option<&'a InventoryEntry>> {
+    if !is_tier_a_portable_companion_entry(companion) {
+        return Ok(None);
+    }
+    let binary_path = companion
+        .source_metadata
+        .get("binary_path")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("{} omits its binary_path", companion.path))?;
+    validate_relative_path(binary_path)?;
+    let binary = entries
+        .iter()
+        .find(|entry| collision_key(&entry.path) == collision_key(binary_path))
+        .ok_or_else(|| anyhow!("{} omits paired binary {binary_path}", companion.path))?;
+    if binary.path != binary_path || binary.kind != EntryKind::Binary {
+        bail!("{} does not point to an exact binary entry", companion.path);
+    }
+    let paired = portable_companion_entry(binary, entries)?
+        .ok_or_else(|| anyhow!("{} is not claimed by its paired binary", companion.path))?;
+    if paired.path != companion.path {
+        bail!(
+            "{} is not the one-to-one companion claimed by {}",
+            companion.path,
+            binary.path
+        );
+    }
+    Ok(Some(binary))
 }
 
 fn required_str<'a>(value: &'a Value, field: &str) -> Result<&'a str> {
@@ -1987,6 +2183,85 @@ mod tests {
             content_hash: format!("sha256:{}", "a".repeat(64)),
             size_bytes: 7,
             metadata: history_metadata(target, semantics),
+        }
+    }
+
+    fn tier_a_companion_pair(target: i64, semantics: &str) -> (InventoryEntry, InventoryEntry) {
+        let description_hash = format!("sha256:{}", "a".repeat(64));
+        let portable = PortableMetadata {
+            modified_unix_ns: Some(1_700_000_000_000_000_000),
+            mode: Some(0o600),
+        };
+        let binary = InventoryEntry {
+            path: "sources/receipt.png".to_owned(),
+            kind: EntryKind::Binary,
+            content_hash: format!("sha256:{}", "b".repeat(64)),
+            size_bytes: 10,
+            media_type: "image/png".to_owned(),
+            portable: portable.clone(),
+            attachment_context: vec![],
+            source_metadata: json!({
+                "_straylight_tier_a": {
+                    "format": TIER_A_PORTABLE_COMPANION_FORMAT,
+                    "binary_description_path": "workspace/assets/receipt.png.md",
+                    "binary_description_hash": description_hash,
+                    "copy_method": "exact_legacy_bytes"
+                }
+            }),
+            observed: ObservedFile::default(),
+        };
+        let mut source_metadata = history_metadata(target, semantics);
+        let values = source_metadata
+            .as_object_mut()
+            .expect("history metadata is an object");
+        values.insert("kind".to_owned(), json!("binary_description"));
+        values.insert("binary_path".to_owned(), json!(binary.path));
+        values.insert("description_status".to_owned(), json!("complete"));
+        values.insert(
+            "_straylight_tier_a".to_owned(),
+            json!({
+                "format": TIER_A_PORTABLE_COMPANION_FORMAT,
+                "copy_method": "exact_legacy_bytes"
+            }),
+        );
+        let companion = InventoryEntry {
+            path: "workspace/assets/receipt.png.md".to_owned(),
+            kind: EntryKind::Markdown,
+            content_hash: description_hash,
+            size_bytes: 20,
+            media_type: "text/markdown".to_owned(),
+            portable,
+            attachment_context: vec![],
+            source_metadata,
+            observed: ObservedFile::default(),
+        };
+        (binary, companion)
+    }
+
+    fn normalized_companion_remote(
+        binary: &InventoryEntry,
+        companion: &InventoryEntry,
+        version: i64,
+    ) -> RemoteEntry {
+        RemoteEntry {
+            entry_ref: format!("entry:{}", Uuid::now_v7()),
+            path: companion.path.clone(),
+            kind: "markdown".to_owned(),
+            version,
+            content_hash: companion.content_hash.clone(),
+            size_bytes: companion.size_bytes,
+            metadata: json!({
+                "_straylight_import": {
+                    "format": IMPORT_MANIFEST_FORMAT,
+                    "portable_companion_format": TIER_A_PORTABLE_COMPANION_FORMAT,
+                    "content_sha256": companion.content_hash,
+                },
+                "binary_path": binary.path,
+                "content_hash": binary.content_hash,
+                "description_status": "byte_copied",
+                "kind": "binary_description",
+                "portable": companion.portable,
+            }),
         }
     }
 
@@ -2208,10 +2483,123 @@ mod tests {
     }
 
     #[test]
+    fn fetched_normalized_tier_a_companion_reconciles_and_final_verifies() {
+        let (binary, companion) = tier_a_companion_pair(1, TIER_A_ORDINARY_HISTORY_SEMANTICS);
+        let local = vec![binary, companion];
+        let paired_binary = tier_a_binary_for_companion(&local[1], &local)
+            .unwrap()
+            .unwrap();
+        let remote_companion = normalized_companion_remote(paired_binary, &local[1], 1);
+        assert_eq!(
+            normalized_portable_companion_metadata(paired_binary, &local[1]),
+            remote_companion.metadata
+        );
+
+        assert_eq!(
+            plan_import_entry(
+                &local[1],
+                Some(&remote_companion),
+                true,
+                Some(paired_binary),
+            )
+            .unwrap(),
+            ImportDecision {
+                upload: false,
+                expected_version: 1,
+            }
+        );
+        verify_upload_receipt(&local[1], &remote_companion, Some(paired_binary)).unwrap();
+
+        let remote_binary = RemoteEntry {
+            entry_ref: format!("entry:{}", Uuid::now_v7()),
+            path: local[0].path.clone(),
+            kind: "binary".to_owned(),
+            version: 1,
+            content_hash: local[0].content_hash.clone(),
+            size_bytes: local[0].size_bytes,
+            metadata: json!({
+                "companion_path": local[1].path,
+                "portable": local[0].portable,
+            }),
+        };
+        let remote = BTreeMap::from([
+            (collision_key(&remote_binary.path), remote_binary),
+            (collision_key(&remote_companion.path), remote_companion),
+        ]);
+        verify_complete_import(&local, &remote).unwrap();
+    }
+
+    #[test]
+    fn normalized_tier_a_companion_mismatches_fail_closed() {
+        let (binary, companion) = tier_a_companion_pair(1, TIER_A_ORDINARY_HISTORY_SEMANTICS);
+        let rejected = |remote: &RemoteEntry| {
+            assert!(plan_import_entry(&companion, Some(remote), true, Some(&binary)).is_err());
+            assert!(verify_upload_receipt(&companion, remote, Some(&binary)).is_err());
+        };
+
+        let mut wrong_binary_path = normalized_companion_remote(&binary, &companion, 1);
+        wrong_binary_path.metadata["binary_path"] = json!("sources/other.png");
+        rejected(&wrong_binary_path);
+
+        let mut wrong_status = normalized_companion_remote(&binary, &companion, 1);
+        wrong_status.metadata["description_status"] = json!("provided");
+        rejected(&wrong_status);
+
+        let mut wrong_binary_hash = normalized_companion_remote(&binary, &companion, 1);
+        wrong_binary_hash.metadata["content_hash"] = json!(format!("sha256:{}", "c".repeat(64)));
+        rejected(&wrong_binary_hash);
+
+        let mut wrong_companion_hash = normalized_companion_remote(&binary, &companion, 1);
+        wrong_companion_hash.metadata["_straylight_import"]["content_sha256"] =
+            json!(format!("sha256:{}", "d".repeat(64)));
+        rejected(&wrong_companion_hash);
+
+        let mut wrong_portable = normalized_companion_remote(&binary, &companion, 1);
+        wrong_portable.metadata["portable"]["mode"] = json!(0o644);
+        rejected(&wrong_portable);
+
+        let wrong_version = normalized_companion_remote(&binary, &companion, 2);
+        rejected(&wrong_version);
+    }
+
+    #[test]
+    fn changed_tier_a_companion_must_advance_atomically_with_binary() {
+        let (binary, companion) = tier_a_companion_pair(2, TIER_A_ORDINARY_HISTORY_SEMANTICS);
+        let predecessor = RemoteEntry {
+            version: 1,
+            content_hash: format!("sha256:{}", "e".repeat(64)),
+            size_bytes: companion.size_bytes + 1,
+            ..normalized_companion_remote(&binary, &companion, 1)
+        };
+        let error = plan_import_entry(&companion, Some(&predecessor), true, Some(&binary))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("advanced atomically with its binary"));
+
+        let atomic_target = normalized_companion_remote(&binary, &companion, 2);
+        assert_eq!(
+            plan_import_entry(&companion, Some(&atomic_target), true, Some(&binary)).unwrap(),
+            ImportDecision {
+                upload: false,
+                expected_version: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn exact_history_binary_companions_are_unsupported() {
+        let (binary, companion) = tier_a_companion_pair(2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        let target = normalized_companion_remote(&binary, &companion, 2);
+
+        assert!(plan_import_entry(&companion, Some(&target), true, Some(&binary)).is_err());
+        assert!(verify_upload_receipt(&companion, &target, Some(&binary)).is_err());
+    }
+
+    #[test]
     fn tier_a_exact_history_forces_only_the_immediate_next_ordinal() {
         let entry = history_entry(2, TIER_A_EXACT_HISTORY_SEMANTICS);
         let predecessor = remote_history_entry(1, 1, TIER_A_ORDINARY_HISTORY_SEMANTICS);
-        let decision = plan_import_entry(&entry, Some(&predecessor), true).unwrap();
+        let decision = plan_import_entry(&entry, Some(&predecessor), true, None).unwrap();
 
         assert_eq!(
             decision,
@@ -2226,7 +2614,7 @@ mod tests {
     fn tier_a_exact_history_retry_is_idempotent_only_at_matching_target() {
         let entry = history_entry(2, TIER_A_EXACT_HISTORY_SEMANTICS);
         let target = remote_history_entry(2, 2, TIER_A_EXACT_HISTORY_SEMANTICS);
-        let decision = plan_import_entry(&entry, Some(&target), true).unwrap();
+        let decision = plan_import_entry(&entry, Some(&target), true, None).unwrap();
 
         assert_eq!(
             decision,
@@ -2243,7 +2631,7 @@ mod tests {
             .unwrap()
             .remove("_straylight_tier_a_history");
         assert_eq!(
-            plan_import_entry(&entry, Some(&pre_protocol_target), true).unwrap(),
+            plan_import_entry(&entry, Some(&pre_protocol_target), true, None).unwrap(),
             ImportDecision {
                 upload: false,
                 expected_version: 2
@@ -2251,27 +2639,39 @@ mod tests {
         );
 
         let mismatched_target = remote_history_entry(2, 2, TIER_A_ORDINARY_HISTORY_SEMANTICS);
-        assert!(plan_import_entry(&entry, Some(&mismatched_target), true).is_err());
+        assert!(plan_import_entry(&entry, Some(&mismatched_target), true, None).is_err());
+
+        let mut mismatched_legacy = remote_history_entry(2, 2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        mismatched_legacy.metadata["legacy"]["asset_ref"] = json!("asset:different");
+        assert!(plan_import_entry(&entry, Some(&mismatched_legacy), true, None).is_err());
+
+        let mut normalized_without_legacy =
+            remote_history_entry(2, 2, TIER_A_EXACT_HISTORY_SEMANTICS);
+        normalized_without_legacy.metadata = json!({
+            "_straylight_import": {"format": IMPORT_MANIFEST_FORMAT},
+            "portable": entry.portable,
+        });
+        assert!(plan_import_entry(&entry, Some(&normalized_without_legacy), true, None).is_err());
     }
 
     #[test]
     fn tier_a_history_gap_and_ahead_states_fail_closed() {
         let entry = history_entry(2, TIER_A_EXACT_HISTORY_SEMANTICS);
-        assert!(plan_import_entry(&entry, None, true).is_err());
+        assert!(plan_import_entry(&entry, None, true, None).is_err());
 
         let ahead = remote_history_entry(3, 3, TIER_A_EXACT_HISTORY_SEMANTICS);
-        assert!(plan_import_entry(&entry, Some(&ahead), true).is_err());
+        assert!(plan_import_entry(&entry, Some(&ahead), true, None).is_err());
     }
 
     #[test]
     fn repeated_bytes_require_exact_history_semantics_and_markdown() {
         let ordinary = history_entry(2, TIER_A_ORDINARY_HISTORY_SEMANTICS);
         let predecessor = remote_history_entry(1, 1, TIER_A_ORDINARY_HISTORY_SEMANTICS);
-        assert!(plan_import_entry(&ordinary, Some(&predecessor), true).is_err());
+        assert!(plan_import_entry(&ordinary, Some(&predecessor), true, None).is_err());
 
         let mut binary = history_entry(2, TIER_A_EXACT_HISTORY_SEMANTICS);
         binary.kind = EntryKind::Binary;
-        assert!(plan_import_entry(&binary, Some(&predecessor), true).is_err());
+        assert!(plan_import_entry(&binary, Some(&predecessor), true, None).is_err());
     }
 
     #[test]

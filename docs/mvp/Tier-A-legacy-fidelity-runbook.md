@@ -39,6 +39,22 @@ evaluation-only exact-history protocol below preserves those ordinals without
 changing normal production write semantics. No same-byte binary transition was
 present in the owner composite.
 
+A subsequent clean replay exposed a separate retry verifier mismatch after the
+atomic binary uploads had already committed. The binary API deliberately stores
+portable companion metadata in its canonical server form instead of retaining
+the full legacy and replay-marker objects supplied by the importer. The fetched
+manifest therefore had the correct companion path, version, bytes, portable
+fields, binary pointer, and byte-copy receipt, but the importer incorrectly
+required the discarded replay marker. That failure is evidence of an importer
+verification bug, not a service-fidelity difference.
+
+The corrected importer recognizes only that narrow canonical companion receipt.
+It requires the exact companion path/kind/hash/size/version and portable fields,
+`kind=binary_description`, the exact paired binary path and content hash,
+`description_status=byte_copied`, and the exact portable-companion import format
+and companion hash. A mismatch in any field fails closed. Ordinary Markdown
+continues to require its full legacy target identity.
+
 ## Safety boundary
 
 Keep every owner artifact and credential under ignored `operator-output/` with
@@ -181,6 +197,12 @@ Same-byte binary history is deliberately unsupported. Stage materialization or
 import must fail rather than synthesize or collapse a binary version. If a
 future owner composite contains such a transition, stop and design an
 equivalent object-store/version protocol before proceeding.
+
+The same boundary applies to exact portable binary companions. A changed
+companion is advanced only by the atomic binary upload; the later companion
+phase verifies and skips the canonical receipt. A missing or predecessor
+companion is not repaired with a standalone Markdown write, and intentional
+same-byte companion history is rejected as unsupported.
 
 ## 4. Restore checkpoint semantics, then audit the service
 

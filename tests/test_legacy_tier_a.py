@@ -27,6 +27,7 @@ from legacy_tier_a import (
     rebuild_native_materialization,
     roundtrip_audit,
     sha256_value,
+    stage_history_semantics,
     validate_checkpoint_graph,
     verify_checksum_tree,
 )
@@ -458,6 +459,24 @@ class LegacyTierATests(unittest.TestCase):
                 "semantics": EXACT_HISTORY_SEMANTICS,
             },
         )
+
+    def test_same_byte_binary_companion_history_fails_closed(self) -> None:
+        content_hash = sha256_value(b"exact companion bytes")
+        predecessor = {
+            "content_hash": content_hash,
+            "size_bytes": 21,
+        }
+        companion = {
+            **predecessor,
+            "describes_binary_path": "sources/Assets/photo.png",
+        }
+
+        with self.assertRaisesRegex(TierAError, "binary companion history is unsupported"):
+            stage_history_semantics(
+                companion,
+                predecessor,
+                kind="markdown",
+            )
 
     def test_native_record_renderer_matches_the_legacy_export_contract(self) -> None:
         rendered = render_native_record(

@@ -1148,6 +1148,35 @@ def portable_metadata_for_entry(
     return metadata
 
 
+def stage_history_semantics(
+    entry: Mapping[str, Any],
+    predecessor: Mapping[str, Any] | None,
+    *,
+    kind: str,
+) -> str | None:
+    same_bytes_as_predecessor = predecessor is not None and (
+        predecessor["content_hash"] == entry["content_hash"]
+        and int(predecessor["size_bytes"]) == int(entry["size_bytes"])
+    )
+    if same_bytes_as_predecessor and kind == "binary":
+        raise TierAError(
+            "same-byte binary history is unsupported; refusing to collapse "
+            "or synthesize a binary version"
+        )
+    if same_bytes_as_predecessor and entry.get("describes_binary_path"):
+        raise TierAError(
+            "same-byte binary companion history is unsupported; refusing to "
+            "collapse or synthesize a companion version"
+        )
+    if kind != "markdown":
+        return None
+    return (
+        EXACT_HISTORY_SEMANTICS
+        if same_bytes_as_predecessor
+        else ORDINARY_HISTORY_SEMANTICS
+    )
+
+
 def materialize_stage(
     root: Path,
     *,
@@ -1188,22 +1217,11 @@ def materialize_stage(
         kind = workspace_kind(entry)
         ordinal = int(entry["lineage_ordinal"])
         predecessor = lineage.get((str(entry["path"]), ordinal - 1))
-        same_bytes_as_predecessor = predecessor is not None and (
-            predecessor["content_hash"] == entry["content_hash"]
-            and int(predecessor["size_bytes"]) == int(entry["size_bytes"])
+        history_semantics = stage_history_semantics(
+            entry,
+            predecessor,
+            kind=kind,
         )
-        if same_bytes_as_predecessor and kind == "binary":
-            raise TierAError(
-                "same-byte binary history is unsupported; refusing to collapse "
-                "or synthesize a binary version"
-            )
-        history_semantics = None
-        if kind == "markdown":
-            history_semantics = (
-                EXACT_HISTORY_SEMANTICS
-                if same_bytes_as_predecessor
-                else ORDINARY_HISTORY_SEMANTICS
-            )
         source = safe_file(root, str(entry["archive_path"]))
         hardlink_new(source, output.joinpath(*PurePosixPath(relative).parts))
         portable_entries.append(
