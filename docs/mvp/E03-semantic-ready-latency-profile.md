@@ -58,7 +58,10 @@ secret-free attestations. Mode 3 additionally requires the exact official
 the API and worker network namespaces using a locally present digest-pinned
 helper image with pull disabled, and records OpenAI `usage.prompt_tokens`
 actuals without retaining response bodies. Bound teardown runs even if proxy
-start times out.
+start times out. Modes 2 and 3 prove the configured endpoint from both the API
+and worker network namespaces before importing. Native Linux may use the exact
+Compose gateway; Docker Desktop uses the explicit `host.docker.internal`
+route because its bridge gateway is VM-local.
 
 ## Arms
 
@@ -100,7 +103,7 @@ MM-DD is the run date.
    `python3 eval/e03_mode1.py --label e03-mode1-64k --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-api-image-id "$API_IMAGE_ID" --expect-db-image-id "$DB_IMAGE_ID" --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode1-64k.json`.
 3. Configure Mode 2 API and worker with the exact run-unique local mock `/v1`
    URL and a `mock-`, `dummy-`, or `test-` inline key, then run:
-   `python3 eval/e03_mode2.py --label e03-mode2-64k --mock-port "$MOCK_PORT" --mock-state "$MOCK_STATE" --mock-log "$MOCK_LOG" --mock-config "$MOCK_CONFIG" --expected-openai-base-url "$MOCK_BASE_URL" --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --worker-container "$WORKER_CONTAINER" --expect-build-revision "$REV" --expect-api-image-id "$API_IMAGE_ID" --expect-db-image-id "$DB_IMAGE_ID" --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode2-64k.json`.
+   `python3 eval/e03_mode2.py --label e03-mode2-64k --mock-port "$MOCK_PORT" --mock-state "$MOCK_STATE" --mock-log "$MOCK_LOG" --mock-config "$MOCK_CONFIG" --mock-instance-id "$MOCK_INSTANCE" --expected-openai-base-url "$MOCK_BASE_URL" --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --worker-container "$WORKER_CONTAINER" --expect-build-revision "$REV" --expect-api-image-id "$API_IMAGE_ID" --expect-db-image-id "$DB_IMAGE_ID" --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode2-64k.json`.
 4. Semantic-failure probe (within mode 2 config): the mode-2 wrapper wires the
    mock's injected-503 configure command and distinct fast-state restore
    command into `--semantic-failure-start-command` /
@@ -117,7 +120,8 @@ MM-DD is the run date.
    the asynchronously warmed cache, and a new semantic query to succeed after
    restore.
 5. Configure Mode 3 API and worker to the exact run-unique proxy `/v1` URL
-   using the numeric gateway of their sole Docker network,
+   using the numeric gateway of their sole Docker network on native Linux or
+   the exact `host.docker.internal` route on Docker Desktop,
    then let the wrapper own start, attested error/restore controls, paired
    sampling, and bound teardown:
    `python3 eval/e03_mode3.py --label e03-mode3-paired-64k --proxy-port "$PROXY_PORT" --proxy-state "$PROXY_STATE" --proxy-config "$PROXY_CONFIG" --proxy-log "$PROXY_LOG" --proxy-instance-id "$PROXY_INSTANCE" --expected-proxy-base-url "$PROXY_BASE_URL" --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --worker-container "$WORKER_CONTAINER" --expect-build-revision "$REV" --expect-api-image-id "$API_IMAGE_ID" --expect-db-image-id "$DB_IMAGE_ID" --samples 30 --out results/2026-MM-DD-e03-mode3-paired-64k.json`.

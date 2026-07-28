@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import tempfile
 import unittest
@@ -7,9 +8,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from eval.e03_mode1 import build_performance_command as mode1_command
-from eval.e03_mode2 import build_performance_command as mode2_command
+from eval.e03_mode2 import (
+    MOCK,
+    build_performance_command as mode2_command,
+    mock_network_probe,
+)
 from eval.e03_mode3 import (
     build_performance_command as mode3_command,
+    container_host_route_allowed,
     normalize_official_upstream,
     usage_receipt_contract,
 )
@@ -292,6 +298,70 @@ class E03ProfileTests(unittest.TestCase):
             },
         )
         self.assertFalse(incomplete["pass"])
+
+    def test_mode3_container_host_route_is_exact_and_platform_bounded(self):
+        self.assertTrue(container_host_route_allowed("172.28.233.1"))
+        self.assertTrue(container_host_route_allowed("host.docker.internal"))
+        self.assertFalse(container_host_route_allowed("localhost"))
+        self.assertFalse(
+            container_host_route_allowed("host.docker.internal.example")
+        )
+
+    @patch("eval.e03_mode2.run_command")
+    def test_mode2_network_probe_runs_in_exact_container_namespace(
+        self,
+        run_command,
+    ):
+        mock_config = Path("/tmp/e03-mode2-test-config.json")
+        implementation = hashlib.sha256(MOCK.read_bytes()).hexdigest()
+        config_digest = hashlib.sha256(
+            str(mock_config.resolve()).encode("utf-8")
+        ).hexdigest()
+        expected_identity = {
+            "instance_id": "e03-mode2-test",
+            "implementation_sha256": implementation,
+            "host": "0.0.0.0",
+            "port": 19235,
+            "config_path_sha256": config_digest,
+            "pid": 1234,
+        }
+        run_command.return_value = SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({
+                "schema": "straylight-mock-openai-embeddings-health@v1",
+                "status": "ok",
+                "behavior": {"delay_ms": 0, "error_status": 0},
+                "identity": expected_identity,
+            }),
+        )
+        args = SimpleNamespace(
+            expected_openai_base_url=(
+                "http://host.docker.internal:19235/v1"
+            ),
+            probe_image="busybox@sha256:" + "a" * 64,
+            mock_instance_id="e03-mode2-test",
+            mock_port=19235,
+            mock_config=mock_config,
+        )
+        endpoint = {
+            "api": {"container_id": "api-container-id"},
+            "probe_image": {"image_id": "sha256:" + "b" * 64},
+        }
+        result = mock_network_probe(
+            args,
+            endpoint,
+            role="api",
+            expected_identity=expected_identity,
+        )
+        self.assertTrue(result["pass"])
+        command = run_command.call_args.args[0]
+        self.assertIn("container:api-container-id", command)
+        self.assertEqual(
+            command[-1],
+            "http://host.docker.internal:19235/health",
+        )
+        self.assertIn("--pull", command)
+        self.assertIn("never", command)
 
     def test_e03_api_route_binds_exact_loopback_port_and_named_db(self):
         api = {
@@ -687,6 +757,7 @@ class E03ProfileTests(unittest.TestCase):
                 mock_state=root / "mock.state",
                 mock_log=root / "mock.log",
                 mock_config=root / "mock.config",
+                mock_instance_id="e03-mode2-test",
                 failure_settle_seconds=0.1,
                 quick=False,
                 future_soak=False,

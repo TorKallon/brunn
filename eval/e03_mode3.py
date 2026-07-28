@@ -89,6 +89,16 @@ def normalize_official_upstream(value: str) -> str:
     return normalized
 
 
+def container_host_route_allowed(value: str) -> bool:
+    if value == "host.docker.internal":
+        return True
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
 def probe_image_contract(image: str) -> dict[str, Any]:
     digest = image.rpartition("@sha256:")[2]
     pinned_reference = bool(SHA256_PATTERN.fullmatch(digest))
@@ -125,18 +135,19 @@ def probe_image_contract(image: str) -> dict[str, Any]:
 
 def container_endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
     parsed = urllib.parse.urlsplit(args.expected_proxy_base_url)
+    endpoint_host = str(parsed.hostname or "")
     try:
         endpoint_port = parsed.port
-        ipaddress.ip_address(str(parsed.hostname or ""))
     except ValueError as error:
         raise ValueError(
-            "--expected-proxy-base-url must use the numeric Docker gateway"
+            "--expected-proxy-base-url contains an invalid port"
         ) from error
+    docker_desktop_host = endpoint_host == "host.docker.internal"
     if (
         parsed.scheme != "http"
         or endpoint_port != args.proxy_port
         or parsed.path.rstrip("/") != "/v1"
-        or not parsed.hostname
+        or not container_host_route_allowed(endpoint_host)
         or parsed.username is not None
         or parsed.password is not None
         or parsed.query
@@ -144,7 +155,8 @@ def container_endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
     ):
         raise ValueError(
             "--expected-proxy-base-url must be an HTTP /v1 URL whose port "
-            "equals --proxy-port and whose host is the Docker gateway"
+            "equals --proxy-port and whose host is either the exact Docker "
+            "gateway or host.docker.internal"
         )
 
     def inspect(name: str, service: str) -> dict[str, Any]:
@@ -260,8 +272,9 @@ def container_endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
     } if network_name else set()
     exact_gateway = (
         len(gateways) == 1
-        and str(parsed.hostname) == next(iter(gateways))
+        and endpoint_host == next(iter(gateways))
     )
+    exact_container_route = exact_gateway or docker_desktop_host
     probe_image = probe_image_contract(args.probe_image)
     value = {
         "api": api,
@@ -281,6 +294,8 @@ def container_endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
         "same_single_network": network_name is not None,
         "network": network_name,
         "exact_gateway": exact_gateway,
+        "docker_desktop_host": docker_desktop_host,
+        "exact_container_route": exact_container_route,
         "exact_revision": (
             api["image_revision"] == args.expect_build_revision
             and worker["image_revision"] == args.expect_build_revision
@@ -301,7 +316,7 @@ def container_endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
         and value["same_credential_configuration"]
         and value["same_project"]
         and value["same_single_network"]
-        and value["exact_gateway"]
+        and value["exact_container_route"]
         and value["exact_revision"]
         and value["exact_images"]
         and probe_image["pass"]
@@ -311,7 +326,8 @@ def container_endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
     if not value["pass"]:
         raise RuntimeError(
             "Mode 3 API/worker must share one real-provider proxy endpoint, "
-            "gateway, credential posture, Compose project, and exact images"
+            "container host route, credential posture, Compose project, and "
+            "exact images"
         )
     return value
 

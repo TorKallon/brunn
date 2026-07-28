@@ -303,6 +303,7 @@ class SemanticExperimentInfrastructureTest(unittest.TestCase):
                 mock_state=root / "mock.pid",
                 mock_log=root / "mock.log",
                 mock_config=root / "mock.json",
+                mock_instance_id="mode2-unit",
                 label="mode2-unit",
                 out=root / "result.json",
                 failure_settle_seconds=0.1,

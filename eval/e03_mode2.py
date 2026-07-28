@@ -22,10 +22,16 @@ from performance_eval import (  # noqa: E402
     E03_EMBEDDING_DIMENSIONS,
     E03_EMBEDDING_MODELS,
 )
+from eval.e03_mode3 import (  # noqa: E402
+    DEFAULT_PROBE_IMAGE,
+    container_host_route_allowed,
+    probe_image_contract,
+)
 
 MOCK = PROJECT_ROOT / "tests" / "mock_openai_embeddings.py"
 PERFORMANCE = PROJECT_ROOT / "performance_eval.py"
 SCHEMA = "straylight-e03-mode2-orchestration@v1"
+MOCK_HEALTH_SCHEMA = "straylight-mock-openai-embeddings-health@v1"
 
 
 def run_command(
@@ -57,6 +63,10 @@ def mock_command(args: argparse.Namespace, action: str) -> list[str]:
         str(args.mock_log),
         "--config",
         str(args.mock_config),
+        "--instance-id",
+        args.mock_instance_id,
+        "--expect-implementation-sha256",
+        hashlib.sha256(MOCK.read_bytes()).hexdigest(),
     ]
     if action in {"start", "configure"}:
         command.extend(["--delay-ms", "0", "--error-status", "0"])
@@ -146,11 +156,16 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
         parsed.scheme != "http"
         or parsed.port != args.mock_port
         or parsed.path.rstrip("/") != "/v1"
-        or not parsed.hostname
+        or not container_host_route_allowed(str(parsed.hostname or ""))
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
     ):
         raise ValueError(
             "--expected-openai-base-url must be a run-unique local HTTP /v1 "
-            "URL whose port equals --mock-port"
+            "URL whose port equals --mock-port and whose host is either the "
+            "exact Docker gateway or host.docker.internal"
         )
 
     def inspect(name: str, service: str) -> dict[str, Any]:
@@ -162,6 +177,7 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
             labels = record["Config"].get("Labels") or {}
             env_rows = record["Config"].get("Env") or []
             state = record["State"]
+            networks = record["NetworkSettings"].get("Networks") or {}
         except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
             raise RuntimeError(
                 f"invalid Mode 2 {service} inspection"
@@ -218,6 +234,7 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "compose_project": labels.get("com.docker.compose.project"),
             "compose_service": labels.get("com.docker.compose.service"),
+            "networks": networks,
             "endpoint_sha256": hashlib.sha256(
                 args.expected_openai_base_url.encode()
             ).hexdigest(),
@@ -240,6 +257,7 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
         db_record = json.loads(completed.stdout)[0]
         db_labels = db_record["Config"].get("Labels") or {}
         db_running = db_record["State"].get("Running") is True
+        db_networks = db_record["NetworkSettings"].get("Networks") or {}
     except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
         raise RuntimeError("invalid Mode 2 db inspection") from error
     db = {
@@ -247,6 +265,7 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
         "image_id": db_record.get("Image"),
         "compose_project": db_labels.get("com.docker.compose.project"),
         "compose_service": db_labels.get("com.docker.compose.service"),
+        "networks": db_networks,
         "running": db_running,
         "pass": bool(
             db_running
@@ -254,10 +273,33 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
             and db_record.get("Image") == args.expect_db_image_id
         ),
     }
+    api_network_names = sorted(api["networks"])
+    worker_network_names = sorted(worker["networks"])
+    db_network_names = sorted(db["networks"])
+    network_name = (
+        api_network_names[0]
+        if (
+            len(api_network_names) == 1
+            and api_network_names == worker_network_names == db_network_names
+        )
+        else None
+    )
+    gateways = {
+        str(item["networks"][network_name].get("Gateway") or "")
+        for item in (api, worker, db)
+    } if network_name else set()
+    endpoint_host = str(parsed.hostname or "")
+    exact_gateway = (
+        len(gateways) == 1
+        and endpoint_host == next(iter(gateways))
+    )
+    docker_desktop_host = endpoint_host == "host.docker.internal"
+    probe_image = probe_image_contract(args.probe_image)
     value = {
         "api": api,
         "worker": worker,
         "db": db,
+        "probe_image": probe_image,
         "same_endpoint": (
             api["endpoint_sha256"] == worker["endpoint_sha256"]
         ),
@@ -270,6 +312,11 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
             and api["compose_project"] == worker["compose_project"]
             and api["compose_project"] == db["compose_project"]
         ),
+        "same_single_network": network_name is not None,
+        "network": network_name,
+        "exact_gateway": exact_gateway,
+        "docker_desktop_host": docker_desktop_host,
+        "exact_container_route": exact_gateway or docker_desktop_host,
     }
     value["pass"] = bool(
         api["pass"]
@@ -278,13 +325,111 @@ def endpoint_contract(args: argparse.Namespace) -> dict[str, Any]:
         and value["same_endpoint"]
         and value["same_credential_configuration"]
         and value["same_compose_project"]
+        and value["same_single_network"]
+        and value["exact_container_route"]
+        and probe_image["pass"]
     )
+    for item in (api, worker, db):
+        item.pop("networks", None)
     if not value["pass"]:
         raise RuntimeError(
             "Mode 2 API/worker are not bound to the same owned mock endpoint "
-            "with dummy non-production credentials"
+            "and container host route with dummy non-production credentials"
         )
     return value
+
+
+def mock_network_probe(
+    args: argparse.Namespace,
+    endpoint: dict[str, Any],
+    *,
+    role: str,
+    expected_identity: dict[str, Any],
+) -> dict[str, Any]:
+    target = endpoint[role]
+    parsed = urllib.parse.urlsplit(args.expected_openai_base_url)
+    health_url = urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, "/health", "", "")
+    )
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        "--pull",
+        "never",
+        "--network",
+        f"container:{target['container_id']}",
+        "--read-only",
+        "--user",
+        "65534:65534",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--pids-limit",
+        "32",
+        "--memory",
+        "32m",
+        "--entrypoint",
+        "/bin/wget",
+        args.probe_image,
+        "-q",
+        "-T",
+        "5",
+        "-O",
+        "-",
+        health_url,
+    ]
+    completed = run_command(command, timeout=15.0)
+    try:
+        value = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        value = {}
+    identity = value.get("identity")
+    identity = identity if isinstance(identity, dict) else {}
+    checks = {
+        "probe_exit_zero": completed.returncode == 0,
+        "health_schema": value.get("schema") == MOCK_HEALTH_SCHEMA,
+        "healthy": value.get("status") == "ok",
+        "fast_behavior": (
+            value.get("behavior")
+            == {"delay_ms": 0, "error_status": 0}
+        ),
+        "exact_owned_identity": identity == expected_identity,
+        "instance": (
+            identity.get("instance_id") == args.mock_instance_id
+        ),
+        "implementation": (
+            identity.get("implementation_sha256")
+            == hashlib.sha256(MOCK.read_bytes()).hexdigest()
+        ),
+        "listener": (
+            identity.get("host") == "0.0.0.0"
+            and identity.get("port") == args.mock_port
+        ),
+        "config_path": (
+            identity.get("config_path_sha256")
+            == hashlib.sha256(
+                str(args.mock_config.resolve()).encode("utf-8")
+            ).hexdigest()
+        ),
+    }
+    result = {
+        "role": role,
+        "target_container_id": target["container_id"],
+        "probe_image_id": endpoint["probe_image"]["image_id"],
+        "endpoint_sha256": hashlib.sha256(
+            args.expected_openai_base_url.encode("utf-8")
+        ).hexdigest(),
+        "command": command_fingerprint(command),
+        "checks": checks,
+        "pass": all(checks.values()),
+    }
+    if not result["pass"]:
+        raise RuntimeError(
+            f"Mode 2 {role} network namespace cannot reach the owned mock"
+        )
+    return result
 
 
 def build_performance_command(args: argparse.Namespace) -> list[str]:
@@ -399,6 +544,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mock-state", type=Path, required=True)
     parser.add_argument("--mock-log", type=Path, required=True)
     parser.add_argument("--mock-config", type=Path, required=True)
+    parser.add_argument("--mock-instance-id", required=True)
     parser.add_argument("--api-container", required=True)
     parser.add_argument("--db-container", required=True)
     parser.add_argument("--worker-container", required=True)
@@ -406,6 +552,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expect-api-image-id", required=True)
     parser.add_argument("--expect-db-image-id", required=True)
     parser.add_argument("--expected-openai-base-url", required=True)
+    parser.add_argument("--probe-image", default=DEFAULT_PROBE_IMAGE)
     parser.add_argument("--scales", type=int, nargs="+")
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--quick", action="store_true")
@@ -442,6 +589,7 @@ def main() -> int:
     after_start: dict[str, Any] = {}
     after_restore: dict[str, Any] = {}
     after_stop: dict[str, Any] = {}
+    network_probes: list[dict[str, Any]] = []
     artifact_binding: dict[str, Any] = {"pass": False, "checks": {}}
     stop_result: subprocess.CompletedProcess[str] | None = None
     orchestration_error: dict[str, str] | None = None
@@ -458,6 +606,15 @@ def main() -> int:
             raise RuntimeError(
                 f"embedding mock start state was not healthy/fast: {after_start}"
             )
+        network_probes = [
+            mock_network_probe(
+                args,
+                endpoint_binding,
+                role=role,
+                expected_identity=after_start.get("identity", {}),
+            )
+            for role in ("api", "worker")
+        ]
         performance = run_command(performance_command, timeout=args.timeout)
         _, after_restore = status(args)
         artifact_binding = artifact_contract(args.out, args)
@@ -480,11 +637,16 @@ def main() -> int:
         "schema": SCHEMA,
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "owned_mock": True,
+        "mock_instance_id": args.mock_instance_id,
+        "mock_implementation_sha256": hashlib.sha256(
+            MOCK.read_bytes()
+        ).hexdigest(),
         "port": args.mock_port,
         "preexisting_mock": before,
         "healthy_fast_after_start": after_start,
         "healthy_fast_after_failure_restore": after_restore,
         "stopped_owned_mock": after_stop,
+        "network_namespace_health_probes": network_probes,
         "start": {
             "exit_code": started.returncode if started else None,
             **command_fingerprint(mock_command(args, "start")),
@@ -509,6 +671,8 @@ def main() -> int:
         and performance.returncode == 0
         and after_start.get("behavior")
         == {"delay_ms": 0, "error_status": 0}
+        and len(network_probes) == 2
+        and all(item.get("pass") for item in network_probes)
         and after_restore.get("behavior")
         == {"delay_ms": 0, "error_status": 0}
         and stop_result
