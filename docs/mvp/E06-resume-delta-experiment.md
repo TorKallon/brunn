@@ -79,7 +79,18 @@ variable. An E06 pass cannot rehabilitate D02.
    the same mutation script, each arm in a paired draw uses a byte-identical
    mutation-plan set, and the mutation seed exactly equals that paired-draw ID.
    The aggregate records those checks under `mutation_provenance`.
-6. If the headline is inside the noise floor but straylight-api-gate-transition moves, run a targeted 5-draw repeat on that card, all three arms, adding `--case straylight-api-gate-transition` to every invocation and using targeted-specific paired-draw IDs.
+6. Audit the operation-level resume payloads from exactly the three definitive
+   A draws and three definitive B draws:
+   `E06_RESUME_PAYLOADS=(results/2026-MM-DD-resume-deltas-{a,b}-draw{1,2,3}.json); python3 eval/audit_resume_payloads.py "${E06_RESUME_PAYLOADS[@]}" --manifest eval/transition_cases.json --out results/2026-MM-DD-e06-resume-payload-comparison.json`.
+   The auditor revalidates the immutable run, source, image, retrieval-mode,
+   runtime-feature, mutation-plan, mutation-receipt, and ledger bindings. It
+   requires the exact 2-arm × 3-draw × 5-case grid and exactly one successful,
+   uncontaminated `service_operations` entry whose `operation` is `resume` per
+   record. It compares only that operation's `result_chars`, never whole-card
+   response metrics. Every pair must have treatment `result_chars` ≤ control `result_chars`,
+   with zero tolerance; any malformed or drifted evidence fails
+   closed and emits a machine-readable failing artifact.
+7. If the headline is inside the noise floor but straylight-api-gate-transition moves, run a targeted 5-draw repeat on that card, all three arms, adding `--case straylight-api-gate-transition` to every invocation and using targeted-specific paired-draw IDs.
 
    **Predeclared for the 2026-07-28 execution:** do not invoke this optional
    repeat. Neither "inside the noise floor" nor "moves" has a frozen numeric
@@ -87,7 +98,7 @@ variable. An E06 pass cannot rehabilitate D02.
    are unspecified. The three-draw five-card main grid is definitive for this
    run. Any targeted follow-up requires a new predeclared plan before looking
    at regenerated evidence.
-7. Use `python3 transition_eval.py --manifest eval/transition_cases.json regrade ...` for rubric corrections; never regenerate answers to fix grading.
+8. Use `python3 transition_eval.py --manifest eval/transition_cases.json regrade ...` for rubric corrections; never regenerate answers to fix grading.
 
 The run JSON fingerprints the mutation script, embeds every per-card plan and
 receipt, hash-binds the complete mutation evidence in the immutable run ledger,
@@ -102,7 +113,8 @@ file tree; it is not handed a synthetic change-log file.
 - Claims per arm per draw (n/20); per-card win/loss/tie grids B-vs-A and B-vs-C.
 - Cases won per arm per draw (historical baseline: 0/5 everywhere); straylight-api-gate-transition tracked individually.
 - Resume p95 at 640k with flag on, vs the 35.2ms v8 baseline (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json) and the 150ms gate.
-- Open payload chars per resume, arm B vs arm A (budget-neutrality check: deltas are charged against the evidence budget, so totals must not grow beyond noise).
+- Operation-level resume `result_chars`, arm B vs arm A, paired by draw and
+  case. Whole-card response metrics are ineligible for this budget check.
 - Query count per resume open (must be exactly +5 completed statements in arm
   B, representing one batched application `SELECT` plus four authenticated
   transaction statements).
@@ -113,7 +125,9 @@ file tree; it is not handed a synthetic change-log file.
 - Paired improvement over BOTH arms: claim-level exact McNemar favors B over A and B over C (alpha 0.05, one-sided given the directional hypothesis), with the direction consistent in all 3 draws. With only 20 claims per draw, the paired aggregate across draws is the load-bearing statistic; single-draw deltas are noise per the ±3-5 claim floor.
 - Resume p95 ≤150ms at the 640k soak (~4x the 35.2ms baseline; the loose 500ms figure is rejected per D03).
 - Checkpoint write path unchanged: footprint gate (≤100 rows/4MiB; actual 11 rows/~55KB) and protocol-to-evidence ratio ≤1.0 both hold.
-- Payload budget-neutrality: arm B open chars within noise of arm A.
+- Payload budget-neutrality: in every one of the 15 definitive A/B draw-case
+  pairs, the single successful `service_operations` resume entry has treatment
+  `result_chars` ≤ control `result_chars`, with zero tolerance.
 
 ## Cost preflight and ceiling
 
@@ -137,4 +151,4 @@ Subscription rule: all reasoning runs via the ChatGPT-authenticated Codex subscr
 
 ## Reporting
 
-The run record must contain: git fingerprint with clean-tree confirmation; flag state and mutation seeds per draw; per-draw per-arm JSON and MD artifact paths; the full per-card grid including straylight-api-gate-transition; paired McNemar p-values and CIs for B-vs-A and B-vs-C; cases-won table against the historical 0/5; soak numbers (resume p95, concurrent probe, footprint, protocol-to-evidence, query counts); open payload char comparison; cost actuals vs preflight with subscription and embeddings-exempt spend listed separately.
+The run record must contain: git fingerprint with clean-tree confirmation; flag state and mutation seeds per draw; per-draw per-arm JSON and MD artifact paths; the full per-card grid including straylight-api-gate-transition; paired McNemar p-values and CIs for B-vs-A and B-vs-C; cases-won table against the historical 0/5; soak numbers (resume p95, concurrent probe, footprint, protocol-to-evidence, query counts); `results/2026-MM-DD-e06-resume-payload-comparison.json` with all 15 operation-level control/treatment `result_chars` pairs, per-pair deltas, totals, means, and the zero-tolerance verdict; cost actuals vs preflight with subscription and embeddings-exempt spend listed separately.
