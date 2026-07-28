@@ -17,6 +17,7 @@ use crate::{
     config::Config,
     embeddings::{SharedEmbedder, from_config as embedder_from_config},
     error::{ApiError, ApiResult},
+    foreground_latency::ForegroundLatencyTracker,
     object_store::ObjectStore,
     quota::{PreauthRateLimiter, RequestRateLimiter},
     semantic_policy::SemanticRuntime,
@@ -39,6 +40,8 @@ pub struct AppState {
     pub usage_tracker: UsageTracker,
     pub workspace_features: WorkspaceFeatureCache,
     pub semantic_runtime: SemanticRuntime,
+    pub foreground_latency: ForegroundLatencyTracker,
+    pub foreground_latency_client: reqwest::Client,
 }
 
 impl AppState {
@@ -75,6 +78,15 @@ impl AppState {
         let usage_tracker = UsageTracker::start(admin_pool.clone());
         let workspace_features = WorkspaceFeatureCache::default();
         let semantic_runtime = SemanticRuntime::default();
+        let foreground_latency = ForegroundLatencyTracker::default();
+        let foreground_latency_client = reqwest::Client::builder()
+            .timeout(config.embedding_backfill_foreground_status_timeout)
+            .build()
+            .map_err(|error| {
+                ApiError::configuration(format!(
+                    "could not build foreground-latency client: {error}"
+                ))
+            })?;
         Ok(Self {
             config,
             auth_pool,
@@ -89,6 +101,8 @@ impl AppState {
             usage_tracker,
             workspace_features,
             semantic_runtime,
+            foreground_latency,
+            foreground_latency_client,
         })
     }
 

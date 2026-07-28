@@ -196,12 +196,14 @@ class AgentWorkEvalTests(unittest.TestCase):
                 "intention_ledger=off",
                 "read_path_roundtrip_v1=on",
                 "lexical_single_scan=off",
+                "embedding_backfill_foreground_status_url_configured=on",
             ]),
             {
                 "supersession_demotion": True,
                 "intention_ledger": False,
                 "read_path_roundtrip_v1": True,
                 "lexical_single_scan": False,
+                "embedding_backfill_foreground_status_url_configured": True,
             },
         )
         with self.assertRaisesRegex(ValueError, "expect-feature-flag"):
@@ -212,6 +214,8 @@ class AgentWorkEvalTests(unittest.TestCase):
             "allow_degraded_embeddings": False,
             "embed_cache": True,
             "embedding_backfill_batch_chunks": 64,
+            "embedding_backfill_foreground_status_timeout_ms": 1000,
+            "embedding_backfill_foreground_status_url_configured": True,
             "embedding_backfill_guard": True,
             "embedding_backfill_inter_batch_ms": 25,
             "embedding_backfill_open_p95_limit_ms": 150,
@@ -254,7 +258,10 @@ class AgentWorkEvalTests(unittest.TestCase):
         }
         expected = expected_runtime_features(
             ["search_fair_share=on", "verbatim_spans=off"],
-            ["search_section_demotion_top_n=8"],
+            [
+                "embedding_backfill_foreground_status_timeout_ms=1000",
+                "search_section_demotion_top_n=8",
+            ],
         )
         snapshot = capture_service_runtime_snapshot(
             status,

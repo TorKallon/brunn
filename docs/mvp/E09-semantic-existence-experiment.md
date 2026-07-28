@@ -29,7 +29,7 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 
 ## Corpus and fixtures
 
-- Quality suites: agent-work (14 cases / 56 claims), rupture (12 / 48), recent (14 / 56) = 40 cases / 160 claims per draw. Personal-coordination is excluded for cost control and because it carries no semantic-lane-specific hypothesis. Transitions are excluded because their claim-slot omissions are unrelated to retrieval lanes.
+- Quality suites at the checked-in manifest revisions: agent-work (13 cases / 52 claims), rupture (12 / 48), recent (14 / 56) = 39 cases / 156 claims per draw. Personal-coordination is excluded for cost control and because it carries no semantic-lane-specific hypothesis (its chronic case, coord-deadline-readiness, is a prospective-memory failure — E08's domain, not a retrieval-lane question). Transitions are excluded because they are stuck at 0/5 on claim-slot omissions unrelated to retrieval lanes.
 - Condition: service_api only (the lane under test lives behind the service).
 - Corpus: the standard eval corpus for these manifests, embedded per E03. Coverage check before any semantic-arm draw (precondition 1).
 - Latency fixture: performance_eval 64K scale, 30 samples (definitive), per arm.
@@ -59,7 +59,14 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
    semantic-failure start/stop hooks already specified by the performance
    harness.
 6. Aggregate: `python3 eval/aggregate_draws.py results/2026-MM-DD-e09-*-draw*.json --expected-arm e09-deadline-cache --expected-arm e09-unbounded-semantic --expected-arm e09-no-semantic --out results/2026-MM-DD-e09-aggregate.json`.
-7. Deadline stepping: only if C loses to B with McNemar significance, step semantic_deadline_ms 300→600→1,000, re-running ONLY the losing suite (3 draws per step), and re-test the B-C pair on that suite.
+7. Deadline stepping: only if C loses to B with McNemar significance, generate
+   `eval/e09_step_policy.py --losing-suite <suite> --out
+   results/2026-MM-DD-e09-step-policy.json`, supplying actual base spend when
+   available. The artifact may authorize exactly one 300→600ms step, three
+   draws, and at most 12 deterministic case IDs while keeping accounted spend
+   at or below $100. A truncated suite is exploratory and requires an owner
+   decision after the step. Automatic 1,000ms stepping is forbidden; it needs
+   new owner authorization and a new budget artifact.
 
 ## Metrics
 
@@ -73,21 +80,22 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 
 - Ship semantic (some form) only if B or C beats A with exact-binomial McNemar p < 0.05 pooled over n=3 paired draws, with no individual suite showing a significant regression against A.
 - If no semantic arm beats A: cut the lane from the default hot path (D11 rollout section). This outcome is a success, not a failure — it is the cheapest simplification available.
-- C is the shipping variant only if C is not significantly worse than B (directly, or after deadline stepping per Procedure 7). If C still loses at 1,000ms, OWNER DECISION: ship B unbounded (accepting the synchronous-call risk D11 documents) or cut.
+- C is the shipping variant only if C is not significantly worse than B directly or after the single 600ms contingency in Procedure 7. If C still loses, or the bounded subset is only exploratory, OWNER DECISION: authorize a newly budgeted investigation, ship B unbounded (accepting the synchronous-call risk D11 documents), or cut.
 - Cache retained only if pooled hit rate ≥5%; below that, ship deadline-only.
 - Arm C must show deferral <10% warm and all 64K p95s within hard gates; otherwise C is not shippable regardless of quality score.
 
 ## Cost preflight and ceiling
 
-- Reasoning runs: 40 cases × 3 draws × 3 arms = 360 case-runs. At the audited ≈$0.24/agent-run equivalent: 360 × $0.24 = $86.40.
-- Deadline stepping reruns only the changed C arm against the retained B artifact. One worst-case 14-case step costs 14 × 3 × $0.24 = $10.08, for $96.48 total. A second step would reach $106.56 and is forbidden by the current ceiling; either predeclare a smaller decision subset or obtain a revised ceiling before launch.
+- Reasoning runs: 39 cases × 3 draws × 3 arms = 351 case-runs. At the audited ≈$0.24/agent-run equivalent (470-run audit, $113.18): 351 × $0.24 = $84.24.
+- Deadline stepping contingency: at most 12 cases × 3 draws × $0.24 = $8.64 for one 600ms step. Projected maximum automatic path: $92.88. `eval/e09_step_policy.py` re-derives the base from current manifests, uses actual base spend when supplied, shrinks or blocks the step to stay within $100, and never authorizes 1,000ms.
 - Hard ceiling: $100 all-in for reasoning. Stop at the ceiling even mid-arm.
 - Subscription rule: ALL reasoning runs execute via the ChatGPT-authenticated Codex subscription, fail-closed (require_codex_subscription rejects API keys). No run may be re-pointed at usage-billed API to "finish the draw".
 - Embeddings (exempt, usage-billed OpenAI, listed separately): E03 establishes
   the semantic-ready profile, but the quality harness still creates isolated
   per-case users. At the checked-in corpus character counts and the conservative
-  four-characters/token estimate, the two semantic arms across three draws
-  embed about 33.6M tokens, or about **$0.67** at $0.02/M tokens, before retries.
+  four-characters/token estimate plus a 25% chunk-overlap allowance, the two
+  semantic arms across three draws embed about 42.0M tokens, or about **$0.84**
+  at $0.02/M tokens, before retries.
   Query embeddings are much smaller; retain **$2 as the conservative E09
   embedding ceiling** and report provider receipts when available. This is well
   below the owner's $20 notification threshold; stop and notify before
@@ -105,7 +113,7 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 
 ## Reporting
 
-The run record must contain: git commit hash and flag settings per arm; all 27+ artifact paths (quality draws, latency runs, any stepping runs) under the results/2026-MM-DD-e09-* naming; per-arm per-draw per-suite claim totals; the three paired McNemar tables with win/loss/tie counts and bootstrap CIs; cache hit and deferral rates; the 64K latency table per arm against hard gates and the v8 reference; overfetch chars/case per arm; actual spend vs the $80 preflight and the separate embedding spend; and a single ship/bound/cut recommendation mapped to D11's acceptance gates, including the cache-retention and deadline-value decisions.
+The run record must contain: git commit hash and flag settings per arm; all 27+ artifact paths (quality draws, latency runs, and the bounded step-policy/run artifacts if triggered) under the results/2026-MM-DD-e09-* naming; per-arm per-draw per-suite claim totals; the three paired McNemar tables with win/loss/tie counts and bootstrap CIs; cache hit and deferral rates; the 64K latency table per arm against hard gates and the v8 reference; overfetch chars/case per arm; actual spend vs the $84.24 base projection and the separate embedding spend; and a single ship/bound/cut recommendation mapped to D11's acceptance gates, including the cache-retention and deadline-value decisions.
 
 Each quality and performance JSON now also records authenticated runtime flag
 provenance, API build revision, before/after semantic counters, counter deltas,

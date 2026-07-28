@@ -68,7 +68,7 @@ Phase 0 — measurement, pre-code (no product code changes; harness/corpus only)
 |---|---|---|---|
 | [E01](mvp/E01-paired-draw-machinery-and-baseline.md) | Paired-draw machinery, writable-sidecar control, baseline replication | Specified — not run | Feeds every Exx; re-establishes the overfetch diagnosis |
 | [E02](mvp/E02-verbatim-identifier-gate.md) (stage 1) | Verbatim identifier gate — expected-fail proof on current build | Specified — not run | Gates D02 |
-| [E03](mvp/E03-semantic-ready-latency-profile.md) | Semantic-ready latency profile (3 modes) | Specified — not run | Feeds E09, D11; mode 3 wants D09 timings |
+| [E03](mvp/E03-semantic-ready-latency-profile.md) | Semantic-ready latency profile (3 modes) | Harness ready — not run | Feeds E09, D11; mode 3 wants D09 timings |
 
 Infrastructure — no reasoning-quality risk (code, no experiment gate):
 
@@ -77,7 +77,7 @@ Infrastructure — no reasoning-quality risk (code, no experiment gate):
 | [D09](mvp/D09-latency-contract-and-gates.md) | Latency contract: timings_ms, regression-tier gates, per-op query budgets, EXPLAIN assertions | Implemented in harness — isolated acceptance runs remain | Enabler for E03 mode 3; query budgets become measured only after the coordinated run |
 | [D08](mvp/D08-legacy-freeze-and-deletion.md) | Legacy freeze now; deletion later (needs gates 3–4 AND n≥3 parity); dream-retry fix now; MCP residue removal now | Proposed — not started | Dream-retry fix and MCP residue are immediate |
 | [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — not started | Deferred lexical consolidation needs [E05](mvp/E05-lexical-consolidation-guard.md) |
-| [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Proposed — not started | Kills the MinIO CVE release blocker |
+| [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Backfill guard implemented — remaining operational work not started | Kills the MinIO CVE release blocker |
 
 Features — flag + experiment gated:
 
@@ -88,7 +88,7 @@ Features — flag + experiment gated:
 | [D03](mvp/D03-resume-delta-packets.md) | Resume delta packets ("changes since your checkpoint") | Proposed — not started | [E06](mvp/E06-resume-delta-experiment.md) |
 | [D04](mvp/D04-supersession-current-truth.md) | Supersession / current-truth (Markdown frontmatter round-trip) | Proposed — not started | [E07](mvp/E07-supersession-experiment.md) |
 | [D05](mvp/D05-intention-ledger.md) | Intention ledger at open | Proposed — not started | [E08](mvp/E08-intention-ledger-experiment.md) |
-| [D11](mvp/D11-semantic-lane-policy.md) | Semantic lane policy: existence question, embed cache + deadline | Proposed — not started | [E09](mvp/E09-semantic-existence-experiment.md) — may conclude "cut the lane" |
+| [D11](mvp/D11-semantic-lane-policy.md) | Semantic lane policy: existence question, embed cache + deadline | Implemented behind default-off flags — E09 not run | [E09](mvp/E09-semantic-existence-experiment.md) — may conclude "cut the lane" |
 
 Readiness — clients, migration, authority:
 

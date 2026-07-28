@@ -15,6 +15,7 @@ use crate::{
     control_service,
     db::AppState,
     error::{ApiError, ApiResult},
+    foreground_latency::ForegroundLatencySnapshot,
     models::{
         ApiEnvelope, Capability, CaptureRequest, CheckpointRequest, ComputeRequest, ListQuery,
         OpenRequest, QueryRequest, ReadRequest, ResponseStatus, SaveRequest, VerifyRequest,
@@ -31,6 +32,10 @@ pub async fn health() -> Json<Value> {
         "version": env!("CARGO_PKG_VERSION"),
         "build_revision": build_revision()
     }))
+}
+
+pub async fn foreground_latency(State(state): State<AppState>) -> Json<ForegroundLatencySnapshot> {
+    Json(state.foreground_latency.snapshot())
 }
 
 pub async fn ready(State(state): State<AppState>) -> Response {
@@ -171,6 +176,8 @@ fn runtime_feature_flags(state: &AppState) -> Value {
         "allow_degraded_embeddings": state.config.allow_degraded_embeddings,
         "embed_cache": state.config.embed_cache,
         "embedding_backfill_guard": state.config.embedding_backfill_guard,
+        "embedding_backfill_foreground_status_url_configured":
+            state.config.embedding_backfill_foreground_status_url.is_some(),
         "intention_ledger": state.config.intention_ledger,
         "lexical_single_scan": state.config.lexical_single_scan,
         "observability_timings_ms": state.config.observability_timings_ms,
@@ -202,6 +209,11 @@ fn runtime_features(state: &AppState) -> Value {
             state.config.embedding_backfill_open_p95_limit_ms,
         "embedding_backfill_search_p95_limit_ms":
             state.config.embedding_backfill_search_p95_limit_ms,
+        "embedding_backfill_foreground_status_url_configured":
+            state.config.embedding_backfill_foreground_status_url.is_some(),
+        "embedding_backfill_foreground_status_timeout_ms": u64::try_from(
+            state.config.embedding_backfill_foreground_status_timeout.as_millis()
+        ).unwrap_or(u64::MAX),
         "intention_ledger": state.config.intention_ledger,
         "lexical_single_scan": state.config.lexical_single_scan,
         "materialize_token_budget": state.config.materialize_token_budget,

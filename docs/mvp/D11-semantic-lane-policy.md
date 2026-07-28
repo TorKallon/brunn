@@ -19,10 +19,14 @@ harness.
 
 The canonical backfill guard now stops embedding-job claims when off and, when
 on, caps publications at 64 chunks with at least 250ms between full batches.
-The configured foreground open/search p95 limits are exported as runtime
-policy. Cross-process rolling-p95 sampling and automatic pause remain a D12
-worker/telemetry integration item; neither this implementation nor E09 may
-claim acceptance gate 5 until that sampler exists.
+The API records successful foreground open/search latency in rolling 60-second
+windows and exposes a content-free p95 snapshot on
+`/health/foreground-latency`. A separately running worker reads that snapshot
+over a configured internal HTTP URL and fails closed on a stale, invalid, or
+unavailable snapshot; it pauses embedding claims whenever either configured
+p95 limit is exceeded. The process boundary, rolling calculation, and pause
+decision have deterministic tests. D12 acceptance gate 5 still requires the
+coordinated 64K load run.
 
 ## Problem and evidence
 
@@ -60,7 +64,7 @@ Lanes already run concurrently under RETRIEVAL_LANE_TIMEOUT (~2.5s). Inside that
   coverage while preserving successful-lane results.
 - The embedding call completes asynchronously and lands in the cache, so a repeated or refined query is warm.
 
-This makes "accelerator, never a gate" mechanical rather than aspirational: no code path exists in which a response waits past the deadline for OpenAI. The 300ms number is a starting point only — E09 tunes it (300→600→1,000ms stepping) rather than us guessing. The response contract extends the existing lane-gap vocabulary without changing successful candidate shapes. Per-lane metrics gain a semantic_deferred counter and cache hit/miss counters (in-process, exported with existing lane metrics).
+This makes "accelerator, never a gate" mechanical rather than aspirational: no code path exists in which a response waits past the deadline for OpenAI. The 300ms number is a starting point only. E09 may automatically take one bounded 300→600ms contingency step; any 1,000ms run requires a new owner decision and budget artifact. The response contract extends the existing lane-gap vocabulary without changing successful candidate shapes. Per-lane metrics gain a semantic_deferred counter and cache hit/miss counters (in-process, exported with existing lane metrics).
 
 ### (d) Backfill rate limit and foreground-latency guard
 
@@ -95,10 +99,10 @@ Per D14 (D14-migration-and-authority-tiers.md), semantic stays OFF the Tier B cr
 Deterministic (pre-experiment):
 
 1. Unit tests: key normalization (whitespace/trim), LRU eviction at 4,096, TTL expiry, negative-cache window, model-id self-invalidation.
-2. Deterministic mock-embedder deadline test with injected latency greater than `semantic_deadline_ms`: the bounded future defers, and the cache is populated asynchronously afterward. The full HTTP/mock-server acceptance probe remains part of E09 stack qualification.
+2. Deterministic mock-embedder deadline test with injected latency greater than `semantic_deadline_ms`: the bounded future defers, and the cache is populated asynchronously afterward. `eval/semantic_http_probe.py` supplies the full HTTP slow-provider/deadline/cache acceptance probe; it remains to be executed against the isolated E09 stack.
 3. Round-trip budget assertion: a search performs ≤1 embed call, exactly 0 on cache hit (per the constraint that query-count budgets accompany latency gates).
-4. performance_eval.py semantic-failure probe passes using the mock server as --semantic-failure-start/stop-command hooks; 64K 30-sample p95s within hard gates with the lane on.
-5. Backfill guard test: synthetic foreground load above threshold pauses backfill within one batch. **Pending D12 cross-process foreground sampler; the existing code proves kill-switch, batch-cap, and pacing behavior only.**
+4. `eval/e03_mode2.py` wires distinct injected-failure and restore commands into performance_eval.py's semantic-failure hooks; the definitive 64K 30-sample p95 run must pass the hard gates with the lane on.
+5. Backfill guard test: the rolling-p95 calculator and a real cross-process HTTP boundary deterministically prove pause/fail-closed behavior. The definitive D12 64K concurrent-load artifact must additionally prove pause and resume within one batch without a foreground p95 breach.
 
 Experimental: E09 acceptance criteria. Ship the lane on the hot path only if E09 says so; otherwise remove it from the default search path (flag stays for research).
 

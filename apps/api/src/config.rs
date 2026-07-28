@@ -53,6 +53,8 @@ pub struct Config {
     pub embedding_backfill_inter_batch_delay: Duration,
     pub embedding_backfill_open_p95_limit_ms: f64,
     pub embedding_backfill_search_p95_limit_ms: f64,
+    pub embedding_backfill_foreground_status_url: Option<String>,
+    pub embedding_backfill_foreground_status_timeout: Duration,
     pub continuation_secret: String,
     pub materialize_token_budget: usize,
     pub search_fair_share: bool,
@@ -225,6 +227,13 @@ impl Config {
                 "STRAYLIGHT_EMBEDDING_BACKFILL_SEARCH_P95_LIMIT_MS",
                 "107",
             )?,
+            embedding_backfill_foreground_status_url: first_env(&[
+                "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL",
+            ]),
+            embedding_backfill_foreground_status_timeout: Duration::from_millis(env_parse(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS",
+                "1000",
+            )?),
             continuation_secret,
             materialize_token_budget: env_parse("STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET", "24000")?,
             search_fair_share: env_parse("STRAYLIGHT_SEARCH_FAIR_SHARE", "false")?,
@@ -312,6 +321,23 @@ impl Config {
         {
             return Err(ApiError::configuration(
                 "embedding backfill foreground p95 limits must be greater than zero",
+            ));
+        }
+        if config
+            .embedding_backfill_foreground_status_timeout
+            .is_zero()
+        {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS must be greater than zero",
+            ));
+        }
+        if config
+            .embedding_backfill_foreground_status_url
+            .as_ref()
+            .is_some_and(|value| !value.starts_with("http://") && !value.starts_with("https://"))
+        {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL must use http or https",
             ));
         }
         config.validate_production()?;
@@ -651,7 +677,15 @@ mod tests {
                     .env("STRAYLIGHT_SEMANTIC_DEADLINE_MS", "0")
                     .env("STRAYLIGHT_EMBEDDING_BACKFILL_GUARD", "false")
                     .env("STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS", "32")
-                    .env("STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS", "500");
+                    .env("STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS", "500")
+                    .env(
+                        "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL",
+                        "http://api:8080/health/foreground-latency",
+                    )
+                    .env(
+                        "STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS",
+                        "750",
+                    );
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
@@ -755,6 +789,14 @@ mod tests {
                 assert_eq!(
                     config.embedding_backfill_inter_batch_delay,
                     Duration::from_millis(500)
+                );
+                assert_eq!(
+                    config.embedding_backfill_foreground_status_url.as_deref(),
+                    Some("http://api:8080/health/foreground-latency")
+                );
+                assert_eq!(
+                    config.embedding_backfill_foreground_status_timeout,
+                    Duration::from_millis(750)
                 );
             }
             scenario => panic!("unknown config probe scenario {scenario}"),

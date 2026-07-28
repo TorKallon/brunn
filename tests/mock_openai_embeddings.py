@@ -24,6 +24,8 @@ DEFAULT_PORT = 55200
 DEFAULT_DIMENSIONS = 1536
 DEFAULT_STATE = Path("/tmp/straylight-embedding-mock-55200.pid")
 DEFAULT_LOG = Path("/tmp/straylight-embedding-mock-55200.log")
+DEFAULT_CONFIG = Path("/tmp/straylight-embedding-mock-55200.json")
+CONTROL_PATH: Path | None = None
 
 
 def embedding(text: str, dimensions: int) -> list[float]:
@@ -43,7 +45,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/health":
-            self._json(200, {"status": "ok"})
+            self._json(200, {"status": "ok", "behavior": read_behavior()})
         else:
             self._json(404, {"error": "not_found"})
 
@@ -66,6 +68,22 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("dimensions are out of range")
         except (ValueError, TypeError, json.JSONDecodeError) as error:
             self._json(400, {"error": {"message": str(error)}})
+            return
+        behavior = read_behavior()
+        delay_ms = int(behavior["delay_ms"])
+        if delay_ms:
+            time.sleep(delay_ms / 1_000)
+        error_status = int(behavior["error_status"])
+        if error_status:
+            self._json(
+                error_status,
+                {
+                    "error": {
+                        "message": "mock embedding provider failure",
+                        "type": "mock_injected_failure",
+                    }
+                },
+            )
             return
         self._json(
             200,
@@ -99,7 +117,44 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def serve(host: str, port: int) -> int:
+def validate_behavior(delay_ms: int, error_status: int) -> dict[str, int]:
+    if delay_ms < 0 or delay_ms > 60_000:
+        raise ValueError("delay_ms must be between 0 and 60000")
+    if error_status != 0 and not 400 <= error_status <= 599:
+        raise ValueError("error_status must be zero or an HTTP 4xx/5xx status")
+    return {"delay_ms": delay_ms, "error_status": error_status}
+
+
+def write_behavior(path: Path, delay_ms: int, error_status: int) -> None:
+    behavior = validate_behavior(delay_ms, error_status)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(behavior, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def read_behavior(path: Path | None = None) -> dict[str, int]:
+    selected = path or CONTROL_PATH
+    if selected is None:
+        return validate_behavior(0, 0)
+    try:
+        value = json.loads(selected.read_text(encoding="utf-8"))
+        return validate_behavior(
+            int(value.get("delay_ms", 0)),
+            int(value.get("error_status", 0)),
+        )
+    except (FileNotFoundError, ValueError, TypeError, json.JSONDecodeError):
+        return validate_behavior(0, 503)
+
+
+def serve(host: str, port: int, config: Path) -> int:
+    global CONTROL_PATH
+    CONTROL_PATH = config
+    if not config.exists():
+        write_behavior(config, 0, 0)
     server = ThreadingHTTPServer((host, port), Handler)
     server.serve_forever()
     return 0
@@ -122,18 +177,29 @@ def process_is_live(pid: int | None) -> bool:
     return True
 
 
-def health(port: int) -> bool:
+def health(port: int) -> dict[str, Any] | None:
     try:
         with urllib.request.urlopen(
             f"http://127.0.0.1:{port}/health",
             timeout=0.25,
         ) as response:
-            return response.status == 200
-    except OSError:
-        return False
+            if response.status != 200:
+                return None
+            payload = json.loads(response.read() or b"{}")
+            return payload if isinstance(payload, dict) else None
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
-def start(state: Path, log: Path, port: int) -> int:
+def start(
+    state: Path,
+    log: Path,
+    config: Path,
+    port: int,
+    delay_ms: int,
+    error_status: int,
+) -> int:
+    write_behavior(config, delay_ms, error_status)
     pid = read_pid(state)
     if process_is_live(pid) and health(port):
         return 0
@@ -147,6 +213,8 @@ def start(state: Path, log: Path, port: int) -> int:
                 "serve",
                 "--port",
                 str(port),
+                "--config",
+                str(config),
             ],
             stdin=subprocess.DEVNULL,
             stdout=output,
@@ -156,7 +224,12 @@ def start(state: Path, log: Path, port: int) -> int:
     state.write_text(f"{process.pid}\n", encoding="ascii")
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
-        if health(port):
+        observed = health(port)
+        if (
+            observed
+            and observed.get("behavior")
+            == validate_behavior(delay_ms, error_status)
+        ):
             return 0
         if process.poll() is not None:
             break
@@ -181,25 +254,71 @@ def stop(state: Path) -> int:
     return 0
 
 
+def configure(
+    config: Path,
+    port: int,
+    delay_ms: int,
+    error_status: int,
+) -> int:
+    write_behavior(config, delay_ms, error_status)
+    deadline = time.monotonic() + 2.0
+    expected = validate_behavior(delay_ms, error_status)
+    while time.monotonic() < deadline:
+        observed = health(port)
+        if observed and observed.get("behavior") == expected:
+            return 0
+        time.sleep(0.05)
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("serve", "start", "stop", "status"))
+    parser.add_argument(
+        "command",
+        choices=("serve", "start", "stop", "status", "configure"),
+    )
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--log", type=Path, default=DEFAULT_LOG)
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--delay-ms", type=int, default=0)
+    parser.add_argument("--error-status", type=int, default=0)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     if args.command == "serve":
-        return serve(args.host, args.port)
+        return serve(args.host, args.port, args.config)
     if args.command == "start":
-        return start(args.state, args.log, args.port)
+        return start(
+            args.state,
+            args.log,
+            args.config,
+            args.port,
+            args.delay_ms,
+            args.error_status,
+        )
     if args.command == "stop":
         return stop(args.state)
-    return 0 if process_is_live(read_pid(args.state)) and health(args.port) else 1
+    if args.command == "configure":
+        return configure(
+            args.config,
+            args.port,
+            args.delay_ms,
+            args.error_status,
+        )
+    observed = health(args.port)
+    status = {
+        "pid": read_pid(args.state),
+        "live": process_is_live(read_pid(args.state)),
+        "healthy": observed is not None,
+        "behavior": observed.get("behavior") if observed else read_behavior(args.config),
+        "port": args.port,
+    }
+    print(json.dumps(status, sort_keys=True))
+    return 0 if status["live"] and status["healthy"] else 1
 
 
 if __name__ == "__main__":

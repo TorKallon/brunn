@@ -1,6 +1,6 @@
 # E03 — Semantic-Ready Latency Profile
 
-Status: Harness prerequisites partially implemented — not run
+Status: Harness ready — not run
 Date: 2026-07-27
 Gates: none directly — measurement baseline and the primary decision input to E09 (E09-semantic-existence-experiment.md, the semantic existence experiment; the lane policy itself is D11-semantic-lane-policy.md); requires D09(a) (D09-latency-contract-and-gates.md) as a measurement enabler
 Phase: 0 (measurement; no product code — D09(a) instrumentation is a measurement enabler, not a behavior change)
@@ -18,13 +18,16 @@ Every latency number we cite — the entire v8 640K soak (results/2026-07-27-sim
 5. **Mock embedder** — exists: tests/mock_openai_embeddings.py, a deterministic OpenAI-compatible server, already usable as the semantic-failure probe hooks.
 6. **Eval-corpus backfill for E09** (Small; scope addition) — embed the quality-suite eval corpora (the fixtures behind eval/work_cases.json, eval/rupture_ops_cases.json, eval/recent_work_cases.json) through the same rate-limited backfill path, verified by zero `semantic_unavailable` notices on a warm probe query. This is the deliverable E09's precondition 1 depends on; without it no E03 mode touches the quality-suite corpus (modes 1-3 cover only synthetic/owner performance fixtures). Spend is inside the embeddings ceiling below.
 
-Implementation note (2026-07-27): items 1-4 are implemented and covered by
-API/harness unit tests. The run record now includes top-level and nested
-phase-percentile tables, semantic-ready validity, repeated resume samples,
-unique-query mode, and an explicitly estimated embedding-spend field. Mode 2
-orchestration, the failure-probe command wiring, and item 6's quality-corpus
-backfill still require clean isolated run configuration before any definitive
-sample set is valid.
+Implementation note (2026-07-27): all six build items now have deterministic
+harness support. The run record includes top-level and nested phase-percentile
+tables, semantic-ready validity, repeated resume samples, unique-query mode,
+and an explicit embedding-spend estimate. `eval/e03_mode2.py` owns a
+run-unique mock lifecycle and wires distinct failure/restore hooks into the
+performance harness. `eval/e03_quality_backfill.py` estimates before mutation,
+imports through the ordinary rate-limited worker path, verifies that the
+cross-process foreground guard is configured, and requires a semantic-only
+warm probe with candidates and no semantic gap. These harnesses are unit
+tested; no definitive experiment has been run.
 
 ## Arms
 
@@ -44,10 +47,32 @@ MM-DD is the run date.
 
 1. Land build items 1-4; verify `timings_ms` phase-sum sanity (D09 acceptance gate 1) on a `--quick` run.
 2. Mode 1: `python performance_eval.py run --label e03-mode1-64k --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode1-64k.json` (the harness lives at repo root), then `python performance_eval.py run --label e03-mode1-640k --future-soak --out results/2026-MM-DD-e03-mode1-640k.json` for the 640k point.
-3. Mode 2: start tests/mock_openai_embeddings.py; point the API's embedding endpoint at it; run with `--wait-semantic` at 64k and `--future-soak`: results/2026-MM-DD-e03-mode2-64k.json, results/2026-MM-DD-e03-mode2-640k.json. Record backfill wall-clock and rate-limit behavior.
-4. Semantic-failure probe (within mode 2 config): run with `--semantic-failure-start-command` / `--semantic-failure-stop-command` wired to the mock's hooks; assert graceful degradation — semantic lane times out under RETRIEVAL_LANE_TIMEOUT (~2.5s), response arrives with `semantic_unavailable`, exact+lexical results intact, and open/search totals still inside the hard SLO gates during the outage window.
+3. Mode 2: configure the isolated API stack to use the run-unique mock endpoint,
+   then invoke `python3 eval/e03_mode2.py` with unique `--mock-port`,
+   `--mock-state`, `--mock-log`, and `--mock-config` paths. The wrapper refuses
+   to adopt a pre-existing mock, runs `performance_eval.py --wait-semantic`,
+   verifies fast state after the failure hook is restored, and tears down only
+   the process it started. Produce the 64k and `--future-soak` artifacts and
+   record backfill wall-clock and rate-limit behavior.
+4. Semantic-failure probe (within mode 2 config): the mode-2 wrapper wires the
+   mock's injected-503 configure command and distinct fast-state restore
+   command into `--semantic-failure-start-command` /
+   `--semantic-failure-stop-command`. In addition, run
+   `eval/semantic_http_probe.py` with the mock's slow/restore configure hooks;
+   require the cold full HTTP response to retain exact+lexical evidence and
+   defer semantic before provider delay, the identical query to succeed from
+   the asynchronously warmed cache, and a new semantic query to succeed after
+   restore.
 5. Mode 3: real OpenAI embeddings, 64k, `--wait-semantic`; two sub-runs — cache-miss (unique queries) then warm (repeat queries): results/2026-MM-DD-e03-mode3-cold-64k.json, results/2026-MM-DD-e03-mode3-warm-64k.json.
-6. Eval-corpus backfill (build item 6): run the rate-limited backfill over the three quality-suite corpora; record wall-clock, spend, and the zero-`semantic_unavailable` warm-probe verification in results/2026-MM-DD-e03-eval-corpus-backfill.json. This unblocks E09 precondition 1.
+6. Eval-corpus backfill (build item 6): first run
+   `python3 eval/e03_quality_backfill.py --provider-mode openai estimate
+   --out results/2026-MM-DD-e03-eval-corpus-backfill-estimate.json`. Only after
+   the estimate passes the $5 ceiling, run the same harness's `run` subcommand
+   with a unique run ID. It imports all three quality corpora through the
+   ordinary guarded worker path and records wall-clock, machine-readable
+   preflight/actual spend accounting, and a zero-gap semantic-only warm probe
+   in `results/2026-MM-DD-e03-eval-corpus-backfill.json`. This unblocks E09
+   precondition 1.
 7. Report per-phase p50/p95/p99 tables per mode from `timings_ms`; diff against the v8 baselines.
 
 ## Metrics

@@ -70,10 +70,27 @@ STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=true
 does not remove the outer 2.5-second retrieval-lane timeout. Turning
 `STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=false` stops the worker from claiming
 embedding jobs. With the guard on, each publication is capped at 64 chunks and
-full batches are separated by at least 250ms. `/ready` reports the active
-flags; authenticated `/v1/status` additionally reports semantic cache and
-deferral counters. The E09 harness validates these values and the immutable
-build revision before any reasoning draw.
+full batches are separated by at least 250ms. In Compose the worker also reads
+the API process's rolling foreground-latency snapshot from
+`http://api:8080/health/foreground-latency`. Hosted environments must set
+`STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL` to a private/internal API
+URL and may tune its request timeout with
+`STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_TIMEOUT_MS`.
+
+The snapshot schema is `straylight-foreground-latency@v1`, covers 60 seconds,
+and contains only sample counts, p95 values, newest-sample ages, and generation
+time. It contains no query text, paths, user IDs, or credentials. A configured
+worker pauses embedding claims when either p95 exceeds its open/search limit
+or when the endpoint is unavailable, non-successful, malformed, stale by more
+than 10 seconds, or more than 5 seconds in the future. An absent endpoint URL
+preserves standalone local-development behavior but does not satisfy the D12
+backfill-guard gate. Keep this route on the private service network in hosted
+deployments.
+
+`/ready` reports the active flags and whether a foreground status URL is
+configured; authenticated `/v1/status` additionally reports semantic cache and
+deferral counters. The E03/E09 harnesses validate these values and the
+immutable build revision before their guarded backfill or reasoning work.
 
 ## Health
 

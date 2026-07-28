@@ -214,6 +214,10 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .route("/health", get(service::health))
+        .route(
+            "/health/foreground-latency",
+            get(service::foreground_latency),
+        )
         .route("/ready", get(service::ready))
         .route("/openapi.json", get(service::openapi))
         .nest("/v1", protected)

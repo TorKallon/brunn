@@ -30,6 +30,7 @@ use crate::{
     db::{AppState, set_context},
     error::{ApiError, ApiResult},
     eval_service::EvalImportRequest,
+    foreground_latency::ForegroundOperation,
     ingest::{DocumentChunk, normalize_document},
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId},
     retrieval_sql::{
@@ -755,6 +756,9 @@ pub async fn open(
         }));
     }
     metrics::histogram!("simple.open.duration_ms").record(total_ms);
+    state
+        .foreground_latency
+        .record(ForegroundOperation::Open, total_ms);
     metrics::histogram!("simple.open.evidence_sources").record(evidence.len() as f64);
     metrics::histogram!("simple.open.evidence_leads").record(evidence_leads.len() as f64);
     Ok(Json(envelope))
@@ -964,6 +968,9 @@ pub async fn search(
         }));
     }
     metrics::histogram!("simple.search.duration_ms").record(total_ms);
+    state
+        .foreground_latency
+        .record(ForegroundOperation::Search, total_ms);
     metrics::histogram!("simple.search.candidates").record(all_candidates.len() as f64);
     Ok(Json(envelope))
 }

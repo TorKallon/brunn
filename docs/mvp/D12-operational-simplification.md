@@ -1,10 +1,19 @@
 # D12 — Operational Simplification
 
-Status: Proposed — not started
+Status: Backfill guard implemented — remaining operational work not started
 Date: 2026-07-27
 Depends on: D08 (legacy freeze; D08-legacy-freeze-and-deletion.md), D14 (authority tiers; D14-migration-and-authority-tiers.md)
 Gated by: none (infrastructure; the Railway cutover itself is a Tier C event gated by D14's tripwires)
 Runtime flag: n/a for infrastructure items; `embedding_backfill_guard` for the backfill throttle
+
+Implementation note (2026-07-27): only the embedding-backfill guard subset is
+implemented. The API publishes a content-free rolling 60-second open/search
+p95 snapshot, and the separate worker consumes it over an internal HTTP URL.
+Configured endpoint failures, stale/future snapshots, schema drift, or a p95
+above either limit pause embedding claims. Unit tests cover the rolling p95,
+the cross-process HTTP boundary, and fail-closed behavior. The coordinated 64K
+load artifact, S3/Railway work, Datadog trim, restore drill, and PITR drill are
+still pending.
 
 ## Problem and evidence
 
@@ -28,7 +37,7 @@ Operational surface is currently wider than the product: two object-store paths 
 - Exactly four monitors: API down; write p95; queue age; backup success.
 - Queue-age monitoring is polling-shaped — a jitter in poll cadence looks like queue stall. Thresholds must tolerate the documented false-alarm mode: alert on sustained breach (multiple consecutive windows), not single samples. A monitor that cries wolf weekly is worse than no monitor.
 
-**Embedding backfill rate limit with a foreground-latency guard.** The initial owner-corpus embed (~$0.19 per 9.6M-token corpus; usage-billed OpenAI, explicitly exempt from the subscription rule) runs through the worker at a configured rate limit. The guard: worker samples foreground open/search p95 and pauses backfill while p95 exceeds a configured multiple of the v8 baseline (default: pause above 2x open 59.7ms / search 53.1ms sustained). Controlled by `embedding_backfill_guard` so backfill can be halted at runtime without a deploy — the canonical flag name, shared with D11-semantic-lane-policy.md section (d); one guard, one name in config.
+**Embedding backfill rate limit with a foreground-latency guard.** The initial owner-corpus embed (~$0.19 per 9.6M-token corpus; usage-billed OpenAI, explicitly exempt from the subscription rule) runs through the worker at a configured rate limit. The API records open/search completion latency in rolling 60-second windows and exposes only counts, p95s, sample ages, and snapshot time. The worker fetches that content-free snapshot over its configured internal HTTP URL before claiming embedding work. It pauses on either p95 breach (defaults: 120ms open / 107ms search) and fails closed when a configured endpoint is unavailable, invalid, stale, or from the future. `embedding_backfill_guard=false` remains the immediate runtime halt. Compose configures the service-to-service URL; production must use a private API URL. An absent URL preserves local-development compatibility but does not qualify for this D12 gate.
 
 ## What this does NOT change
 
@@ -52,7 +61,7 @@ Operational surface is currently wider than the product: two object-store paths 
 2. Restore drill: back up from production S3+PG, restore onto Nyx, re-run the fidelity audit (paths/bytes/sha256, binary descriptions byte-copied, parent_checkpoint_id resolution) — zero divergence. PITR drill to an arbitrary point succeeds before Tier C.
 3. Worker isolation probe: with the worker stopped, full exact+lexical service; performance_eval correctness markers green and p95s within v8 baselines.
 4. Monitor verification: each of the four monitors fired by a synthetic fault (API stopped; injected slow write; stalled queue job; failed backup) exactly once, with queue-age proven quiet across a normal week.
-5. Backfill guard test: bulk embed against a 64k-scale fixture with concurrent foreground load; guard pauses and resumes; foreground open/search p95 never exceeds the configured multiple.
+5. Backfill guard test: deterministic tests first prove the rolling window and real API-process-to-worker-process HTTP pause path. Then bulk embed against a 64k-scale fixture with concurrent foreground load; the run artifact must prove pause and resume within one batch and that foreground open/search p95 never exceeds the configured limit.
 
 ## Rollout and kill switch
 

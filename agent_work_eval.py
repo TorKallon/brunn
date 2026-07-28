@@ -67,6 +67,7 @@ BOOLEAN_RUNTIME_FEATURES = {
     "allow_degraded_embeddings",
     "embed_cache",
     "embedding_backfill_guard",
+    "embedding_backfill_foreground_status_url_configured",
     "intention_ledger",
     "lexical_single_scan",
     "observability_timings_ms",
@@ -81,6 +82,7 @@ BOOLEAN_RUNTIME_FEATURES = {
 }
 RUNTIME_FEATURES = BOOLEAN_RUNTIME_FEATURES | {
     "embedding_backfill_batch_chunks",
+    "embedding_backfill_foreground_status_timeout_ms",
     "embedding_backfill_inter_batch_ms",
     "embedding_backfill_open_p95_limit_ms",
     "embedding_backfill_search_p95_limit_ms",

@@ -22,6 +22,7 @@ pub mod dreams;
 pub mod embeddings;
 pub mod error;
 pub mod eval_service;
+pub mod foreground_latency;
 pub mod ingest;
 pub mod logging;
 pub mod models;

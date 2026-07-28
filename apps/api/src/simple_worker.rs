@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use pgvector::Vector;
 use serde_json::Value;
@@ -12,6 +12,9 @@ use crate::{
     db::AppState,
     embeddings::embed_indexing_inputs,
     error::{ApiError, ApiResult},
+    foreground_latency::{
+        ForegroundGuardDecision, ForegroundLatencySnapshot, SNAPSHOT_SCHEMA, evaluate_guard,
+    },
     simple_core, simple_dream,
 };
 
@@ -19,6 +22,8 @@ const MAX_ATTEMPTS: i32 = 5;
 const LEASE_MINUTES: i32 = 5;
 const MAX_EMBED_BATCH_JOBS: i64 = 8;
 const MAX_EMBED_CHUNKS_PER_PUBLICATION: usize = 64;
+const MAX_FOREGROUND_SNAPSHOT_AGE: Duration = Duration::from_secs(10);
+const MAX_FOREGROUND_SNAPSHOT_FUTURE_SKEW: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
 struct Job {
@@ -40,6 +45,8 @@ pub async fn process_next(state: &AppState) -> ApiResult<bool> {
         job
     } else if !state.config.embedding_backfill_guard {
         mark_exhausted(pool).await?;
+        return Ok(false);
+    } else if !embedding_backfill_allowed(state).await {
         return Ok(false);
     } else if let Some(job) = claim_embedding(pool).await? {
         job
@@ -100,6 +107,150 @@ pub async fn process_next(state: &AppState) -> ApiResult<bool> {
         }
     }
     Ok(true)
+}
+
+async fn embedding_backfill_allowed(state: &AppState) -> bool {
+    let Some(url) = state
+        .config
+        .embedding_backfill_foreground_status_url
+        .as_deref()
+    else {
+        metrics::counter!(
+            "simple.embedding_backfill.foreground_guard",
+            "result" => "unconfigured"
+        )
+        .increment(1);
+        return true;
+    };
+    match fetch_foreground_guard(
+        &state.foreground_latency_client,
+        url,
+        state.config.embedding_backfill_open_p95_limit_ms,
+        state.config.embedding_backfill_search_p95_limit_ms,
+    )
+    .await
+    {
+        Ok(decision) => {
+            let result = if decision.allow_backfill {
+                "allow"
+            } else {
+                "pause"
+            };
+            metrics::counter!(
+                "simple.embedding_backfill.foreground_guard",
+                "result" => result,
+                "reason" => decision.reason.clone()
+            )
+            .increment(1);
+            if !decision.allow_backfill {
+                tracing::warn!(
+                    reason = decision.reason,
+                    open_p95_ms = ?decision.open_p95_ms,
+                    search_p95_ms = ?decision.search_p95_ms,
+                    "embedding backfill paused by foreground latency guard"
+                );
+            }
+            decision.allow_backfill
+        }
+        Err(error) => {
+            metrics::counter!(
+                "simple.embedding_backfill.foreground_guard",
+                "result" => "pause",
+                "reason" => "snapshot_error"
+            )
+            .increment(1);
+            tracing::warn!(
+                %error,
+                "embedding backfill paused because the foreground latency snapshot is unavailable"
+            );
+            false
+        }
+    }
+}
+
+async fn fetch_foreground_guard(
+    client: &reqwest::Client,
+    url: &str,
+    open_limit_ms: f64,
+    search_limit_ms: f64,
+) -> Result<ForegroundGuardDecision, String> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("foreground latency request failed: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "foreground latency endpoint returned {}",
+            response.status()
+        ));
+    }
+    let snapshot = response
+        .json::<ForegroundLatencySnapshot>()
+        .await
+        .map_err(|error| format!("foreground latency response was invalid: {error}"))?;
+    validate_foreground_snapshot(&snapshot)?;
+    Ok(evaluate_guard(&snapshot, open_limit_ms, search_limit_ms))
+}
+
+fn validate_foreground_snapshot(snapshot: &ForegroundLatencySnapshot) -> Result<(), String> {
+    if snapshot.schema != SNAPSHOT_SCHEMA || snapshot.window_seconds != 60 {
+        return Err("foreground latency snapshot schema or window is invalid".to_owned());
+    }
+    validate_operation_snapshot("open", &snapshot.open)?;
+    validate_operation_snapshot("search", &snapshot.search)?;
+    let now_ms: u64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX);
+    let max_age_ms: u64 = MAX_FOREGROUND_SNAPSHOT_AGE
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX);
+    let max_future_ms: u64 = MAX_FOREGROUND_SNAPSHOT_FUTURE_SKEW
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX);
+    if now_ms.saturating_sub(snapshot.generated_at_unix_ms) > max_age_ms {
+        return Err("foreground latency snapshot is stale".to_owned());
+    }
+    if snapshot.generated_at_unix_ms.saturating_sub(now_ms) > max_future_ms {
+        return Err("foreground latency snapshot is from the future".to_owned());
+    }
+    Ok(())
+}
+
+fn validate_operation_snapshot(
+    operation: &str,
+    snapshot: &crate::foreground_latency::OperationLatencySnapshot,
+) -> Result<(), String> {
+    if snapshot.samples == 0 {
+        if snapshot.p95_ms.is_some() || snapshot.newest_sample_age_ms.is_some() {
+            return Err(format!(
+                "{operation} foreground latency snapshot has values without samples"
+            ));
+        }
+        return Ok(());
+    }
+    let p95_ms = snapshot
+        .p95_ms
+        .ok_or_else(|| format!("{operation} foreground latency snapshot omitted p95"))?;
+    if !p95_ms.is_finite() || p95_ms < 0.0 {
+        return Err(format!(
+            "{operation} foreground latency snapshot has invalid p95"
+        ));
+    }
+    let newest_sample_age_ms = snapshot
+        .newest_sample_age_ms
+        .ok_or_else(|| format!("{operation} foreground latency snapshot omitted sample age"))?;
+    if newest_sample_age_ms > 60_000 {
+        return Err(format!(
+            "{operation} foreground latency snapshot has an expired sample"
+        ));
+    }
+    Ok(())
 }
 
 async fn process_embedding_batch(
@@ -819,14 +970,23 @@ fn payload_string(payload: &Value, field: &'static str) -> ApiResult<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use axum::{Json, Router, routing::get};
     use sqlx::postgres::PgPoolOptions;
     use uuid::Uuid;
 
     use super::{
         MAX_EMBED_BATCH_JOBS, MAX_EMBED_CHUNKS_PER_PUBLICATION, claim_embedding,
-        claim_more_embeddings, claim_priority, retry_delay_seconds, sanitize_error,
+        claim_more_embeddings, claim_priority, fetch_foreground_guard, retry_delay_seconds,
+        sanitize_error, validate_foreground_snapshot,
     };
-    use crate::error::ApiError;
+    use crate::{
+        error::ApiError,
+        foreground_latency::{
+            ForegroundLatencySnapshot, OperationLatencySnapshot, SNAPSHOT_SCHEMA,
+        },
+    };
 
     #[test]
     fn retry_delay_is_bounded() {
@@ -845,6 +1005,84 @@ mod tests {
     fn embedding_batches_remain_bounded() {
         assert_eq!(MAX_EMBED_BATCH_JOBS, 8);
         assert_eq!(MAX_EMBED_CHUNKS_PER_PUBLICATION, 64);
+    }
+
+    fn foreground_snapshot(
+        open_p95_ms: Option<f64>,
+        search_p95_ms: Option<f64>,
+    ) -> ForegroundLatencySnapshot {
+        ForegroundLatencySnapshot {
+            schema: SNAPSHOT_SCHEMA.to_owned(),
+            generated_at_unix_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+                .try_into()
+                .unwrap(),
+            window_seconds: 60,
+            open: OperationLatencySnapshot {
+                samples: usize::from(open_p95_ms.is_some()),
+                p95_ms: open_p95_ms,
+                newest_sample_age_ms: Some(0),
+            },
+            search: OperationLatencySnapshot {
+                samples: usize::from(search_p95_ms.is_some()),
+                p95_ms: search_p95_ms,
+                newest_sample_age_ms: Some(0),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn foreground_guard_reads_another_process_over_http_and_pauses() {
+        let snapshot = foreground_snapshot(Some(80.0), Some(180.0));
+        let app = Router::new().route(
+            "/health/foreground-latency",
+            get(move || {
+                let snapshot = snapshot.clone();
+                async move { Json(snapshot) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(1))
+            .build()
+            .unwrap();
+        let decision = fetch_foreground_guard(
+            &client,
+            &format!("http://{address}/health/foreground-latency"),
+            120.0,
+            107.0,
+        )
+        .await
+        .unwrap();
+        assert!(!decision.allow_backfill);
+        assert_eq!(decision.reason, "search_p95_exceeded");
+        server.abort();
+    }
+
+    #[test]
+    fn stale_cross_process_snapshot_fails_closed() {
+        let mut snapshot = foreground_snapshot(Some(10.0), Some(10.0));
+        snapshot.generated_at_unix_ms = snapshot.generated_at_unix_ms.saturating_sub(11_000);
+        assert_eq!(
+            validate_foreground_snapshot(&snapshot).unwrap_err(),
+            "foreground latency snapshot is stale"
+        );
+    }
+
+    #[test]
+    fn malformed_cross_process_operation_snapshot_fails_closed() {
+        let mut snapshot = foreground_snapshot(Some(10.0), Some(10.0));
+        snapshot.open.samples = 0;
+        assert_eq!(
+            validate_foreground_snapshot(&snapshot).unwrap_err(),
+            "open foreground latency snapshot has values without samples"
+        );
     }
 
     #[tokio::test]
