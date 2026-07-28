@@ -1,0 +1,16 @@
+{
+  "schema": "straylight-experiment-predeclaration@v1",
+  "experiment": "E04",
+  "created_at": "2026-07-28T07:04:19-07:00",
+  "status": "frozen_before_e04_candidate_outcomes",
+  "authoring_parent_revision": "e92460230880ca23ae1d630bcdf36b082e30890c",
+  "decision": "Do not invoke the under-specified one-factor bisection contingency in this definitive execution.",
+  "reason": "The contingency lacks paired control arms, draw IDs, output names, an aggregate command, and factor-level acceptance rules. Its stated cost also omits new paired controls.",
+  "definitive_effect": "Any candidate that regresses under the frozen E04 grid is rejected. A bisection, if later desired, is a separately predeclared and repriced experiment.",
+  "planned_definitive_subscription_case_runs": 528,
+  "planned_definitive_subscription_equivalent_usd": 126.72,
+  "unincurred_documented_bisection_case_runs": 54,
+  "unincurred_documented_bisection_equivalent_usd": 12.96,
+  "actual_embedding_usd_expected": 0.0,
+  "hard_ceiling_usd": 150.0
+}

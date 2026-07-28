@@ -101,6 +101,14 @@ on-disk counts in the cost ledger.
    `E04_SERVICE=(results/2026-MM-DD-e04-{A,B,C}-{rupture,work,personal}-draw{1,2,3}.json results/2026-MM-DD-e04-{A,B,C}-{rupture,work}-draw{4,5}.json); python3 eval/audit_accepted_sources.py "${E04_SERVICE[@]}" --expected-arm-retrieval-modes e04-A=exact,lexical --expected-arm-retrieval-modes e04-B=exact,lexical --expected-arm-retrieval-modes e04-C=exact,lexical --out results/2026-MM-DD-e04-accepted-source-context.json`.
 7. On regression only: one-factor-at-a-time bisection of the three bounds before abandoning D01 — `char_cap` only; `fair_share` only; demotion isolated via `section_demotion_top_n` unset vs 8 — chronic subsets, 3 draws per configuration.
 
+   **Predeclared for the 2026-07-28 execution:** do not invoke this diagnostic
+   contingency. The text does not freeze paired control arms, draw IDs,
+   output names, an aggregate command, or per-factor acceptance rules, and
+   its 54-run cost estimate omits any new paired controls. A regressing
+   candidate is rejected in the definitive grid. Any bisection is a new
+   experiment that must first freeze those contracts and reprice its full
+   paired topology.
+
 ## Metrics
 
 - Per-case claim scores, per suite, per arm, per draw.
