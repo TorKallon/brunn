@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "errors": [],
+  "cards": 5,
+  "workloads": [
+    "Charlemagne",
+    "Star Rupture",
+    "Straylight",
+    "Switzerland",
+    "Warmind"
+  ],
+  "mutation_cases": 5
+}

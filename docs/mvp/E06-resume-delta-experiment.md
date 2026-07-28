@@ -1,9 +1,29 @@
 # E06 — Resume Delta Experiment
 
-Status: Build prerequisites implemented — experiment not run
+Status: Complete — negative result; D03 rejected
 Date: 2026-07-27
 Gates: D03 (D03-resume-delta-packets.md)
 Phase: 1 (requires D03 built behind resume_deltas)
+
+## Result (2026-07-28)
+
+The definitive three-draw experiment rejected D03 in its tested form.
+Treatment B passed every deterministic performance, SQL-count, footprint, and
+lineage gate, including 77.606 ms resume p95 at 640K, exactly +5 completed SQL
+statements in all 30 paired samples, and 30/30 byte/version-exact lineage
+responses. It did not pass the quality or payload gates:
+
+- B produced 0/5 complete cases in all three draws.
+- B scored 34/60 claims versus A's 33/60 and C's 40/60. The one-sided exact
+  claim-level McNemar p-values were 0.8125 versus A and 0.96875 versus C.
+- B increased the operation-level resume payload in all 15/15 paired
+  draw-case comparisons, by 63,387 characters total and 4,225.8 characters
+  per pair on average.
+
+`resume_deltas` remains default-off and is not eligible for rollout. The
+definitive artifacts, complete card grid, cost record, and excluded-diagnostic
+history are in
+[the E06 result report](../../results/2026-07-28-e06-report.md).
 
 ## Question
 

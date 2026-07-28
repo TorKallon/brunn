@@ -1,0 +1,408 @@
+{
+  "schema": "straylight-e06-resume-payload-comparison@v1",
+  "created_at": "2026-07-28T15:25:01.606881-07:00",
+  "pass": false,
+  "errors": [],
+  "contract": {
+    "control_arm": "e06-A",
+    "treatment_arm": "e06-B",
+    "draws": [
+      "e06-draw1",
+      "e06-draw2",
+      "e06-draw3"
+    ],
+    "case_ids": [
+      "warmind-alpha-budget-transition",
+      "charlemagne-storage-observation-transition",
+      "star-rupture-second-facturer-transition",
+      "switzerland-reservation-transition",
+      "straylight-api-gate-transition"
+    ],
+    "pairs": 15,
+    "measurement_source": "records[].service_operations[operation=resume].result_chars",
+    "successful_resume_operations_per_record": 1,
+    "threshold": "treatment_result_chars <= control_result_chars in every pair",
+    "tolerance_chars": 0,
+    "whole_record_character_metrics_used": false
+  },
+  "manifest": {
+    "path": "/Users/Shared/projects/.codex-straylight-worktrees/e06-run-final/eval/transition_cases.json",
+    "sha256": "4ab28c64c4ec5648a91fe8614ee0bf64a02b5ce0e7ac4ab0e2a504bf1b7e7d67",
+    "benchmark_version": "0.3",
+    "model": "gpt-5.6-sol",
+    "case_ids": [
+      "warmind-alpha-budget-transition",
+      "charlemagne-storage-observation-transition",
+      "star-rupture-second-facturer-transition",
+      "switzerland-reservation-transition",
+      "straylight-api-gate-transition"
+    ]
+  },
+  "inputs": [
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e06-run-final/results/2026-07-28-resume-deltas-a-draw1.json",
+      "sha256": "87f2de4f3b58cffdb5888cbc36c3f0c524614d87a51e86b10c0b96506ca8543e",
+      "run_id": "resume-deltas-a-draw1",
+      "experiment_arm": "e06-A",
+      "paired_draw_id": "e06-draw1",
+      "manifest_sha256": "4ab28c64c4ec5648a91fe8614ee0bf64a02b5ce0e7ac4ab0e2a504bf1b7e7d67",
+      "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+      "harness_sha256": "debe6f312702d1818678f3dcc5164d4d605d4f60e43a1cd602c1e43504ebe0a4",
+      "mutation_sha256": "054ef686b683f904c73c9a6239c388d127bf9c7c988dac8a468436778929bf2e"
+    },
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e06-run-final/results/2026-07-28-resume-deltas-a-draw2.json",
+      "sha256": "e970eca2108b787ad21bee2aa3871441efc133f71a19b22334c0aba8eb934264",
+      "run_id": "resume-deltas-a-draw2",
+      "experiment_arm": "e06-A",
+      "paired_draw_id": "e06-draw2",
+      "manifest_sha256": "4ab28c64c4ec5648a91fe8614ee0bf64a02b5ce0e7ac4ab0e2a504bf1b7e7d67",
+      "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+      "harness_sha256": "debe6f312702d1818678f3dcc5164d4d605d4f60e43a1cd602c1e43504ebe0a4",
+      "mutation_sha256": "71b5bd9f1ae7a70578cbf33ed99d710108abde870dd2ede6d2d4ea483baf6712"
+    },
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e06-run-final/results/2026-07-28-resume-deltas-a-draw3.json",
+      "sha256": "790e7c7ab276e24c64dc74c5693d74248d0634acffd137fc3a4af617f4384cb7",
+      "run_id": "resume-deltas-a-draw3",
+      "experiment_arm": "e06-A",
+      "paired_draw_id": "e06-draw3",
+      "manifest_sha256": "4ab28c64c4ec5648a91fe8614ee0bf64a02b5ce0e7ac4ab0e2a504bf1b7e7d67",
+      "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+      "harness_sha256": "debe6f312702d1818678f3dcc5164d4d605d4f60e43a1cd602c1e43504ebe0a4",
+      "mutation_sha256": "9b2b73c17111c574c2afe27175bdd87ed0ee5f0820bf9d84fa28cc7511ff22d7"
+    },
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e06-run-final/results/2026-07-28-resume-deltas-b-draw1.json",
+      "sha256": "0c0a57b9582e311b1b0d09a86b777f1adde7a463480e8f4e01407deda9a0acf3",
+      "run_id": "resume-deltas-b-draw1",
+      "experiment_arm": "e06-B",
+      "paired_draw_id": "e06-draw1",
+      "manifest_sha256": "4ab28c64c4ec5648a91fe8614ee0bf64a02b5ce0e7ac4ab0e2a504bf1b7e7d67",
+      "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+      "harness_sha256": "debe6f312702d1818678f3dcc5164d4d605d4f60e43a1cd602c1e43504ebe0a4",
+      "mutation_sha256": "054ef686b683f904c73c9a6239c388d127bf9c7c988dac8a468436778929bf2e"
+    },
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e06-run-final/results/2026-07-28-resume-deltas-b-draw2.json",
+      "sha256": "4ee22bc73c6757f6eebad7b4755ef39692b4f4ce652ffefcced99ac5686426ed",
+      "run_id": "resume-deltas-b-draw2",
+      "experiment_arm": "e06-B",
+      "paired_draw_id": "e06-draw2",
+      "manifest_sha256": "4ab28c64c4ec5648a91fe8614ee0bf64a02b5ce0e7ac4ab0e2a504bf1b7e7d67",
+      "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+      "harness_sha256": "debe6f312702d1818678f3dcc5164d4d605d4f60e43a1cd602c1e43504ebe0a4",
+      "mutation_sha256": "71b5bd9f1ae7a70578cbf33ed99d710108abde870dd2ede6d2d4ea483baf6712"
+    },
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e06-run-final/results/2026-07-28-resume-deltas-b-draw3.json",
+      "sha256": "0bf52092332cbe64e2697f626f6e3a7f1119a9c2b955cc709d4193be153b9419",
+      "run_id": "resume-deltas-b-draw3",
+      "experiment_arm": "e06-B",
+      "paired_draw_id": "e06-draw3",
+      "manifest_sha256": "4ab28c64c4ec5648a91fe8614ee0bf64a02b5ce0e7ac4ab0e2a504bf1b7e7d67",
+      "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+      "harness_sha256": "debe6f312702d1818678f3dcc5164d4d605d4f60e43a1cd602c1e43504ebe0a4",
+      "mutation_sha256": "9b2b73c17111c574c2afe27175bdd87ed0ee5f0820bf9d84fa28cc7511ff22d7"
+    }
+  ],
+  "provenance": {
+    "source_revision": "aca015acf52eef5adc3d338263c81fe0bca676dc",
+    "build_revision": "aca015acf52eef5adc3d338263c81fe0bca676dc",
+    "api_image_id": "sha256:6d6442eff51f42769b5816963e09ca3a39c88d2b35ccd36836dd91ea67f88567",
+    "api_image_revision": "aca015acf52eef5adc3d338263c81fe0bca676dc",
+    "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+    "harness_sha256": "debe6f312702d1818678f3dcc5164d4d605d4f60e43a1cd602c1e43504ebe0a4",
+    "service_retrieval_modes": [
+      "exact",
+      "lexical"
+    ],
+    "runtime_features_except_resume_deltas": {
+      "allow_degraded_embeddings": false,
+      "embed_cache": false,
+      "embedding_backfill_batch_chunks": 64,
+      "embedding_backfill_foreground_status_timeout_ms": 1000,
+      "embedding_backfill_foreground_status_url_configured": true,
+      "embedding_backfill_guard": false,
+      "embedding_backfill_inter_batch_ms": 250,
+      "embedding_backfill_open_p95_limit_ms": 120.0,
+      "embedding_backfill_search_p95_limit_ms": 107.0,
+      "intention_ledger": false,
+      "lexical_single_scan": false,
+      "materialize_token_budget": 24000,
+      "observability_timings_ms": true,
+      "read_path_roundtrip_v1": false,
+      "search_char_cap": false,
+      "search_fair_share": false,
+      "search_section_demotion_top_n": null,
+      "search_top1_hydration": false,
+      "semantic_deadline_ms": 300,
+      "semantic_lane": false,
+      "supersession_demotion": false,
+      "supersession_demotion_weight": 1.5,
+      "verbatim_spans": false
+    },
+    "expected_features_except_resume_deltas": {
+      "semantic_lane": false,
+      "verbatim_spans": false,
+      "lexical_single_scan": false,
+      "supersession_demotion": false,
+      "intention_ledger": false,
+      "read_path_roundtrip_v1": false,
+      "search_fair_share": false,
+      "search_top1_hydration": false,
+      "search_char_cap": false,
+      "embed_cache": false,
+      "embedding_backfill_guard": false,
+      "allow_degraded_embeddings": false,
+      "observability_timings_ms": true,
+      "search_section_demotion_top_n": null
+    },
+    "mutation": {
+      "schema": "straylight-aggregate-mutation-provenance@v1",
+      "status": "complete",
+      "mutation_script_sha256": "1fa28a3b02179f5e9777f258f467b052bd67081e9833adbf8c58d7713da98ecd",
+      "draw_bindings": [
+        {
+          "suite": "0.3",
+          "paired_draw_id": "e06-draw1",
+          "mutation_seed": "e06-draw1",
+          "mutation_plans_sha256": "7215de00c63f2a997d26cd22b26f7be530ae3381fe8f5502814b385ef9af41bf",
+          "experiment_arms": [
+            "e06-A",
+            "e06-B"
+          ]
+        },
+        {
+          "suite": "0.3",
+          "paired_draw_id": "e06-draw2",
+          "mutation_seed": "e06-draw2",
+          "mutation_plans_sha256": "2e5fd11f156dee1c1657649b1674d01be4d8e51d513f39beb9ada628330e7e07",
+          "experiment_arms": [
+            "e06-A",
+            "e06-B"
+          ]
+        },
+        {
+          "suite": "0.3",
+          "paired_draw_id": "e06-draw3",
+          "mutation_seed": "e06-draw3",
+          "mutation_plans_sha256": "1c90fa8f26359d0b4495b25471a614493eef92b42c32f564189db739c8777bc2",
+          "experiment_arms": [
+            "e06-A",
+            "e06-B"
+          ]
+        }
+      ]
+    }
+  },
+  "totals": {
+    "control_result_chars": 355921,
+    "treatment_result_chars": 419308,
+    "treatment_minus_control": 63387
+  },
+  "means": {
+    "control_result_chars": 23728.066667,
+    "treatment_result_chars": 27953.866667,
+    "treatment_minus_control": 4225.8
+  },
+  "violations": [
+    {
+      "draw": "e06-draw1",
+      "case_id": "warmind-alpha-budget-transition",
+      "treatment_minus_control": 5436
+    },
+    {
+      "draw": "e06-draw1",
+      "case_id": "charlemagne-storage-observation-transition",
+      "treatment_minus_control": 4478
+    },
+    {
+      "draw": "e06-draw1",
+      "case_id": "star-rupture-second-facturer-transition",
+      "treatment_minus_control": 3741
+    },
+    {
+      "draw": "e06-draw1",
+      "case_id": "switzerland-reservation-transition",
+      "treatment_minus_control": 3159
+    },
+    {
+      "draw": "e06-draw1",
+      "case_id": "straylight-api-gate-transition",
+      "treatment_minus_control": 4313
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "warmind-alpha-budget-transition",
+      "treatment_minus_control": 5436
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "charlemagne-storage-observation-transition",
+      "treatment_minus_control": 4478
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "star-rupture-second-facturer-transition",
+      "treatment_minus_control": 3744
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "switzerland-reservation-transition",
+      "treatment_minus_control": 3159
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "straylight-api-gate-transition",
+      "treatment_minus_control": 4313
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "warmind-alpha-budget-transition",
+      "treatment_minus_control": 5436
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "charlemagne-storage-observation-transition",
+      "treatment_minus_control": 4478
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "star-rupture-second-facturer-transition",
+      "treatment_minus_control": 3744
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "switzerland-reservation-transition",
+      "treatment_minus_control": 3159
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "straylight-api-gate-transition",
+      "treatment_minus_control": 4313
+    }
+  ],
+  "pairs": [
+    {
+      "draw": "e06-draw1",
+      "case_id": "warmind-alpha-budget-transition",
+      "control_result_chars": 24612,
+      "treatment_result_chars": 30048,
+      "treatment_minus_control": 5436,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw1",
+      "case_id": "charlemagne-storage-observation-transition",
+      "control_result_chars": 27476,
+      "treatment_result_chars": 31954,
+      "treatment_minus_control": 4478,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw1",
+      "case_id": "star-rupture-second-facturer-transition",
+      "control_result_chars": 24584,
+      "treatment_result_chars": 28325,
+      "treatment_minus_control": 3741,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw1",
+      "case_id": "switzerland-reservation-transition",
+      "control_result_chars": 17981,
+      "treatment_result_chars": 21140,
+      "treatment_minus_control": 3159,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw1",
+      "case_id": "straylight-api-gate-transition",
+      "control_result_chars": 23974,
+      "treatment_result_chars": 28287,
+      "treatment_minus_control": 4313,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "warmind-alpha-budget-transition",
+      "control_result_chars": 24620,
+      "treatment_result_chars": 30056,
+      "treatment_minus_control": 5436,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "charlemagne-storage-observation-transition",
+      "control_result_chars": 27476,
+      "treatment_result_chars": 31954,
+      "treatment_minus_control": 4478,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "star-rupture-second-facturer-transition",
+      "control_result_chars": 24584,
+      "treatment_result_chars": 28328,
+      "treatment_minus_control": 3744,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "switzerland-reservation-transition",
+      "control_result_chars": 17981,
+      "treatment_result_chars": 21140,
+      "treatment_minus_control": 3159,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw2",
+      "case_id": "straylight-api-gate-transition",
+      "control_result_chars": 23974,
+      "treatment_result_chars": 28287,
+      "treatment_minus_control": 4313,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "warmind-alpha-budget-transition",
+      "control_result_chars": 24620,
+      "treatment_result_chars": 30056,
+      "treatment_minus_control": 5436,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "charlemagne-storage-observation-transition",
+      "control_result_chars": 27476,
+      "treatment_result_chars": 31954,
+      "treatment_minus_control": 4478,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "star-rupture-second-facturer-transition",
+      "control_result_chars": 24592,
+      "treatment_result_chars": 28336,
+      "treatment_minus_control": 3744,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "switzerland-reservation-transition",
+      "control_result_chars": 17989,
+      "treatment_result_chars": 21148,
+      "treatment_minus_control": 3159,
+      "pass": false
+    },
+    {
+      "draw": "e06-draw3",
+      "case_id": "straylight-api-gate-transition",
+      "control_result_chars": 23982,
+      "treatment_result_chars": 28295,
+      "treatment_minus_control": 4313,
+      "pass": false
+    }
+  ]
+}

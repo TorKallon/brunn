@@ -1,10 +1,27 @@
 # D03 — Resume Delta Packets
 
-Status: Implemented behind a default-off flag — E06 not run
+Status: Implemented behind a default-off flag — rejected by E06
 Date: 2026-07-27
 Depends on: none
 Gated by: E06 (E06-resume-delta-experiment.md)
 Runtime flag: resume_deltas
+
+## E06 outcome (2026-07-28)
+
+E06 rejected this candidate. The mechanism was correct and bounded in the
+deterministic run: resume p95 was 77.606 ms at 640K, all 30 paired treatment
+samples added exactly five completed SQL statements, and all 30 returned the
+byte/version-exact `whole_pair`. The intended product effect did not
+materialize:
+
+- no arm produced a complete transitions case in any draw;
+- B did not significantly improve claims over A or C; and
+- B's operation-level resume result was larger than A in all 15 paired
+  draw-case observations (+63,387 characters total).
+
+Keep `STRAYLIGHT_RESUME_DELTAS=false`. This implementation is not eligible for
+Nyx rollout or default-on promotion. See
+[the definitive E06 report](../../results/2026-07-28-e06-report.md).
 
 ## Problem and evidence
 
@@ -72,7 +89,10 @@ Latency gate: resume p95 ≤150ms at 640K — ~4x the measured 35.2ms v8 baselin
 
 ## Rollout and kill switch
 
-Flag resume_deltas, default off. Sequence: eval environment for E06 → Nyx under the Tier B read/write plan (D14 frame; checkpoint-resume canaries) → default on after gates. Kill switch is the runtime flag — flip disables delta computation entirely and restores today's resume payload with no deploy. Any checkpoint-lineage incident during rollout follows the Tier C tripwire: immediate flag-off and revert to Markdown authority.
+Flag `resume_deltas` remains default off. E06 did not clear the gate, so the
+candidate must not enter the Nyx or default-on stages of the proposed rollout.
+The runtime flag remains the dormant kill switch: keeping it false restores
+the baseline resume payload with no deploy.
 
 ## Implementation record
 
@@ -82,7 +102,9 @@ Flag resume_deltas, default off. Sequence: eval environment for E06 → Nyx unde
 - Evidence accounting: returned before/after or diff characters are deducted from the existing evidence token allowance before ordinary hydration.
 - Evaluation checkpoints: the simple evaluation importer now records exact `entry_ref`, path, version, and hash structures, including when a batched import placed a source in an earlier batch.
 - Agent projection: both `native_memory.py` and the MCP reasoning view preserve `resume_deltas` and annotated delta pointers.
-- Verification is unit and harness-level only in this commit. The definitive 640K/30-sample performance and query-count gates remain part of E06/D09 execution, not an implementation result.
+- Definitive E06 verification completed at revision `aca015a`. The
+  640K/30-sample mechanism gates passed, but the three-draw quality and
+  operation-level payload gates failed; the candidate is rejected.
 
 ## References
 

@@ -1,0 +1,317 @@
+{
+  "schema": "straylight-experiment-summary@v1",
+  "experiment": "E06",
+  "title": "Resume delta experiment",
+  "completed_at": "2026-07-28T15:26:28-07:00",
+  "status": "complete_negative",
+  "experiment_verdict": "rejected",
+  "decision": "Reject D03 in its tested form, keep resume_deltas default-off, and do not advance it to a Nyx rollout.",
+  "reason": "The treatment passed every deterministic performance, query-count, and lineage gate, but it produced no complete transitions case in any draw, did not significantly improve claims over either control, and increased the operation-level resume payload in all 15 paired draw-case comparisons.",
+  "provenance": {
+    "source_revision": "aca015acf52eef5adc3d338263c81fe0bca676dc",
+    "api_image_id": "sha256:6d6442eff51f42769b5816963e09ca3a39c88d2b35ccd36836dd91ea67f88567",
+    "api_image_revision": "aca015acf52eef5adc3d338263c81fe0bca676dc",
+    "model": "gpt-5.6-sol",
+    "retrieval_modes": [
+      "exact",
+      "lexical"
+    ],
+    "semantic_lane": false,
+    "verbatim_spans": false,
+    "embedding_provider": "hashing",
+    "worker_started": false,
+    "reasoning_route": "chatgpt_subscription",
+    "reasoning_api_fallback": "forbidden",
+    "reasoning_auth_status": "Logged in using ChatGPT"
+  },
+  "predeclaration": {
+    "path": "results/2026-07-28-e06-grid-predeclaration.json",
+    "sha256": "9e0983315dd1b7f1ab9c63e4db3ee4c86c4bbc4d4bdf6927bf68e3cd02365dc5",
+    "definitive_draws": 3,
+    "cases_per_arm_draw": 5,
+    "arms": [
+      "e06-A",
+      "e06-B",
+      "e06-C"
+    ],
+    "planned_case_runs": 45,
+    "targeted_repeat_allowed": false
+  },
+  "artifacts": {
+    "mutation_validations": [
+      {
+        "path": "results/2026-07-28-e06-mutation-validation-draw1.json",
+        "sha256": "a7ccca8fc95022e3dc277509b3fcb7efffaa9cfc89862e04d05c0b931d78f963",
+        "status": "ok"
+      },
+      {
+        "path": "results/2026-07-28-e06-mutation-validation-draw2.json",
+        "sha256": "a7ccca8fc95022e3dc277509b3fcb7efffaa9cfc89862e04d05c0b931d78f963",
+        "status": "ok"
+      },
+      {
+        "path": "results/2026-07-28-e06-mutation-validation-draw3.json",
+        "sha256": "a7ccca8fc95022e3dc277509b3fcb7efffaa9cfc89862e04d05c0b931d78f963",
+        "status": "ok"
+      }
+    ],
+    "deterministic_control": {
+      "path": "results/2026-07-28-e06-resume-control.json",
+      "sha256": "506a9499bd766486cf2293e39b9c412fef05ec6f7db384f5834e580d39a1021e",
+      "pass": true
+    },
+    "deterministic_treatment": {
+      "path": "results/2026-07-28-e06-resume-treatment.json",
+      "sha256": "5ee5d933f039131926dbf59a25f6bf308fa4e1b62aaf26b7e51e08f4b8a018b9",
+      "pass": true
+    },
+    "reasoning_run_set": {
+      "json_artifacts": 9,
+      "markdown_artifacts": 9,
+      "artifact_pairs": 9,
+      "combined_bytes": 3635681,
+      "ledger_sha256": "9cfbca33337285c9bf3613f118ed564021897fa3da0570cd9ea2e70e42ce6752",
+      "json_ledger_sha256": "7af08378d44ed8b1c60128b596afe7241baf064c8290bb384fc0d2c321619034",
+      "markdown_ledger_sha256": "27c2a0dcebc8e7c872a05eb9d7e53f81252d62e9a0ed10b8bc579eb34d6fa45f",
+      "ledger_definition": "SHA-256 of sorted lines formatted as '<file_sha256>  <relative_path>\\n'."
+    },
+    "aggregate": {
+      "path": "results/2026-07-28-resume-deltas-aggregate.json",
+      "sha256": "2a308f7d7b8daf5af83f18644ff124d03e4716a33d79e9b861927bc9d854995a",
+      "definitive": true
+    },
+    "resume_payload_audit": {
+      "path": "results/2026-07-28-e06-resume-payload-comparison.json",
+      "sha256": "afff29c8a4d2995e558b73eb8ebde3109120f548b8ab934138331fbe51c14d7b",
+      "pass": false,
+      "violations": 15
+    }
+  },
+  "integrity": {
+    "reasoning_artifacts": 9,
+    "case_runs": 45,
+    "successful_case_runs": 45,
+    "timed_out_case_runs": 0,
+    "errored_case_runs": 0,
+    "nonzero_exit_case_runs": 0,
+    "service_accounting_errors": 0,
+    "graded_claim_slots": 180,
+    "graded_claims_passed": 107,
+    "complete_cases_passed": 0,
+    "artifacts_with_clean_source_fingerprint": 9,
+    "mutation_receipts": 45,
+    "mutation_provenance": "complete and byte-identical across arms within every paired draw",
+    "service_image_provenance": "stable and exact for all six service artifacts",
+    "reasoning_concurrency_maximum": 2,
+    "stacks_after_run": 0,
+    "volumes_after_run": 0,
+    "allocated_ports_after_run": "all free"
+  },
+  "deterministic_results": {
+    "control": {
+      "built_in_gates_passed": 73,
+      "built_in_gates_failed": 0,
+      "resume_p95_ms_at_640000": 14.184,
+      "checkpoint_ms_at_640000": 22.271,
+      "concurrent_write_p95_ms_at_640000": 12.218,
+      "concurrent_search_p95_ms_at_640000": 15.281,
+      "resume_query_counts": [
+        32
+      ],
+      "canonical_checkpoint_query_counts": [
+        28,
+        28,
+        28
+      ],
+      "resume_delta_fixture_checkpoint_query_counts": [
+        33
+      ],
+      "checkpoint_footprint_rows": 12,
+      "checkpoint_footprint_bytes": 6072,
+      "protocol_to_evidence_ratio": 0.669178
+    },
+    "treatment": {
+      "built_in_gates_passed": 75,
+      "built_in_gates_failed": 0,
+      "resume_p95_ms_at_640000": 77.606,
+      "resume_p95_gate_ms": 150.0,
+      "checkpoint_ms_at_640000": 17.407,
+      "concurrent_write_p95_ms_at_640000": 165.625,
+      "concurrent_search_p95_ms_at_640000": 173.583,
+      "resume_query_counts": [
+        37
+      ],
+      "paired_resume_query_deltas": [
+        5
+      ],
+      "paired_resume_samples": 30,
+      "lineage_samples_passed": 30,
+      "lineage_samples_total": 30,
+      "canonical_write_query_counts": [
+        14
+      ],
+      "canonical_checkpoint_query_counts": [
+        28,
+        28,
+        28
+      ],
+      "resume_delta_fixture_checkpoint_query_counts": [
+        33
+      ],
+      "checkpoint_footprint_rows": 12,
+      "checkpoint_footprint_bytes": 6056,
+      "protocol_to_evidence_ratio": 0.786976
+    }
+  },
+  "reasoning_results": {
+    "by_draw": [
+      {
+        "draw": "e06-draw1",
+        "claims": {
+          "e06-A": 11,
+          "e06-B": 10,
+          "e06-C": 13
+        },
+        "claim_slots_per_arm": 20,
+        "complete_cases": {
+          "e06-A": 0,
+          "e06-B": 0,
+          "e06-C": 0
+        },
+        "cases_per_arm": 5
+      },
+      {
+        "draw": "e06-draw2",
+        "claims": {
+          "e06-A": 11,
+          "e06-B": 11,
+          "e06-C": 14
+        },
+        "claim_slots_per_arm": 20,
+        "complete_cases": {
+          "e06-A": 0,
+          "e06-B": 0,
+          "e06-C": 0
+        },
+        "cases_per_arm": 5
+      },
+      {
+        "draw": "e06-draw3",
+        "claims": {
+          "e06-A": 11,
+          "e06-B": 13,
+          "e06-C": 13
+        },
+        "claim_slots_per_arm": 20,
+        "complete_cases": {
+          "e06-A": 0,
+          "e06-B": 0,
+          "e06-C": 0
+        },
+        "cases_per_arm": 5
+      }
+    ],
+    "cumulative_claims": {
+      "e06-A": 33,
+      "e06-B": 34,
+      "e06-C": 40,
+      "claim_slots_per_arm": 60
+    },
+    "first_ever_case_win": {
+      "required": "e06-B scores more than 0 of 5 cases in at least 2 of 3 draws",
+      "observed": [
+        0,
+        0,
+        0
+      ],
+      "pass": false
+    },
+    "pairings": {
+      "e06-B__vs__e06-A": {
+        "claim_difference_point": 0.333333,
+        "bootstrap_95_ci_claims": [
+          -3.0,
+          3.666667
+        ],
+        "strict_majority_claim_discordance": {
+          "b_pass_a_fail": 2,
+          "b_fail_a_pass": 3
+        },
+        "one_sided_exact_mcnemar_p": 0.8125,
+        "per_draw_claim_net_b_minus_a": [
+          -1,
+          0,
+          2
+        ],
+        "direction_consistent": false,
+        "pass": false
+      },
+      "e06-B__vs__e06-C": {
+        "claim_difference_point": -2.0,
+        "bootstrap_95_ci_claims": [
+          -4.666667,
+          0.0
+        ],
+        "strict_majority_claim_discordance": {
+          "b_pass_c_fail": 1,
+          "b_fail_c_pass": 4
+        },
+        "one_sided_exact_mcnemar_p": 0.96875,
+        "per_draw_claim_net_b_minus_c": [
+          -3,
+          -3,
+          0
+        ],
+        "direction_consistent": false,
+        "pass": false
+      }
+    }
+  },
+  "payload_budget": {
+    "measurement_source": "records[].service_operations[operation=resume].result_chars",
+    "pairs": 15,
+    "passing_pairs": 0,
+    "violating_pairs": 15,
+    "control_result_chars_total": 355921,
+    "treatment_result_chars_total": 419308,
+    "treatment_minus_control_total": 63387,
+    "control_result_chars_mean": 23728.066667,
+    "treatment_result_chars_mean": 27953.866667,
+    "treatment_minus_control_mean": 4225.8,
+    "minimum_pair_delta": 3159,
+    "maximum_pair_delta": 5436,
+    "pass": false
+  },
+  "acceptance": {
+    "first_ever_transitions_case_win": false,
+    "paired_claim_improvement_over_control_a": false,
+    "paired_claim_improvement_over_control_c": false,
+    "direction_consistent_in_all_draws": false,
+    "resume_p95_at_most_150ms": true,
+    "paired_resume_query_delta_exactly_five": true,
+    "resume_delta_lineage_exact": true,
+    "checkpoint_footprint": true,
+    "protocol_to_evidence_ratio": true,
+    "payload_budget_neutrality": false,
+    "overall": false
+  },
+  "cost": {
+    "reasoning_case_runs": 45,
+    "actual_usage_billed_reasoning_usd": 0.0,
+    "actual_embedding_usd": 0.0,
+    "actual_api_spend_usd": 0.0,
+    "actual_subscription_equivalent_usd": 10.8,
+    "unincurred_targeted_repeat_subscription_equivalent_usd": 3.6,
+    "hard_ceiling_usd": 30.0,
+    "embedding_warning_threshold_usd": 20.0,
+    "embedding_warning_triggered": false
+  },
+  "excluded_diagnostic": {
+    "source_revision": "4419b4b36364452f38a939bd6742635515113d74",
+    "control_sha256": "0f449a852059c47911db27d357d21481abe351340c7d5053308c9f1149b2d1ed",
+    "treatment_sha256": "9830e0ce8c0ca07b0e43a34080a357f9b93030a097b0bbd184d38b4030d92304",
+    "reason": "An independent static audit proved that the D03 contract had retained obsolete non-resume write/checkpoint budgets. These artifacts are private diagnostic evidence only; no reasoning run was launched from them.",
+    "committed": false
+  },
+  "conclusion": "D03 is not eligible for rollout. Keep resume_deltas off. Any future candidate must be materially redesigned and evaluated under a newly predeclared experiment; the completed E06 evidence does not authorize a targeted repeat or threshold change."
+}

@@ -42,8 +42,8 @@ deltas) proven in real use.
   rehabilitate D02. E09 is prerequisite-aborted by E03's failed Mode 2 and
   missing quality backfill. E10 lacks an accepted immutable launch flag
   manifest: E01 is complete, E04 rejected both D01 configurations, E05
-  rejected `lexical_single_scan`, and E06–E09 have not collectively resolved
-  the launch feature set. E11 is
+  rejected `lexical_single_scan`, E06 rejected D03, and E07–E09 have not
+  collectively resolved the launch feature set. E11 is
   prerequisite-aborted by D02's rejection, the absent D06/`link_leads`
   implementation, and the missing owner-authored, owner-signed-off case
   manifest.
@@ -101,7 +101,8 @@ Features — flag + experiment gated:
 | [D01](mvp/D01-budget-contracted-retrieval.md) | Budget-contracted retrieval + result budgets (overfetch fix; top-1 complete hydration) | Implemented default-off, rejected by E04 | Closed; retain baseline A |
 | [E04](mvp/E04-result-budget-experiment.md) | Result-budget experiment | Complete negative — B and C rejected; retain A | Gates D01 |
 | [D02](mvp/D02-verbatim-span-contract.md) | Verbatim-span contract | Implemented default-off, rejected by E02 Stage 2 | Repair, then rerun [E02](mvp/E02-verbatim-identifier-gate.md) |
-| [D03](mvp/D03-resume-delta-packets.md) | Resume delta packets ("changes since your checkpoint") | Proposed — not started | [E06](mvp/E06-resume-delta-experiment.md) |
+| [D03](mvp/D03-resume-delta-packets.md) | Resume delta packets ("changes since your checkpoint") | Implemented default-off, rejected by E06 | Closed; keep `resume_deltas` off |
+| [E06](mvp/E06-resume-delta-experiment.md) | Resume delta experiment | Complete negative — no case win or paired claim improvement; payload larger in 15/15 pairs | D03 rejected |
 | [D04](mvp/D04-supersession-current-truth.md) | Supersession / current-truth (Markdown frontmatter round-trip) | Proposed — not started | [E07](mvp/E07-supersession-experiment.md) |
 | [D05](mvp/D05-intention-ledger.md) | Intention ledger at open | Proposed — not started | [E08](mvp/E08-intention-ledger-experiment.md) |
 | [D11](mvp/D11-semantic-lane-policy.md) | Semantic lane policy: existence question, embed cache + deadline | Implemented behind default-off flags — E09 prerequisite-aborted | Repair E03 Mode 2 and complete quality backfill before [E09](mvp/E09-semantic-existence-experiment.md) |
@@ -155,6 +156,14 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Change log
 
+- 2026-07-28: E06 completed 45/45 reasoning case-runs with zero timeout/error.
+  D03 passed its deterministic 640K mechanism gates (77.606 ms resume p95,
+  exact +5 SQL statements in 30/30 pairs, exact lineage in 30/30) but failed
+  the product gates. B produced 0/5 cases in all three draws, claim-level
+  one-sided McNemar p=0.8125 versus A and p=0.96875 versus C, and increased
+  operation-level resume characters in all 15/15 pairs (+63,387 total).
+  D03 is rejected and `resume_deltas` remains off. Actual API/embedding spend
+  was $0.
 - 2026-07-28: E04 completed 528/528 case-runs with zero timeout/error.
   Both candidates passed deterministic 640K and query-count gates, but neither
   passed reasoning acceptance. C had no significant RuptureOps claim gain and
