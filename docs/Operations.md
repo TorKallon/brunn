@@ -316,6 +316,16 @@ state/config/log paths, ports, and an instance ID. Set the API's
 `OPENAI_BASE_URL` to the proxy's `/v1` URL; the API keeps the provider key and
 the proxy forwards its authorization header without logging it.
 
+For definitive E03 Mode 3, use `eval/e03_mode3.py` rather than issuing two
+performance commands manually. The wrapper verifies API and worker point to
+the exact numeric Docker-gateway proxy URL, proves the proxy identity from both
+container network namespaces with a locally present digest-pinned helper image
+and no pull, binds exact API/worker/DB image IDs, owns the proxy lifecycle, and
+runs the built-in single-import cold/warm pair. It requires the official OpenAI
+upstream and records provider token-usage actuals. Separate cold and warm
+imports are invalid because the second import changes table and HNSW
+cardinality.
+
 Start with the upstream base URL free of credentials, query, and fragment:
 
 ```bash

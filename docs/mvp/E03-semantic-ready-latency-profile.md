@@ -2,7 +2,7 @@
 
 Status: Harness ready — not run
 Date: 2026-07-27
-Gates: none directly — measurement baseline and the primary decision input to E09 (E09-semantic-existence-experiment.md, the semantic existence experiment; the lane policy itself is D11-semantic-lane-policy.md); requires D09(a) (D09-latency-contract-and-gates.md) as a measurement enabler
+Gates: `--gate-profile e03-semantic-ready` with explicit `--e03-arm`; measurement baseline and the primary decision input to E09
 Phase: 0 (measurement; no product code — D09(a) instrumentation is a measurement enabler, not a behavior change)
 
 ## Question
@@ -19,11 +19,19 @@ Every latency number we cite — the entire v8 640K soak (results/2026-07-27-sim
 6. **Eval-corpus backfill for E09** (Small; scope addition) — embed the quality-suite eval corpora (the fixtures behind eval/work_cases.json, eval/rupture_ops_cases.json, eval/recent_work_cases.json) through the same rate-limited backfill path, verified by zero `semantic_unavailable` notices on a warm probe query. This is the deliverable E09's precondition 1 depends on; without it no E03 mode touches the quality-suite corpus (modes 1-3 cover only synthetic/owner performance fixtures). Spend is inside the embeddings ceiling below.
 
 Implementation note (2026-07-27): all six build items now have deterministic
-harness support. The run record includes top-level and nested phase-percentile
-tables, semantic-ready validity, repeated resume samples, unique-query mode,
-and an explicit embedding-spend estimate. `eval/e03_mode2.py` owns a
-run-unique mock lifecycle and wires distinct failure/restore hooks into the
-performance harness. `eval/e03_quality_backfill.py` estimates before mutation,
+harness support. All three arms run the same current product/harness build with
+`verbatim_spans=false`; exact source, API image, worker image (where present),
+DB image, runtime build revision, container IDs/start times, and one isolated
+Compose project are bound before and after each run. The ambient API URL must
+equal the named API container's single loopback-published port, and that API's
+read/write and read-only database URLs must resolve to the named DB on their
+sole Compose network. `eval/e03_mode1.py` proves a
+hashing-provider, semantic-disabled, no-worker baseline whose chunks stay
+zero-embedded and pending. `eval/e03_mode2.py` owns a run-unique mock lifecycle
+and proves API and worker point to that exact mock with dummy credentials
+before import. `eval/e03_mode3.py` owns the real-provider proxy and captures
+cold then warm queries after one 64K import; a second provisioning run is
+forbidden because it would change HNSW/table cardinality. `eval/e03_quality_backfill.py` estimates before mutation,
 imports through the ordinary rate-limited worker path, verifies that the
 cross-process foreground guard is configured, and requires a semantic-only
 warm probe with candidates and no semantic gap. These harnesses are unit
@@ -38,45 +46,54 @@ owner-only file. Every configure command binds the proxy instance ID, checked-in
 implementation SHA-256, and upstream-base-URL SHA-256. Definitive real-provider
 performance runs add `--require-semantic-failure-hook-attestation`, so both the
 injected-error hook and restored-forward hook must return matching,
-secret-free attestations.
+secret-free attestations. Mode 3 additionally requires the exact official
+`https://api.openai.com/v1` upstream, proves the owned proxy identity from both
+the API and worker network namespaces using a locally present digest-pinned
+helper image with pull disabled, and records OpenAI `usage.prompt_tokens`
+actuals without retaining response bodies. Bound teardown runs even if proxy
+start times out.
 
 ## Arms
 
 Three modes, per the Codex review note:
 
-- **Mode 1 — exact+lexical availability (baseline, exists).** Embeddings pending; reproduces the cited evidence profile on the current build so cross-mode deltas are same-build.
+- **Mode 1 — exact+lexical availability.** The API uses the explicit hashing
+  provider only so it can start without an external credential; semantic
+  retrieval is disabled and no worker runs, so the hashing provider is never
+  invoked. Every imported chunk remains pending with zero embeddings.
 - **Mode 2 — semantic-ready DB path (mock embedder; deterministic, free).** `--wait-semantic` with the mock as the embedding endpoint. Isolates the DB-side cost (HNSW probe, merge, budget) from provider latency: the embed phase is near-zero and deterministic, so mode 2 minus mode 1 ≈ pure semantic-lane DB cost.
-- **Mode 3 — production semantic path (real OpenAI embed).** Cache-miss (fresh query strings) and warm (repeated query strings) sub-runs. Note: simple_core.rs:3005 has no application-side cache, so "warm" measures connection reuse and provider-side behavior only; an application query-embedding cache would be a Dxx design change and is out of scope here. Corpus: owner-shaped corpus when available; 64K synthetic until then. OWNER DECISION: whether to wait for the Tier A owner-corpus import on Nyx or run 64K synthetic now and re-run mode 3 after import.
+- **Mode 3 — production semantic path (real OpenAI embed).** One 64K import is
+  followed by 30 unique cold queries and the identical 30 warm queries in the
+  same session, corpus, API process, worker process, and proxy instance.
+  Cardinality is checked before, between, and after the phases. Because
+  `embed_cache=false`, each phase must record exactly 30 provider requests,
+  successes, and cache bypasses, with zero cache hits/misses, failures, or
+  deferrals. “Warm” therefore measures connection/provider behavior only.
 
 ## Corpus and fixtures
 
-Scales 1k/10k/64k (default), 640k via `--future-soak` for modes 1 and 2 (mode 2 embeddings are free, so soak-scale backfill costs nothing but time; mode 3 is not run at 640k). 30 samples definitive; 3 via `--quick` for iteration only. Clean git tree per the implementation fingerprint gate.
+Modes 1 and 2 use 64K and may use the explicitly separate 640K
+`--future-soak`. Mode 3 is exactly one 64K import and rejects default
+1K/10K scales, 640K, `--unique-queries`, or a second warm invocation.
+Thirty samples are definitive. The explicit E03 profile accepts exactly 30
+samples and rejects quick mode so
+the fixed cost bound and cold/warm pairing cannot be silently expanded.
 
 ## Procedure
 
 MM-DD is the run date.
 
-1. Use separate project-scoped stacks and container IDs from
+1. Use separate project-scoped stacks and exact container IDs from
    [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
-   Verify `timings_ms` phase-sum sanity on a quick, explicitly
-   semantic-disabled smoke:
-   `python3 performance_eval.py run --quick --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e03-mode1-smoke --scales 1000 --api-container "$API_CONTAINER" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --out results/2026-MM-DD-e03-mode1-smoke.json`.
-2. Mode 1 uses the authenticated semantic-disabled runtime and no worker:
-   `E03_MODE1=(--protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on)`;
-   then
-   `python3 performance_eval.py run "${E03_MODE1[@]}" --label e03-mode1-64k --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode1-64k.json`
-   and
-   `python3 performance_eval.py run "${E03_MODE1[@]}" --label e03-mode1-640k --future-soak --out results/2026-MM-DD-e03-mode1-640k.json`.
-3. Mode 2: configure the isolated API stack to use the run-unique mock endpoint,
-   then invoke `python3 eval/e03_mode2.py` with unique `--mock-port`,
-   `--mock-state`, `--mock-log`, and `--mock-config` paths. The wrapper refuses
-   to adopt a pre-existing mock, runs `performance_eval.py --wait-semantic`,
-   verifies fast state after the failure hook is restored, and tears down only
-   the process it started. Produce the 64k and `--future-soak` artifacts and
-   record backfill wall-clock and rate-limit behavior. The definitive 64K form
-   is:
-   `python3 eval/e03_mode2.py --label e03-mode2-64k --mock-port "$MOCK_PORT" --mock-state "$MOCK_STATE" --mock-log "$MOCK_LOG" --mock-config "$MOCK_CONFIG" --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode2-64k.json`.
-   Add `--future-soak` and a distinct output for the 640K run.
+   Build one clean revision/image pair and use the same full source SHA, exact
+   API image ID, and exact DB image ID for all arms. Modes 2 and 3 require the
+   worker image ID to equal the API image ID.
+2. Run Mode 1 with no worker and
+   `STRAYLIGHT_EMBEDDING_PROVIDER=hashing`:
+   `python3 eval/e03_mode1.py --label e03-mode1-64k --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-api-image-id "$API_IMAGE_ID" --expect-db-image-id "$DB_IMAGE_ID" --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode1-64k.json`.
+3. Configure Mode 2 API and worker with the exact run-unique local mock `/v1`
+   URL and a `mock-`, `dummy-`, or `test-` inline key, then run:
+   `python3 eval/e03_mode2.py --label e03-mode2-64k --mock-port "$MOCK_PORT" --mock-state "$MOCK_STATE" --mock-log "$MOCK_LOG" --mock-config "$MOCK_CONFIG" --expected-openai-base-url "$MOCK_BASE_URL" --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --worker-container "$WORKER_CONTAINER" --expect-build-revision "$REV" --expect-api-image-id "$API_IMAGE_ID" --expect-db-image-id "$DB_IMAGE_ID" --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode2-64k.json`.
 4. Semantic-failure probe (within mode 2 config): the mode-2 wrapper wires the
    mock's injected-503 configure command and distinct fast-state restore
    command into `--semantic-failure-start-command` /
@@ -92,15 +109,12 @@ MM-DD is the run date.
    defer semantic before provider delay, the identical query to succeed from
    the asynchronously warmed cache, and a new semantic query to succeed after
    restore.
-5. Mode 3 uses real OpenAI embeddings, semantic lane on, cache off, and an
-   unbounded semantic deadline. A controllable per-stack provider proxy is
-   mandatory; set `SEMANTIC_FAILURE_START` and `SEMANTIC_FAILURE_STOP` to its
-   distinct injected-503 and restored-forward configure commands. Definitive
-   runs require both hooks to attest the same proxy target. Run cold first:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical semantic --semantic-failure-probe required --semantic-failure-start-command "$SEMANTIC_FAILURE_START" --semantic-failure-stop-command "$SEMANTIC_FAILURE_STOP" --require-semantic-failure-hook-attestation --wait-semantic --unique-queries --query-budget-profile default-safe --label e03-mode3-cold-64k --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=on --expect-feature-flag embed_cache=off --expect-feature-flag verbatim_spans=on --expect-runtime-config semantic_deadline_ms=null --out results/2026-MM-DD-e03-mode3-cold-64k.json`.
-   Then repeat without `--unique-queries`, against the same API process, as
-   `e03-mode3-warm-64k`. Do not substitute the deterministic mock for the
-   real-provider failure proof.
+5. Configure Mode 3 API and worker to the exact run-unique proxy `/v1` URL
+   using the numeric gateway of their sole Docker network,
+   then let the wrapper own start, attested error/restore controls, paired
+   sampling, and bound teardown:
+   `python3 eval/e03_mode3.py --label e03-mode3-paired-64k --proxy-port "$PROXY_PORT" --proxy-state "$PROXY_STATE" --proxy-config "$PROXY_CONFIG" --proxy-log "$PROXY_LOG" --proxy-instance-id "$PROXY_INSTANCE" --expected-proxy-base-url "$PROXY_BASE_URL" --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --worker-container "$WORKER_CONTAINER" --expect-build-revision "$REV" --expect-api-image-id "$API_IMAGE_ID" --expect-db-image-id "$DB_IMAGE_ID" --samples 30 --out results/2026-MM-DD-e03-mode3-paired-64k.json`.
+   Do not run separate cold and warm imports.
 6. Eval-corpus backfill (build item 6): first run
    `python3 eval/e03_quality_backfill.py --provider-mode openai estimate
    --out results/2026-MM-DD-e03-eval-corpus-backfill-estimate.json`. Only after
@@ -126,7 +140,7 @@ MM-DD is the run date.
 ## Metrics
 
 - p50/p95/p99 per phase (embed, exact, lexical, semantic, merge, budget; open phases) per mode and scale.
-- Embed attribution: embed-phase share of search total at p50 and p95, mode 3 cold vs warm.
+- Embed attribution: embed-phase share of search total at p50/p95/p99, mode 3 cold vs warm.
 - Semantic DB cost: mode 2 minus mode 1 per phase at 64k and 640k.
 - Drift check: mode 1/2 deltas between 64k and 640k (the v8 finding of no latency drift with change-log growth must hold with semantic on).
 - Backfill provisioning wall-clock under the rate limit, per scale.
@@ -138,13 +152,36 @@ MM-DD is the run date.
 2. D09 regression-tier gates hold in modes 1 and 2 at 64k and 640k. Mode 3 search is reported against the ≤500ms regression gate but a breach there is a finding for E09 (the embed call is the suspect), not an automatic build failure — that is precisely the decision this experiment feeds.
 3. Embed phase fully attributed: mode 3 embed p50/p95/p99 stated as absolute ms and as share of search total.
 4. Zero `retrieval_lane_deferred` / `semantic_unavailable` in all `--wait-semantic` sample sets; failure probe passes.
+   The failure probe must return the planted target from a semantic-only query
+   both before injection and after restore; exact/lexical mixed-mode evidence
+   is tracked separately and cannot mask an empty semantic lane.
 5. Output explicitly labeled as the first semantic-ready profile, superseding the "no semantic-ready profile exists" caveat on all cited baselines.
+6. The D02 30-probe measurement is complete and internally exact in every arm:
+   planted manifest, returned rows, identifiers, paths, byte offsets,
+   exact-only modes, typed booleans, counted outcome, and reported result all
+   agree. Because `verbatim_spans=false` is frozen across E03, the raw feature
+   outcome (including the known 0/30 result) is a nonblocking finding named
+   `verbatim_identifier_feature_acceptance`; measurement incompleteness or
+   corruption remains blocking. The default non-E03
+   `verbatim_identifier` feature-acceptance gate remains blocking.
 
 ## Cost preflight and ceiling
 
-Reasoning: **$0.** performance_eval.py drives the simple protocol deterministically; no agent reasoning runs. The subscription rule (all reasoning via ChatGPT-authenticated Codex subscription, fail-closed via `require_codex_subscription`) is unexercised here.
+Reasoning API billing: **$0.** All planning, review, and interpretation use the
+owner's ChatGPT-authenticated Codex subscription. The deterministic harness
+does not invoke a reasoning model or inherit API credentials for reasoning.
 
-Embeddings (usage-billed OpenAI, explicitly exempt per Decisions.md, listed separately): mode 2 $0 (mock). Mode 3: 64K synthetic corpus backfill — at the observed ~$0.19 per 9.6M-token corpus, a 64K-record synthetic corpus lands in the $0.19-$2 range depending on record length; query embeddings for 2×30 samples are negligible (<$0.01). Eval-corpus backfill for E09 (build item 6): the quality-suite fixture corpora are a fraction of the 9.6M-token reference, ≤$0.50 combined. Preflight estimate: ≤$2.50. Ceiling: **$5 embeddings, $0 reasoning**, hard. Re-running mode 3 on the owner corpus after import adds one more ~$0.19-2 backfill under the same ceiling.
+Embeddings (usage-billed OpenAI, explicitly exempt per Decisions.md, listed
+separately): Modes 1 and 2 cost $0 (disabled hashing path and owned mock).
+Mode 3 includes one 64K backfill plus the paired 60 query embeddings, ordinary
+samples, and failure/restore probes. The artifact uses a conservative query
+allowance and records per-scale and aggregate estimates, then reconciles those
+estimates against the proxy's aggregate provider token-usage receipt. Every
+successful provider response must report usage; missing usage invalidates the
+run. Preflight maximum:
+**$2.50**. Ceiling: **$5 embeddings, $0 reasoning API billing**, hard. This
+stricter ceiling is below the user's $20 notification threshold, so no >$20
+warning is expected; crossing $5 aborts before further mutation.
 
 ## Abort criteria
 

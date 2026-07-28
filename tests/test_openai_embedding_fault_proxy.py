@@ -12,6 +12,7 @@ from eval.hook_provenance import (
 )
 from eval.openai_embedding_fault_proxy import (
     forwarded_headers,
+    parse_upstream_usage,
     read_behavior,
     read_token,
     validate_behavior,
@@ -98,6 +99,19 @@ class OpenAiEmbeddingFaultProxyTests(unittest.TestCase):
             set(key.casefold() for key in forwarded),
             {"authorization", "content-type"},
         )
+
+    def test_usage_receipt_extracts_only_valid_provider_token_totals(self):
+        self.assertEqual(
+            parse_upstream_usage(json.dumps({
+                "data": [{"embedding": [0.1]}],
+                "usage": {"prompt_tokens": 41, "total_tokens": 41},
+            }).encode()),
+            (41, 41),
+        )
+        self.assertIsNone(parse_upstream_usage(b'{"data":[]}'))
+        self.assertIsNone(parse_upstream_usage(json.dumps({
+            "usage": {"prompt_tokens": True, "total_tokens": 1},
+        }).encode()))
 
     def test_hook_attestation_drops_arbitrary_stdout_fields(self):
         attestation = {

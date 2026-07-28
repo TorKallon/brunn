@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -15,6 +16,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.parse
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -55,9 +57,45 @@ OLD_SOURCE_QUERY = (
 )
 LEXICAL_CONSOLIDATION_GATE_PROFILE = "e05-lexical-consolidation"
 D03_RESUME_DELTAS_GATE_PROFILE = "d03-resume-deltas"
+E03_SEMANTIC_READY_GATE_PROFILE = "e03-semantic-ready"
+E03_ARMS = ("mode1", "mode2", "mode3")
 SEMANTIC_FAILURE_PROBE_REQUIRED = "required"
 SEMANTIC_FAILURE_PROBE_NOT_APPLICABLE = "not-applicable"
 DEFAULT_QUERY_BUDGET_PROFILE = "default-safe"
+E03_FAILURE_WINDOW_SEARCH_SLO_MS = 3_000.0
+E03_EMBEDDING_COST_CEILING_USD = 5.0
+E03_MODE3_PREFLIGHT_MAX_USD = 2.5
+E03_EMBEDDING_DIMENSIONS = 1_536
+E03_EMBEDDING_MODELS = {
+    "mode1": "straylight-hashing-v1",
+    "mode2": "text-embedding-3-small",
+    "mode3": "text-embedding-3-small",
+}
+E03_COMMON_RUNTIME_EXPECTATIONS: dict[str, Any] = {
+    "allow_degraded_embeddings": False,
+    "embed_cache": False,
+    "embedding_backfill_batch_chunks": 64,
+    "embedding_backfill_guard": True,
+    "embedding_backfill_foreground_status_url_configured": True,
+    "embedding_backfill_foreground_status_timeout_ms": 1_000,
+    "embedding_backfill_inter_batch_ms": 250,
+    "embedding_backfill_open_p95_limit_ms": 120.0,
+    "embedding_backfill_search_p95_limit_ms": 107.0,
+    "intention_ledger": False,
+    "lexical_single_scan": False,
+    "materialize_token_budget": 24_000,
+    "observability_timings_ms": True,
+    "read_path_roundtrip_v1": False,
+    "resume_deltas": False,
+    "search_char_cap": False,
+    "search_fair_share": False,
+    "search_section_demotion_top_n": None,
+    "search_top1_hydration": False,
+    "semantic_deadline_ms": None,
+    "supersession_demotion": False,
+    "supersession_demotion_weight": 1.5,
+    "verbatim_spans": False,
+}
 LEXICAL_CONSOLIDATION_REQUIRED_GATES = frozenset({
     "all_required_scales_completed",
     "retrieval_sample_count_is_definitive",
@@ -340,7 +378,7 @@ def require_stable_runtime_configuration(
     before: dict[str, Any],
     after: dict[str, Any],
 ) -> None:
-    for field in ("build_revision", "runtime_features"):
+    for field in ("build_revision", "runtime_features", "embeddings"):
         if before.get(field) != after.get(field):
             raise ValueError(f"service {field} drifted during the evaluation run")
 
@@ -1011,7 +1049,8 @@ def response_reports_gap_kind(value: Any, kind: str) -> bool:
 
 
 def implementation_fingerprint(
-    api_container: str | None,
+    api_container: str | None = None,
+    worker_container: str | None = None,
 ) -> dict[str, Any]:
     repository = Path(__file__).resolve().parent
 
@@ -1047,7 +1086,21 @@ def implementation_fingerprint(
     ]
     image_id = None
     image_revision = None
+    container_id = None
+    container_started_at = None
     if api_container:
+        container_id = output([
+            "docker",
+            "inspect",
+            "--format={{.Id}}",
+            api_container,
+        ])
+        container_started_at = output([
+            "docker",
+            "inspect",
+            "--format={{.State.StartedAt}}",
+            api_container,
+        ])
         image_id = output([
             "docker",
             "inspect",
@@ -1063,21 +1116,468 @@ def implementation_fingerprint(
             ),
             api_container,
         ])
+    worker_container_id = None
+    worker_container_started_at = None
+    worker_running = None
+    worker_image_id = None
+    worker_image_revision = None
+    if worker_container:
+        worker_container_id = output([
+            "docker", "inspect", "--format={{.Id}}", worker_container,
+        ])
+        worker_container_started_at = output([
+            "docker",
+            "inspect",
+            "--format={{.State.StartedAt}}",
+            worker_container,
+        ])
+        worker_running = output([
+            "docker", "inspect", "--format={{.State.Running}}", worker_container,
+        ])
+        worker_image_id = output([
+            "docker", "inspect", "--format={{.Image}}", worker_container,
+        ])
+        worker_image_revision = output([
+            "docker",
+            "inspect",
+            (
+                "--format={{index .Config.Labels "
+                '"org.opencontainers.image.revision"}}'
+            ),
+            worker_container,
+        ])
     return {
         "source_revision": revision,
         "tracked_source_clean": tracked_diff.returncode == 0,
         "untracked_source_files": untracked_source,
         "api_container": api_container,
+        "api_container_id": container_id,
+        "api_container_started_at": container_started_at,
         "api_image_id": image_id,
         "api_image_revision": image_revision,
+        "worker_container": worker_container,
+        "worker_container_id": worker_container_id,
+        "worker_container_started_at": worker_container_started_at,
+        "worker_running": worker_running == "true" if worker_container else None,
+        "worker_image_id": worker_image_id,
+        "worker_image_revision": worker_image_revision,
         "reproducible": bool(
             revision
             and tracked_diff.returncode == 0
             and not untracked_source
+            and container_id
+            and container_started_at
             and image_id
             and image_revision == revision
+            and (
+                not worker_container
+                or (
+                    worker_container_id
+                    and worker_container_started_at
+                    and worker_running == "true"
+                    and worker_image_id
+                    and worker_image_revision == revision
+                )
+            )
         ),
     }
+
+
+def e03_mode1_environment_snapshot(api_container: str) -> dict[str, Any]:
+    inspected = subprocess.run(
+        ["docker", "inspect", api_container],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if inspected.returncode != 0:
+        raise RuntimeError(f"could not inspect E03 Mode 1 API {api_container}")
+    try:
+        record = json.loads(inspected.stdout)[0]
+        config = record["Config"]
+        state = record["State"]
+    except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError("invalid E03 Mode 1 API inspection") from error
+    labels = config.get("Labels")
+    labels = labels if isinstance(labels, dict) else {}
+    environment = {}
+    for item in config.get("Env") or []:
+        if isinstance(item, str) and "=" in item:
+            key, value = item.split("=", 1)
+            environment[key] = value
+    compose_project = str(labels.get("com.docker.compose.project") or "")
+    worker_query = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-q",
+            "--filter",
+            f"label=com.docker.compose.project={compose_project}",
+            "--filter",
+            "label=com.docker.compose.service=worker",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if worker_query.returncode != 0:
+        raise RuntimeError("could not inspect E03 Mode 1 worker state")
+    workers = [line for line in worker_query.stdout.splitlines() if line.strip()]
+    result = {
+        "api_container_id": record.get("Id"),
+        "api_started_at": state.get("StartedAt"),
+        "api_running": state.get("Running") is True,
+        "compose_project": compose_project or None,
+        "compose_service": labels.get("com.docker.compose.service"),
+        "api_image_id": record.get("Image"),
+        "api_image_revision": labels.get("org.opencontainers.image.revision"),
+        "running_worker_count": len(workers),
+        "embedding_provider": environment.get(
+            "STRAYLIGHT_EMBEDDING_PROVIDER",
+            "openai",
+        ),
+        "provider_credential": {
+            "openai_api_key_configured": bool(environment.get("OPENAI_API_KEY")),
+            "openai_api_key_file_configured": bool(
+                environment.get("OPENAI_API_KEY_FILE")
+            ),
+            "values_recorded": False,
+        },
+    }
+    result["provider_call_path_absent"] = bool(
+        not workers
+        and not result["provider_credential"]["openai_api_key_configured"]
+        and not result["provider_credential"]["openai_api_key_file_configured"]
+    )
+    result["pass"] = bool(
+        result["api_running"]
+        and result["compose_project"]
+        and result["compose_service"] == "api"
+        and result["embedding_provider"] == "hashing"
+        and result["running_worker_count"] == 0
+        and result["provider_call_path_absent"]
+    )
+    return result
+
+
+def e03_container_topology(
+    *,
+    arm: str,
+    api_container: str,
+    db_container: str,
+    worker_container: str | None,
+) -> dict[str, Any]:
+    def identity(name: str) -> dict[str, Any]:
+        completed = subprocess.run(
+            ["docker", "inspect", name],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise ValueError(f"could not inspect E03 container {name}")
+        try:
+            record = json.loads(completed.stdout)[0]
+            labels = record["Config"].get("Labels") or {}
+            state = record["State"]
+        except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
+            raise ValueError(f"invalid E03 container inspection for {name}") from error
+        return {
+            "name": name,
+            "container_id": record.get("Id"),
+            "image_id": record.get("Image"),
+            "started_at": state.get("StartedAt"),
+            "running": state.get("Running") is True,
+            "compose_project": labels.get("com.docker.compose.project"),
+            "compose_service": labels.get("com.docker.compose.service"),
+            "image_revision": labels.get(
+                "org.opencontainers.image.revision"
+            ),
+        }
+
+    api = identity(api_container)
+    db = identity(db_container)
+    worker = identity(worker_container) if worker_container else None
+    projects = {
+        item.get("compose_project")
+        for item in (api, db, worker)
+        if isinstance(item, dict)
+    }
+    checks = {
+        "one_nonempty_compose_project": (
+            len(projects) == 1 and None not in projects and "" not in projects
+        ),
+        "api_service_running": (
+            api["compose_service"] == "api" and api["running"] is True
+        ),
+        "db_service_running": (
+            db["compose_service"] == "db" and db["running"] is True
+        ),
+        "worker_posture": (
+            worker is None
+            if arm == "mode1"
+            else bool(
+                worker
+                and worker["compose_service"] == "worker"
+                and worker["running"] is True
+                and worker["image_id"] == api["image_id"]
+            )
+        ),
+    }
+    result = {
+        "schema": "straylight-e03-container-topology@v1",
+        "arm": arm,
+        "api": api,
+        "db": db,
+        "worker": worker,
+        "checks": checks,
+        "pass": all(checks.values()),
+    }
+    if not result["pass"]:
+        raise ValueError(f"E03 container topology mismatch: {result}")
+    return result
+
+
+def e03_api_route_binding(
+    *,
+    api_base_url: str,
+    api_container: str,
+    db_container: str,
+) -> dict[str, Any]:
+    """Bind the ambient evaluation URL and database route to one stack."""
+
+    def inspect(name: str) -> dict[str, Any]:
+        completed = subprocess.run(
+            ["docker", "inspect", name],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise ValueError(f"could not inspect E03 route container {name}")
+        try:
+            value = json.loads(completed.stdout)[0]
+            config = value["Config"]
+            state = value["State"]
+            network_settings = value["NetworkSettings"]
+        except (
+            IndexError,
+            KeyError,
+            TypeError,
+            json.JSONDecodeError,
+        ) as error:
+            raise ValueError(
+                f"invalid E03 route container inspection for {name}"
+            ) from error
+        labels = config.get("Labels")
+        labels = labels if isinstance(labels, dict) else {}
+        environment = {}
+        for row in config.get("Env") or []:
+            if isinstance(row, str) and "=" in row:
+                key, entry = row.split("=", 1)
+                environment[key] = entry
+        networks = network_settings.get("Networks")
+        networks = networks if isinstance(networks, dict) else {}
+        return {
+            "container_id": value.get("Id"),
+            "running": state.get("Running") is True,
+            "compose_project": labels.get("com.docker.compose.project"),
+            "compose_service": labels.get("com.docker.compose.service"),
+            "networks": networks,
+            "ports": network_settings.get("Ports") or {},
+            "environment": environment,
+        }
+
+    parsed_api = urllib.parse.urlsplit(api_base_url)
+    api = inspect(api_container)
+    db = inspect(db_container)
+    api_network_names = sorted(api["networks"])
+    db_network_names = sorted(db["networks"])
+    shared_network = (
+        api_network_names[0]
+        if len(api_network_names) == 1
+        and api_network_names == db_network_names
+        else None
+    )
+    db_aliases = []
+    if shared_network:
+        aliases = db["networks"][shared_network].get("Aliases") or []
+        db_aliases = sorted(
+            alias for alias in aliases if isinstance(alias, str)
+        )
+
+    published = api["ports"].get("8080/tcp")
+    published = published if isinstance(published, list) else []
+    binding = published[0] if len(published) == 1 else {}
+    host_ip = str(binding.get("HostIp") or "")
+    host_port = str(binding.get("HostPort") or "")
+    try:
+        loopback_host = bool(
+            host_ip and ipaddress.ip_address(host_ip).is_loopback
+        )
+    except ValueError:
+        loopback_host = False
+
+    database_checks: dict[str, bool] = {}
+    for name in (
+        "STRAYLIGHT_DATABASE_URL",
+        "STRAYLIGHT_READ_ONLY_DATABASE_URL",
+    ):
+        raw = api["environment"].get(name, "")
+        parsed = urllib.parse.urlsplit(raw)
+        try:
+            port = parsed.port
+        except ValueError:
+            port = None
+        database_checks[name] = bool(
+            parsed.scheme in {"postgres", "postgresql"}
+            and parsed.hostname == "db"
+            and port == 5432
+            and not parsed.query
+            and not parsed.fragment
+        )
+
+    try:
+        api_port = parsed_api.port
+    except ValueError:
+        api_port = None
+    checks = {
+        "api_url_is_exact_loopback_publish": bool(
+            parsed_api.scheme == "http"
+            and parsed_api.hostname == host_ip
+            and str(api_port or "") == host_port
+            and parsed_api.path in {"", "/"}
+            and parsed_api.username is None
+            and parsed_api.password is None
+            and not parsed_api.query
+            and not parsed_api.fragment
+            and loopback_host
+        ),
+        "api_has_one_published_service_port": len(published) == 1,
+        "same_single_compose_network": shared_network is not None,
+        "same_nonempty_compose_project": bool(
+            api["compose_project"]
+            and api["compose_project"] == db["compose_project"]
+        ),
+        "api_service_running": bool(
+            api["running"] and api["compose_service"] == "api"
+        ),
+        "db_service_running": bool(
+            db["running"] and db["compose_service"] == "db"
+        ),
+        "named_db_alias_is_bound": "db" in db_aliases,
+        "api_database_urls_target_named_db": all(database_checks.values()),
+    }
+    result = {
+        "schema": "straylight-e03-api-route-binding@v1",
+        "api_container_id": api["container_id"],
+        "db_container_id": db["container_id"],
+        "compose_project": api["compose_project"],
+        "network": shared_network,
+        "published_host": host_ip or None,
+        "published_port": int(host_port) if host_port.isdigit() else None,
+        "api_base_url_sha256": hashlib.sha256(
+            api_base_url.encode("utf-8")
+        ).hexdigest(),
+        "database_route": {
+            "hostname": "db",
+            "port": 5432,
+            "aliases": db_aliases,
+            "checks": database_checks,
+            "credential_values_recorded": False,
+        },
+        "checks": checks,
+        "pass": all(checks.values()),
+    }
+    if not result["pass"]:
+        raise ValueError(f"E03 API/database route mismatch: {result}")
+    return result
+
+
+def e03_mode1_coverage_snapshot(
+    db_container: str,
+    user_ref: str,
+) -> dict[str, Any]:
+    user_id = uuid.UUID(user_ref.removeprefix("user:"))
+    payload = run_psql(
+        db_container,
+        f"""
+SELECT json_build_object(
+  'user_ref','user:{user_id}',
+  'chunks',(
+    SELECT count(*) FROM straylight.search_chunks
+    WHERE user_id='{user_id}'::uuid
+  ),
+  'semantic_ready_chunks',(
+    SELECT count(*) FROM straylight.search_chunks
+    WHERE user_id='{user_id}'::uuid AND embedding IS NOT NULL
+  ),
+  'pending_chunks',(
+    SELECT count(*) FROM straylight.search_chunks
+    WHERE user_id='{user_id}'::uuid AND embedding IS NULL
+  ),
+  'embed_jobs_queued_or_running',(
+    SELECT count(*) FROM straylight.jobs
+    WHERE user_id='{user_id}'::uuid AND kind='embed_entry'
+      AND status IN ('queued','running')
+  )
+);
+""",
+    )
+    value = json.loads(payload.splitlines()[-1])
+    result = {
+        "user_ref": str(value["user_ref"]),
+        "chunks": int(value["chunks"]),
+        "semantic_ready_chunks": int(value["semantic_ready_chunks"]),
+        "pending_chunks": int(value["pending_chunks"]),
+        "embed_jobs_queued_or_running": int(
+            value["embed_jobs_queued_or_running"]
+        ),
+    }
+    result["pass"] = bool(
+        result["chunks"] > 0
+        and result["semantic_ready_chunks"] == 0
+        and result["pending_chunks"] == result["chunks"]
+    )
+    return result
+
+
+def e03_mode1_service_evidence(
+    provisioning: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = provisioning.get("provisioning")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    imported = metadata.get("import_response")
+    imported = imported if isinstance(imported, dict) else {}
+    index_status = recursive_find(imported, "index_status")
+    index_status = index_status if isinstance(index_status, dict) else {}
+    user_ref = str(recursive_find(imported, "user_id") or "")
+    try:
+        uuid.UUID(user_ref.removeprefix("user:"))
+        valid_user_ref = user_ref.startswith("user:")
+    except (ValueError, AttributeError):
+        valid_user_ref = False
+    result = {
+        "credential_provenance": provisioning.get("credential_provenance"),
+        "authorization_scope_matches_request": (
+            provisioning.get("authorization_scope")
+            == provisioning.get("requested_authorization_scope")
+        ),
+        "user_ref": user_ref or None,
+        "index_status": {
+            lane: index_status.get(lane)
+            for lane in ("exact", "lexical", "semantic")
+        },
+    }
+    result["pass"] = bool(
+        result["credential_provenance"] == "service_issued_case_scope"
+        and result["authorization_scope_matches_request"]
+        and valid_user_ref
+        and str(index_status.get("exact", "")).casefold() == "ready"
+        and str(index_status.get("lexical", "")).casefold() == "ready"
+        and str(index_status.get("semantic", "")).casefold() == "pending"
+    )
+    return result
 
 
 def synthetic_discovery_key(count: int) -> str:
@@ -1285,6 +1785,151 @@ def validate_e09_request_modes(
     ):
         raise ValueError(
             "E09 no_semantic requires --retrieval-modes exact lexical"
+        )
+
+
+def validate_e03_request(
+    args: argparse.Namespace,
+    retrieval_modes: Sequence[str],
+    expected_features: dict[str, Any],
+) -> None:
+    """Fail closed unless the requested run is an explicitly named E03 arm."""
+    arm = getattr(args, "e03_arm", None)
+    profile_selected = (
+        getattr(args, "gate_profile", None)
+        == E03_SEMANTIC_READY_GATE_PROFILE
+    )
+    if arm and not profile_selected:
+        raise ValueError(
+            "--e03-arm requires --gate-profile e03-semantic-ready"
+        )
+    if profile_selected and arm not in E03_ARMS:
+        raise ValueError(
+            "--gate-profile e03-semantic-ready requires explicit "
+            "--e03-arm mode1|mode2|mode3"
+        )
+    if not profile_selected:
+        return
+    if args.protocol != "simple":
+        raise ValueError("the E03 profile requires --protocol simple")
+    if args.e09_arm is not None:
+        raise ValueError("the E03 profile cannot be combined with --e09-arm")
+    if args.query_budget_profile != DEFAULT_QUERY_BUDGET_PROFILE:
+        raise ValueError(
+            "the E03 profile requires --query-budget-profile default-safe"
+        )
+    if getattr(args, "quick", False) or (
+        getattr(args, "samples", None) is not None
+        and args.samples != DEFINITIVE_SAMPLES
+    ):
+        raise ValueError(
+            f"the definitive E03 profile requires exactly "
+            f"{DEFINITIVE_SAMPLES} samples"
+        )
+    mismatches = {
+        name: {"expected": expected, "declared": expected_features.get(name)}
+        for name, expected in E03_COMMON_RUNTIME_EXPECTATIONS.items()
+        if (
+            name not in expected_features
+            or type(expected_features[name]) is not type(expected)
+            or expected_features[name] != expected
+        )
+    }
+    semantic_expected = arm != "mode1"
+    if expected_features.get("semantic_lane") is not semantic_expected:
+        mismatches["semantic_lane"] = {
+            "expected": semantic_expected,
+            "declared": expected_features.get("semantic_lane"),
+        }
+    if mismatches:
+        raise ValueError(
+            "the E03 profile requires an explicit frozen runtime posture: "
+            f"{mismatches}"
+        )
+    modes = list(dict.fromkeys(retrieval_modes))
+    hooks = bool(
+        args.semantic_failure_start_command
+        and args.semantic_failure_stop_command
+    )
+    if arm == "mode1":
+        valid = (
+            modes == ["exact", "lexical"]
+            and args.semantic_failure_probe
+            == SEMANTIC_FAILURE_PROBE_NOT_APPLICABLE
+            and not args.wait_semantic
+            and not hooks
+            and not args.require_semantic_failure_hook_attestation
+            and not args.unique_queries
+            and args.worker_container is None
+        )
+        expected = (
+            "exact lexical, semantic failure not-applicable, no wait/hooks/"
+            "attestation/unique queries, and no worker container"
+        )
+    elif arm == "mode2":
+        valid = (
+            modes == ["exact", "lexical", "semantic"]
+            and args.semantic_failure_probe == SEMANTIC_FAILURE_PROBE_REQUIRED
+            and args.wait_semantic
+            and hooks
+            and not args.require_semantic_failure_hook_attestation
+            and not args.unique_queries
+            and bool(args.worker_container)
+        )
+        expected = (
+            "exact lexical semantic, wait, required owned-mock hooks, no hook "
+            "attestation, no unique queries, and an explicit worker container"
+        )
+    else:
+        if (
+            list(args.scales or DEFAULT_SCALES) != [PRODUCTION_RECORDS]
+            or args.future_soak
+        ):
+            raise ValueError(
+                "E03 mode3 is a single-import paired profile and requires "
+                f"--scales {PRODUCTION_RECORDS} without --future-soak"
+            )
+        valid = (
+            modes == ["exact", "lexical", "semantic"]
+            and args.semantic_failure_probe == SEMANTIC_FAILURE_PROBE_REQUIRED
+            and args.wait_semantic
+            and hooks
+            and args.require_semantic_failure_hook_attestation
+            and not args.unique_queries
+            and bool(args.worker_container)
+        )
+        expected = (
+            "exact lexical semantic, wait, required attested proxy hooks, and "
+            "the built-in paired cold/warm query path with an explicit worker"
+        )
+    if not valid:
+        raise ValueError(f"E03 {arm} posture requires {expected}")
+
+
+def validate_e03_runtime_metadata(
+    arm: str | None,
+    runtime_snapshot: dict[str, Any],
+) -> None:
+    if arm not in E03_ARMS:
+        return
+    embeddings = runtime_snapshot.get("embeddings")
+    if not isinstance(embeddings, dict):
+        raise ValueError("E03 runtime omitted embeddings metadata")
+    expected_provider = "hashing" if arm == "mode1" else "openai"
+    expected_status = "degraded" if arm == "mode1" else "ready"
+    expected_model = E03_EMBEDDING_MODELS[arm]
+    if (
+        embeddings.get("provider") != expected_provider
+        or embeddings.get("model") != expected_model
+        or embeddings.get("dimensions") != E03_EMBEDDING_DIMENSIONS
+        or embeddings.get("status") != expected_status
+    ):
+        raise ValueError(
+            "E03 embedding runtime mismatch: "
+            f"arm {arm} requires provider={expected_provider!r}, "
+            f"model={expected_model!r}, "
+            f"dimensions={E03_EMBEDDING_DIMENSIONS}, and "
+            f"status={expected_status!r}"
         )
 
 
@@ -2148,6 +2793,7 @@ def semantic_failure_probe(
     session_id: str,
     scale: int,
     marker: str,
+    target_path: str,
     required: bool,
     start_command: str | None,
     stop_command: str | None,
@@ -2179,8 +2825,21 @@ def semantic_failure_probe(
     )
     discovery_key = synthetic_discovery_key(scale)
 
-    def search(query_id: str, query: str, modes: list[str]) -> dict[str, Any]:
-        body, _ = request_with_result(
+    def target_found(body: dict[str, Any]) -> bool:
+        return bool(
+            response_has_candidates(body)
+            and (
+                rendered_contains(body, marker)
+                or rendered_contains(body, target_path)
+            )
+        )
+
+    def search(
+        query_id: str,
+        query: str,
+        modes: list[str],
+    ) -> tuple[dict[str, Any], float]:
+        body, elapsed_ms = request_with_result(
             client,
             search_path,
             {
@@ -2195,32 +2854,48 @@ def semantic_failure_probe(
                 }],
             },
         )
-        return body
+        return body, round(elapsed_ms, 3)
 
+    latencies_ms: dict[str, float | None] = {
+        "baseline_semantic": None,
+        "injected_semantic": None,
+        "injected_exact_lexical": None,
+        "injected_mixed": None,
+        "restored_semantic": None,
+    }
     try:
-        baseline = search(
+        baseline, latencies_ms["baseline_semantic"] = search(
             "semantic-provider-baseline",
             f"Semantically locate the answer associated with {discovery_key}.",
             ["semantic"],
         )
     except NativeApiError as error:
+        latencies_ms["baseline_semantic"] = getattr(error, "elapsed_ms", None)
         return {
             "status": "baseline_failed",
             "pass": False,
             "required": required,
             "reason": "semantic-only retrieval did not work before injection",
             "baseline_http_status": error.status,
+            "latencies_ms": latencies_ms,
         }
-    baseline_healthy = not response_reports_lane_failure(baseline, "semantic")
+    baseline_target_found = target_found(baseline)
+    baseline_healthy = bool(
+        not response_reports_lane_failure(baseline, "semantic")
+        and baseline_target_found
+    )
     if not baseline_healthy:
         return {
             "status": "baseline_failed",
             "pass": False,
             "required": required,
             "reason": (
-                "the semantic lane reported a failure before failure injection"
+                "semantic-only retrieval did not return the planted target "
+                "before failure injection"
             ),
             "baseline_semantic_lane_healthy": False,
+            "baseline_semantic_target_found": baseline_target_found,
+            "latencies_ms": latencies_ms,
         }
 
     start_result = run_external_hook(
@@ -2242,7 +2917,7 @@ def semantic_failure_probe(
         else:
             time.sleep(max(0.0, settle_seconds))
             try:
-                failed_semantic = search(
+                failed_semantic, latencies_ms["injected_semantic"] = search(
                     "semantic-provider-outage",
                     (
                         "During the provider probe, semantically retrieve the "
@@ -2257,14 +2932,19 @@ def semantic_failure_probe(
             except NativeApiError as error:
                 semantic_failure_observed = True
                 semantic_status = error.status
+                latencies_ms["injected_semantic"] = getattr(
+                    error,
+                    "elapsed_ms",
+                    None,
+                )
 
-            lexical = search(
+            lexical, latencies_ms["injected_exact_lexical"] = search(
                 "provider-outage-lexical",
                 discovery_key,
                 ["exact", "lexical"],
             )
             lexical_found = rendered_contains(lexical, marker)
-            mixed = search(
+            mixed, latencies_ms["injected_mixed"] = search(
                 "provider-outage-mixed",
                 discovery_key,
                 ["exact", "lexical", "semantic"],
@@ -2282,7 +2962,7 @@ def semantic_failure_probe(
         time.sleep(max(0.0, settle_seconds))
         if restore_result["pass"]:
             try:
-                restored = search(
+                restored, latencies_ms["restored_semantic"] = search(
                     "semantic-provider-restored",
                     (
                         "After provider restoration, semantically locate the "
@@ -2290,12 +2970,17 @@ def semantic_failure_probe(
                     ),
                     ["semantic"],
                 )
-                restored_found = not response_reports_lane_failure(
-                    restored,
-                    "semantic",
+                restored_found = bool(
+                    not response_reports_lane_failure(restored, "semantic")
+                    and target_found(restored)
                 )
-            except NativeApiError:
+            except NativeApiError as error:
                 restored_found = False
+                latencies_ms["restored_semantic"] = getattr(
+                    error,
+                    "elapsed_ms",
+                    None,
+                )
 
     hook_target_bound = (
         hook_target_matches(start_result, restore_result or {})
@@ -2317,14 +3002,17 @@ def semantic_failure_probe(
         "pass": passed,
         "required": required,
         "baseline_semantic_lane_healthy": baseline_healthy,
+        "baseline_semantic_target_found": baseline_target_found,
         "semantic_failure_observed": semantic_failure_observed,
         "semantic_failure_http_status": semantic_status,
         "exact_lexical_found_during_failure": lexical_found,
         "mixed_lane_found_during_failure": mixed_found,
         "semantic_lane_healthy_after_restore": restored_found,
+        "semantic_target_found_after_restore": restored_found,
         "start_hook": start_result,
         "restore_hook": restore_result,
         "hook_target_bound": hook_target_bound,
+        "latencies_ms": latencies_ms,
         "error": probe_error,
     }
 
@@ -2381,6 +3069,193 @@ def verbatim_identifier_probe(
         "returned": returned,
         "pass": returned == expected,
         "results": results,
+    }
+
+
+def e03_mode3_paired_query_probe(
+    client: NativeApiClient,
+    admin: NativeApiClient,
+    *,
+    authorization_scope: str,
+    session_id: str,
+    status_url: str,
+    scale: int,
+    run_id: str,
+    discovery_key: str,
+    samples: int,
+) -> dict[str, Any]:
+    """Measure cold then warm semantic queries without provisioning twice."""
+    if samples < 1:
+        raise ValueError("paired mode-3 query probe requires samples")
+
+    def status_snapshot() -> dict[str, Any]:
+        value = client.get(status_url).data
+        if not isinstance(value, dict):
+            raise RuntimeError("mode-3 import status was not an object")
+        return {
+            "import_id": value.get("import_id"),
+            "corpus_revision": value.get("corpus_revision"),
+            "index_status": value.get("index_status"),
+            "index_counts": value.get("index_counts"),
+        }
+
+    def counters() -> dict[str, Any]:
+        value = admin.get("/v1/status").data
+        if not isinstance(value, dict):
+            raise RuntimeError("mode-3 service status was not an object")
+        runtime = value.get("semantic_runtime")
+        return dict(runtime) if isinstance(runtime, dict) else {}
+
+    queries = [
+        (
+            f"{discovery_key} paired semantic latency probe "
+            f"{hashlib.sha256(f'{run_id}:{index}'.encode()).hexdigest()[:16]}"
+        )
+        for index in range(samples)
+    ]
+    search_path = "/v1/workspace/search"
+
+    def run_phase(phase: str) -> dict[str, Any]:
+        phase_started_ns = time.monotonic_ns()
+        before = counters()
+        times: list[float] = []
+        timing_samples: list[dict[str, Any]] = []
+        embed_shares: list[float] = []
+        healthy: list[bool] = []
+        candidate_samples: list[bool] = []
+        for index, query in enumerate(queries):
+            body, elapsed_ms = request_with_result(
+                client,
+                search_path,
+                {
+                    "session_id": session_id,
+                    "queries": [{
+                        "id": f"e03-mode3-{phase}-{index:04d}",
+                        "goal": "locate the current terminal-corpus answer",
+                        "query": query,
+                        "scope": authorization_scope,
+                        "modes": ["exact", "lexical", "semantic"],
+                        "limit": 8,
+                    }],
+                },
+            )
+            times.append(elapsed_ms)
+            timing = response_timings(body)
+            timing_samples.append(timing)
+            flattened = flatten_numeric_timings(timing)
+            total_ms = flattened.get("total")
+            embed_ms = sum(
+                value
+                for name, value in flattened.items()
+                if "embed" in name.casefold()
+            )
+            embed_shares.append(
+                embed_ms / total_ms
+                if isinstance(total_ms, (int, float)) and total_ms > 0
+                else -1.0
+            )
+            healthy.append(
+                not response_reports_lane_failure(body, "semantic")
+                and not response_reports_gap_kind(
+                    body,
+                    "retrieval_lane_unavailable",
+                )
+                and not response_reports_gap_kind(
+                    body,
+                    "retrieval_lane_deferred",
+                )
+            )
+            candidate_samples.append(response_has_candidates(body))
+        after = counters()
+        phase_finished_ns = time.monotonic_ns()
+        counter_delta = semantic_counter_delta(before, after)
+        expected_counter_delta = {
+            "requested": samples,
+            "disabled": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "negative_cache_hits": 0,
+            "cache_bypasses": samples,
+            "successes": samples,
+            "failures": 0,
+            "deferrals": 0,
+        }
+        counters_match = counter_delta == expected_counter_delta
+        return {
+            "phase": phase,
+            "started_monotonic_ns": phase_started_ns,
+            "finished_monotonic_ns": phase_finished_ns,
+            "query_sha256": [
+                hashlib.sha256(query.encode()).hexdigest() for query in queries
+            ],
+            "samples": samples,
+            "latencies_ms": [round(value, 3) for value in times],
+            "p50_ms": round(percentile(times, 0.50), 3),
+            "p95_ms": round(percentile(times, 0.95), 3),
+            "p99_ms": round(percentile(times, 0.99), 3),
+            "max_ms": round(max(times), 3),
+            "timings_ms": summarize_timing_samples(timing_samples),
+            "timing_phase_sum_sane": [
+                timing_phase_sum_sane(item) for item in timing_samples
+            ],
+            "embed_share_of_total": {
+                "samples": [round(value, 6) for value in embed_shares],
+                "p50": round(percentile(embed_shares, 0.50), 6),
+                "p95": round(percentile(embed_shares, 0.95), 6),
+                "p99": round(percentile(embed_shares, 0.99), 6),
+            },
+            "semantic_lane_healthy": healthy,
+            "candidates_returned": candidate_samples,
+            "counters_before": before,
+            "counters_after": after,
+            "counter_delta": counter_delta,
+            "expected_counter_delta": expected_counter_delta,
+            "counter_contract_pass": counters_match,
+            "pass": bool(
+                all(healthy)
+                and all(candidate_samples)
+                and all(timing_samples)
+                and all(timing_phase_sum_sane(item) for item in timing_samples)
+                and all(value >= 0 for value in embed_shares)
+                and counters_match
+            ),
+        }
+
+    cardinality_before = status_snapshot()
+    cold = run_phase("cold_unique")
+    cardinality_between = status_snapshot()
+    warm = run_phase("warm_repeat")
+    cardinality_after = status_snapshot()
+    same_queries = cold["query_sha256"] == warm["query_sha256"]
+    cardinality_stable = (
+        cardinality_before == cardinality_between == cardinality_after
+    )
+    cold_before_warm = (
+        cold["finished_monotonic_ns"] <= warm["started_monotonic_ns"]
+    )
+    return {
+        "schema": "straylight-e03-mode3-paired-query@v1",
+        "status": "complete",
+        "single_provisioning_event": True,
+        "cold_before_warm": cold_before_warm,
+        "same_query_strings": same_queries,
+        "same_session_id": True,
+        "session_id_sha256": hashlib.sha256(session_id.encode()).hexdigest(),
+        "cardinality": {
+            "before": cardinality_before,
+            "between": cardinality_between,
+            "after": cardinality_after,
+            "stable": cardinality_stable,
+        },
+        "cold": cold,
+        "warm": warm,
+        "pass": bool(
+            cold["pass"]
+            and warm["pass"]
+            and cold_before_warm
+            and same_queries
+            and cardinality_stable
+        ),
     }
 
 
@@ -2539,6 +3414,7 @@ def benchmark_scale(
     timeout_seconds: float,
     import_timeout_seconds: float,
     db_container: str | None,
+    api_container: str | None = None,
     protocol: str,
     retrieval_modes: Sequence[str],
     run_semantic_failure: bool,
@@ -2551,6 +3427,9 @@ def benchmark_scale(
     wait_for_semantic: bool,
     unique_queries: bool,
     e09_arm: str | None,
+    e03_arm: str | None = None,
+    run_e03_mode3_paired: bool = False,
+    run_e03_mode1_pending: bool = False,
     flat_result_callback: Callable[[dict[str, Any]], None] | None = None,
     flat_file_control_override: dict[str, Any] | None = None,
     flat_file_control_source: str | None = None,
@@ -2612,6 +3491,44 @@ def benchmark_scale(
         batch_size=10_000 if protocol == "simple" else None,
     )
     import_ms = (time.monotonic() - started) * 1000
+    mode1_pending_evidence: dict[str, Any] | None = None
+    if run_e03_mode1_pending:
+        if not api_container or not db_container:
+            raise RuntimeError(
+                "E03 Mode 1 pending proof requires API and DB containers"
+            )
+        service_evidence = e03_mode1_service_evidence(provisioning)
+        user_ref = str(service_evidence.get("user_ref") or "")
+        environment_before = e03_mode1_environment_snapshot(api_container)
+        coverage_before = (
+            e03_mode1_coverage_snapshot(db_container, user_ref)
+            if service_evidence.get("pass") is True
+            else {"pass": False, "reason": "service evidence was invalid"}
+        )
+        mode1_pending_evidence = {
+            "schema": "straylight-e03-mode1-pending@v1",
+            "before_sampling": {
+                "service": service_evidence,
+                "database": coverage_before,
+                "environment": environment_before,
+            },
+            "after_sampling": None,
+            "retrieval_integrity": None,
+            "pass": False,
+        }
+        if not all(
+            item.get("pass") is True
+            for item in (
+                service_evidence,
+                coverage_before,
+                environment_before,
+            )
+        ):
+            raise RuntimeError(
+                "E03 Mode 1 preflight did not prove service-issued exact/"
+                "lexical readiness, zero semantic-ready chunks, all chunks "
+                "pending, no worker, and no provider credential"
+            )
     client = NativeApiClient(
         base_url=admin.base_url,
         token=provisioning["token"],
@@ -2866,6 +3783,34 @@ def benchmark_scale(
         session_id=latest_session_id,
         probes=fixture_manifest["verbatim_identifiers"],
     )
+    status_url = provisioning.get("status_url")
+    mode3_paired_query = (
+        e03_mode3_paired_query_probe(
+            client,
+            admin,
+            authorization_scope=authorization_scope,
+            session_id=latest_session_id,
+            status_url=status_url,
+            scale=scale,
+            run_id=run_id,
+            discovery_key=discovery_key,
+            samples=samples,
+        )
+        if (
+            run_e03_mode3_paired
+            and protocol == "simple"
+            and isinstance(status_url, str)
+            and status_url
+        )
+        else {
+            "status": "not_requested",
+            "pass": None,
+        }
+    )
+    if run_e03_mode3_paired and mode3_paired_query["status"] != "complete":
+        raise RuntimeError(
+            "E03 mode3 paired query probe requires an eval import status URL"
+        )
 
     before_checkpoint = (
         database_snapshot(db_container)
@@ -3009,6 +3954,7 @@ def benchmark_scale(
             session_id=latest_session_id,
             scale=scale,
             marker=marker,
+            target_path=target_path,
             required=semantic_failure_required,
             start_command=semantic_failure_start_command,
             stop_command=semantic_failure_stop_command,
@@ -3025,6 +3971,60 @@ def benchmark_scale(
             "required": False,
         }
     )
+    if run_e03_mode1_pending:
+        if (
+            mode1_pending_evidence is None
+            or not api_container
+            or not db_container
+        ):
+            raise RuntimeError("E03 Mode 1 pending evidence was lost")
+        service_before = mode1_pending_evidence["before_sampling"]["service"]
+        user_ref = str(service_before.get("user_ref") or "")
+        coverage_after = e03_mode1_coverage_snapshot(db_container, user_ref)
+        environment_after = e03_mode1_environment_snapshot(api_container)
+        environment_before = mode1_pending_evidence[
+            "before_sampling"
+        ]["environment"]
+        same_api_process = bool(
+            environment_after.get("api_container_id")
+            == environment_before.get("api_container_id")
+            and environment_after.get("api_started_at")
+            == environment_before.get("api_started_at")
+            and environment_after.get("api_image_id")
+            == environment_before.get("api_image_id")
+        )
+        retrieval_integrity = {
+            "open_found": all(open_found),
+            "search_found": all(search_found),
+            "broad_found": all(broad_found),
+            "overflow_found": all(overflow_found),
+            "old_source_found": all(old_source_found),
+            "read_found": all(read_found),
+            "resume_found": all(resume_found_samples),
+            "concurrent_write_committed": bool(
+                concurrent_probe["write_committed"]
+            ),
+            "concurrent_search_found": all(
+                concurrent_probe["search_found"]
+            ),
+            "no_exact_or_lexical_failures": all(
+                not item.get("exact") and not item.get("lexical")
+                for item in critical_lane_failures
+            ),
+        }
+        retrieval_integrity["pass"] = all(retrieval_integrity.values())
+        mode1_pending_evidence["after_sampling"] = {
+            "database": coverage_after,
+            "environment": environment_after,
+            "same_api_process": same_api_process,
+        }
+        mode1_pending_evidence["retrieval_integrity"] = retrieval_integrity
+        mode1_pending_evidence["pass"] = bool(
+            coverage_after.get("pass") is True
+            and environment_after.get("pass") is True
+            and same_api_process
+            and retrieval_integrity["pass"]
+        )
     index_after = (
         index_scan_snapshot(db_container)
         if index_before is not None and db_container is not None
@@ -3071,7 +4071,6 @@ def benchmark_scale(
                 for key in ("max_wal_size", "min_wal_size", "wal_compression")
             },
         }
-    status_url = provisioning.get("status_url")
     semantic_status_end: dict[str, Any] = {}
     if protocol == "simple" and isinstance(status_url, str) and status_url:
         semantic_status_end = client.get(status_url).data
@@ -3114,6 +4113,15 @@ def benchmark_scale(
             ),
         }
     )
+    source_embedding_tokens = (
+        sum(len(str(document["content"])) for document in documents) + 3
+    ) // 4
+    query_embedding_token_allowance = 100_000 if e03_arm == "mode3" else 0
+    billable_embedding_tokens = (
+        source_embedding_tokens + query_embedding_token_allowance
+        if wait_for_semantic and e03_arm != "mode2"
+        else 0
+    )
     return {
         "scale": scale,
         "protocol": protocol,
@@ -3122,6 +4130,8 @@ def benchmark_scale(
         "marker": marker,
         "fixture_manifest": fixture_manifest,
         "verbatim_identifier": verbatim_probe,
+        "e03_mode3_paired_query": mode3_paired_query,
+        "e03_mode1_pending": mode1_pending_evidence,
         "scale_elapsed_ms": round(
             (time.monotonic() - scale_started) * 1000,
             3,
@@ -3242,28 +4252,26 @@ def benchmark_scale(
         },
         "embedding_spend_estimate": {
             "model": "text-embedding-3-small",
-            "estimated_input_tokens": (
-                sum(len(str(document["content"])) for document in documents) + 3
-            ) // 4,
+            "provider_billing": (
+                "owned_mock_free" if e03_arm == "mode2"
+                else "openai_usage_billed" if billable_embedding_tokens
+                else "not_billable"
+            ),
+            "source_embedding_tokens": source_embedding_tokens,
+            "query_embedding_token_allowance": query_embedding_token_allowance,
+            "estimated_input_tokens": billable_embedding_tokens,
             "usd_per_million_tokens": 0.02,
             "estimated_usd": round(
-                (
-                    (
-                        sum(
-                            len(str(document["content"]))
-                            for document in documents
-                        )
-                        + 3
-                    )
-                    // 4
-                )
+                billable_embedding_tokens
                 / 1_000_000
                 * 0.02,
                 6,
             )
-            if wait_for_semantic
-            else 0.0,
-            "basis": "ceil(source characters / 4); provider receipt unavailable",
+            if billable_embedding_tokens else 0.0,
+            "basis": (
+                "ceil(source characters / 4) plus conservative paired/main/"
+                "failure query allowance; provider receipt unavailable"
+            ),
         },
         "concurrent_probe": concurrent_probe,
         "checkpoint_pressure": checkpoint_pressure,
@@ -3282,6 +4290,89 @@ def benchmark_scale(
     }
 
 
+def verbatim_identifier_measurement_evidence(
+    scale: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate the 30-probe D02 measurement without accepting its outcome."""
+    probe = scale.get("verbatim_identifier")
+    probe = probe if isinstance(probe, dict) else {}
+    fixture_manifest = scale.get("fixture_manifest")
+    fixture_manifest = (
+        fixture_manifest if isinstance(fixture_manifest, dict) else {}
+    )
+    planted = fixture_manifest.get("verbatim_identifiers")
+    results = probe.get("results")
+    planted_rows = planted if isinstance(planted, list) else []
+    result_rows = results if isinstance(results, list) else []
+    expected = probe.get("expected")
+    returned = probe.get("returned")
+    reported_pass = probe.get("pass")
+    expected_is_exact = type(expected) is int and expected == VERBATIM_IDENTIFIER_PROBES
+    returned_is_valid = (
+        type(returned) is int
+        and 0 <= returned <= VERBATIM_IDENTIFIER_PROBES
+    )
+    planted_is_exact = (
+        len(planted_rows) == VERBATIM_IDENTIFIER_PROBES
+        and all(isinstance(item, dict) for item in planted_rows)
+    )
+    results_are_exact = (
+        len(result_rows) == VERBATIM_IDENTIFIER_PROBES
+        and all(isinstance(item, dict) for item in result_rows)
+    )
+    row_identity_matches = planted_is_exact and results_are_exact and all(
+        all(
+            result.get(field) == fixture.get(field)
+            for field in ("path", "identifier", "byte_offset")
+        )
+        for fixture, result in zip(planted_rows, result_rows)
+    )
+    modes_are_exact_only = results_are_exact and all(
+        item.get("modes") == ["exact"] for item in result_rows
+    )
+    outcomes_are_boolean = results_are_exact and all(
+        type(item.get("verbatim_in_source_payload")) is bool
+        for item in result_rows
+    )
+    counted = (
+        sum(
+            item["verbatim_in_source_payload"]
+            for item in result_rows
+        )
+        if outcomes_are_boolean
+        else None
+    )
+    returned_matches_rows = returned_is_valid and counted == returned
+    reported_pass_is_consistent = (
+        type(reported_pass) is bool
+        and returned_is_valid
+        and reported_pass is (returned == VERBATIM_IDENTIFIER_PROBES)
+    )
+    checks = {
+        "status_complete": probe.get("status") == "complete",
+        "expected_is_exactly_30": expected_is_exact,
+        "fixture_manifest_has_exactly_30_rows": planted_is_exact,
+        "results_have_exactly_30_rows": results_are_exact,
+        "row_identity_matches_fixture_manifest": row_identity_matches,
+        "modes_are_exact_only": modes_are_exact_only,
+        "outcomes_are_boolean": outcomes_are_boolean,
+        "returned_is_typed_and_bounded": returned_is_valid,
+        "returned_equals_counted_outcomes": returned_matches_rows,
+        "reported_pass_matches_returned": reported_pass_is_consistent,
+    }
+    return {
+        "scale": scale.get("scale"),
+        "pass": all(checks.values()),
+        "checks": checks,
+        "returned": returned,
+        "expected": expected,
+        "reported_pass": reported_pass,
+        "counted_true_outcomes": counted,
+        "result_count": len(result_rows),
+        "fixture_count": len(planted_rows),
+    }
+
+
 def evaluate_gates(
     scales: list[dict[str, Any]],
     thresholds: dict[str, float | int],
@@ -3289,8 +4380,10 @@ def evaluate_gates(
     required_scales: Sequence[int] = (),
     minimum_samples: int | None = None,
     semantic_failure_required: bool = False,
+    semantic_failure_latency_required: bool = False,
     require_gin_index: bool = True,
     query_budgets: dict[str, Any] | None = None,
+    verbatim_feature_acceptance_required: bool = True,
 ) -> list[dict[str, Any]]:
     largest = max(scales, key=lambda item: item["scale"])
     smallest = min(scales, key=lambda item: item["scale"])
@@ -3700,26 +4793,45 @@ def evaluate_gates(
     verbatim_scales = [
         item
         for item in scales
-        if item.get("verbatim_identifier", {}).get("status") == "complete"
+        if item.get("protocol") == "simple"
     ]
     if verbatim_scales:
-        observed = [
-            {
-                "scale": item["scale"],
-                "returned": item["verbatim_identifier"]["returned"],
-                "expected": item["verbatim_identifier"]["expected"],
-            }
+        measurement_evidence = [
+            verbatim_identifier_measurement_evidence(item)
             for item in verbatim_scales
         ]
         gates.append((
-            "verbatim_identifier",
-            all(
-                item["verbatim_identifier"].get("pass") is True
-                for item in verbatim_scales
+            "verbatim_identifier_measurement_integrity",
+            all(item["pass"] for item in measurement_evidence),
+            measurement_evidence,
+            (
+                "complete typed 30-row measurement whose planted identities, "
+                "exact-only modes, counted outcomes, and reported result agree"
             ),
-            observed,
-            "every planted identifier appears in exact-lane source payload",
         ))
+        if verbatim_feature_acceptance_required:
+            gates.append((
+                "verbatim_identifier",
+                all(
+                    item.get("verbatim_identifier", {}).get("pass") is True
+                    for item in verbatim_scales
+                ),
+                [
+                    {
+                        "scale": item["scale"],
+                        "returned": item.get(
+                            "verbatim_identifier",
+                            {},
+                        ).get("returned"),
+                        "expected": item.get(
+                            "verbatim_identifier",
+                            {},
+                        ).get("expected"),
+                    }
+                    for item in verbatim_scales
+                ],
+                "every planted identifier appears in exact-lane source payload",
+            ))
     if semantic_failure_required:
         probe = largest.get("semantic_failure_probe", {})
         gates.append((
@@ -3742,6 +4854,35 @@ def evaluate_gates(
             },
             True,
         ))
+        failure_latencies = probe.get("latencies_ms")
+        failure_latencies = (
+            failure_latencies if isinstance(failure_latencies, dict) else {}
+        )
+        required_latency_names = {
+            "baseline_semantic",
+            "injected_semantic",
+            "injected_exact_lexical",
+            "injected_mixed",
+            "restored_semantic",
+        }
+        if semantic_failure_latency_required:
+            gates.append((
+                "semantic_failure_window_search_hard_slo",
+                set(failure_latencies) == required_latency_names
+                and all(
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and 0 <= float(value) <= E03_FAILURE_WINDOW_SEARCH_SLO_MS
+                    for value in failure_latencies.values()
+                ),
+                failure_latencies,
+                {
+                    "every_required_call_ms_lte": (
+                        E03_FAILURE_WINDOW_SEARCH_SLO_MS
+                    ),
+                    "required_calls": sorted(required_latency_names),
+                },
+            ))
     if "concurrent_probe" in largest:
         concurrent_probe = largest["concurrent_probe"]
         gates.extend([
@@ -3883,6 +5024,168 @@ def evaluate_gates(
         }
         for name, passed, observed, threshold in gates
     ]
+
+
+def apply_e03_gate_policy(
+    scales: list[dict[str, Any]],
+    gates: list[dict[str, Any]],
+    *,
+    arm: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Separate E03 applicability findings from its blocking acceptance gates."""
+    if arm not in E03_ARMS:
+        raise ValueError(f"unknown E03 arm {arm!r}")
+    findings: list[dict[str, Any]] = [{
+        "name": "verbatim_identifier_feature_acceptance",
+        "blocking": False,
+        "pass": all(
+            item.get("verbatim_identifier", {}).get("pass") is True
+            for item in scales
+            if item.get("protocol") == "simple"
+        ),
+        "outcome": (
+            "green"
+            if all(
+                item.get("verbatim_identifier", {}).get("pass") is True
+                for item in scales
+                if item.get("protocol") == "simple"
+            )
+            else "red"
+        ),
+        "observed": [
+            {
+                "scale": item.get("scale"),
+                "returned": item.get("verbatim_identifier", {}).get("returned"),
+                "expected": item.get("verbatim_identifier", {}).get("expected"),
+                "reported_pass": item.get(
+                    "verbatim_identifier",
+                    {},
+                ).get("pass"),
+            }
+            for item in scales
+            if item.get("protocol") == "simple"
+        ],
+        "applicability": (
+            "D02 feature acceptance is outside E03 acceptance and "
+            "verbatim_spans is intentionally disabled; measurement integrity "
+            "remains blocking"
+        ),
+    }]
+    blocking = list(gates)
+    if arm == "mode1":
+        pending_evidence = [
+            {
+                "scale": item.get("scale"),
+                "evidence": item.get("e03_mode1_pending"),
+            }
+            for item in scales
+        ]
+        blocking.append({
+            "name": "mode1_pending_semantic_baseline_is_proven",
+            "pass": all(
+                isinstance(item["evidence"], dict)
+                and item["evidence"].get("pass") is True
+                for item in pending_evidence
+            ),
+            "observed": pending_evidence,
+            "threshold": (
+                "service-issued exact+lexical-ready corpus; zero embedded "
+                "chunks and every chunk pending before/after; worker absent; "
+                "hashing provider with no external credential; exact+lexical "
+                "retrieval healthy; "
+                "same API process"
+            ),
+        })
+    if arm == "mode3":
+        regression = [
+            gate for gate in blocking
+            if str(gate.get("name", "")).startswith("regression_tier_")
+        ]
+        blocking = [
+            gate for gate in blocking
+            if not str(gate.get("name", "")).startswith("regression_tier_")
+        ]
+        findings.extend({
+            **gate,
+            "blocking": False,
+            "outcome": "green" if gate.get("pass") is True else "red",
+            "applicability": (
+                "D09 regression tiers block modes 1 and 2; Mode 3 provider "
+                "latency is an E09 input while E03 hard SLOs still block"
+            ),
+        } for gate in regression)
+        paired = max(scales, key=lambda item: item["scale"]).get(
+            "e03_mode3_paired_query",
+            {},
+        )
+        cold = paired.get("cold", {}) if isinstance(paired, dict) else {}
+        warm = paired.get("warm", {}) if isinstance(paired, dict) else {}
+        blocking.extend([
+            {
+                "name": "mode3_cold_warm_pair_is_single_corpus",
+                "pass": bool(
+                    isinstance(paired, dict)
+                    and paired.get("status") == "complete"
+                    and paired.get("pass") is True
+                    and paired.get("single_provisioning_event") is True
+                    and paired.get("cold_before_warm") is True
+                    and paired.get("same_query_strings") is True
+                    and paired.get("same_session_id") is True
+                    and paired.get("cardinality", {}).get("stable") is True
+                ),
+                "observed": paired,
+                "threshold": (
+                    "one import/session/corpus; cold unique queries precede "
+                    "identical warm repeats with stable index cardinality"
+                ),
+            },
+            {
+                "name": "mode3_cold_warm_search_hard_slo",
+                "pass": all(
+                    isinstance(phase.get("max_ms"), (int, float))
+                    and not isinstance(phase.get("max_ms"), bool)
+                    and float(phase["max_ms"])
+                    <= E03_FAILURE_WINDOW_SEARCH_SLO_MS
+                    for phase in (cold, warm)
+                ),
+                "observed": {
+                    "cold_max_ms": cold.get("max_ms"),
+                    "warm_max_ms": warm.get("max_ms"),
+                },
+                "threshold": E03_FAILURE_WINDOW_SEARCH_SLO_MS,
+            },
+        ])
+        findings.append({
+            "name": "mode3_cold_warm_search_regression_tier",
+            "blocking": False,
+            "pass": all(
+                isinstance(phase.get("p95_ms"), (int, float))
+                and not isinstance(phase.get("p95_ms"), bool)
+                and float(phase["p95_ms"])
+                <= REGRESSION_THRESHOLDS["search_p95_ms"]
+                for phase in (cold, warm)
+            ),
+            "outcome": (
+                "green"
+                if all(
+                    isinstance(phase.get("p95_ms"), (int, float))
+                    and not isinstance(phase.get("p95_ms"), bool)
+                    and float(phase["p95_ms"])
+                    <= REGRESSION_THRESHOLDS["search_p95_ms"]
+                    for phase in (cold, warm)
+                )
+                else "red"
+            ),
+            "observed": {
+                "cold_p95_ms": cold.get("p95_ms"),
+                "warm_p95_ms": warm.get("p95_ms"),
+            },
+            "threshold": REGRESSION_THRESHOLDS["search_p95_ms"],
+            "applicability": (
+                "nonblocking E09 input; the 3000ms hard SLO remains blocking"
+            ),
+        })
+    return blocking, findings
 
 
 def evaluate_lexical_consolidation_guards(
@@ -4054,6 +5357,9 @@ def load_reused_flat_controls(
 
 def command_run(args: argparse.Namespace) -> int:
     d03_control: dict[str, Any] | None = None
+    e03_cost_preflight: dict[str, Any] | None = None
+    e03_topology_before: dict[str, Any] | None = None
+    e03_route_binding_before: dict[str, Any] | None = None
     try:
         feature_states = parse_feature_states(args.feature_state)
         expected_features = expected_runtime_features(
@@ -4090,6 +5396,59 @@ def command_run(args: argparse.Namespace) -> int:
                 "definitive simple-protocol runs require --db-container"
             )
         validate_e09_request_modes(args.e09_arm, retrieval_modes)
+        validate_e03_request(args, retrieval_modes, expected_features)
+        if args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE:
+            estimated_tokens = 0
+            if args.e03_arm == "mode3":
+                for scale in profile.scales:
+                    preflight_documents, _, _ = synthetic_documents(scale)
+                    estimated_tokens += (
+                        sum(
+                            len(str(item["content"]))
+                            for item in preflight_documents
+                        )
+                        + 3
+                    ) // 4
+                    del preflight_documents
+                estimated_tokens += 100_000
+            direct_estimate = round(
+                estimated_tokens / 1_000_000 * 0.02,
+                6,
+            )
+            estimated_max = (
+                max(E03_MODE3_PREFLIGHT_MAX_USD, direct_estimate)
+                if args.e03_arm == "mode3"
+                else 0.0
+            )
+            e03_cost_preflight = {
+                "reasoning_billing": "ChatGPT/Codex subscription only",
+                "embedding_provider": (
+                    "openai" if args.e03_arm == "mode3"
+                    else "owned_mock" if args.e03_arm == "mode2"
+                    else "hashing"
+                ),
+                "estimated_input_tokens": estimated_tokens,
+                "direct_estimate_usd": direct_estimate,
+                "estimated_max_usd": estimated_max,
+                "ceiling_usd": E03_EMBEDDING_COST_CEILING_USD,
+                "ceiling_pass": (
+                    estimated_max <= E03_EMBEDDING_COST_CEILING_USD
+                ),
+                "user_notification_threshold_usd": 20.0,
+                "notification_required": estimated_max > 20.0,
+            }
+            if not e03_cost_preflight["ceiling_pass"]:
+                raise ValueError(
+                    "E03 embedding preflight exceeds the strict $5 ceiling"
+                )
+            if not args.api_container or not args.db_container:
+                raise ValueError("E03 requires API and DB containers")
+            e03_topology_before = e03_container_topology(
+                arm=args.e03_arm,
+                api_container=args.api_container,
+                db_container=args.db_container,
+                worker_container=args.worker_container,
+            )
         if (
             args.require_semantic_failure_hook_attestation
             and not args.semantic_failure_start_command
@@ -4142,6 +5501,12 @@ def command_run(args: argparse.Namespace) -> int:
             profile,
         )
         admin = NativeApiClient(timeout=profile.import_timeout_seconds)
+        if args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE:
+            e03_route_binding_before = e03_api_route_binding(
+                api_base_url=admin.base_url,
+                api_container=args.api_container,
+                db_container=args.db_container,
+            )
         runtime_status_before = admin.get("/v1/status").data
         if not isinstance(runtime_status_before, dict):
             raise ValueError("service status response was not an object")
@@ -4150,6 +5515,7 @@ def command_run(args: argparse.Namespace) -> int:
             expected_features=expected_features,
             expected_build_revision=args.expect_build_revision,
         )
+        validate_e03_runtime_metadata(args.e03_arm, runtime_snapshot_before)
         semantic_failure_posture = validate_semantic_failure_probe_posture(
             posture=args.semantic_failure_probe,
             runtime_snapshot=runtime_snapshot_before,
@@ -4169,11 +5535,35 @@ def command_run(args: argparse.Namespace) -> int:
             gate_profile=args.gate_profile,
             protocol=args.protocol,
         )
-        fingerprint_before = implementation_fingerprint(args.api_container)
+        fingerprint_before = implementation_fingerprint(
+            args.api_container,
+            args.worker_container,
+        )
         if profile.definitive and not fingerprint_before["reproducible"]:
             raise ValueError(
                 "definitive runs require a reproducible implementation "
                 f"fingerprint: {fingerprint_before}"
+            )
+        if (
+            args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE
+            and (
+                not args.expect_build_revision
+                or fingerprint_before.get("source_revision")
+                != args.expect_build_revision
+                or fingerprint_before.get("api_image_revision")
+                != args.expect_build_revision
+                or (
+                    args.e03_arm in {"mode2", "mode3"}
+                    and fingerprint_before.get("worker_image_revision")
+                    != args.expect_build_revision
+                )
+                or runtime_snapshot_before.get("build_revision")
+                != args.expect_build_revision
+            )
+        ):
+            raise ValueError(
+                "E03 requires the exact expected full revision to match source, "
+                "API image label, and authenticated runtime"
             )
         if d03_control is not None:
             validate_d03_resume_control_compatibility(
@@ -4262,6 +5652,7 @@ def command_run(args: argparse.Namespace) -> int:
                 timeout_seconds=args.timeout,
                 import_timeout_seconds=profile.import_timeout_seconds,
                 db_container=args.db_container,
+                api_container=args.api_container,
                 protocol=args.protocol,
                 retrieval_modes=retrieval_modes,
                 run_semantic_failure=(
@@ -4287,6 +5678,16 @@ def command_run(args: argparse.Namespace) -> int:
                 wait_for_semantic=args.wait_semantic,
                 unique_queries=args.unique_queries,
                 e09_arm=args.e09_arm,
+                e03_arm=args.e03_arm,
+                run_e03_mode3_paired=(
+                    args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE
+                    and args.e03_arm == "mode3"
+                    and scale == largest_requested_scale
+                ),
+                run_e03_mode1_pending=(
+                    args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE
+                    and args.e03_arm == "mode1"
+                ),
                 flat_result_callback=lambda result, current=scale: (
                     partial_flat_controls.__setitem__(current, result)
                 ),
@@ -4333,16 +5734,153 @@ def command_run(args: argparse.Namespace) -> int:
                 DEFINITIVE_SAMPLES if profile.definitive else None
             ),
             semantic_failure_required=profile.semantic_failure_required,
+            semantic_failure_latency_required=(
+                args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE
+                and args.e03_arm in {"mode2", "mode3"}
+            ),
             require_gin_index=profile.definitive,
             query_budgets=(
                 query_budget_contract["contract"]
                 if query_budget_contract is not None
                 else None
             ),
+            verbatim_feature_acceptance_required=(
+                args.gate_profile != E03_SEMANTIC_READY_GATE_PROFILE
+            ),
         )
     else:
         gates = []
-    fingerprint = implementation_fingerprint(args.api_container)
+    nonblocking_findings: list[dict[str, Any]] = []
+    if scales and args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE:
+        gates, nonblocking_findings = apply_e03_gate_policy(
+            scales,
+            gates,
+            arm=args.e03_arm,
+        )
+    e03_embedding_cost: dict[str, Any] | None = None
+    if args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE:
+        accounted_usd = round(sum(
+            float(item.get("embedding_spend_estimate", {}).get(
+                "estimated_usd",
+                0.0,
+            ))
+            for item in scales
+        ), 6)
+        e03_embedding_cost = {
+            "preflight": e03_cost_preflight,
+            "accounted_estimate_usd": accounted_usd,
+            "ceiling_usd": E03_EMBEDDING_COST_CEILING_USD,
+            "mode2_mock_billing_is_zero": (
+                args.e03_arm != "mode2" or accounted_usd == 0.0
+            ),
+        }
+        gates.append({
+            "name": "e03_embedding_cost_ceiling",
+            "pass": bool(
+                e03_cost_preflight
+                and e03_cost_preflight.get("ceiling_pass") is True
+                and accounted_usd <= E03_EMBEDDING_COST_CEILING_USD
+                and e03_embedding_cost["mode2_mock_billing_is_zero"]
+            ),
+            "observed": e03_embedding_cost,
+            "threshold": f"<= ${E03_EMBEDDING_COST_CEILING_USD:.2f}",
+        })
+    fingerprint = implementation_fingerprint(
+        args.api_container,
+        args.worker_container,
+    )
+    e03_topology_after: dict[str, Any] | None = None
+    e03_route_binding_after: dict[str, Any] | None = None
+    if args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE:
+        stable_fingerprint_fields = (
+            "source_revision",
+            "api_container_id",
+            "api_container_started_at",
+            "api_image_id",
+            "api_image_revision",
+            "worker_container_id",
+            "worker_container_started_at",
+            "worker_running",
+            "worker_image_id",
+            "worker_image_revision",
+        )
+        drift = {
+            field: {
+                "before": fingerprint_before.get(field),
+                "after": fingerprint.get(field),
+            }
+            for field in stable_fingerprint_fields
+            if fingerprint_before.get(field) != fingerprint.get(field)
+        }
+        if drift:
+            errors.append({
+                "type": "ProvenanceDrift",
+                "message": f"E03 API/source provenance drifted: {drift}",
+                "stage": "implementation_fingerprint_after",
+            })
+        try:
+            e03_topology_after = e03_container_topology(
+                arm=args.e03_arm,
+                api_container=args.api_container,
+                db_container=args.db_container,
+                worker_container=args.worker_container,
+            )
+            if e03_topology_after != e03_topology_before:
+                raise ValueError(
+                    "E03 API/DB/worker topology drifted during the run"
+                )
+        except ValueError as error:
+            errors.append({
+                "type": type(error).__name__,
+                "message": str(error),
+                "stage": "container_topology_after",
+            })
+        try:
+            e03_route_binding_after = e03_api_route_binding(
+                api_base_url=admin.base_url,
+                api_container=args.api_container,
+                db_container=args.db_container,
+            )
+            if e03_route_binding_after != e03_route_binding_before:
+                raise ValueError(
+                    "E03 API/database route drifted during the run"
+                )
+        except ValueError as error:
+            errors.append({
+                "type": type(error).__name__,
+                "message": str(error),
+                "stage": "api_route_binding_after",
+            })
+        gates.append({
+            "name": "e03_container_topology_is_stable",
+            "pass": bool(
+                e03_topology_before
+                and e03_topology_after == e03_topology_before
+            ),
+            "observed": {
+                "before": e03_topology_before,
+                "after": e03_topology_after,
+            },
+            "threshold": (
+                "same isolated Compose project and API/DB/worker container "
+                "identities before and after"
+            ),
+        })
+        gates.append({
+            "name": "e03_api_database_route_is_stable",
+            "pass": bool(
+                e03_route_binding_before
+                and e03_route_binding_after == e03_route_binding_before
+            ),
+            "observed": {
+                "before": e03_route_binding_before,
+                "after": e03_route_binding_after,
+            },
+            "threshold": (
+                "ambient API URL is the named container's exact loopback "
+                "publish and that API targets the named DB on one network"
+            ),
+        })
     runtime_status_after: dict[str, Any] | None = None
     runtime_snapshot_after: dict[str, Any] | None = None
     try:
@@ -4354,6 +5892,7 @@ def command_run(args: argparse.Namespace) -> int:
             expected_features=expected_features,
             expected_build_revision=args.expect_build_revision,
         )
+        validate_e03_runtime_metadata(args.e03_arm, runtime_snapshot_after)
         require_stable_runtime_configuration(
             runtime_snapshot_before,
             runtime_snapshot_after,
@@ -4451,6 +5990,7 @@ def command_run(args: argparse.Namespace) -> int:
         "label": args.label,
         "protocol": args.protocol,
         "gate_profile": args.gate_profile,
+        "e03_arm": args.e03_arm,
         "retrieval_modes": list(retrieval_modes),
         "declared_feature_states": feature_states,
         "expected_runtime_features": expected_features,
@@ -4465,6 +6005,8 @@ def command_run(args: argparse.Namespace) -> int:
                 == runtime_snapshot_after.get("build_revision")
                 and runtime_snapshot_before.get("runtime_features")
                 == runtime_snapshot_after.get("runtime_features")
+                and runtime_snapshot_before.get("embeddings")
+                == runtime_snapshot_after.get("embeddings")
             ),
         },
         "run_tags": sorted(set(args.run_tag)),
@@ -4473,6 +6015,23 @@ def command_run(args: argparse.Namespace) -> int:
         "e09_runtime": e09_runtime,
         "d03_resume_delta": d03_resume_delta,
         "e09_step_authorization": e09_step_authorization,
+        "e03_embedding_cost": e03_embedding_cost,
+        "e03_container_topology": {
+            "before": e03_topology_before,
+            "after": e03_topology_after,
+            "stable": (
+                e03_topology_before is not None
+                and e03_topology_after == e03_topology_before
+            ),
+        } if args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE else None,
+        "e03_api_route_binding": {
+            "before": e03_route_binding_before,
+            "after": e03_route_binding_after,
+            "stable": (
+                e03_route_binding_before is not None
+                and e03_route_binding_after == e03_route_binding_before
+            ),
+        } if args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE else None,
         "run_profile": {
             "mode": "definitive" if profile.definitive else "quick",
             "definitive": profile.definitive,
@@ -4511,6 +6070,7 @@ def command_run(args: argparse.Namespace) -> int:
             ).hexdigest(),
         },
         "gates": gates,
+        "nonblocking_findings": nonblocking_findings,
         "errors": errors,
         "pass": bool(scales and not errors and all(gate["pass"] for gate in gates)),
     }
@@ -4587,9 +6147,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--gate-profile",
         choices=(
             D03_RESUME_DELTAS_GATE_PROFILE,
+            E03_SEMANTIC_READY_GATE_PROFILE,
             LEXICAL_CONSOLIDATION_GATE_PROFILE,
         ),
         help="run an experiment-specific deterministic gate subset",
+    )
+    run.add_argument(
+        "--e03-arm",
+        choices=E03_ARMS,
+        help=(
+            "explicit E03 same-build arm; mode3 performs one paired cold/warm "
+            "query probe after a single corpus import"
+        ),
     )
     run.add_argument(
         "--feature-state",
@@ -4678,6 +6247,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run.add_argument("--db-container")
+    run.add_argument(
+        "--worker-container",
+        help=(
+            "worker container required by E03 modes 2/3; its running process, "
+            "image ID, and revision are bound into provenance"
+        ),
+    )
     run.add_argument(
         "--api-container",
         help=(

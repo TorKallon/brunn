@@ -992,6 +992,7 @@ class PerformanceEvalTests(unittest.TestCase):
             session_id="session:test",
             scale=PRODUCTION_RECORDS,
             marker="marker",
+            target_path="Synthetic/records/0063999.md",
             required=True,
             start_command=None,
             stop_command=None,
@@ -1020,16 +1021,16 @@ class PerformanceEvalTests(unittest.TestCase):
         class Client:
             def __init__(self):
                 self.responses = iter([
-                    {"data": {"results": []}},
-                    {"data": {"results": [], "lane_failures": ["semantic"]}},
-                    {"data": {"results": [{"text": marker}]}},
+                    {"data": {"candidates": [{"text": marker}]}},
+                    {"data": {"candidates": [], "lane_failures": ["semantic"]}},
+                    {"data": {"candidates": [{"text": marker}]}},
                     {
                         "data": {
-                            "results": [{"text": marker}],
+                            "candidates": [{"text": marker}],
                             "lane_failures": ["semantic"],
                         },
                     },
-                    {"data": {"results": []}},
+                    {"data": {"candidates": [{"text": marker}]}},
                 ])
 
             def post(self, _path, _payload):
@@ -1042,6 +1043,7 @@ class PerformanceEvalTests(unittest.TestCase):
             session_id="session:test",
             scale=PRODUCTION_RECORDS,
             marker=marker,
+            target_path="Synthetic/records/0063999.md",
             required=True,
             start_command="/usr/bin/true",
             stop_command="/usr/bin/true",
@@ -1055,6 +1057,33 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertTrue(result["exact_lexical_found_during_failure"])
         self.assertTrue(result["mixed_lane_found_during_failure"])
         self.assertTrue(result["semantic_lane_healthy_after_restore"])
+
+    def test_semantic_failure_probe_rejects_empty_baseline_candidates(self):
+        class Response:
+            body = {"data": {"candidates": []}}
+            elapsed_ms = 1.0
+
+        class Client:
+            def post(self, _path, _payload):
+                return Response()
+
+        result = semantic_failure_probe(
+            Client(),  # type: ignore[arg-type]
+            protocol="simple",
+            authorization_scope="scope:test",
+            session_id="session:test",
+            scale=PRODUCTION_RECORDS,
+            marker="narrow-fact-64000-cobalt",
+            target_path="Synthetic/records/0063999.md",
+            required=True,
+            start_command="/usr/bin/true",
+            stop_command="/usr/bin/true",
+            settle_seconds=0.0,
+            timeout_seconds=1.0,
+        )
+
+        self.assertEqual(result["status"], "baseline_failed")
+        self.assertFalse(result["baseline_semantic_target_found"])
 
     def test_percentile_interpolates_small_samples(self):
         self.assertEqual(percentile([], 0.95), 0.0)

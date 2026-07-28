@@ -35,6 +35,8 @@ from typing import Any
 SCHEMA = "straylight-openai-embedding-fault-proxy-state@v1"
 CONFIG_SCHEMA = "straylight-openai-embedding-fault-proxy-config@v1"
 ATTESTATION_SCHEMA = "straylight-eval-hook-attestation@v1"
+IDENTITY_SCHEMA = "straylight-openai-embedding-fault-proxy-identity@v1"
+USAGE_SCHEMA = "straylight-openai-embedding-usage-receipt@v1"
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 55210
 MAX_BODY_BYTES = 64 * 1024 * 1024
@@ -45,6 +47,15 @@ CONFIG_PATH: Path | None = None
 UPSTREAM_BASE_URL = ""
 CONTROL_TOKEN: bytes | None = None
 CONFIG_LOCK = threading.Lock()
+USAGE_LOCK = threading.Lock()
+UPSTREAM_USAGE = {
+    "schema": USAGE_SCHEMA,
+    "successful_embedding_responses": 0,
+    "usage_reported_responses": 0,
+    "usage_missing_responses": 0,
+    "prompt_tokens": 0,
+    "total_tokens": 0,
+}
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -238,6 +249,54 @@ def public_state(value: dict[str, Any]) -> dict[str, Any]:
     return {key: value[key] for key in allowed if key in value}
 
 
+def identity_state(value: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "instance_id",
+        "host",
+        "port",
+        "implementation_sha256",
+        "upstream_base_url_sha256",
+    }
+    return {key: value[key] for key in allowed if key in value}
+
+
+def parse_upstream_usage(body: bytes) -> tuple[int, int] | None:
+    """Extract only billable token totals without retaining response content."""
+    try:
+        value = json.loads(body)
+        usage = value.get("usage") if isinstance(value, dict) else None
+        prompt_tokens = usage.get("prompt_tokens")
+        total_tokens = usage.get("total_tokens")
+    except (AttributeError, TypeError, json.JSONDecodeError):
+        return None
+    if (
+        type(prompt_tokens) is not int
+        or type(total_tokens) is not int
+        or prompt_tokens < 0
+        or total_tokens < prompt_tokens
+    ):
+        return None
+    return prompt_tokens, total_tokens
+
+
+def record_upstream_usage(body: bytes) -> None:
+    parsed = parse_upstream_usage(body)
+    with USAGE_LOCK:
+        UPSTREAM_USAGE["successful_embedding_responses"] += 1
+        if parsed is None:
+            UPSTREAM_USAGE["usage_missing_responses"] += 1
+            return
+        prompt_tokens, total_tokens = parsed
+        UPSTREAM_USAGE["usage_reported_responses"] += 1
+        UPSTREAM_USAGE["prompt_tokens"] += prompt_tokens
+        UPSTREAM_USAGE["total_tokens"] += total_tokens
+
+
+def usage_receipt() -> dict[str, Any]:
+    with USAGE_LOCK:
+        return dict(UPSTREAM_USAGE)
+
+
 def read_state(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if value.get("schema") != SCHEMA:
@@ -339,6 +398,16 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "StraylightEmbeddingFaultProxy/1"
 
     def do_GET(self) -> None:
+        if urllib.parse.urlsplit(self.path).path == "/__straylight/identity":
+            assert STATE_PATH is not None
+            self._json(
+                200,
+                {
+                    "schema": IDENTITY_SCHEMA,
+                    "state": identity_state(read_state(STATE_PATH)),
+                },
+            )
+            return
         if self.path not in {
             "/__straylight/health",
             "/__straylight/status",
@@ -359,6 +428,7 @@ class Handler(BaseHTTPRequestHandler):
                 "control": control,
                 "state": state,
                 "behavior": behavior,
+                "usage": usage_receipt(),
             },
         )
 
@@ -467,6 +537,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
                 response_body = response.read()
+                record_upstream_usage(response_body)
                 self.send_response(response.status)
                 for name in (
                     "Content-Type",
