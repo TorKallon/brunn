@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import ANY, patch
 
 import sys
 
@@ -25,6 +26,7 @@ from performance_eval import (  # noqa: E402
     DatabaseSnapshot,
     benchmark_flat_files,
     build_parser,
+    candidate_audit,
     compare_results,
     capture_service_runtime_snapshot,
     counter_growth,
@@ -35,6 +37,7 @@ from performance_eval import (  # noqa: E402
     extract_sql_function_body,
     load_query_budgets,
     load_reused_flat_controls,
+    isolated_semantic_failure_probe,
     old_source_marker,
     parse_feature_states,
     expected_runtime_features,
@@ -990,7 +993,7 @@ class PerformanceEvalTests(unittest.TestCase):
             protocol="simple",
             authorization_scope="scope:test",
             session_id="session:test",
-            scale=PRODUCTION_RECORDS,
+            query="locate semantic failure marker",
             marker="marker",
             target_path="Synthetic/records/0063999.md",
             required=True,
@@ -1012,6 +1015,7 @@ class PerformanceEvalTests(unittest.TestCase):
 
     def test_semantic_failure_probe_requires_failure_fallback_and_restore(self):
         marker = "narrow-fact-64000-cobalt"
+        target_path = "Synthetic/records/0063999.md"
 
         class Response:
             def __init__(self, body):
@@ -1020,30 +1024,57 @@ class PerformanceEvalTests(unittest.TestCase):
 
         class Client:
             def __init__(self):
+                self.payloads = []
                 self.responses = iter([
-                    {"data": {"candidates": [{"text": marker}]}},
-                    {"data": {"candidates": [], "lane_failures": ["semantic"]}},
-                    {"data": {"candidates": [{"text": marker}]}},
                     {
                         "data": {
-                            "candidates": [{"text": marker}],
+                            "candidates": [{
+                                "path": target_path,
+                                "excerpt": marker,
+                            }]
+                        }
+                    },
+                    {"data": {"candidates": [], "lane_failures": ["semantic"]}},
+                    {
+                        "data": {
+                            "candidates": [{
+                                "path": target_path,
+                                "excerpt": marker,
+                            }]
+                        }
+                    },
+                    {
+                        "data": {
+                            "candidates": [{
+                                "path": target_path,
+                                "excerpt": marker,
+                            }],
                             "lane_failures": ["semantic"],
                         },
                     },
-                    {"data": {"candidates": [{"text": marker}]}},
+                    {
+                        "data": {
+                            "candidates": [{
+                                "path": target_path,
+                                "excerpt": marker,
+                            }]
+                        }
+                    },
                 ])
 
-            def post(self, _path, _payload):
+            def post(self, _path, payload):
+                self.payloads.append(payload)
                 return Response(next(self.responses))
 
+        client = Client()
         result = semantic_failure_probe(
-            Client(),  # type: ignore[arg-type]
+            client,  # type: ignore[arg-type]
             protocol="simple",
             authorization_scope="scope:test",
-            session_id="session:test",
-            scale=PRODUCTION_RECORDS,
+            session_id=None,
+            query="locate narrow fact",
             marker=marker,
-            target_path="Synthetic/records/0063999.md",
+            target_path=target_path,
             required=True,
             start_command="/usr/bin/true",
             stop_command="/usr/bin/true",
@@ -1057,6 +1088,9 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertTrue(result["exact_lexical_found_during_failure"])
         self.assertTrue(result["mixed_lane_found_during_failure"])
         self.assertTrue(result["semantic_lane_healthy_after_restore"])
+        self.assertTrue(
+            all("session_id" not in payload for payload in client.payloads)
+        )
 
     def test_semantic_failure_probe_rejects_empty_baseline_candidates(self):
         class Response:
@@ -1072,7 +1106,7 @@ class PerformanceEvalTests(unittest.TestCase):
             protocol="simple",
             authorization_scope="scope:test",
             session_id="session:test",
-            scale=PRODUCTION_RECORDS,
+            query="locate narrow fact",
             marker="narrow-fact-64000-cobalt",
             target_path="Synthetic/records/0063999.md",
             required=True,
@@ -1084,6 +1118,178 @@ class PerformanceEvalTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "baseline_failed")
         self.assertFalse(result["baseline_semantic_target_found"])
+        self.assertEqual(
+            result["candidate_audits"]["baseline_semantic"][
+                "candidate_count"
+            ],
+            0,
+        )
+
+    def test_candidate_audit_binds_path_and_marker_to_same_candidate(self):
+        marker = "semantic-marker"
+        target_path = "eval/probe.md"
+        split_evidence = candidate_audit(
+            {
+                "candidates": [
+                    {
+                        "path": target_path,
+                        "metadata": {"note": marker},
+                    },
+                    {
+                        "path": "eval/other.md",
+                        "excerpt": marker,
+                    },
+                ]
+            },
+            marker=marker,
+            target_path=target_path,
+        )
+        self.assertFalse(split_evidence["target_found"])
+
+        bound_evidence = candidate_audit(
+            {
+                "candidates": [{
+                    "path": target_path,
+                    "excerpt": f"The answer is {marker}.",
+                    "lanes": ["semantic"],
+                    "score": 2.5,
+                }]
+            },
+            marker=marker,
+            target_path=target_path,
+        )
+        self.assertTrue(bound_evidence["target_found"])
+        self.assertTrue(
+            bound_evidence["candidates"][0]["marker_in_source_text"]
+        )
+
+    def test_isolated_failure_probe_provisions_and_revokes_unique_fixture(self):
+        class Admin:
+            base_url = "http://unit"
+            token = "admin-token"
+
+        captured = {}
+
+        def provision(_client, **kwargs):
+            captured["provision"] = kwargs
+            return {
+                "token": "scoped-token-must-not-be-recorded",
+                "authorization_scope": "eval:unit/probe",
+                "requested_authorization_scope": "eval:unit/probe",
+                "status_url": (
+                    "/v1/workspace/admin/eval/imports/simple-import:unit"
+                ),
+                "credential_provenance": "service_issued_case_scope",
+                "provisioning": {},
+            }
+
+        def core(_client, **kwargs):
+            captured["core"] = kwargs
+            return {
+                "status": "passed",
+                "pass": True,
+                "required": True,
+            }
+
+        with (
+            patch("performance_eval.NativeApiClient", return_value=object()),
+            patch(
+                "performance_eval.provision_evaluation",
+                side_effect=provision,
+            ),
+            patch(
+                "performance_eval.semantic_failure_probe",
+                side_effect=core,
+            ),
+            patch(
+                "performance_eval.cleanup_fixture",
+                return_value={
+                    "attempted": True,
+                    "credential_revocation_verified": True,
+                    "pass": True,
+                },
+            ) as cleanup,
+        ):
+            result = isolated_semantic_failure_probe(
+                Admin(),  # type: ignore[arg-type]
+                run_id="perf-unit",
+                protocol="simple",
+                required=True,
+                start_command="/usr/bin/true start",
+                stop_command="/usr/bin/true stop",
+                settle_seconds=0.0,
+                timeout_seconds=30.0,
+            )
+
+        self.assertTrue(result["pass"])
+        self.assertTrue(captured["provision"]["wait_for_semantic"])
+        self.assertEqual(len(captured["provision"]["documents"]), 1)
+        self.assertIsNone(captured["core"]["session_id"])
+        self.assertIn(
+            captured["core"]["marker"],
+            captured["provision"]["documents"][0]["content"],
+        )
+        self.assertNotIn(
+            "scoped-token-must-not-be-recorded",
+            json.dumps(result),
+        )
+        cleanup.assert_called_once_with(
+            ANY,
+            status_url=(
+                "/v1/workspace/admin/eval/imports/simple-import:unit"
+            ),
+        )
+
+    def test_isolated_failure_probe_cleanup_failure_is_fatal(self):
+        class Admin:
+            base_url = "http://unit"
+            token = "admin-token"
+
+        metadata = {
+            "token": "scoped-token",
+            "authorization_scope": "eval:unit/probe",
+            "requested_authorization_scope": "eval:unit/probe",
+            "status_url": "/v1/workspace/admin/eval/imports/unit",
+            "credential_provenance": "service_issued_case_scope",
+            "provisioning": {},
+        }
+        with (
+            patch("performance_eval.NativeApiClient", return_value=object()),
+            patch(
+                "performance_eval.provision_evaluation",
+                return_value=metadata,
+            ),
+            patch(
+                "performance_eval.semantic_failure_probe",
+                return_value={
+                    "status": "passed",
+                    "pass": True,
+                    "required": True,
+                },
+            ),
+            patch(
+                "performance_eval.cleanup_fixture",
+                return_value={
+                    "attempted": True,
+                    "credential_revocation_verified": False,
+                    "pass": False,
+                    "error": "credential remained live",
+                },
+            ),
+        ):
+            result = isolated_semantic_failure_probe(
+                Admin(),  # type: ignore[arg-type]
+                run_id="perf-unit",
+                protocol="simple",
+                required=True,
+                start_command="/usr/bin/true start",
+                stop_command="/usr/bin/true stop",
+                settle_seconds=0.0,
+                timeout_seconds=30.0,
+            )
+
+        self.assertFalse(result["pass"])
+        self.assertEqual(result["status"], "cleanup_failed")
 
     def test_percentile_interpolates_small_samples(self):
         self.assertEqual(percentile([], 0.95), 0.0)

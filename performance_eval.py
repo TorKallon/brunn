@@ -27,6 +27,7 @@ from native_eval import (
     NativeApiClient,
     NativeApiError,
     provision_evaluation,
+    public_provisioning,
     recursively_redact_secrets,
 )
 from eval.e09_step_authorization import load_step_authorization
@@ -34,6 +35,7 @@ from eval.hook_provenance import (
     hook_target_matches,
     run_hook as run_provenance_hook,
 )
+from eval.semantic_http_probe import cleanup_fixture
 from semantic_eval_policy import (
     response_has_candidates,
     semantic_counter_delta,
@@ -1040,6 +1042,84 @@ def source_text_contains(value: Any, needle: str) -> bool:
         )
 
     return visit(value)
+
+
+def candidate_audit(
+    value: Any,
+    *,
+    marker: str,
+    target_path: str,
+    limit: int = 8,
+) -> dict[str, Any]:
+    """Return bounded, source-bound evidence about retrieval candidates."""
+    candidates: list[dict[str, Any]] = []
+
+    def visit(item: Any) -> None:
+        if isinstance(item, dict):
+            nested = item.get("candidates")
+            if isinstance(nested, list):
+                candidates.extend(
+                    candidate
+                    for candidate in nested
+                    if isinstance(candidate, dict)
+                )
+            for key, child in item.items():
+                if key != "candidates":
+                    visit(child)
+        elif isinstance(item, list):
+            for child in item:
+                visit(child)
+
+    visit(value)
+    target_key = target_path.casefold()
+    summaries = []
+    target_found = False
+    for candidate in candidates[:limit]:
+        path = candidate.get("path")
+        path_matches = (
+            isinstance(path, str)
+            and path.casefold() == target_key
+        )
+        marker_in_source_text = source_text_contains(candidate, marker)
+        target_found |= path_matches and marker_in_source_text
+        summaries.append({
+            "path": path if isinstance(path, str) else None,
+            "heading": (
+                candidate.get("heading")
+                if isinstance(candidate.get("heading"), str)
+                else None
+            ),
+            "content_sha256": (
+                candidate.get("content_sha256")
+                if isinstance(candidate.get("content_sha256"), str)
+                else None
+            ),
+            "version": (
+                candidate.get("version")
+                if isinstance(candidate.get("version"), int)
+                and not isinstance(candidate.get("version"), bool)
+                else None
+            ),
+            "lanes": (
+                candidate.get("lanes")
+                if isinstance(candidate.get("lanes"), list)
+                else None
+            ),
+            "score": (
+                candidate.get("score")
+                if isinstance(candidate.get("score"), (int, float))
+                and not isinstance(candidate.get("score"), bool)
+                else None
+            ),
+            "target_path_match": path_matches,
+            "marker_in_source_text": marker_in_source_text,
+        })
+    return {
+        "candidate_count": len(candidates),
+        "target_found": target_found,
+        "candidates": summaries,
+        "truncated": len(candidates) > limit,
+    }
 
 
 def response_reports_lane_failure(value: Any, lane: str) -> bool:
@@ -2847,8 +2927,8 @@ def semantic_failure_probe(
     *,
     protocol: str,
     authorization_scope: str,
-    session_id: str,
-    scale: int,
+    session_id: str | None,
+    query: str,
     marker: str,
     target_path: str,
     required: bool,
@@ -2880,36 +2960,28 @@ def semantic_failure_probe(
         if protocol == "simple"
         else f"{operation_prefix}/query"
     )
-    discovery_key = synthetic_discovery_key(scale)
-
-    def target_found(body: dict[str, Any]) -> bool:
-        return bool(
-            response_has_candidates(body)
-            and (
-                rendered_contains(body, marker)
-                or rendered_contains(body, target_path)
-            )
-        )
 
     def search(
         query_id: str,
-        query: str,
+        query_text: str,
         modes: list[str],
     ) -> tuple[dict[str, Any], float]:
+        payload: dict[str, Any] = {
+            "queries": [{
+                "id": query_id,
+                "goal": "locate the isolated semantic failure probe source",
+                "query": query_text,
+                "scope": authorization_scope,
+                "modes": modes,
+                "limit": 8,
+            }],
+        }
+        if session_id:
+            payload["session_id"] = session_id
         body, elapsed_ms = request_with_result(
             client,
             search_path,
-            {
-                "session_id": session_id,
-                "queries": [{
-                    "id": query_id,
-                    "goal": "locate the current terminal-corpus answer",
-                    "query": query,
-                    "scope": authorization_scope,
-                    "modes": modes,
-                    "limit": 8,
-                }],
-            },
+            payload,
         )
         return body, round(elapsed_ms, 3)
 
@@ -2920,10 +2992,17 @@ def semantic_failure_probe(
         "injected_mixed": None,
         "restored_semantic": None,
     }
+    candidate_audits: dict[str, dict[str, Any] | None] = {
+        "baseline_semantic": None,
+        "injected_semantic": None,
+        "injected_exact_lexical": None,
+        "injected_mixed": None,
+        "restored_semantic": None,
+    }
     try:
         baseline, latencies_ms["baseline_semantic"] = search(
             "semantic-provider-baseline",
-            f"Semantically locate the answer associated with {discovery_key}.",
+            f"{query} semantic-baseline",
             ["semantic"],
         )
     except NativeApiError as error:
@@ -2935,8 +3014,15 @@ def semantic_failure_probe(
             "reason": "semantic-only retrieval did not work before injection",
             "baseline_http_status": error.status,
             "latencies_ms": latencies_ms,
+            "candidate_audits": candidate_audits,
         }
-    baseline_target_found = target_found(baseline)
+    baseline_audit = candidate_audit(
+        baseline,
+        marker=marker,
+        target_path=target_path,
+    )
+    candidate_audits["baseline_semantic"] = baseline_audit
+    baseline_target_found = bool(baseline_audit["target_found"])
     baseline_healthy = bool(
         not response_reports_lane_failure(baseline, "semantic")
         and baseline_target_found
@@ -2953,6 +3039,7 @@ def semantic_failure_probe(
             "baseline_semantic_lane_healthy": False,
             "baseline_semantic_target_found": baseline_target_found,
             "latencies_ms": latencies_ms,
+            "candidate_audits": candidate_audits,
         }
 
     start_result = run_external_hook(
@@ -2976,11 +3063,13 @@ def semantic_failure_probe(
             try:
                 failed_semantic, latencies_ms["injected_semantic"] = search(
                     "semantic-provider-outage",
-                    (
-                        "During the provider probe, semantically retrieve the "
-                        f"answer associated with {discovery_key}."
-                    ),
+                    f"{query} semantic-outage",
                     ["semantic"],
+                )
+                candidate_audits["injected_semantic"] = candidate_audit(
+                    failed_semantic,
+                    marker=marker,
+                    target_path=target_path,
                 )
                 semantic_failure_observed = response_reports_lane_failure(
                     failed_semantic,
@@ -2997,16 +3086,28 @@ def semantic_failure_probe(
 
             lexical, latencies_ms["injected_exact_lexical"] = search(
                 "provider-outage-lexical",
-                discovery_key,
+                query,
                 ["exact", "lexical"],
             )
-            lexical_found = rendered_contains(lexical, marker)
+            lexical_audit = candidate_audit(
+                lexical,
+                marker=marker,
+                target_path=target_path,
+            )
+            candidate_audits["injected_exact_lexical"] = lexical_audit
+            lexical_found = bool(lexical_audit["target_found"])
             mixed, latencies_ms["injected_mixed"] = search(
                 "provider-outage-mixed",
-                discovery_key,
+                f"{query} mixed-outage",
                 ["exact", "lexical", "semantic"],
             )
-            mixed_found = rendered_contains(mixed, marker)
+            mixed_audit = candidate_audit(
+                mixed,
+                marker=marker,
+                target_path=target_path,
+            )
+            candidate_audits["injected_mixed"] = mixed_audit
+            mixed_found = bool(mixed_audit["target_found"])
     except (NativeApiError, RuntimeError) as error:
         probe_error = f"{type(error).__name__}: {error}"
     finally:
@@ -3021,15 +3122,18 @@ def semantic_failure_probe(
             try:
                 restored, latencies_ms["restored_semantic"] = search(
                     "semantic-provider-restored",
-                    (
-                        "After provider restoration, semantically locate the "
-                        f"answer associated with {discovery_key}."
-                    ),
+                    f"{query} semantic-restored",
                     ["semantic"],
                 )
+                restored_audit = candidate_audit(
+                    restored,
+                    marker=marker,
+                    target_path=target_path,
+                )
+                candidate_audits["restored_semantic"] = restored_audit
                 restored_found = bool(
                     not response_reports_lane_failure(restored, "semantic")
-                    and target_found(restored)
+                    and restored_audit["target_found"]
                 )
             except NativeApiError as error:
                 restored_found = False
@@ -3070,8 +3174,155 @@ def semantic_failure_probe(
         "restore_hook": restore_result,
         "hook_target_bound": hook_target_bound,
         "latencies_ms": latencies_ms,
+        "candidate_audits": candidate_audits,
         "error": probe_error,
     }
+
+
+def isolated_semantic_failure_probe(
+    admin: NativeApiClient,
+    *,
+    run_id: str,
+    protocol: str,
+    required: bool,
+    start_command: str | None,
+    stop_command: str | None,
+    settle_seconds: float,
+    timeout_seconds: float,
+    require_hook_attestation: bool = False,
+) -> dict[str, Any]:
+    if not start_command or not stop_command:
+        return semantic_failure_probe(
+            admin,
+            protocol=protocol,
+            authorization_scope="",
+            session_id=None,
+            query="",
+            marker="",
+            target_path="",
+            required=required,
+            start_command=start_command,
+            stop_command=stop_command,
+            settle_seconds=settle_seconds,
+            timeout_seconds=timeout_seconds,
+            require_hook_attestation=require_hook_attestation,
+        )
+    if protocol != "simple":
+        return {
+            "status": "lifecycle_failed",
+            "pass": False,
+            "required": required,
+            "reason": "isolated semantic failure probing requires simple protocol",
+        }
+
+    nonce = uuid.uuid4().hex
+    case_id = f"semantic-failure-{nonce}"
+    marker = f"semantic-failure-marker-{nonce}"
+    query = f"locate semantic failure qualification {marker}"
+    path = f"eval/semantic-failure-probe/{nonce}.md"
+    content = (
+        f"# Semantic failure probe {nonce}\n\n"
+        f"The unique current qualification marker is `{marker}`.\n\n"
+        f"Retrieval intent: {query}.\n"
+    )
+    document = {
+        "path": path,
+        "content": content,
+        "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "media_type": "text/markdown",
+    }
+    metadata: dict[str, Any] | None = None
+    scoped: NativeApiClient | None = None
+    core_result: dict[str, Any] | None = None
+    lifecycle_error: str | None = None
+    cleanup: dict[str, Any] = {
+        "attempted": False,
+        "pass": False,
+        "error": "fixture was not provisioned",
+    }
+    try:
+        probe_admin = NativeApiClient(
+            base_url=admin.base_url,
+            token=admin.token,
+            run_id=run_id,
+            case_id=case_id,
+            timeout=timeout_seconds,
+        )
+        metadata = provision_evaluation(
+            probe_admin,
+            run_id=run_id,
+            case_id=case_id,
+            display_scope=f"Semantic failure probe {nonce}",
+            access_mode="read_write",
+            documents=[document],
+            timeout_seconds=timeout_seconds,
+            import_path="/v1/workspace/admin/eval/import",
+            wait_for_semantic=True,
+        )
+        scoped = NativeApiClient(
+            base_url=admin.base_url,
+            token=str(metadata["token"]),
+            run_id=run_id,
+            case_id=case_id,
+            timeout=timeout_seconds,
+        )
+        core_result = semantic_failure_probe(
+            scoped,
+            protocol=protocol,
+            authorization_scope=str(metadata["authorization_scope"]),
+            session_id=None,
+            query=query,
+            marker=marker,
+            target_path=path,
+            required=required,
+            start_command=start_command,
+            stop_command=stop_command,
+            settle_seconds=settle_seconds,
+            timeout_seconds=timeout_seconds,
+            require_hook_attestation=require_hook_attestation,
+        )
+    except Exception as error:
+        lifecycle_error = f"{type(error).__name__}: {error}"
+    finally:
+        if scoped is not None and metadata is not None:
+            status_url = str(metadata.get("status_url") or "")
+            if status_url:
+                cleanup = cleanup_fixture(scoped, status_url=status_url)
+            else:
+                cleanup = {
+                    "attempted": False,
+                    "pass": False,
+                    "error": "provisioning receipt omitted status_url",
+                }
+
+    result = dict(core_result or {
+        "status": "lifecycle_failed",
+        "pass": False,
+        "required": required,
+        "reason": "isolated semantic failure fixture did not complete",
+    })
+    result["fixture"] = {
+        "case_id": case_id,
+        "path": path,
+        "content_sha256": document["content_sha256"],
+        "marker_sha256": hashlib.sha256(marker.encode("utf-8")).hexdigest(),
+        "credential_recorded": False,
+        "provisioning": (
+            public_provisioning(metadata)
+            if metadata is not None
+            else None
+        ),
+    }
+    result["cleanup"] = cleanup
+    result["lifecycle_error"] = lifecycle_error
+    result["pass"] = bool(result.get("pass") and cleanup.get("pass"))
+    if core_result is not None and core_result.get("pass") and not result["pass"]:
+        result["status"] = "cleanup_failed"
+        result["reason"] = (
+            "semantic failure behavior passed but fixture cleanup or "
+            "credential revocation failed"
+        )
+    return result
 
 
 def verbatim_identifier_probe(
@@ -3594,6 +3845,27 @@ def benchmark_scale(
         timeout=timeout_seconds,
     )
     authorization_scope = provisioning["authorization_scope"]
+    failure_probe = (
+        isolated_semantic_failure_probe(
+            admin,
+            run_id=run_id,
+            protocol=protocol,
+            required=semantic_failure_required,
+            start_command=semantic_failure_start_command,
+            stop_command=semantic_failure_stop_command,
+            settle_seconds=semantic_failure_settle_seconds,
+            timeout_seconds=max(timeout_seconds, 30.0),
+            require_hook_attestation=(
+                require_semantic_failure_hook_attestation
+            ),
+        )
+        if run_semantic_failure
+        else {
+            "status": "not_applicable_at_this_scale",
+            "pass": None,
+            "required": False,
+        }
+    )
     semantic_coverage_probe: dict[str, Any] | None = None
     if e09_arm in {
         "unbounded_semantic",
@@ -4002,31 +4274,6 @@ def benchmark_scale(
         retrieval_modes=retrieval_modes,
         rounds=concurrent_rounds,
         response_samples=response_samples,
-    )
-    failure_probe = (
-        semantic_failure_probe(
-            client,
-            protocol=protocol,
-            authorization_scope=authorization_scope,
-            session_id=latest_session_id,
-            scale=scale,
-            marker=marker,
-            target_path=target_path,
-            required=semantic_failure_required,
-            start_command=semantic_failure_start_command,
-            stop_command=semantic_failure_stop_command,
-            settle_seconds=semantic_failure_settle_seconds,
-            timeout_seconds=max(timeout_seconds, 30.0),
-            require_hook_attestation=(
-                require_semantic_failure_hook_attestation
-            ),
-        )
-        if run_semantic_failure
-        else {
-            "status": "not_applicable_at_this_scale",
-            "pass": None,
-            "required": False,
-        }
     )
     if run_e03_mode1_pending:
         if (

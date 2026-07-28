@@ -160,7 +160,21 @@ MM-DD is the run date.
 4. Semantic-failure probe (within mode 2 config): the mode-2 wrapper wires the
    mock's injected-503 configure command and distinct fast-state restore
    command into `--semantic-failure-start-command` /
-   `--semantic-failure-stop-command`. In addition, run
+   `--semantic-failure-stop-command`. The required performance probe
+   provisions a nonce-bound, one-document evaluation user after the main
+   corpus is semantic-ready but before any measured request or concurrent
+   write. It waits for that isolated document to become semantic-ready, then
+   requires the exact path and marker to occur on the same returned candidate
+   before injection, during exact/lexical fallback, and after restore. The
+   artifact records a bounded candidate audit for every phase rather than
+   treating an arbitrary rendered marker as retrieval proof. Its `finally`
+   path atomically removes the isolated fixture and proves the scoped
+   credential was revoked; cleanup failure invalidates the run. This ordering
+   ensures both worker queues are drained before the provider-wide fault hook
+   changes state and prevents later main-corpus writes from contaminating the
+   outage probe.
+
+   Separately, run
    `eval/semantic_http_probe.py --run-id <unique-run>` with slow/restore proxy
    configure hooks. The probe now provisions its own unique one-document,
    read/write evaluation user and nonce-bearing marker, waits for semantic
@@ -217,8 +231,11 @@ MM-DD is the run date.
 3. Embed phase fully attributed: mode 3 embed p50/p95/p99 stated as absolute ms and as share of search total.
 4. Zero `retrieval_lane_deferred` / `semantic_unavailable` in all `--wait-semantic` sample sets; failure probe passes.
    The failure probe must return the planted target from a semantic-only query
-   both before injection and after restore; exact/lexical mixed-mode evidence
-   is tracked separately and cannot mask an empty semantic lane.
+   both before injection and after restore. Exact path and marker evidence
+   must be bound to the same candidate in the recorded candidate audit;
+   exact/lexical mixed-mode evidence is tracked separately and cannot mask an
+   empty semantic lane. Isolated-fixture cleanup and scoped-credential
+   revocation are part of the blocking probe result.
 5. Output explicitly labeled as the first semantic-ready profile, superseding the "no semantic-ready profile exists" caveat on all cited baselines.
 6. The D02 30-probe measurement is complete and internally exact in every arm:
    planted manifest, returned rows, identifiers, paths, byte offsets,
