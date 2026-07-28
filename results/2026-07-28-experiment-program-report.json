@@ -1,0 +1,689 @@
+{
+  "schema": "straylight-experiment-program-report@v1",
+  "created_at": "2026-07-28T13:34:39-07:00",
+  "evidence_snapshot_revision": "e2df1915a6e01606c6246ab8448b1f78b4ce62bc",
+  "status": "interim_e06_e08_in_progress",
+  "scope": {
+    "definitive_experiments": [
+      "E01",
+      "E02",
+      "E03",
+      "E04",
+      "E05"
+    ],
+    "in_progress_placeholders": [
+      "E06",
+      "E07",
+      "E08"
+    ],
+    "prerequisite_aborts": [
+      "E09",
+      "E10",
+      "E11"
+    ],
+    "experiment_object_count": 11
+  },
+  "verdict_semantics": {
+    "complete_baseline_parity_not_established": "The baseline and paired-draw machinery completed, but the primary non-inferiority gate was not established. This is not proof of inferiority.",
+    "complete_negative_rejected": "The tested implementation completed enough of its procedure to support a definitive rejection under the predeclared gate.",
+    "in_progress_not_evaluated": "No definitive result artifact exists in this snapshot. Predeclarations and partial work are not verdict evidence.",
+    "prerequisite_abort_not_evaluated": "The experiment was not executed because a prerequisite failed or was absent. The abort supports no efficacy verdict."
+  },
+  "cost_totals_for_definitive_and_prerequisite_abort_evidence": {
+    "included_experiments": [
+      "E01",
+      "E02",
+      "E03",
+      "E04",
+      "E05",
+      "E09",
+      "E10",
+      "E11"
+    ],
+    "actual_usage_billed_reasoning_usd": 0.0,
+    "actual_embedding_usd": 0.0,
+    "actual_subscription_equivalent_usd": 254.88,
+    "actual_subscription_equivalent_is_api_invoice": false,
+    "in_progress_e06_e08_excluded": true,
+    "embedding_warning_threshold_usd": 20.0,
+    "embedding_warning_triggered": false
+  },
+  "planned_in_progress_main_grids": {
+    "subscription_case_runs": 336,
+    "subscription_equivalent_usd": 80.64,
+    "expected_embedding_usd": 0.0,
+    "actual_cost": "not_consolidated_until_definitive_artifacts_exist"
+  },
+  "experiments": [
+    {
+      "id": "E01",
+      "title": "Paired-draw machinery and baseline",
+      "status": "complete",
+      "outcome_class": "complete_baseline_parity_not_established",
+      "experiment_executed": true,
+      "experiment_verdict": "non_inferiority_not_established",
+      "verdict_semantics": "The machinery gate passed, but the service-versus-sidecar parity gate did not. The lower confidence bound crossing the margin is not proof that the service is inferior.",
+      "execution": {
+        "cases": 59,
+        "arms": 3,
+        "repeated_draws_per_case": 3,
+        "definitive_case_runs": 531,
+        "excluded_calibration_case_runs": 3,
+        "total_subscription_case_runs": 534,
+        "input_json_artifacts": 15,
+        "top_level_errors": 0,
+        "top_level_timeouts": 0,
+        "actual_http_operations": 520,
+        "actual_http_200": 520
+      },
+      "metrics": {
+        "service_minus_filesystem_sidecar_claims": {
+          "point": -4.666667,
+          "bootstrap_95_ci": [
+            -13.666667,
+            4.333333
+          ],
+          "noninferiority_margin_claims": -5.0,
+          "noninferiority_established": false,
+          "exact_mcnemar_p": 0.423950195312
+        },
+        "service_minus_filesystem_claims": {
+          "point": -3.333333,
+          "bootstrap_95_ci": [
+            -13.666667,
+            6.333333
+          ]
+        },
+        "ruptureops_service_minus_filesystem_model_visible_chars": {
+          "service_mean": 63090.361,
+          "filesystem_mean": 142639.75,
+          "point": -79549.389,
+          "bootstrap_95_ci": [
+            -111508.19375,
+            -49126.00625
+          ],
+          "paired_service_overfetch_established": false
+        },
+        "suite_level_superiority_established": false
+      },
+      "feature_decision": {
+        "feature": null,
+        "state": "no_feature_change",
+        "decision": "Retain the measured baseline and make no service-parity, inferiority, or service-over-files overfetch claim."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 128.16,
+        "subscription_equivalent_includes_excluded_calibration": true
+      },
+      "provenance": {
+        "measured_source_revision": "232e7c6c8b8675d3ceeee3ff02a600ffdb95d2da",
+        "aggregation_revision": "8c6aa05e9c40100ec010dd28bedfe6e4ac5f258a",
+        "reasoning_route": "chatgpt_subscription",
+        "reasoning_api_fallback": "forbidden"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-28-e01-aggregate.json",
+          "sha256": "ae1bf01dfcb478b42edb7892ff1ddf38314a022180b0b7c065c502a35362d1db",
+          "role": "definitive_machine_aggregate"
+        },
+        {
+          "path": "results/2026-07-28-e01-aggregate.md",
+          "sha256": "32e99366225ec223350038e712a6adb3dde9cfc6b6e7932532910b5fb875f405",
+          "role": "definitive_human_report"
+        }
+      ],
+      "conclusion": "E01 completed the baseline and paired-draw machinery. Service non-inferiority was not established, no suite-level superiority was established, and paired RuptureOps output was materially lower than filesystem rather than overfetched."
+    },
+    {
+      "id": "E02",
+      "title": "Verbatim identifier gate",
+      "status": "complete_negative",
+      "outcome_class": "complete_negative_rejected",
+      "experiment_executed": true,
+      "experiment_verdict": "rejected",
+      "verdict_semantics": "The tested D02 implementation failed its deterministic feature contract; downstream soak and reasoning were correctly aborted.",
+      "execution": {
+        "deterministic_artifacts": 3,
+        "scales_per_artifact": 3,
+        "identifier_probes_per_scale": 30,
+        "identifier_probe_observations": 270,
+        "reasoning_case_runs": 0,
+        "future_soak_640000_run": false
+      },
+      "metrics": {
+        "stage1_returned_by_scale": {
+          "1000": 0,
+          "10000": 0,
+          "64000": 0,
+          "expected_each": 30
+        },
+        "stage2_flag_off_returned_by_scale": {
+          "1000": 0,
+          "10000": 0,
+          "64000": 0,
+          "expected_each": 30
+        },
+        "stage2_flag_on_returned_by_scale": {
+          "1000": 4,
+          "10000": 4,
+          "64000": 4,
+          "expected_each": 30
+        },
+        "successful_byte_offsets": [
+          2600
+        ],
+        "deeper_offsets_returned": 0,
+        "flag_on_search_query_count": 11,
+        "search_query_count_matches_flag_off": true
+      },
+      "feature_decision": {
+        "feature": "verbatim_spans",
+        "state": "off",
+        "decision": "Reject the current D02 implementation; repair it and rerun the free deterministic arm before any soak or reasoning."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 0.0,
+        "unincurred_subscription_equivalent_preflight_usd": 32.16
+      },
+      "provenance": {
+        "stage1_source_revision": "09581d471a58a036ef4c80576dec2433fa35c930",
+        "stage2_source_revision": "8baf0d305d90cdc48566df7679c07b0a66085707"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-27-e02-definitive-summary.json",
+          "sha256": "a5060af37aac41634ae68267906ffb4856e621fb97c5770e3939276951c62318",
+          "role": "definitive_summary"
+        }
+      ],
+      "conclusion": "Flag-on recovered only the four shallow probes and no deeper identifiers at every measured scale. D02 remains default-off."
+    },
+    {
+      "id": "E03",
+      "title": "Semantic-ready latency profile",
+      "status": "complete_negative",
+      "outcome_class": "complete_negative_rejected",
+      "experiment_executed": true,
+      "experiment_verdict": "rejected",
+      "verdict_semantics": "Exact/lexical Mode 1 passed, but the blocking semantic-ready Mode 2 gate failed. The overall semantic-path experiment is negative.",
+      "execution": {
+        "completed_modes": 2,
+        "samples_per_mode": 30,
+        "sample_observations": 60,
+        "mode3_run": false,
+        "quality_backfill_run": false
+      },
+      "metrics": {
+        "mode1": {
+          "documents": 64000,
+          "gates_passed": 62,
+          "gates_failed": 0,
+          "open_p95_ms": 113.998,
+          "search_p95_ms": 105.64
+        },
+        "mode2": {
+          "documents": 64000,
+          "gates_passed": 63,
+          "gates_failed": 1,
+          "failed_gate": "semantic_ready_runs_have_no_deferred_or_unavailable_lane",
+          "open_p95_ms": 42.537,
+          "search_p95_ms": 48.826,
+          "timeout_shaped_outlier_count": 4,
+          "timeout_shaped_outliers_ms": [
+            2512.762,
+            2512.285,
+            2520.935,
+            2511.169
+          ],
+          "semantic_coverage_status_at_end": "ready",
+          "pending_jobs_at_end": 0,
+          "failed_jobs_at_end": 0
+        }
+      },
+      "feature_decision": {
+        "feature": "semantic_lane",
+        "state": "off",
+        "decision": "Fix or redesign the synchronous semantic timeout path and rerun free Mode 2 before paid Mode 3 or E09."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 0.0,
+        "embedding_provider_billing": "owned_mock_free"
+      },
+      "provenance": {
+        "source_revision": "8e40d63fe3cf7f288d9c5067330ed0b191032f26"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-27-e03-definitive-summary.json",
+          "sha256": "52c9ff6835a3415a588828c2128d293b80b7ef61ddfb7dd6fd6588245da8cdf8",
+          "role": "definitive_summary"
+        }
+      ],
+      "conclusion": "The exact/lexical posture is acceptable under E03, but the current semantic-ready synchronous path is not. Semantic stays off."
+    },
+    {
+      "id": "E04",
+      "title": "Result budget experiment",
+      "status": "complete_negative",
+      "outcome_class": "complete_negative_rejected",
+      "experiment_executed": true,
+      "experiment_verdict": "rejected",
+      "verdict_semantics": "Both candidates passed deterministic safety gates but failed the primary efficacy tradeoff and chronic-case criterion.",
+      "execution": {
+        "reasoning_artifact_pairs": 52,
+        "case_runs": 528,
+        "successful_case_runs": 528,
+        "timed_out_case_runs": 0,
+        "errored_case_runs": 0,
+        "graded_claim_slots": 2112,
+        "deterministic_640000_soaks": 2
+      },
+      "metrics": {
+        "ruptureops": {
+          "arm_a_cluster_mean_service_result_chars": 59975.344,
+          "arm_b_cluster_mean_service_result_chars": 59221.611,
+          "arm_b_reduction": 0.01256738,
+          "arm_c_cluster_mean_service_result_chars": 55908.078,
+          "arm_c_reduction": 0.06781563,
+          "required_reduction": 0.25,
+          "absolute_target_chars": 53100,
+          "arm_b_exact_mcnemar_p": 0.625,
+          "arm_c_exact_mcnemar_p": 1.0
+        },
+        "chronic_extension_draws_4_and_5": {
+          "arm_b_wins_losses_ties": [
+            3,
+            4,
+            5
+          ],
+          "arm_c_wins_losses_ties": [
+            3,
+            3,
+            6
+          ],
+          "arm_b_previously_nonzero_case_to_zero_of_five": "0.2:star-rupture-plan-revision",
+          "arm_c_previously_nonzero_case_to_zero_of_five": "rupture-ops-v0.1:ruptureops-archive-import-reconciliation"
+        },
+        "hydration_query_comparator": {
+          "selected_search_samples": 795,
+          "selected_samples_with_delta_5": 795,
+          "unselected_nonzero_deltas": 0,
+          "pass": true
+        },
+        "performance_soaks_passed": true
+      },
+      "feature_decision": {
+        "features": {
+          "search_fair_share": false,
+          "search_char_cap": false,
+          "search_top1_hydration": false
+        },
+        "state": "retain_arm_a",
+        "decision": "Reject D01 in its tested form and ship neither Arm B nor Arm C."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "executed_subscription_case_runs": 528,
+        "actual_subscription_equivalent_usd": 126.72,
+        "unincurred_bisection_subscription_equivalent_usd": 12.96
+      },
+      "provenance": {
+        "source_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d",
+        "reasoning_route": "chatgpt_subscription",
+        "reasoning_api_fallback": "forbidden"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-28-e04-definitive-summary.json",
+          "sha256": "b92047dbf3273e3d90843a35e69751460c00fe3147b85133d4b5256e024abc99",
+          "role": "definitive_summary"
+        },
+        {
+          "path": "results/2026-07-28-e04-report.md",
+          "sha256": "86b6207c5daf63c90d03d606b5165ef61360d2fe66d3735271f6eaa29959a81a",
+          "role": "definitive_human_report"
+        }
+      ],
+      "conclusion": "Neither D01 candidate achieved enough RuptureOps character reduction, and both failed the chronic criterion. Retain baseline Arm A."
+    },
+    {
+      "id": "E05",
+      "title": "Lexical consolidation guard",
+      "status": "complete_negative",
+      "outcome_class": "complete_negative_rejected",
+      "experiment_executed": true,
+      "experiment_verdict": "rejected",
+      "verdict_semantics": "The treatment preserved deterministic retrieval but achieved no SQL-statement reduction, so the blocking comparator failed and reasoning was prohibited.",
+      "execution": {
+        "deterministic_640000_soaks": 2,
+        "selected_paired_search_samples": 795,
+        "reasoning_case_runs": 0
+      },
+      "metrics": {
+        "treatment_old_source_probes": {
+          "passed": 30,
+          "total": 30
+        },
+        "treatment_bounded_overflow_probes": {
+          "passed": 30,
+          "total": 30
+        },
+        "treatment_unrelated_write_p95_ms": 13.683,
+        "unrelated_write_gate_ms": 58.0,
+        "paired_query_counts": {
+          "selected_samples": 795,
+          "observed_unique_deltas": [
+            0
+          ],
+          "strict_reductions": 0,
+          "unselected_operation_nonzero_deltas": 0,
+          "blocking_requirement_met": false
+        }
+      },
+      "feature_decision": {
+        "feature": "lexical_single_scan",
+        "state": "off",
+        "decision": "Drop the candidate permanently and close the deferred D10 item."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 0.0,
+        "unincurred_reasoning_preflight_usd": 23.52
+      },
+      "provenance": {
+        "source_revision": "1c37f15e66e44134dcb55868cc8907d4e444ae0d"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-28-e05-definitive-summary.json",
+          "sha256": "f4c964d3dab3f18745a852c39879bcf4dde7378266e0c4edc0fbf51af7a5422a",
+          "role": "definitive_summary"
+        },
+        {
+          "path": "results/2026-07-28-e05-report.md",
+          "sha256": "e95799a86e13ebad4cb24ca09567ae71ec4cdc2834d247327fff306e83a28664",
+          "role": "definitive_human_report"
+        }
+      ],
+      "conclusion": "The treatment was retrieval-safe but mechanically inert: all 795 selected statement-count deltas were zero. Do not ship it."
+    },
+    {
+      "id": "E06",
+      "title": "Resume delta experiment",
+      "status": "in_progress",
+      "outcome_class": "in_progress_not_evaluated",
+      "experiment_executed": null,
+      "experiment_verdict": "not_evaluated",
+      "verdict_semantics": "No definitive E06 artifact exists in this snapshot. The frozen grid is process evidence only.",
+      "execution": {
+        "definitive_case_runs": null,
+        "definitive_artifacts_available": false,
+        "planned_main_grid_case_runs": 45
+      },
+      "metrics": null,
+      "feature_decision": {
+        "feature": "resume_deltas",
+        "state": "off_pending_result",
+        "decision": "Make no verdict; keep the feature off until definitive E06 evidence exists."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": null,
+        "actual_embedding_usd": null,
+        "actual_subscription_equivalent_usd": null,
+        "planned_main_grid_subscription_equivalent_usd": 10.8,
+        "expected_embedding_usd": 0.0,
+        "hard_ceiling_usd": 30.0
+      },
+      "provenance": {
+        "predeclaration_authoring_parent_revision": "d0fa7625420661826a0e71c9be9833b92fdf8b22"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-28-e06-grid-predeclaration.json",
+          "sha256": "9e0983315dd1b7f1ab9c63e4db3ee4c86c4bbc4d4bdf6927bf68e3cd02365dc5",
+          "role": "plan_only_not_result_evidence"
+        }
+      ],
+      "conclusion": "In progress; no result or conclusion is available from the checked-in evidence snapshot."
+    },
+    {
+      "id": "E07",
+      "title": "Supersession experiment",
+      "status": "in_progress",
+      "outcome_class": "in_progress_not_evaluated",
+      "experiment_executed": null,
+      "experiment_verdict": "not_evaluated",
+      "verdict_semantics": "No definitive E07 artifact exists in this snapshot. The frozen draw count is process evidence only.",
+      "execution": {
+        "definitive_case_runs": null,
+        "definitive_artifacts_available": false,
+        "planned_main_grid_case_runs": 162
+      },
+      "metrics": null,
+      "feature_decision": {
+        "feature": "supersession_demotion",
+        "state": "off_pending_result",
+        "decision": "Make no verdict; keep the feature off until definitive E07 evidence exists."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": null,
+        "actual_embedding_usd": null,
+        "actual_subscription_equivalent_usd": null,
+        "planned_main_grid_subscription_equivalent_usd": 38.88,
+        "expected_embedding_usd": 0.0,
+        "hard_ceiling_usd": 60.0
+      },
+      "provenance": {
+        "predeclaration_authoring_parent_revision": "eb781411d916b496d149bf2f504667f46d8b51a3"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-28-e07-draw-count-predeclaration.json",
+          "sha256": "95a05fbb66f3c600d406c1fed088a0b305f985b41d105c9007ac1463b4616050",
+          "role": "plan_only_not_result_evidence"
+        }
+      ],
+      "conclusion": "In progress; no result or conclusion is available from the checked-in evidence snapshot."
+    },
+    {
+      "id": "E08",
+      "title": "Intention ledger experiment",
+      "status": "in_progress",
+      "outcome_class": "in_progress_not_evaluated",
+      "experiment_executed": null,
+      "experiment_verdict": "not_evaluated",
+      "verdict_semantics": "No definitive E08 artifact exists in this snapshot. The experiment specification is process evidence only.",
+      "execution": {
+        "definitive_case_runs": null,
+        "definitive_artifacts_available": false,
+        "planned_main_grid_case_runs": 129
+      },
+      "metrics": null,
+      "feature_decision": {
+        "feature": "intention_ledger",
+        "state": "off_pending_result",
+        "decision": "Make no verdict; keep the feature off until definitive E08 evidence exists."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": null,
+        "actual_embedding_usd": null,
+        "actual_subscription_equivalent_usd": null,
+        "planned_main_grid_subscription_equivalent_usd": 30.96,
+        "expected_embedding_usd": 0.0,
+        "hard_ceiling_usd": 40.0
+      },
+      "provenance": {
+        "specification_snapshot_revision": "e2df1915a6e01606c6246ab8448b1f78b4ce62bc"
+      },
+      "evidence": [
+        {
+          "path": "docs/mvp/E08-intention-ledger-experiment.md",
+          "sha256": "b84a13908ecd911cb0569a25e68f71e5e3e063f5854720a2f42038682cb4839a",
+          "role": "specification_only_not_result_evidence"
+        }
+      ],
+      "conclusion": "In progress; no result or conclusion is available from the checked-in evidence snapshot."
+    },
+    {
+      "id": "E09",
+      "title": "Semantic lane existence experiment",
+      "status": "prerequisite_abort",
+      "outcome_class": "prerequisite_abort_not_evaluated",
+      "experiment_executed": false,
+      "experiment_verdict": "not_evaluated",
+      "verdict_semantics": "The abort records prerequisite state only and is not a ship, bound, cut, pass, or fail verdict for the semantic lane.",
+      "execution": {
+        "service_stacks_started": 0,
+        "docker_projects_started": 0,
+        "deterministic_runs": 0,
+        "reasoning_case_runs": 0,
+        "embedding_requests": 0,
+        "quality_draw_artifacts": 0,
+        "latency_artifacts": 0
+      },
+      "metrics": {
+        "blockers": [
+          "E03 Mode 2 failed semantic_ready_runs_have_no_deferred_or_unavailable_lane",
+          "eval-corpus quality backfill not run"
+        ],
+        "future_embedding_expected_usd": 0.84,
+        "future_embedding_conservative_ceiling_usd": 2.0,
+        "future_embedding_warning_required": false
+      },
+      "feature_decision": {
+        "feature": "semantic_lane",
+        "state": "off",
+        "decision": "Do not run E09; repair and pass E03 Mode 2 and complete quality backfill first."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 0.0
+      },
+      "provenance": {
+        "source_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-28-e09-prerequisite-abort.json",
+          "sha256": "a18980a2e1dbfc373b3aac4fa91b01a40abe582a5edac12d6f33e750674f0d4f",
+          "role": "prerequisite_abort"
+        }
+      ],
+      "conclusion": "Not evaluated. Keep semantic_lane default-off; E09 supports no efficacy verdict."
+    },
+    {
+      "id": "E10",
+      "title": "Combined all-flags launch preflight",
+      "status": "prerequisite_abort",
+      "outcome_class": "prerequisite_abort_not_evaluated",
+      "experiment_executed": false,
+      "experiment_verdict": "not_evaluated",
+      "verdict_semantics": "The abort records that no accepted immutable launch manifest was eligible. It is not a Tier C launch or cutover verdict.",
+      "execution": {
+        "service_stacks_started": 0,
+        "docker_projects_started": 0,
+        "deterministic_runs": 0,
+        "reasoning_case_runs": 0,
+        "embedding_requests": 0,
+        "quality_draw_artifacts": 0,
+        "latency_artifacts": 0
+      },
+      "metrics": {
+        "satisfied_prerequisite": "E01 paired-draw machinery",
+        "blockers_at_abort_snapshot": [
+          "accepted immutable launch manifest absent",
+          "feature qualifications unresolved",
+          "E09 semantic posture prerequisite-aborted"
+        ],
+        "snapshot_caveat": "The abort artifact listed E04 among unresolved qualifications at d989ae5. E04 was subsequently completed and rejected; E06-E08 and E09 still block the manifest.",
+        "future_embedding_usd_under_specified_semantic_off_posture": 0.0
+      },
+      "feature_decision": {
+        "feature": "tier_c_launch_gate",
+        "state": "closed",
+        "decision": "Do not run E10 until every candidate has a ship/drop outcome and the exact accepted launch manifest is frozen and hashed."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 0.0
+      },
+      "provenance": {
+        "source_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-28-e10-prerequisite-abort.json",
+          "sha256": "6581cd5faa3d3769426594fc727a9ed3e2f88688849ac07acaa954225520c921",
+          "role": "prerequisite_abort"
+        }
+      ],
+      "conclusion": "Not evaluated. The Tier C gate remains closed and E10 supports no launch or cutover verdict."
+    },
+    {
+      "id": "E11",
+      "title": "Wiki-link leads paired experiment",
+      "status": "prerequisite_abort",
+      "outcome_class": "prerequisite_abort_not_evaluated",
+      "experiment_executed": false,
+      "experiment_verdict": "not_evaluated",
+      "verdict_semantics": "The abort records independent missing product and owner-input prerequisites. It is not a ship or kill verdict for wiki-link leads.",
+      "execution": {
+        "service_stacks_started": 0,
+        "docker_projects_started": 0,
+        "deterministic_runs": 0,
+        "reasoning_case_runs": 0,
+        "embedding_requests": 0,
+        "quality_draw_artifacts": 0,
+        "latency_artifacts": 0
+      },
+      "metrics": {
+        "blockers": [
+          "D02 rejected",
+          "D06 link_leads implementation absent",
+          "owner-authored and owner-signed-off link case manifest absent"
+        ],
+        "matching_link_leads_implementation_files_at_snapshot": 0,
+        "future_optional_owner_corpus_indexing_estimate_usd": 0.19,
+        "future_embedding_warning_required": false
+      },
+      "feature_decision": {
+        "feature": "link_leads",
+        "state": "unavailable_unbuilt",
+        "decision": "Leave D06 unbuilt; do not solicit the owner manifest until D02 and the other product prerequisites clear."
+      },
+      "cost": {
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 0.0
+      },
+      "provenance": {
+        "source_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b"
+      },
+      "evidence": [
+        {
+          "path": "results/2026-07-28-e11-prerequisite-abort.json",
+          "sha256": "8632bcfc5f79647086f342104664993670c8585ae05dfcd17f97a1cc07228976",
+          "role": "prerequisite_abort"
+        }
+      ],
+      "conclusion": "Not evaluated. D06 remains unbuilt and E11 supports no wiki-link efficacy verdict."
+    }
+  ],
+  "integrity_notes": [
+    "E10's abort artifact is snapshot-correct at d989ae5 but stale about E04, which was subsequently completed and rejected. The remaining E06-E09 blockers preserve the abort conclusion.",
+    "E01 aggregate draws=15 counts five suite artifacts across three repeated draws; the definitive case-run count is 531.",
+    "E03's blocking Mode 2 failure controls the overall semantic-path verdict even though Mode 1 passed.",
+    "No predeclaration, partial run, or prerequisite abort was promoted to an efficacy verdict."
+  ]
+}
