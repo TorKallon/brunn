@@ -1,0 +1,665 @@
+{
+  "schema": "straylight-checkpoint-query-diagnostic@v1",
+  "created_at": "2026-07-28T00:34:17-07:00",
+  "status": "complete",
+  "pass": true,
+  "run": {
+    "run_id": "e03-checkpoint-query-semantic-ready",
+    "case_id": "checkpoint-query-diagnostic-9d1911ba0d1947d289623ab04f92948e",
+    "runtime_posture": "semantic-ready",
+    "requested_samples": 30,
+    "minimum_samples": 30,
+    "api_url_sha256": "889ed5677c4cc64fcea4e6aba07eca112be79529a1b03196fed8af7ea07a8ff2",
+    "expected_build_revision": "4cde5edb809cb4158d632256273b5b611db8728a"
+  },
+  "implementation_provenance": {
+    "script": "eval/checkpoint_query_diagnostic.py",
+    "script_sha256": "4701f460a383bf88ffa3631bb20ffb1534b50ea056a5688814db0dd1a0f21989",
+    "git_revision": "7cdb60ae0118a2497d2ced04a58015548d357cbf",
+    "git_tree": "42305b19fb1b2c7982cafb7c3913ec28120b26d8",
+    "tracked_tree_clean": true,
+    "pass": true
+  },
+  "runtime": {
+    "build_revision": "4cde5edb809cb4158d632256273b5b611db8728a",
+    "semantic_lane": true,
+    "embedding_provider": "openai",
+    "embedding_model": "text-embedding-3-small",
+    "embedding_status": "ready",
+    "http_status": 200,
+    "pass": true
+  },
+  "provisioning": {
+    "access_mode": "read_write",
+    "credential_provenance": "service_issued_case_scope",
+    "authorization_scope_sha256": "1b858d0e949738c9b8e80954baf86e4ad0dce7fdadcacb67bcdbadbcbc01ef52",
+    "status_url_sha256": "b80900e8d9c21f77d34d03b3be3271ecc435ec8e4192b169ab530ba05a0ab7b9",
+    "document": {
+      "path": "eval/checkpoint-query-diagnostic/9d1911ba0d1947d289623ab04f92948e.md",
+      "content_sha256": "6fed7e8cc6b8b04b2b042506c0f1feef9ff8d8bcca5efa14497700dd42bef55c",
+      "content_bytes": 187
+    },
+    "requested_runtime_posture": "semantic-ready",
+    "import": {
+      "documents": 1,
+      "delta_documents": 0,
+      "import_http_status": 200,
+      "import_elapsed_ms": 61.803,
+      "import_batch_count": 1,
+      "max_batch_documents": 1
+    },
+    "credential_recorded": false
+  },
+  "index_posture": {
+    "posture": "semantic-ready",
+    "initial_index_status": {
+      "exact": "ready",
+      "lexical": "ready",
+      "semantic": "pending"
+    },
+    "final_index_status": {
+      "exact": "ready",
+      "lexical": "ready",
+      "semantic": "ready"
+    },
+    "semantic_waited": true,
+    "status_polls": 3,
+    "pass": true
+  },
+  "samples": [
+    {
+      "sample_index": 0,
+      "x_request_id": "req_019fa7a54fc279718c9de0a08e872c36",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 20.82,
+      "checkpoint_ref_sha256": "f511920797eaae08f1428839f67392d79c38994db866c54947954ebf0d7eef91",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 1,
+      "x_request_id": "req_019fa7a54fd773008d155002886889c6",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 10.864,
+      "checkpoint_ref_sha256": "3c8c5a65ca5ab4e5e61986c329cf5f6cae6878bd8f5b6a7dd1472383e3fa5fe4",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 2,
+      "x_request_id": "req_019fa7a54fe17eb39b094bfdf4a552ba",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 8.114,
+      "checkpoint_ref_sha256": "db25b2a11a996782d567c4749fd2b0fa3e64c35caa33b5a07ceaee5025c6d151",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 3,
+      "x_request_id": "req_019fa7a54fe974b0828d5ae6b0bcf4d7",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 10.735,
+      "checkpoint_ref_sha256": "3c942b1870b4b1bd5116ac0f8a01f9aa9a043ed75ae0fc68ff9ba8b67dbf7e74",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 4,
+      "x_request_id": "req_019fa7a54ff57d50b818dc7cf2fbf7a2",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 10.139,
+      "checkpoint_ref_sha256": "22ce993d2136204fd170edf9ce0986e6b6e0fd750635470f4ff4e738425c49a0",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 5,
+      "x_request_id": "req_019fa7a54ffe72d2985e3ff262d7a2cb",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 7.964,
+      "checkpoint_ref_sha256": "6a4960d7b8370daa57cd54fa4d08e65e75661ecbbb407cb7fd022904b4fff79f",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 6,
+      "x_request_id": "req_019fa7a550077673bed94a3972bdf028",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 7.979,
+      "checkpoint_ref_sha256": "8046ae360330f534d5d15c507771579329bc7d5a9ccc6ccbfd62fc1bfd15437e",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 7,
+      "x_request_id": "req_019fa7a5500f7bf1be98c233908842db",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 10.102,
+      "checkpoint_ref_sha256": "090b04b48da14ef7e7065fb3d36ac86ed3397b8568bed7de023f461ec3963d35",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 8,
+      "x_request_id": "req_019fa7a5501a78c1aabd151b5324bb73",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 11.064,
+      "checkpoint_ref_sha256": "a414565d695d4fba94bfed2d16cda6d8bc884d886e39247d89a1eeddeb2e1258",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 9,
+      "x_request_id": "req_019fa7a550247762a1da1895cedb3bb7",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 8.815,
+      "checkpoint_ref_sha256": "34e3cbcdf391d9292eb0a0e1a54c1e1d07f56f1a82266e42aab234a8d29979e9",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 10,
+      "x_request_id": "req_019fa7a5502d79d3b27d6b78bfcba62a",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 11.663,
+      "checkpoint_ref_sha256": "a408c3504e9d628afd1cb243ee18f85397fa2f0ac1842035d7e8670942fe9b77",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 11,
+      "x_request_id": "req_019fa7a550397a01aa7d7f9fefee86a8",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 9.311,
+      "checkpoint_ref_sha256": "7c5c513ad05fb78b5242c1439d73a571d7cea2f3349855c58bb1cdcc38561487",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 12,
+      "x_request_id": "req_019fa7a5504273638f4bd8df5e1cabf3",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 7.125,
+      "checkpoint_ref_sha256": "a9156855fc4d9c80dea01c4e900b492ba60655620260ee10d705c856abd817af",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 13,
+      "x_request_id": "req_019fa7a550497401b50b990dfa7ef273",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 6.345,
+      "checkpoint_ref_sha256": "c5b905df73ad2e9832dde15ca52986ea4dede3207c0992759d6dff395cec9882",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 14,
+      "x_request_id": "req_019fa7a5504f7f029c503e9d7ab150a0",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 6.539,
+      "checkpoint_ref_sha256": "e8146d945a0bbff83f40a54d54d13b8f872521020f91ab88ab7228a9029911f7",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 15,
+      "x_request_id": "req_019fa7a55056727083742e557b3a4ecf",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 6.339,
+      "checkpoint_ref_sha256": "6a0ea88db9f15eca9d530a9260da29f5f4d968c85232d43831e9bd0c556c0718",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 16,
+      "x_request_id": "req_019fa7a5505d75e0b345c652ec7530b2",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 7.633,
+      "checkpoint_ref_sha256": "ccad51265cd41386d87bd16be42ae19c67f0b42f5556e93831e0d6ca20729db9",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 17,
+      "x_request_id": "req_019fa7a550647af38041da7089bc9d09",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 6.337,
+      "checkpoint_ref_sha256": "f0e043848db603c3a3905f04a78022f996169837c0a84ddd3b611b497574de77",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 18,
+      "x_request_id": "req_019fa7a5506b74e39c16f49476e89dd6",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 8.88,
+      "checkpoint_ref_sha256": "cba4179786a91a2b0fa744097d1c54dd3b8ebe8fa7abcf8586788a8992499f18",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 19,
+      "x_request_id": "req_019fa7a550747a92a46d221dea45dec7",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 9.52,
+      "checkpoint_ref_sha256": "d878606790fc9080745bf22e015ecbfa37c1757ef29a3cceb821ecf694d21970",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 20,
+      "x_request_id": "req_019fa7a5507e7391b0b9d9e8d93bafa9",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 7.97,
+      "checkpoint_ref_sha256": "7c11099fcf5e9e8bde48598db832804c056246e09a1d1158d118629689d124ec",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 21,
+      "x_request_id": "req_019fa7a550867763b0f1cc82ad9094f6",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 6.487,
+      "checkpoint_ref_sha256": "566c4d6f2ac6d7089fcc3a480630898ef7c05f44a5fab20fbfeefb8fbd24a211",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 22,
+      "x_request_id": "req_019fa7a5508d71128ae93acc171aa368",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 7.835,
+      "checkpoint_ref_sha256": "94abf3f0f2ec7b7ea1a664ba27ca593dc7d86464983b9db501a9390136c7f177",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 23,
+      "x_request_id": "req_019fa7a550947bb3af72044437e5386b",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 6.48,
+      "checkpoint_ref_sha256": "2b18037a4a0a551c053c507ebb3b8c1c1a197a0ed7e50eb953a1f0f21b066325",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 24,
+      "x_request_id": "req_019fa7a5509a77d38e46f9aae5d32f88",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 6.392,
+      "checkpoint_ref_sha256": "dc8a9afec0490a9d0fe52b388f7245a3953fb99ac6d13de1459630070a44cb55",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 25,
+      "x_request_id": "req_019fa7a550a270c28b1e8a6193ab1df6",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 7.622,
+      "checkpoint_ref_sha256": "44d57de06e1941a5dcc16e1d461214a2649d8fe7885c1ccb1596af61a7aeb572",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 26,
+      "x_request_id": "req_019fa7a550aa75409c3156eb081c6633",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 8.54,
+      "checkpoint_ref_sha256": "544430536fd327328b18bd07cd4b2deedb06d212995a4797c2998392e754b08a",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 27,
+      "x_request_id": "req_019fa7a550b27fc1829a9b04883eda57",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 10.467,
+      "checkpoint_ref_sha256": "bd327cfe33733eb4884e64f065505bfc18a4b743e8eb9745d9d6a5ab3e43665c",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 28,
+      "x_request_id": "req_019fa7a550bd77319939040b4bbf046c",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 8.096,
+      "checkpoint_ref_sha256": "6b99d9dfaf3b84e48c2011b558bdaab306aaad9ea7d61eafeceed87935b6becb",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    },
+    {
+      "sample_index": 29,
+      "x_request_id": "req_019fa7a550c47ea395529e38cb5a8d32",
+      "query_count": 28,
+      "http_status": 200,
+      "elapsed_ms": 6.728,
+      "checkpoint_ref_sha256": "e2c116a0bb8d5edd3f8862e0732a25264f41272bf4b0273d8f96a72ff988ea31",
+      "checks": {
+        "http_200": true,
+        "committed": true,
+        "fresh_write": true,
+        "one_inferred_source": true,
+        "query_count": true,
+        "request_id": true,
+        "checkpoint_ref": true
+      },
+      "pass": true
+    }
+  ],
+  "query_count_distribution": {
+    "samples": 30,
+    "min": 28,
+    "max": 28,
+    "histogram": {
+      "28": 30
+    },
+    "deterministic": true
+  },
+  "freshness": {
+    "unique_request_ids": true,
+    "unique_checkpoint_refs": true
+  },
+  "cleanup": {
+    "attempted": true,
+    "status_url_sha256": "b80900e8d9c21f77d34d03b3be3271ecc435ec8e4192b169ab530ba05a0ab7b9",
+    "response": {
+      "http_status": 200,
+      "body": {
+        "credentials_revoked": 1,
+        "entries_removed": 31,
+        "import_id": "simple-import:52ac9b82-47bb-4520-851b-5b3d2eee8ca3",
+        "jobs_removed": 23,
+        "revoked_at": "2026-07-28T07:34:17.037313Z",
+        "search_chunks_removed": 241,
+        "status": "cleaned"
+      }
+    },
+    "credential_revocation_verified": true,
+    "pass": true,
+    "error": null,
+    "cleanup_receipt": {
+      "status": "cleaned",
+      "import_id": "simple-import:52ac9b82-47bb-4520-851b-5b3d2eee8ca3",
+      "entries_removed": 31,
+      "search_chunks_removed": 241,
+      "jobs_removed": 23,
+      "credentials_revoked": 1,
+      "revoked_at": "2026-07-28T07:34:17.037313Z"
+    }
+  },
+  "log_correlation": {
+    "status": "pending",
+    "request_id_header": "x-request-id",
+    "required_runtime_filter": "RUST_LOG=info,straylight=debug,sqlx::query=debug",
+    "bindings_logged": false,
+    "next_command": "checkpoint_query_diagnostic.py correlate --artifact <run.json> --api-log <api.jsonl> --out <out.json>"
+  },
+  "contract": {
+    "query_budget_mutated": false,
+    "reasoning_api_calls": 0,
+    "embedding_posture": "mode1-pending performs no embedding wait; semantic-ready uses the runtime's configured provider and should be run against the owned Mode 2 mock unless separately authorized"
+  },
+  "error": null
+}

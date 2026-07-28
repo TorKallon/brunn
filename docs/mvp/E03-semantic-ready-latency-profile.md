@@ -1,6 +1,6 @@
 # E03 — Semantic-Ready Latency Profile
 
-Status: Harness ready — not run
+Status: Harness ready — checkpoint query-count diagnostic complete; definitive E03 latency run not complete
 Date: 2026-07-27
 Gates: `--gate-profile e03-semantic-ready` with explicit `--e03-arm`; measurement baseline and the primary decision input to E09
 Phase: 0 (measurement; no product code — D09(a) instrumentation is a measurement enabler, not a behavior change)
@@ -68,6 +68,53 @@ the documented 12-hour stall boundary below; their owning wrappers outlive
 that boundary. A prior 1,800-second generic import default could terminate a
 healthy rate-limited 64K backfill before any latency sample and is retained
 only as excluded, non-evidentiary harness calibration.
+
+## Scoped checkpoint query-count diagnostic
+
+The 2026-07-27 query diagnostic is complete and passing. This result covers
+only fresh committed-checkpoint query counts and request-correlated SQL
+statement order; it does not complete the E03 latency, failure-probe, or
+quality-backfill acceptance work.
+
+All 60 fresh committed samples passed on product build
+`4cde5edb809cb4158d632256273b5b611db8728a`:
+
+| Runtime posture | Samples | Response `query_count` | Correlated SQL statements | Sequence |
+| --- | ---: | ---: | ---: | --- |
+| Mode 1 pending (`hashing`, semantic disabled) | 30 | 28 in 30/30 | 28 in 30/30 | `bd7a11cbafcd9bd367b02e320198800a29a1cb52267f2e5bc095dd79aa347ba8` |
+| Semantic ready (owned local Mode 2 mock) | 30 | 28 in 30/30 | 28 in 30/30 | `bd7a11cbafcd9bd367b02e320198800a29a1cb52267f2e5bc095dd79aa347ba8` |
+
+Every sample had a unique request ID and checkpoint reference. Request-ID
+correlation found one deterministic 28-statement sequence in each posture, and
+the normalized statement lists are identical. The semantic posture therefore
+cannot explain the prior lone `query_count=29` observation. Keep the checkpoint
+query budget at `<=28`; this diagnostic made no query-budget or product
+mutation.
+
+Both isolated fixtures were removed and both scoped credentials were proven
+revoked. Mode 1 cleanup removed 31 entries, 241 search chunks, and 31 jobs;
+semantic-ready cleanup removed 31 entries, 241 search chunks, and 23 jobs. The
+diagnostic used the owner's ChatGPT-authenticated Codex plan for reasoning and
+the owned local mock for the semantic-ready posture: zero reasoning API calls,
+zero external embedding-provider API calls, and **$0 billed cost**.
+
+The immutable evidence is:
+
+- [Mode 1 run](../../results/2026-07-27-e03-checkpoint-query-mode1-pending-run.json)
+  and [request-correlated SQL](../../results/2026-07-27-e03-checkpoint-query-mode1-pending-sql.json)
+- [Semantic-ready run](../../results/2026-07-27-e03-checkpoint-query-semantic-ready-run.json)
+  and [request-correlated SQL](../../results/2026-07-27-e03-checkpoint-query-semantic-ready-sql.json)
+- [Compact result, cleanup, provenance, hashes, cost, and exclusion summary](../../results/2026-07-27-e03-checkpoint-query-diagnostic-summary.json)
+
+Two failed run-local artifacts are excluded as harness calibration, not product
+results. `mode1-pending-run.json`
+(`0674d6f11363f07ba629e1f933f7e98390e09882e54cc6ffa04384833d77d6df`)
+used the earlier posture preflight contract and stopped before fixture
+mutation. `semantic-ready-sql.json`
+(`14ff0361142ad7d3bfece21f24818e2baa9c96d6f56a0d63d27ebdb147449cf4`)
+used the earlier SQLx parser that omitted `fields.summary`; its corrected
+correlation passes at 28/28 for all 30 requests. Neither excluded artifact is
+checked into `results/`.
 
 ## Arms
 

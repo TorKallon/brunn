@@ -1,0 +1,147 @@
+{
+  "schema": "straylight-checkpoint-query-diagnostic-summary@v1",
+  "plan_date": "2026-07-27",
+  "evidence_completed_at": "2026-07-28T00:39:49-07:00",
+  "status": "complete",
+  "pass": true,
+  "scope": {
+    "included": "fresh committed-checkpoint query counts and request-correlated SQL statement sequences",
+    "excluded": "the full E03 semantic-ready latency, failure-probe, and quality-backfill acceptance decision"
+  },
+  "product_build_revision": "4cde5edb809cb4158d632256273b5b611db8728a",
+  "result": {
+    "samples": 60,
+    "all_fresh_committed": true,
+    "query_count_histogram": {
+      "28": 60
+    },
+    "minimum_query_count": 28,
+    "maximum_query_count": 28,
+    "all_response_and_log_counts_match": true,
+    "statement_sequence_identical_between_postures": true,
+    "statement_sequence_sha256": "bd7a11cbafcd9bd367b02e320198800a29a1cb52267f2e5bc095dd79aa347ba8",
+    "statement_count": 28,
+    "postures": {
+      "mode1-pending": {
+        "samples": 30,
+        "response_query_count_histogram": {
+          "28": 30
+        },
+        "log_statement_count_histogram": {
+          "28": 30
+        },
+        "runtime": {
+          "embedding_provider": "hashing",
+          "embedding_model": "straylight-hashing-v1",
+          "embedding_status": "degraded",
+          "semantic_lane": false
+        }
+      },
+      "semantic-ready": {
+        "samples": 30,
+        "response_query_count_histogram": {
+          "28": 30
+        },
+        "log_statement_count_histogram": {
+          "28": 30
+        },
+        "runtime": {
+          "embedding_provider": "openai",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_status": "ready",
+          "semantic_lane": true,
+          "provider_endpoint": "owned local Mode 2 mock"
+        }
+      }
+    }
+  },
+  "conclusion": {
+    "semantic_posture_explains_prior_lone_29": false,
+    "statement": "The controlled pending and semantic-ready postures both execute the same 28-statement checkpoint sequence, so semantic posture cannot explain the prior lone query_count=29 observation.",
+    "query_budget_requirement": "<=28",
+    "query_budget_mutated": false
+  },
+  "cost": {
+    "reasoning_api_calls": 0,
+    "external_embedding_api_calls": 0,
+    "reasoning_billed_usd": 0.0,
+    "embedding_billed_usd": 0.0,
+    "total_billed_usd": 0.0,
+    "over_20_usd_notification_required": false
+  },
+  "cleanup": {
+    "all_attempted": true,
+    "all_passed": true,
+    "all_scoped_credentials_revoked": true,
+    "mode1-pending": {
+      "entries_removed": 31,
+      "search_chunks_removed": 241,
+      "jobs_removed": 31,
+      "credentials_revoked": 1,
+      "status": "cleaned"
+    },
+    "semantic-ready": {
+      "entries_removed": 31,
+      "search_chunks_removed": 241,
+      "jobs_removed": 23,
+      "credentials_revoked": 1,
+      "status": "cleaned"
+    }
+  },
+  "provenance": {
+    "mode1-pending": {
+      "harness_git_revision": "e0049259aacf5e7be542a05d36eb7ccdf31e8388",
+      "harness_git_tree": "f483c34589e867cfe7ce9e55be6c171e0450040a",
+      "harness_script_sha256": "a9266255eba9a5b99e7db8bc0342d3b9be6ad7abdbe75e69baeb0f257df70a3b",
+      "harness_tracked_tree_clean": true,
+      "api_log_sha256": "9a7786634082b1c6ae88d7a64f075738f4b35d10db55590964cdfa8957eeef19"
+    },
+    "semantic-ready": {
+      "harness_git_revision": "7cdb60ae0118a2497d2ced04a58015548d357cbf",
+      "harness_git_tree": "42305b19fb1b2c7982cafb7c3913ec28120b26d8",
+      "harness_script_sha256": "4701f460a383bf88ffa3631bb20ffb1534b50ea056a5688814db0dd1a0f21989",
+      "harness_tracked_tree_clean": true,
+      "api_log_sha256": "073de544e43f6f1886c6e3d97ca87d756f9d38ba178c8180abbdaef4e84e8e19"
+    }
+  },
+  "artifacts": [
+    {
+      "file": "results/2026-07-27-e03-checkpoint-query-mode1-pending-run.json",
+      "role": "passed run artifact",
+      "bytes": 20054,
+      "sha256": "06e42256063741c0a4e677f947176f23d3e32ea9819751ecf62a9f22192a2716"
+    },
+    {
+      "file": "results/2026-07-27-e03-checkpoint-query-mode1-pending-sql.json",
+      "role": "passed SQL correlation artifact",
+      "bytes": 23481,
+      "sha256": "894f24b1061f790699dd0616dcd989c0fc35b5891030fd91dab274f5a0e082bf"
+    },
+    {
+      "file": "results/2026-07-27-e03-checkpoint-query-semantic-ready-run.json",
+      "role": "passed run artifact",
+      "bytes": 20061,
+      "sha256": "81220321a9c404129fe8c606e8e7c1d1ce617befd184366a1cce81287d849dee"
+    },
+    {
+      "file": "results/2026-07-27-e03-checkpoint-query-semantic-ready-sql.json",
+      "role": "passed SQL correlation artifact",
+      "bytes": 23481,
+      "sha256": "134a2382e1231c16146c7c202ac9072ccb36859950be035635fd685e83092ee9"
+    }
+  ],
+  "excluded_harness_calibration_artifacts": [
+    {
+      "run_local_file": "mode1-pending-run.json",
+      "bytes": 2296,
+      "sha256": "0674d6f11363f07ba629e1f933f7e98390e09882e54cc6ffa04384833d77d6df",
+      "reason": "An earlier posture preflight contract rejected the expected hashing/degraded Mode 1 ready response before fixture mutation; the corrected v2 run passed."
+    },
+    {
+      "run_local_file": "semantic-ready-sql.json",
+      "bytes": 21460,
+      "sha256": "14ff0361142ad7d3bfece21f24818e2baa9c96d6f56a0d63d27ebdb147449cf4",
+      "reason": "An earlier correlator did not read SQLx statements from fields.summary and undercounted the raw log; the corrected v2 correlation passed at 28/28 for all 30 requests."
+    }
+  ]
+}
