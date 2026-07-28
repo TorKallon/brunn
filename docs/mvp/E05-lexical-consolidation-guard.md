@@ -60,12 +60,20 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
    comparative latency and query-count control; it does not weaken the Arm B
    cheap-kill gate.
 4. Paired draws, N = 1..3, alternating arms per draw to avoid drift:
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --condition service_api --experiment-arm e05-A --paired-draw-id "e05-work-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag lexical_single_scan=off --run-tag E05 --run-tag armA --concurrency 3 --timeout 360 --run-id "e05-armA-draw${N}" --out "results/2026-MM-DD-e05-lexical-armA-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-armA-draw${N}.md"` (flag off), then the same with `--experiment-arm e05-B`, `--expect-feature-flag lexical_single_scan=on`, and an API actually started with the treatment flag on. Both arms use the same paired-draw ID and distinct run IDs.
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --condition service_api --experiment-arm e05-A --paired-draw-id "e05-work-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag lexical_single_scan=off --run-tag E05 --run-tag armA --concurrency 3 --timeout 360 --run-id "e05-armA-draw${N}" --out "results/2026-MM-DD-e05-lexical-armA-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-armA-draw${N}.md"` (flag off), then the same with `--experiment-arm e05-B`, `--expect-feature-flag lexical_single_scan=on`, and an API actually started with the treatment flag on. Both arms use the same paired-draw ID and distinct run IDs.
 5. Targeted 5-draw repeats, N = 1..5, both arms:
-   Use the same arm identities and feature-state declarations with `--manifest eval/e05_targeted_cases.json`, shared `--paired-draw-id e05-targeted-draw<N>`, and distinct run IDs.
+   - Arm A:
+     `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json run --service-protocol simple --condition service_api --experiment-arm e05-A --paired-draw-id "e05-targeted-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag lexical_single_scan=off --run-tag E05 --run-tag targeted --run-tag armA --concurrency 3 --timeout 360 --run-id "e05-targeted-armA-draw${N}" --out "results/2026-MM-DD-e05-lexical-targeted-armA-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-targeted-armA-draw${N}.md"`.
+   - Arm B:
+     `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json run --service-protocol simple --condition service_api --experiment-arm e05-B --paired-draw-id "e05-targeted-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag lexical_single_scan=on --run-tag E05 --run-tag targeted --run-tag armB --concurrency 3 --timeout 360 --run-id "e05-targeted-armB-draw${N}" --out "results/2026-MM-DD-e05-lexical-targeted-armB-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-targeted-armB-draw${N}.md"`.
+   Both arms use the same `e05-targeted-draw${N}` paired-draw ID. Do not reuse
+   the full-suite artifact names or run IDs.
 6. Aggregate exact arrays separately:
    `E05_FULL=(results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E05_FULL[@]}" --expected-arm e05-B --expected-arm e05-A --out results/2026-MM-DD-e05-full-aggregate.json`.
-   Use the analogous targeted-only array for draws 1-5; do not mix case sets.
+   The targeted aggregate is a separate command with its frozen five-draw
+   filenames:
+   `E05_TARGETED=(results/2026-MM-DD-e05-lexical-targeted-arm{A,B}-draw{1,2,3,4,5}.json); python3 eval/aggregate_draws.py "${E05_TARGETED[@]}" --expected-arm e05-B --expected-arm e05-A --out results/2026-MM-DD-e05-targeted-aggregate.json`.
+   Do not mix the full and targeted case sets.
 7. Record per-lane latency metrics and per-operation lexical query counts from both arms (the D09 assertion delta this would lock in if shipped).
 
 The query-count comparison remains a hard dependency on D09. The current
@@ -109,7 +117,16 @@ Hard ceiling: **$40**. Headroom (~$16) covers at most ~2 rerun draws for infrast
 
 ## Reporting
 
-The run record must contain: all artifact paths (`results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1..3}.json`, targeted draws, soak JSONs); aggregator output (win/loss/tie table, McNemar p, bootstrap CI); guard results verbatim; per-lane latency and query-count deltas; git commit fingerprint and flag states per run; actual spend vs the $23.52 preflight; and a one-line verdict — "provably free: ship behind `lexical_single_scan` per D10" or "not free: dropped, negative result recorded alongside v6 recent-first." If dropped, D10's deferred item is closed, not merely postponed.
+The run record must contain: all artifact paths
+(`results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1,2,3}.json`,
+`results/2026-MM-DD-e05-lexical-targeted-arm{A,B}-draw{1,2,3,4,5}.json`,
+and the soak JSONs); both aggregate artifacts (full and targeted);
+win/loss/tie tables, McNemar p, and bootstrap CIs; guard results verbatim;
+per-lane latency and query-count deltas; git commit fingerprint and flag states
+per run; actual spend vs the $23.52 preflight; and a one-line verdict —
+"provably free: ship behind `lexical_single_scan` per D10" or "not free:
+dropped, negative result recorded alongside v6 recent-first." If dropped,
+D10's deferred item is closed, not merely postponed.
 
 ## References
 

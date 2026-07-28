@@ -54,29 +54,42 @@ Prospective cases (5, in eval/e08_prospective_cases.json):
 3. Calibrate the flag-on query shape before its acceptance run:
    `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile calibration --label e08-query-budget-calibration --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --out results/2026-MM-DD-e08-query-budget-calibration.json`.
    This command intentionally exits nonzero because calibration artifacts are
-   never acceptance evidence. Review its counts and check in or otherwise
-   freeze a runtime-bound `e08-intention-ledger` contract as
-   `E08_QUERY_BUDGET_CONTRACT`.
+   never acceptance evidence. Review all 30 samples per operation. Author the
+   contract only from those observed counts, use schema
+   `straylight-query-budgets@v1`, set profile `e08-intention-ledger`, and copy
+   the authenticated calibration runtime-feature applicability into the
+   contract. Do not copy thresholds from `default-safe` or invent unmeasured
+   headroom. Freeze and validate the reviewed artifact:
+   `E08_QUERY_BUDGET_CONTRACT="results/2026-MM-DD-e08-intention-ledger-query-budgets.json"; test -s "$E08_QUERY_BUDGET_CONTRACT"; python3 -m json.tool "$E08_QUERY_BUDGET_CONTRACT" >/dev/null; python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["schema"]=="straylight-query-budgets@v1"; assert p["profile"]=="e08-intention-ledger"; assert p["runtime_features"]["intention_ledger"] is True; assert p["operations"]' "$E08_QUERY_BUDGET_CONTRACT"; E08_QUERY_BUDGET_SHA256="$(shasum -a 256 "$E08_QUERY_BUDGET_CONTRACT" | awk '{print $1}')"; test -n "$E08_QUERY_BUDGET_SHA256"; chmod 0444 "$E08_QUERY_BUDGET_CONTRACT"`.
+   Record the reviewer, calibration artifact SHA-256, contract SHA-256, and
+   review decision. Any later contract change requires a new path, hash, and
+   calibration review.
 4. Run both cheap 64K latency arms before reasoning. Flag off:
    `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e08-open-latency-off --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=off --out results/2026-MM-DD-e08-open-latency-off.json`.
-   Flag on uses
-   `--query-budget-profile e08-intention-ledger --query-budget-contract "$E08_QUERY_BUDGET_CONTRACT"`
-   and `--expect-feature-flag intention_ledger=on`. Any red gate or open p95
-   delta ≥10ms stops all reasoning.
+   Flag on, against its isolated stack:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile e08-intention-ledger --query-budget-contract "$E08_QUERY_BUDGET_CONTRACT" --label e08-open-latency-on --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --out results/2026-MM-DD-e08-open-latency-on.json`.
+   Confirm the on artifact's `query_budget_contract.sha256` equals
+   `E08_QUERY_BUDGET_SHA256`. Any red gate or open p95 delta ≥10ms stops all
+   reasoning.
 5. For draw N in 1..3:
-   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-base --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag intention_ledger=off --concurrency 3 --timeout 360 --run-id "e08-base-full-run${N}" --out "results/2026-MM-DD-e08-intention-base-draw${N}.json" --report "results/2026-MM-DD-e08-intention-base-draw${N}.md"`.
-   2. Same paired-draw ID with `--experiment-arm e08-flag --expect-feature-flag intention_ledger=on`, a unique run ID, and the flag artifact.
-   3. Prospective subset, both service arms, uses `--manifest eval/e08_prospective_cases.json` and shared `--paired-draw-id e08-prospective-draw<N>`.
-   4. Filesystem subset control uses `--condition filesystem --experiment-arm e08-filesystem --paired-draw-id e08-prospective-draw<N>`.
+   1. Full-suite base:
+      `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-base --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=off --concurrency 3 --timeout 360 --run-id "e08-base-full-run${N}" --out "results/2026-MM-DD-e08-intention-base-draw${N}.json" --report "results/2026-MM-DD-e08-intention-base-draw${N}.md"`.
+   2. Full-suite flag:
+      `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-flag --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --concurrency 3 --timeout 360 --run-id "e08-flag-full-run${N}" --out "results/2026-MM-DD-e08-intention-flag-draw${N}.json" --report "results/2026-MM-DD-e08-intention-flag-draw${N}.md"`.
+   3. Prospective base:
+      `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-base --paired-draw-id "e08-prospective-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=off --concurrency 3 --timeout 360 --run-id "e08-base-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-base-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-base-draw${N}.md"`.
+   4. Prospective flag:
+      `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-flag --paired-draw-id "e08-prospective-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --concurrency 3 --timeout 360 --run-id "e08-flag-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-flag-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-flag-draw${N}.md"`.
+   5. Prospective filesystem control, with no service runtime expectations:
+      `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json run --condition filesystem --experiment-arm e08-filesystem --paired-draw-id "e08-prospective-draw${N}" --concurrency 3 --timeout 360 --run-id "e08-filesystem-prospective-run${N}" --out "results/2026-MM-DD-e08-prospective-filesystem-draw${N}.json" --report "results/2026-MM-DD-e08-prospective-filesystem-draw${N}.md"`.
 6. False-surfacing audit uses only exact flag-on draw artifacts:
    `E08_FLAG=(results/2026-MM-DD-e08-intention-flag-draw{1,2,3}.json results/2026-MM-DD-e08-prospective-flag-draw{1,2,3}.json); python3 eval/audit_intentions.py "${E08_FLAG[@]}" --out results/2026-MM-DD-e08-intention-audit.json`.
 7. Regrade disputed answers with the correct global `--manifest` before
-   `regrade`. Aggregate exact arrays separately because their case/arm sets
-   differ:
-   `E08_FULL=(results/2026-MM-DD-e08-intention-{flag,base}-draw{1,2,3}.json)`
-   with `--expected-arm e08-flag --expected-arm e08-base`; the prospective
-   array additionally contains the three filesystem artifacts and declares
-   `--expected-arm e08-filesystem`.
+   `regrade`. Never put original and regraded versions of one draw into the
+   same aggregate. Aggregate the two case/arm sets separately:
+   `E08_FULL=(results/2026-MM-DD-e08-intention-{flag,base}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E08_FULL[@]}" --expected-arm e08-flag --expected-arm e08-base --out results/2026-MM-DD-e08-full-aggregate.json`.
+   Then aggregate the prospective subset:
+   `E08_PROSPECTIVE=(results/2026-MM-DD-e08-prospective-{flag,base,filesystem}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E08_PROSPECTIVE[@]}" --expected-arm e08-flag --expected-arm e08-base --expected-arm e08-filesystem --out results/2026-MM-DD-e08-prospective-aggregate.json`.
 
 ## Metrics
 
@@ -119,4 +132,14 @@ exact+lexical only, semantic lane explicitly disabled, and no worker. $0.00.
 
 ## Reporting
 
-The run record must contain: git commit fingerprint; per-arm flag config; manifest versions and hashes (recent-work-v0.3, e08_prospective, personal_coordination); the 6 seeded intention paths with frontmatter; all artifact paths per draw; prospective slot table per arm per draw with paired aggregate, McNemar p, bootstrap CI; false-surfacing rate with every flagged instance listed; non-prospective paired table; open p95 off/on with delta; char-assertion results; cost split (subscription-equivalent vs embeddings-exempt); adoption measurement reference (E07 artifact) and its result; explicit pass/fail per acceptance criterion.
+The run record must contain: git commit fingerprint; per-arm flag config;
+manifest versions and hashes (recent-work-v0.3, e08_prospective,
+personal_coordination); the calibration path/hash, reviewer decision, frozen
+query-contract path/hash, and both latency artifacts; the 6 seeded intention
+paths with frontmatter; every exact full/prospective/filesystem artifact path;
+both aggregate paths; prospective slot table per arm per draw with paired
+aggregate, McNemar p, and bootstrap CI; false-surfacing audit path and every
+flagged instance; non-prospective paired table; open p95 off/on with delta;
+char-assertion results; cost split (subscription-equivalent vs
+embeddings-exempt); adoption measurement reference (E07 artifact) and its
+result; explicit pass/fail per acceptance criterion.
