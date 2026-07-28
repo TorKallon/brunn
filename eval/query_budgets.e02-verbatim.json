@@ -1,0 +1,58 @@
+{
+  "schema": "straylight-query-budgets@v1",
+  "profile": "e02-verbatim",
+  "retrieval_modes": [
+    "exact",
+    "lexical"
+  ],
+  "runtime_features": {
+    "intention_ledger": false,
+    "lexical_single_scan": false,
+    "read_path_roundtrip_v1": false,
+    "resume_deltas": false,
+    "semantic_lane": false,
+    "supersession_demotion": false
+  },
+  "experiment_variable_features": [
+    "verbatim_spans"
+  ],
+  "definition": "Completed sqlx::query events inside the HTTP request scope. Includes authentication, transaction context/setup, application SQL, and COMMIT. Excludes SQLx's protocol-level BEGIN because SQLx 0.9 does not emit a query event for it. Detached usage bookkeeping is intentionally outside the foreground request scope.",
+  "baseline": {
+    "corpus": "E02 synthetic fixture family at 1k, 10k, and 64k records",
+    "reference": "results/2026-07-27-verbatim-identifier-stage2-calibration.json",
+    "method": "Provisional counts recovered from the reviewed pre-acceptance E02 diagnostic. The formal calibration artifact is intentionally ineligible for acceptance and must reproduce these counts before either Stage-2 arm runs.",
+    "feature_flags": "default-safe except verbatim_spans is the declared experiment variable"
+  },
+  "operations": {
+    "open": {
+      "comparison": "at_most",
+      "max": 17,
+      "variability": "Exact plus lexical retrieval with semantic disabled."
+    },
+    "search": {
+      "comparison": "at_most",
+      "max": 11,
+      "variability": "Exact plus lexical retrieval with semantic disabled; verbatim spans may not add a round trip."
+    },
+    "read": {
+      "comparison": "exact",
+      "count": 11,
+      "fixture": "One exact current-version path."
+    },
+    "write": {
+      "comparison": "exact",
+      "count": 14,
+      "fixture": "One new, single-chunk Markdown entry with semantic work queued but no foreground semantic provider."
+    },
+    "checkpoint": {
+      "comparison": "at_most",
+      "max": 28,
+      "variability": "The fixture has no explicit source_refs but contains one inferred Markdown path in checkpoint state."
+    },
+    "resume": {
+      "comparison": "at_most",
+      "max": 32,
+      "variability": "Checkpoint read, changes page, continuation exact lane, and lexical fallback with semantic disabled."
+    }
+  }
+}

@@ -24,6 +24,7 @@ from performance_eval import (  # noqa: E402
     QUERY_BUDGETS_PATH,
     RETRIEVAL_PLAN_CONTRACT_PATH,
     DatabaseSnapshot,
+    apply_retrieval_plan_applicability,
     benchmark_flat_files,
     build_parser,
     candidate_audit,
@@ -44,6 +45,7 @@ from performance_eval import (  # noqa: E402
     percentile,
     resolve_run_profile,
     resolve_query_budget_contract,
+    retrieval_plan_assertions,
     response_character_metrics,
     response_reports_lane_failure,
     response_reports_gap_kind,
@@ -316,6 +318,39 @@ class PerformanceEvalTests(unittest.TestCase):
         )
         self.assertNotIn("resume", d03["contract"]["operations"])
 
+    def test_e02_query_budget_contract_binds_modes_and_variable_feature(self):
+        contract_path = (
+            Path(__file__).resolve().parents[1]
+            / "eval/query_budgets.e02-verbatim.json"
+        )
+        selected = resolve_query_budget_contract(
+            profile="e02-verbatim",
+            path=contract_path,
+            runtime_snapshot={"runtime_features": runtime_features()},
+            gate_profile=None,
+            protocol="simple",
+            retrieval_modes=("exact", "lexical"),
+        )
+        self.assertEqual(
+            selected["contract"]["experiment_variable_features"],
+            ["verbatim_spans"],
+        )
+        self.assertEqual(selected["contract"]["operations"]["write"]["count"], 14)
+        self.assertEqual(
+            selected["contract"]["operations"]["checkpoint"]["max"],
+            28,
+        )
+
+        with self.assertRaisesRegex(ValueError, "bound to retrieval modes"):
+            resolve_query_budget_contract(
+                profile="e02-verbatim",
+                path=contract_path,
+                runtime_snapshot={"runtime_features": runtime_features()},
+                gate_profile=None,
+                protocol="simple",
+                retrieval_modes=("exact", "lexical", "semantic"),
+            )
+
     def test_d03_gate_pairs_query_counts_and_enforces_150ms(self):
         control = {
             "resume_query_counts": [44] * DEFINITIVE_SAMPLES,
@@ -427,6 +462,65 @@ class PerformanceEvalTests(unittest.TestCase):
             body = extract_sql_function_body(source, lane["function_name"])
             self.assertEqual(sql_fingerprint(body), lane["body_sha256"])
             self.assertIn(lane["invocation_sql"], shared)
+
+    def test_plan_assertions_do_not_explain_unrequested_semantic_lane(self):
+        contract = json.loads(
+            RETRIEVAL_PLAN_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        bodies = {}
+        for lane, lane_contract in contract["lanes"].items():
+            migration = (
+                Path(__file__).resolve().parents[1]
+                / lane_contract["migration"]
+            )
+            bodies[lane] = extract_sql_function_body(
+                migration.read_text(encoding="utf-8"),
+                lane_contract["function_name"],
+            )
+
+        def fake_run_psql(_container, sql):
+            if "SELECT entry.user_id::text" in sql:
+                return (
+                    "11111111-1111-1111-1111-111111111111|"
+                    "22222222-2222-2222-2222-222222222222"
+                )
+            if "::regprocedure" in sql:
+                lane = next(
+                    name
+                    for name, lane_contract in contract["lanes"].items()
+                    if lane_contract["regprocedure"] in sql
+                )
+                return bodies[lane]
+            self.fail(f"unexpected SQL in plan assertion test: {sql}")
+
+        lexical_plan = [{
+            "Plan": {
+                "Node Type": "Bitmap Index Scan",
+                "Index Name": "search_chunks_fts_idx",
+            },
+        }]
+        with (
+            patch("performance_eval.run_psql", side_effect=fake_run_psql),
+            patch("performance_eval.container_env_value", return_value="30"),
+            patch(
+                "performance_eval.explain_json",
+                return_value=lexical_plan,
+            ) as explain,
+        ):
+            result = retrieval_plan_assertions(
+                "test-db",
+                target_path="memory/test.md",
+                query="needle",
+                retrieval_modes=("exact", "lexical"),
+                semantic_lane_enabled=False,
+            )
+
+        self.assertTrue(result["pass"])
+        self.assertEqual(explain.call_count, 2)
+        self.assertEqual(
+            result["lanes"]["semantic"]["status"],
+            "not_applicable",
+        )
 
     def test_64k_regression_tier_fails_before_the_outer_slo(self):
         scale = {
@@ -1703,6 +1797,51 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertEqual(compared["rows"][0]["checkpoint_rows_before"], 10_000)
         self.assertEqual(compared["rows"][0]["checkpoint_rows_after"], 4)
         self.assertTrue(compared["after_pass"])
+
+
+    def test_retrieval_plan_applicability_skips_unrequested_semantic_lane(self):
+        result = apply_retrieval_plan_applicability(
+            {
+                "status": "complete",
+                "sql_drift": [{"lane": "lexical", "pass": True}],
+                "lanes": {
+                    "lexical": {"pass": True},
+                    "semantic": {"pass": False},
+                },
+            },
+            retrieval_modes=("exact", "lexical"),
+            semantic_lane_enabled=False,
+        )
+        self.assertTrue(result["pass"])
+        self.assertEqual(result["required_lanes"], ["lexical"])
+        self.assertEqual(
+            result["lanes"]["semantic"]["status"],
+            "not_applicable",
+        )
+        self.assertTrue(result["lanes"]["semantic"]["pass"])
+
+    def test_retrieval_plan_applicability_fails_requested_semantic_mismatch(self):
+        result = apply_retrieval_plan_applicability(
+            {
+                "status": "complete",
+                "sql_drift": [
+                    {"lane": "lexical", "pass": True},
+                    {"lane": "semantic", "pass": True},
+                ],
+                "lanes": {
+                    "lexical": {"pass": True},
+                    "semantic": {"pass": True},
+                },
+            },
+            retrieval_modes=("exact", "lexical", "semantic"),
+            semantic_lane_enabled=False,
+        )
+        self.assertFalse(result["pass"])
+        self.assertEqual(
+            result["lanes"]["semantic"]["status"],
+            "runtime_mismatch",
+        )
+        self.assertFalse(result["lanes"]["semantic"]["pass"])
 
 
 if __name__ == "__main__":

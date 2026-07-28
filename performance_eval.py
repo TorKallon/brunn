@@ -531,6 +531,7 @@ def resolve_query_budget_contract(
     runtime_snapshot: dict[str, Any],
     gate_profile: str | None,
     protocol: str,
+    retrieval_modes: Sequence[str] = ("exact", "lexical", "semantic"),
 ) -> dict[str, Any] | None:
     if gate_profile == LEXICAL_CONSOLIDATION_GATE_PROFILE:
         if profile != "not-applicable" or path is not None:
@@ -589,6 +590,55 @@ def resolve_query_budget_contract(
                 "default-safe contract"
             )
     payload = load_query_budgets(path, expected_profile=profile)
+    contract_modes = payload.get("retrieval_modes")
+    if contract_modes is not None:
+        if (
+            not isinstance(contract_modes, list)
+            or not contract_modes
+            or not all(
+                isinstance(mode, str)
+                and mode in {"exact", "lexical", "semantic"}
+                for mode in contract_modes
+            )
+            or len(contract_modes) != len(set(contract_modes))
+        ):
+            raise ValueError(
+                f"query-budget profile {profile!r} has invalid retrieval_modes"
+            )
+        if list(retrieval_modes) != contract_modes:
+            raise ValueError(
+                f"query-budget profile {profile!r} is bound to retrieval modes "
+                f"{contract_modes}, not {list(retrieval_modes)}"
+            )
+    experiment_variables = payload.get("experiment_variable_features", [])
+    if (
+        not isinstance(experiment_variables, list)
+        or not all(
+            isinstance(name, str) and name
+            for name in experiment_variables
+        )
+        or len(experiment_variables) != len(set(experiment_variables))
+    ):
+        raise ValueError(
+            f"query-budget profile {profile!r} has invalid "
+            "experiment_variable_features"
+        )
+    unknown_variables = sorted(
+        set(experiment_variables) - BOOLEAN_RUNTIME_FEATURES
+    )
+    if unknown_variables:
+        raise ValueError(
+            f"query-budget profile {profile!r} has unknown experiment "
+            f"variable features: {unknown_variables}"
+        )
+    overlap = sorted(
+        set(experiment_variables) & set(payload.get("runtime_features", {}))
+    )
+    if overlap:
+        raise ValueError(
+            f"query-budget profile {profile!r} cannot both bind and vary "
+            f"runtime features: {overlap}"
+        )
     actual_features = runtime_snapshot.get("runtime_features")
     if not isinstance(actual_features, dict):
         raise ValueError("runtime snapshot omitted runtime_features")
@@ -964,6 +1014,79 @@ def is_expected_mode1_empty_semantic_plan(plan: Any) -> bool:
         index_node.get("Node Type") == "Bitmap Index Scan"
         and any(node is index_node for node in descendants)
     )
+
+
+def apply_retrieval_plan_applicability(
+    assertions: dict[str, Any],
+    *,
+    retrieval_modes: Sequence[str],
+    semantic_lane_enabled: bool,
+) -> dict[str, Any]:
+    modes = list(retrieval_modes)
+    if (
+        not modes
+        or len(modes) != len(set(modes))
+        or any(
+            mode not in {"exact", "lexical", "semantic"}
+            for mode in modes
+        )
+    ):
+        raise ValueError(f"invalid retrieval modes for plan assertions: {modes}")
+    requested = set(modes)
+    result = dict(assertions)
+    lanes = dict(assertions.get("lanes", {}))
+    required_lanes = []
+    for lane in ("lexical", "semantic"):
+        if lane not in requested:
+            lanes[lane] = {
+                "status": "not_applicable",
+                "pass": True,
+                "reason": f"{lane} retrieval was not requested",
+            }
+            continue
+        required_lanes.append(lane)
+        if lane == "semantic" and not semantic_lane_enabled:
+            lanes[lane] = {
+                "status": "runtime_mismatch",
+                "pass": False,
+                "reason": (
+                    "semantic retrieval was requested while the authenticated "
+                    "runtime reported semantic_lane=false"
+                ),
+            }
+        elif isinstance(lanes.get(lane), dict):
+            lanes[lane] = dict(lanes[lane])
+            lanes[lane].setdefault("status", "complete")
+    result["lanes"] = lanes
+    result["required_lanes"] = required_lanes
+    result["retrieval_modes"] = modes
+    result["semantic_lane_enabled"] = semantic_lane_enabled
+    drift_checks = []
+    for record in result.get("sql_drift", []):
+        annotated = dict(record)
+        annotated["applicable"] = record.get("lane") in required_lanes
+        drift_checks.append(annotated)
+    result["sql_drift"] = drift_checks
+    applicable_drift_lanes = {
+        record.get("lane")
+        for record in drift_checks
+        if record.get("applicable") is True
+    }
+    result["pass"] = (
+        result.get("status") == "complete"
+        and all(
+            record.get("pass") is True
+            for record in drift_checks
+            if record.get("applicable") is True
+        )
+        and set(required_lanes).issubset(applicable_drift_lanes)
+        and all(
+            isinstance(lanes.get(lane), dict)
+            and lanes[lane].get("pass") is True
+            for lane in required_lanes
+        )
+    )
+    return result
 
 
 def flatten_numeric_timings(
@@ -2560,7 +2683,20 @@ def retrieval_plan_assertions(
     target_path: str,
     query: str,
     contract_path: Path = RETRIEVAL_PLAN_CONTRACT_PATH,
+    retrieval_modes: Sequence[str] = ("exact", "lexical", "semantic"),
+    semantic_lane_enabled: bool = True,
 ) -> dict[str, Any]:
+    modes = list(retrieval_modes)
+    if (
+        not modes
+        or len(modes) != len(set(modes))
+        or any(
+            mode not in {"exact", "lexical", "semantic"}
+            for mode in modes
+        )
+    ):
+        raise ValueError(f"invalid retrieval modes for plan assertions: {modes}")
+    requested = set(modes)
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
     if contract.get("schema") != "straylight-retrieval-plan-contract@v1":
         raise ValueError(f"unsupported retrieval plan contract in {contract_path}")
@@ -2672,6 +2808,12 @@ LIMIT 1;
         }
         drift_checks.append(drift)
 
+        if (
+            lane not in requested
+            or (lane == "semantic" and not semantic_lane_enabled)
+        ):
+            continue
+
         if lane == "lexical":
             argument = sql_literal(query)
             body_statement = re.sub(
@@ -2715,12 +2857,8 @@ LIMIT 1;
             "pass": drift["pass"] and plan_assertion["pass"],
         }
 
-    passed = all(item["pass"] for item in drift_checks) and all(
-        lane["pass"] for lane in lanes.values()
-    )
-    return {
+    return apply_retrieval_plan_applicability({
         "status": "complete",
-        "pass": passed,
         "contract": str(contract_path.relative_to(PROJECT_ROOT)),
         "scale_identity_path": target_path,
         "production_gucs": {
@@ -2738,7 +2876,7 @@ LIMIT 1;
         ),
         "sql_drift": drift_checks,
         "lanes": lanes,
-    }
+    }, retrieval_modes=modes, semantic_lane_enabled=semantic_lane_enabled)
 
 
 def database_snapshot(container: str) -> DatabaseSnapshot:
@@ -3725,6 +3863,7 @@ def benchmark_scale(
     api_container: str | None = None,
     protocol: str,
     retrieval_modes: Sequence[str],
+    semantic_lane_enabled: bool,
     run_semantic_failure: bool,
     concurrent_rounds: int,
     semantic_failure_required: bool,
@@ -4404,6 +4543,8 @@ def benchmark_scale(
             db_container,
             target_path=target_path,
             query=discovery_key,
+            retrieval_modes=retrieval_modes,
+            semantic_lane_enabled=semantic_lane_enabled,
         )
         if db_container
         and protocol == "simple"
@@ -5964,6 +6105,7 @@ def command_run(args: argparse.Namespace) -> int:
             runtime_snapshot=runtime_snapshot_before,
             gate_profile=args.gate_profile,
             protocol=args.protocol,
+            retrieval_modes=retrieval_modes,
         )
         fingerprint_before = implementation_fingerprint(
             args.api_container,
@@ -6085,6 +6227,9 @@ def command_run(args: argparse.Namespace) -> int:
                 api_container=args.api_container,
                 protocol=args.protocol,
                 retrieval_modes=retrieval_modes,
+                semantic_lane_enabled=runtime_snapshot_before[
+                    "runtime_features"
+                ]["semantic_lane"],
                 run_semantic_failure=(
                     profile.semantic_failure_required
                     and scale == largest_requested_scale

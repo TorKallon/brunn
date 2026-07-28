@@ -40,32 +40,43 @@ Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane
    Resolve `API_CONTAINER` and `DB_CONTAINER` through that exact Compose
    project, never through bare `docker compose`.
 2. These runs deliberately request only exact+lexical retrieval from a
-   semantic-disabled stack. Record that posture explicitly:
-   `E02_PERF=(--protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off)`.
+   semantic-disabled stack. This is a non-default query shape, so it may not
+   inherit the global default-safe query budget:
+   `E02_PERF=(--protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile e02-verbatim --query-budget-contract eval/query_budgets.e02-verbatim.json --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off)`.
 3. Stage 1 run at default scales and 30 samples:
    `python3 performance_eval.py run "${E02_PERF[@]}" --expect-feature-flag verbatim_spans=off --label verbatim-identifier-stage1 --out results/2026-MM-DD-verbatim-identifier-stage1.json`.
    The command is expected to exit nonzero because `verbatim_identifier` is a blocking known-failing gate before D02. `--quick` is acceptable only for smoke.
 4. Record the expected failure per scale (target: 0/30 exact-only source payloads). If any identifier does return verbatim, record its position and response field and re-scope D02 before proceeding.
 5. Keep `verbatim_identifier` blocking but document the stage-1 failure until D02 ships. Stage 1 is complete; no model runs occurred.
-6. Stage 2 begins only after B3 lands on a clean tree. Run distinct isolated
-   flag-off and flag-on stacks with the corresponding authenticated
+6. Stage 2 begins only after B3 lands on a clean tree.
+7. Before either Stage-2 arm, capture the exact shape with
+   `E02_CALIBRATION=(--protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile calibration --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off)` and run
+   `python3 performance_eval.py run "${E02_CALIBRATION[@]}" --label verbatim-identifier-stage2-calibration --out results/2026-MM-DD-verbatim-identifier-stage2-calibration.json`.
+   Calibration is intentionally ineligible for acceptance. Review its
+   per-operation counts against
+   `eval/query_budgets.e02-verbatim.json`; any difference stops E02 until the
+   code shape and contract are reconciled. The contract binds exact+lexical,
+   semantic-off retrieval and declares `verbatim_spans` as the sole experiment
+   variable, so both arms must use the same reviewed limits.
+8. After the calibration exactly matches its reviewed contract, run distinct
+   isolated flag-off and flag-on stacks with the corresponding authenticated
    `--expect-feature-flag verbatim_spans=off|on`. Use the E02 performance
    array above for `verbatim-identifier-stage2-off` and
    `verbatim-identifier-stage2-on`; add `--future-soak` to the flag-on
    `verbatim-identifier-stage2-soak`. Flag off must preserve the failure; flag
    on must reach 30/30 at every scale.
-7. Reasoning pass, paired draws. For `N` in `1 2 3`, flag off:
+9. Reasoning pass, paired draws. For `N` in `1 2 3`, flag off:
    `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm verbatim-off --paired-draw-id "verbatim-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --concurrency 3 --timeout 360 --run-id "verbatim-off-run${N}" --out "results/2026-MM-DD-verbatim-off-draw${N}.json" --report "results/2026-MM-DD-verbatim-off-draw${N}.md"`.
    Run the same draw against the isolated flag-on stack with
    `--experiment-arm verbatim-on`,
    `--expect-feature-flag verbatim_spans=on`, and unique on-arm paths.
-8. Aggregate only the six declared full-draw artifacts:
+10. Aggregate only the six declared full-draw artifacts:
    `VERBATIM_FULL=(results/2026-MM-DD-verbatim-{on,off}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${VERBATIM_FULL[@]}" --expected-arm verbatim-on --expected-arm verbatim-off --out results/2026-MM-DD-verbatim-aggregate.json`.
    Repeated draws remain clustered by case; McNemar is separate from the
    claim-difference bootstrap.
-9. If overall delta is inside the noise floor but identifier-tagged cases move, repeat step 7 for 5 draws with `--manifest eval/e02_identifier_cases.json`, using targeted-specific run and paired-draw IDs, and aggregate separately.
-10. Use `agent_work_eval.py regrade` for any rubric corrections; never regenerate answers to fix grading.
-11. Promote `verbatim_identifier` to a permanent, blocking performance_eval gate: with flag on it fails closed below 30/30; with flag off it remains a documented expected-fail.
+11. If overall delta is inside the noise floor but identifier-tagged cases move, repeat step 9 for 5 draws with `--manifest eval/e02_identifier_cases.json`, using targeted-specific run and paired-draw IDs, and aggregate separately.
+12. Use `agent_work_eval.py regrade` for any rubric corrections; never regenerate answers to fix grading.
+13. Promote `verbatim_identifier` to a permanent, blocking performance_eval gate: with flag on it fails closed below 30/30; with flag off it remains a documented expected-fail.
 
 ## Metrics
 

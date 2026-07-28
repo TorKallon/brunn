@@ -13,6 +13,20 @@ def document(name: str) -> str:
 
 
 class ExecutableExperimentDocsTests(unittest.TestCase):
+    def test_e02_uses_a_calibrated_mode_specific_query_contract(self) -> None:
+        text = document("E02-verbatim-identifier-gate.md")
+        self.assertIn("--query-budget-profile e02-verbatim", text)
+        self.assertIn(
+            "--query-budget-contract eval/query_budgets.e02-verbatim.json",
+            text,
+        )
+        self.assertIn("--query-budget-profile calibration", text)
+        self.assertIn("Calibration is intentionally ineligible", text)
+        self.assertIn(
+            "declares `verbatim_spans` as the sole experiment",
+            text,
+        )
+
     def test_e05_freezes_targeted_artifacts_and_aggregate(self) -> None:
         text = document("E05-lexical-consolidation-guard.md")
         for arm in ("A", "B"):
