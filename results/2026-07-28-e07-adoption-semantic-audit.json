@@ -1,0 +1,524 @@
+{
+  "schema": "straylight-e07-adoption-semantic-audit@v1",
+  "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+  "audit_scope": {
+    "experiment": "E07",
+    "feature": "supersession",
+    "draws": [
+      "e07-adoption-draw1",
+      "e07-adoption-draw2",
+      "e07-adoption-draw3"
+    ],
+    "eligible_session_instances": 18,
+    "official_measurement_preserved": true
+  },
+  "corpus": {
+    "path": "eval/corpus-recent-work-v0.1",
+    "sha256": "6bc83dbf4366fc3a716799ba300c32f841f9f644dfcc497b2aea0e138ddcb10b"
+  },
+  "manifest": {
+    "path": "eval/e07_e08_adoption_cases.json",
+    "sha256": "74c11eeeaa00b4013e8dce2c689e09fcaa4560e863d7ec0bb1de9537780fbae8"
+  },
+  "projection_contract": {
+    "path": "apps/api/src/workspace_features.rs",
+    "sha256": "4971655311c25d6d707a4d0a8e37a569eae9e4cb13be00480d7daf97c454957b",
+    "behavior": [
+      "Only supersedes targets that resolve and differ from the authored document become projection edges.",
+      "Edges are sorted by target and successor path; the lexicographically first successor per target is selected.",
+      "Save warnings cover invalid or unresolved targets, not self-edges or parallel-successor ambiguity."
+    ]
+  },
+  "inputs": [
+    {
+      "draw_id": "e07-adoption-draw1",
+      "raw_artifact": {
+        "path": "results/2026-07-28-e07-adoption-raw-draw1.json",
+        "sha256": "1a8b8fe34f8e1a66d9b35d6654eb6485691a739053cf457b51c0b8a9974f7d8e"
+      },
+      "measurement_artifact": {
+        "path": "results/2026-07-28-e07-adoption-draw1.json",
+        "sha256": "096b1c34441405449432bf42b502b12067c4faed93c7905037ffb3701dd54d32"
+      }
+    },
+    {
+      "draw_id": "e07-adoption-draw2",
+      "raw_artifact": {
+        "path": "results/2026-07-28-e07-adoption-raw-draw2.json",
+        "sha256": "361ca4923f4b04b0ca8f8b3b02808b13137a071300117857ee7c0a28a6279932"
+      },
+      "measurement_artifact": {
+        "path": "results/2026-07-28-e07-adoption-draw2.json",
+        "sha256": "087ef8da316c37d3f830ac786572af414c26594e1bc325ce8f011d75a20fbbf8"
+      }
+    },
+    {
+      "draw_id": "e07-adoption-draw3",
+      "raw_artifact": {
+        "path": "results/2026-07-28-e07-adoption-raw-draw3.json",
+        "sha256": "fc87b5773add93003d5f8204795792aba77d38ab732ba161d80943c6896f570e"
+      },
+      "measurement_artifact": {
+        "path": "results/2026-07-28-e07-adoption-draw3.json",
+        "sha256": "94c383e884c95a8a3597708c32cdc71b31e9317fe14f172c5d4894912d0ba0da"
+      }
+    }
+  ],
+  "workspace_isolation": {
+    "same_service_container_across_draws": true,
+    "separate_workspace_per_case_and_draw": true,
+    "evidence": "Every adoption case/draw has a unique authorization scope, import ID, user ID, and credential in native_provisioning. Repeated path pairs are independent session instances, not updates to one persistent workspace."
+  },
+  "metric_definitions": {
+    "official_syntactic": "Frozen measure-adoption result: the expected target string appears in a supersedes list.",
+    "resolvable_distinct": "Official emission whose target exists in that session workspace and differs from the write path.",
+    "selected_projected": "Resolvable distinct emission selected as the target direct successor after deterministic replay of the observed workspace state under the hashed projection contract.",
+    "novel_noncompeting": "Resolvable distinct emission whose target had no preexisting successor in that session workspace.",
+    "unique_path_pair": "A unique successor-path and target-path pair after ignoring isolated workspace identity."
+  },
+  "draws": [
+    {
+      "draw_id": "e07-adoption-draw1",
+      "official": {
+        "eligible_sessions": 6,
+        "emitted_sessions": 2,
+        "adoption_rate": 0.3333333333333333
+      },
+      "semantic_counts": {
+        "resolvable_distinct_session_instances": 2,
+        "selected_projected_session_instances": 2,
+        "novel_noncompeting_session_instances": 1,
+        "parallel_successor_emissions": 1,
+        "self_edges": 0,
+        "unresolved_targets": 0,
+        "actual_projection_cycles": 0
+      },
+      "sessions": [
+        {
+          "case_id": "adopt-correction-calendar",
+          "target_path": "Trips/Europe 2026/Calendar request provisional.md",
+          "official_emitted_valid_frontmatter": true,
+          "write_path": "Trips/Europe 2026/Calendar bounded search correction.md",
+          "workspace": {
+            "authorization_scope": "eval:e07-adoption-run1/adopt-correction-calendar",
+            "import_id": "simple-import:0fcd9930-9ce2-4434-97dc-3d7f22623dfe",
+            "user_id": "user:0fcd9930-9ce2-4434-97dc-3d7f22623dfe",
+            "credential_id": "credential:a512589d-f767-43e1-85ad-75f1724fe797",
+            "base_corpus_revision": "generation:434"
+          },
+          "observed_pre_save_state": {
+            "event_path": "runs/e07-adoption-run1/service_api/adopt-correction-calendar/events.jsonl",
+            "event_sha256": "b0ecec243e90357c2e3426b09432d288c7363c1ad3cd58a0d92ea6c3b7e0404f",
+            "target_version": 1,
+            "target_superseded_by": "Trips/Europe 2026/Calendar reconciliation.md",
+            "preexisting_successors": [
+              "Trips/Europe 2026/Calendar reconciliation.md"
+            ]
+          },
+          "write_receipt": {
+            "status": "committed",
+            "version": 1,
+            "no_op": false,
+            "workspace_generation": 744,
+            "entry_ref": "entry:019faaf4-bf4d-72e0-892d-ab628f10f0bc",
+            "version_ref": "entry-version:019faaf4-bf4d-72e0-892d-ab7069b98253",
+            "supersession_warnings": []
+          },
+          "classification": "selected_parallel_successor",
+          "selected_successor_after_write": "Trips/Europe 2026/Calendar bounded search correction.md",
+          "resolvable_distinct_edge": true,
+          "selected_projected_edge": true,
+          "novel_noncompeting_edge": false,
+          "self_edge": false,
+          "actual_projection_cycle": false
+        },
+        {
+          "case_id": "adopt-correction-consent",
+          "target_path": "Trips/Europe 2026/Consent provisional.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-straylight",
+          "target_path": "Projects/Straylight stale checkpoint.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-flight-watch",
+          "target_path": "Trips/Europe 2026/Flight watch tracker.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-briefing",
+          "target_path": "Aether/Morning briefing evidence.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-heartbeat",
+          "target_path": "Aether/Automation status healthy.md",
+          "official_emitted_valid_frontmatter": true,
+          "write_path": "Aether/Automation status correction.md",
+          "workspace": {
+            "authorization_scope": "eval:e07-adoption-run1/adopt-correction-heartbeat",
+            "import_id": "simple-import:87dce891-667b-46da-8350-1c54462e4272",
+            "user_id": "user:87dce891-667b-46da-8350-1c54462e4272",
+            "credential_id": "credential:3bfdcd1c-9db5-4fd0-b8bd-bc8d1d435440",
+            "base_corpus_revision": "generation:574"
+          },
+          "observed_pre_save_state": {
+            "event_path": "runs/e07-adoption-run1/service_api/adopt-correction-heartbeat/events.jsonl",
+            "event_sha256": "af0234702ffaad419a62b878b0464d85c75327736aab793b70038bdf8a557a76",
+            "target_version": 1,
+            "target_superseded_by": null,
+            "preexisting_successors": []
+          },
+          "write_receipt": {
+            "status": "committed",
+            "version": 1,
+            "no_op": false,
+            "workspace_generation": 748,
+            "entry_ref": "entry:019faaf5-7514-7d43-9866-eb6c518d5651",
+            "version_ref": "entry-version:019faaf5-7515-7d30-9cbd-2caaaccc6e9f",
+            "supersession_warnings": []
+          },
+          "classification": "novel_noncompeting_successor",
+          "selected_successor_after_write": "Aether/Automation status correction.md",
+          "resolvable_distinct_edge": true,
+          "selected_projected_edge": true,
+          "novel_noncompeting_edge": true,
+          "self_edge": false,
+          "actual_projection_cycle": false
+        }
+      ]
+    },
+    {
+      "draw_id": "e07-adoption-draw2",
+      "official": {
+        "eligible_sessions": 6,
+        "emitted_sessions": 3,
+        "adoption_rate": 0.5
+      },
+      "semantic_counts": {
+        "resolvable_distinct_session_instances": 2,
+        "selected_projected_session_instances": 1,
+        "novel_noncompeting_session_instances": 1,
+        "parallel_successor_emissions": 1,
+        "self_edges": 1,
+        "unresolved_targets": 0,
+        "actual_projection_cycles": 0
+      },
+      "sessions": [
+        {
+          "case_id": "adopt-correction-calendar",
+          "target_path": "Trips/Europe 2026/Calendar request provisional.md",
+          "official_emitted_valid_frontmatter": true,
+          "write_path": "Trips/Europe 2026/Calendar search correction.md",
+          "workspace": {
+            "authorization_scope": "eval:e07-adoption-run2/adopt-correction-calendar",
+            "import_id": "simple-import:390fe225-415a-46a6-ae87-3b7d4aa11146",
+            "user_id": "user:390fe225-415a-46a6-ae87-3b7d4aa11146",
+            "credential_id": "credential:72f8c136-771c-44dc-8d1e-623c35dd2ae2",
+            "base_corpus_revision": "generation:1196"
+          },
+          "observed_pre_save_state": {
+            "event_path": "runs/e07-adoption-run2/service_api/adopt-correction-calendar/events.jsonl",
+            "event_sha256": "b3caad248ead84ddf0a28551c59bcfc7c61abdd5b668b589eb7ff521a72e197e",
+            "target_version": 1,
+            "target_superseded_by": "Trips/Europe 2026/Calendar reconciliation.md",
+            "preexisting_successors": [
+              "Trips/Europe 2026/Calendar reconciliation.md"
+            ]
+          },
+          "write_receipt": {
+            "status": "committed",
+            "version": 1,
+            "no_op": false,
+            "workspace_generation": 1506,
+            "entry_ref": "entry:019faaff-df14-7bc0-ba89-fc4304c039f9",
+            "version_ref": "entry-version:019faaff-df14-7bc0-ba89-fc56b56ee30c",
+            "supersession_warnings": []
+          },
+          "classification": "shadowed_parallel_successor",
+          "selected_successor_after_write": "Trips/Europe 2026/Calendar reconciliation.md",
+          "resolvable_distinct_edge": true,
+          "selected_projected_edge": false,
+          "novel_noncompeting_edge": false,
+          "self_edge": false,
+          "actual_projection_cycle": false
+        },
+        {
+          "case_id": "adopt-correction-consent",
+          "target_path": "Trips/Europe 2026/Consent provisional.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-straylight",
+          "target_path": "Projects/Straylight stale checkpoint.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-flight-watch",
+          "target_path": "Trips/Europe 2026/Flight watch tracker.md",
+          "official_emitted_valid_frontmatter": true,
+          "write_path": "Trips/Europe 2026/Flight watch tracker.md",
+          "workspace": {
+            "authorization_scope": "eval:e07-adoption-run2/adopt-correction-flight-watch",
+            "import_id": "simple-import:4a7cfa71-3b8e-49df-8b0e-33a22ea1a754",
+            "user_id": "user:4a7cfa71-3b8e-49df-8b0e-33a22ea1a754",
+            "credential_id": "credential:32efd8cc-d1c6-4011-a98f-4a4c22f76895",
+            "base_corpus_revision": "generation:1280"
+          },
+          "observed_pre_save_state": {
+            "event_path": "runs/e07-adoption-run2/service_api/adopt-correction-flight-watch/events.jsonl",
+            "event_sha256": "23ccb2cf22b9e651dff96e0c0baa5be1754d80fe2b567e67a430dfa27678391d",
+            "target_version": 1,
+            "target_superseded_by": "Trips/Europe 2026/Flight watch update.md",
+            "preexisting_successors": [
+              "Trips/Europe 2026/Flight watch update.md"
+            ],
+            "observation_basis": "The live open packet returned Flight watch update version 1 with frontmatter naming the tracker target."
+          },
+          "write_receipt": {
+            "status": "committed",
+            "version": 2,
+            "no_op": false,
+            "workspace_generation": 1509,
+            "entry_ref": "entry:019faaff-73d3-7e62-ba2a-c07c11f1e95e",
+            "version_ref": "entry-version:019fab00-77b2-7e81-ab82-35dff6c47b9e",
+            "supersession_warnings": []
+          },
+          "classification": "projection_inert_self_edge",
+          "selected_successor_after_write": "Trips/Europe 2026/Flight watch update.md",
+          "resolvable_distinct_edge": false,
+          "selected_projected_edge": false,
+          "novel_noncompeting_edge": false,
+          "self_edge": true,
+          "actual_projection_cycle": false,
+          "note": "The authored note content may be useful, but its self-edge is discarded by the projection contract and is not useful supersession evidence."
+        },
+        {
+          "case_id": "adopt-correction-briefing",
+          "target_path": "Aether/Morning briefing evidence.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-heartbeat",
+          "target_path": "Aether/Automation status healthy.md",
+          "official_emitted_valid_frontmatter": true,
+          "write_path": "Aether/Automation status correction.md",
+          "workspace": {
+            "authorization_scope": "eval:e07-adoption-run2/adopt-correction-heartbeat",
+            "import_id": "simple-import:438c6e21-c792-4f16-b183-de71d64a2072",
+            "user_id": "user:438c6e21-c792-4f16-b183-de71d64a2072",
+            "credential_id": "credential:95cdd3fc-d1e1-4701-b950-4828b23844f7",
+            "base_corpus_revision": "generation:1336"
+          },
+          "observed_pre_save_state": {
+            "event_path": "runs/e07-adoption-run2/service_api/adopt-correction-heartbeat/events.jsonl",
+            "event_sha256": "ad1b2cda2dc0a4040e274049a5850e3899676375642f6b6ce5bc06f9fcefddbd",
+            "target_version": 1,
+            "target_superseded_by": null,
+            "preexisting_successors": []
+          },
+          "write_receipt": {
+            "status": "committed",
+            "version": 1,
+            "no_op": false,
+            "workspace_generation": 1511,
+            "entry_ref": "entry:019fab00-b0f4-7b91-9849-39055c90c590",
+            "version_ref": "entry-version:019fab00-b0f4-7b91-9849-391a3b9fc59c",
+            "supersession_warnings": []
+          },
+          "classification": "novel_noncompeting_successor",
+          "selected_successor_after_write": "Aether/Automation status correction.md",
+          "resolvable_distinct_edge": true,
+          "selected_projected_edge": true,
+          "novel_noncompeting_edge": true,
+          "self_edge": false,
+          "actual_projection_cycle": false
+        }
+      ]
+    },
+    {
+      "draw_id": "e07-adoption-draw3",
+      "official": {
+        "eligible_sessions": 6,
+        "emitted_sessions": 2,
+        "adoption_rate": 0.3333333333333333
+      },
+      "semantic_counts": {
+        "resolvable_distinct_session_instances": 2,
+        "selected_projected_session_instances": 2,
+        "novel_noncompeting_session_instances": 1,
+        "parallel_successor_emissions": 1,
+        "self_edges": 0,
+        "unresolved_targets": 0,
+        "actual_projection_cycles": 0
+      },
+      "sessions": [
+        {
+          "case_id": "adopt-correction-calendar",
+          "target_path": "Trips/Europe 2026/Calendar request provisional.md",
+          "official_emitted_valid_frontmatter": true,
+          "write_path": "Trips/Europe 2026/Calendar correction.md",
+          "workspace": {
+            "authorization_scope": "eval:e07-adoption-run3/adopt-correction-calendar",
+            "import_id": "simple-import:79cf7b9a-5076-40de-8a3c-b4349342eef5",
+            "user_id": "user:79cf7b9a-5076-40de-8a3c-b4349342eef5",
+            "credential_id": "credential:561324fd-73a7-422a-a883-d9d5a58f1d13",
+            "base_corpus_revision": "generation:1550"
+          },
+          "observed_pre_save_state": {
+            "event_path": "runs/e07-adoption-run3/service_api/adopt-correction-calendar/events.jsonl",
+            "event_sha256": "dcac776f1e5c66f3a4aa6317336d55f7b9627c9586beab12c0c8812273f9b945",
+            "target_version": 1,
+            "target_superseded_by": "Trips/Europe 2026/Calendar reconciliation.md",
+            "preexisting_successors": [
+              "Trips/Europe 2026/Calendar reconciliation.md"
+            ]
+          },
+          "write_receipt": {
+            "status": "committed",
+            "version": 1,
+            "no_op": false,
+            "workspace_generation": 1859,
+            "entry_ref": "entry:019fab07-7f69-7a72-9072-254d31a10e59",
+            "version_ref": "entry-version:019fab07-7f6a-7d91-9346-4d48ce3f2352",
+            "supersession_warnings": []
+          },
+          "classification": "selected_parallel_successor",
+          "selected_successor_after_write": "Trips/Europe 2026/Calendar correction.md",
+          "resolvable_distinct_edge": true,
+          "selected_projected_edge": true,
+          "novel_noncompeting_edge": false,
+          "self_edge": false,
+          "actual_projection_cycle": false
+        },
+        {
+          "case_id": "adopt-correction-consent",
+          "target_path": "Trips/Europe 2026/Consent provisional.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-straylight",
+          "target_path": "Projects/Straylight stale checkpoint.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-flight-watch",
+          "target_path": "Trips/Europe 2026/Flight watch tracker.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-briefing",
+          "target_path": "Aether/Morning briefing evidence.md",
+          "official_emitted_valid_frontmatter": false,
+          "classification": "no_valid_emission"
+        },
+        {
+          "case_id": "adopt-correction-heartbeat",
+          "target_path": "Aether/Automation status healthy.md",
+          "official_emitted_valid_frontmatter": true,
+          "write_path": "Aether/Automation status current.md",
+          "workspace": {
+            "authorization_scope": "eval:e07-adoption-run3/adopt-correction-heartbeat",
+            "import_id": "simple-import:51696da6-9150-45bf-acd6-164f10e0a18d",
+            "user_id": "user:51696da6-9150-45bf-acd6-164f10e0a18d",
+            "credential_id": "credential:209aa2b2-3015-4e74-bd6e-c3a5985d8f95",
+            "base_corpus_revision": "generation:1690"
+          },
+          "observed_pre_save_state": {
+            "event_path": "runs/e07-adoption-run3/service_api/adopt-correction-heartbeat/events.jsonl",
+            "event_sha256": "06c6b51a7bc0dfc45293134e9ff74239cc6458cef94e40de5069c3b9cf94fc23",
+            "target_version": 1,
+            "target_superseded_by": null,
+            "preexisting_successors": []
+          },
+          "write_receipt": {
+            "status": "committed",
+            "version": 1,
+            "no_op": false,
+            "workspace_generation": 1866,
+            "entry_ref": "entry:019fab08-dcf6-78f0-a116-5cfae57a7b5f",
+            "version_ref": "entry-version:019fab08-dcf6-78f0-a116-5d010cbcc8ad",
+            "supersession_warnings": []
+          },
+          "classification": "novel_noncompeting_successor",
+          "selected_successor_after_write": "Aether/Automation status current.md",
+          "resolvable_distinct_edge": true,
+          "selected_projected_edge": true,
+          "novel_noncompeting_edge": true,
+          "self_edge": false,
+          "actual_projection_cycle": false
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "official_overall_adoption": {
+      "eligible_sessions": 36,
+      "emitted_sessions": 20,
+      "adoption_rate": 0.5555555555555556
+    },
+    "official_supersession": {
+      "eligible_sessions": 18,
+      "emitted_session_instances": 7,
+      "unique_path_pairs": 6,
+      "adoption_rate": 0.3888888888888889,
+      "minimum_rate": 0.5,
+      "passed": false
+    },
+    "official_intention": {
+      "eligible_sessions": 18,
+      "emitted_session_instances": 13,
+      "adoption_rate": 0.7222222222222222,
+      "minimum_rate": 0.5,
+      "passed": true
+    },
+    "resolvable_distinct_supersession": {
+      "eligible_sessions": 18,
+      "emitted_session_instances": 6,
+      "unique_path_pairs": 5,
+      "adoption_rate": 0.3333333333333333,
+      "minimum_rate": 0.5,
+      "passed": false
+    },
+    "selected_projected_supersession": {
+      "eligible_sessions": 18,
+      "emitted_session_instances": 5,
+      "unique_path_pairs": 4,
+      "adoption_rate": 0.2777777777777778,
+      "minimum_rate": 0.5,
+      "passed": false
+    },
+    "novel_noncompeting_supersession": {
+      "eligible_sessions": 18,
+      "emitted_session_instances": 3,
+      "unique_path_pairs": 2,
+      "adoption_rate": 0.16666666666666666,
+      "minimum_rate": 0.5,
+      "passed": false
+    },
+    "parallel_successor_emissions": 3,
+    "selected_parallel_successors": 2,
+    "shadowed_parallel_successors": 1,
+    "self_edges": 1,
+    "unresolved_targets": 0,
+    "actual_projection_cycles": 0
+  },
+  "conclusion": {
+    "adoption_gate": "failed",
+    "reason": "Supersession adoption fails the frozen 50% threshold. Every stricter semantic interpretation also fails.",
+    "required_action": "D04 requires assisted authoring before Tier C reliance.",
+    "scorer_follow_up": "Reject self-edges and report parallel-successor ambiguity without changing the frozen official artifacts."
+  }
+}

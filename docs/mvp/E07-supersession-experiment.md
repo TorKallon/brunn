@@ -1,9 +1,62 @@
 # E07 — Supersession Demotion and Adoption Experiment
 
-Status: Specified — not run
-Date: 2026-07-27
+Status: Complete — mechanism gate passed; adoption gate failed
+Date: 2026-07-28
 Gates: D04 (D04-supersession-current-truth.md)
 Phase: 1 (requires flagged feature build)
+
+## Result
+
+The definitive 2026-07-28 run completed the frozen 162-session matrix at
+revision `791fac70f7345e51d732e3965f4e770e9107d0e3`. The human-readable record is
+[results/2026-07-28-e07-aggregate.md](../../results/2026-07-28-e07-aggregate.md);
+the machine aggregate and conclusion audit are
+[results/2026-07-28-e07-aggregate.json](../../results/2026-07-28-e07-aggregate.json)
+and
+[results/2026-07-28-e07-conclusion-audit.json](../../results/2026-07-28-e07-conclusion-audit.json).
+The hash-bound adoption and execution companions are
+[results/2026-07-28-e07-adoption-semantic-audit.json](../../results/2026-07-28-e07-adoption-semantic-audit.json)
+and
+[results/2026-07-28-e07-session-health-audit.json](../../results/2026-07-28-e07-session-health-audit.json).
+
+- **Mechanism gate: passed.** Within the four-case supersession family, the
+  flag arm won 6 paired case-instances, baseline won 2, and 4 tied. Net +4
+  clears the predeclared +3 gate. The arms passed 29/48 versus 25/48 family
+  claim slots. The case-clustered expected per-draw claim difference was
+  +1.333 with 95% CI [-2.333, 3.667]. Majority-collapsed full-case outcomes
+  had no discordant cases and exact McNemar p = 1.0. The gate passes by its
+  frozen net-win rule; the wide interval and null collapsed test mean this is
+  not evidence of a statistically precise effect.
+- **Safety and context gates: passed.** The flag introduced zero new
+  outside-family forbidden assertions. The outside-family exact McNemar
+  p-value was 1.0, with no significantly negative asymmetry. Mean
+  model-visible tool output was 5,685.714 characters/case for flag versus
+  5,639.881 for baseline, a 1.00812659 ratio under the 1.05 ceiling.
+- **Deterministic gate: passed.** The flag-off and flag-on 64K/30 foreground
+  write p95 values were 21.096 ms and 27.401 ms. Flag-on remained below the
+  58.0 ms hard limit and reproduced the independently reviewed zero-headroom
+  query-count contract. The measured +6.305 ms difference is reported as
+  observed; no numeric “within noise” threshold was predeclared, so this run
+  makes no latency-parity inference beyond the hard-gate result.
+- **Adoption gate: failed.** Agents emitted syntactically valid
+  `supersedes` frontmatter in 7/18 eligible unprompted sessions (38.889%),
+  below 50%. The shared intention cohort separately passed at 13/18 (72.222%);
+  it does not repair D04's failure. A hash-bound semantic audit further found
+  6/18 resolvable distinct edges, 5/18 selected projected edges, and only 3/18
+  noncompeting selected emissions. One accepted self-edge was projection
+  inert, and all three calendar emissions competed with an existing
+  successor.
+
+Therefore the implemented D04 retrieval mechanism passes E07, but D04 is not
+ready for Tier C. The predeclared consequence applies: add assisted authoring
+and qualify its adoption before relying on supersession in deployment. Keep
+the frozen official scorer result unchanged; the semantic companion is a
+diagnostic that shows the syntactic metric is optimistic.
+
+All reasoning used ChatGPT-authenticated Codex with API fallback forbidden.
+The 162 definitive sessions equal $38.88 at the predeclared
+subscription-equivalent rate; actual usage-billed reasoning and embeddings
+were both $0.
 
 ## Question
 

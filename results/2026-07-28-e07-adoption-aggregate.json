@@ -1,0 +1,526 @@
+{
+  "schema": "straylight-frontmatter-adoption-aggregate@v1",
+  "experiment_arm": "e07-adoption",
+  "expected_draws": [
+    "e07-adoption-draw1",
+    "e07-adoption-draw2",
+    "e07-adoption-draw3"
+  ],
+  "inputs": [
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-adoption-draw1.json",
+      "sha256": "096b1c34441405449432bf42b502b12067c4faed93c7905037ffb3701dd54d32",
+      "source_artifact": {
+        "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-adoption-raw-draw1.json",
+        "sha256": "1a8b8fe34f8e1a66d9b35d6654eb6485691a739053cf457b51c0b8a9974f7d8e"
+      },
+      "provenance": {
+        "schema": "straylight-definitive-service-run-provenance@v1",
+        "run_id": "e07-adoption-run1",
+        "experiment_arm": "e07-adoption",
+        "paired_draw_id": "e07-adoption-draw1",
+        "benchmark_version": "frontmatter-adoption-v0.1",
+        "manifest_sha256": "74c11eeeaa00b4013e8dce2c689e09fcaa4560e863d7ec0bb1de9537780fbae8",
+        "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+        "harness_sha256": "59ce22f34e31ac240543cf1366560a73b976f5c056761570f199d238e15e6030",
+        "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "build_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+        "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "service_image_provenance": {
+          "schema": "straylight-service-image-provenance@v1",
+          "stable": true,
+          "before": {
+            "schema": "straylight-service-image-fingerprint@v1",
+            "api_container": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_id": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_started_at": "2026-07-28T22:48:16.529961834Z",
+            "api_container_running": true,
+            "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+            "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3"
+          },
+          "after": {
+            "schema": "straylight-service-image-fingerprint@v1",
+            "api_container": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_id": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_started_at": "2026-07-28T22:48:16.529961834Z",
+            "api_container_running": true,
+            "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+            "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3"
+          }
+        },
+        "runtime_snapshot": {
+          "schema": "straylight-service-runtime-snapshot@v1",
+          "captured_at": "2026-07-28T16:02:57-07:00",
+          "status": "ready",
+          "build_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+          "corpus_revision": null,
+          "revision_sequence": null,
+          "read_only": false,
+          "runtime_features": {
+            "allow_degraded_embeddings": false,
+            "embed_cache": false,
+            "embedding_backfill_batch_chunks": 64,
+            "embedding_backfill_foreground_status_timeout_ms": 1000,
+            "embedding_backfill_foreground_status_url_configured": false,
+            "embedding_backfill_guard": true,
+            "embedding_backfill_inter_batch_ms": 250,
+            "embedding_backfill_open_p95_limit_ms": 120.0,
+            "embedding_backfill_search_p95_limit_ms": 107.0,
+            "intention_ledger": false,
+            "lexical_single_scan": false,
+            "materialize_token_budget": 24000,
+            "observability_timings_ms": true,
+            "read_path_roundtrip_v1": false,
+            "resume_deltas": false,
+            "search_char_cap": false,
+            "search_fair_share": false,
+            "search_section_demotion_top_n": null,
+            "search_top1_hydration": false,
+            "semantic_deadline_ms": 300,
+            "semantic_lane": false,
+            "supersession_demotion": true,
+            "supersession_demotion_weight": 1.5,
+            "verbatim_spans": false
+          },
+          "embeddings": {
+            "dimensions": 1536,
+            "model": "straylight-hashing-v1",
+            "provider": "hashing",
+            "status": "degraded"
+          },
+          "semantic_runtime": {
+            "cache_bypasses": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "deferrals": 0,
+            "disabled": 0,
+            "failures": 0,
+            "negative_cache_hits": 0,
+            "requested": 0,
+            "successes": 0
+          }
+        },
+        "runtime_snapshot_sha256": "d71791156dbee6e418075daac44e8e9a8a2064bb7aa097b25cd4b678f734f13f",
+        "runtime_features": {
+          "allow_degraded_embeddings": false,
+          "embed_cache": false,
+          "embedding_backfill_batch_chunks": 64,
+          "embedding_backfill_foreground_status_timeout_ms": 1000,
+          "embedding_backfill_foreground_status_url_configured": false,
+          "embedding_backfill_guard": true,
+          "embedding_backfill_inter_batch_ms": 250,
+          "embedding_backfill_open_p95_limit_ms": 120.0,
+          "embedding_backfill_search_p95_limit_ms": 107.0,
+          "intention_ledger": false,
+          "lexical_single_scan": false,
+          "materialize_token_budget": 24000,
+          "observability_timings_ms": true,
+          "read_path_roundtrip_v1": false,
+          "resume_deltas": false,
+          "search_char_cap": false,
+          "search_fair_share": false,
+          "search_section_demotion_top_n": null,
+          "search_top1_hydration": false,
+          "semantic_deadline_ms": 300,
+          "semantic_lane": false,
+          "supersession_demotion": true,
+          "supersession_demotion_weight": 1.5,
+          "verbatim_spans": false
+        },
+        "expected_runtime_features": {
+          "semantic_lane": false,
+          "verbatim_spans": false,
+          "supersession_demotion": true,
+          "intention_ledger": false,
+          "resume_deltas": false,
+          "supersession_demotion_weight": 1.5
+        },
+        "service_retrieval_modes": [
+          "exact",
+          "lexical"
+        ],
+        "reasoning_billing": {
+          "route": "chatgpt_subscription",
+          "api_fallback": "forbidden",
+          "auth_status": "Logged in using ChatGPT"
+        }
+      },
+      "by_feature": {
+        "supersession": {
+          "eligible_sessions": 6,
+          "emitted_sessions": 2,
+          "adoption_rate": 0.3333333333333333
+        },
+        "intention": {
+          "eligible_sessions": 6,
+          "emitted_sessions": 5,
+          "adoption_rate": 0.8333333333333334
+        }
+      }
+    },
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-adoption-draw2.json",
+      "sha256": "087ef8da316c37d3f830ac786572af414c26594e1bc325ce8f011d75a20fbbf8",
+      "source_artifact": {
+        "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-adoption-raw-draw2.json",
+        "sha256": "361ca4923f4b04b0ca8f8b3b02808b13137a071300117857ee7c0a28a6279932"
+      },
+      "provenance": {
+        "schema": "straylight-definitive-service-run-provenance@v1",
+        "run_id": "e07-adoption-run2",
+        "experiment_arm": "e07-adoption",
+        "paired_draw_id": "e07-adoption-draw2",
+        "benchmark_version": "frontmatter-adoption-v0.1",
+        "manifest_sha256": "74c11eeeaa00b4013e8dce2c689e09fcaa4560e863d7ec0bb1de9537780fbae8",
+        "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+        "harness_sha256": "59ce22f34e31ac240543cf1366560a73b976f5c056761570f199d238e15e6030",
+        "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "build_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+        "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "service_image_provenance": {
+          "schema": "straylight-service-image-provenance@v1",
+          "stable": true,
+          "before": {
+            "schema": "straylight-service-image-fingerprint@v1",
+            "api_container": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_id": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_started_at": "2026-07-28T22:48:16.529961834Z",
+            "api_container_running": true,
+            "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+            "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3"
+          },
+          "after": {
+            "schema": "straylight-service-image-fingerprint@v1",
+            "api_container": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_id": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_started_at": "2026-07-28T22:48:16.529961834Z",
+            "api_container_running": true,
+            "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+            "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3"
+          }
+        },
+        "runtime_snapshot": {
+          "schema": "straylight-service-runtime-snapshot@v1",
+          "captured_at": "2026-07-28T16:15:03-07:00",
+          "status": "ready",
+          "build_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+          "corpus_revision": null,
+          "revision_sequence": null,
+          "read_only": false,
+          "runtime_features": {
+            "allow_degraded_embeddings": false,
+            "embed_cache": false,
+            "embedding_backfill_batch_chunks": 64,
+            "embedding_backfill_foreground_status_timeout_ms": 1000,
+            "embedding_backfill_foreground_status_url_configured": false,
+            "embedding_backfill_guard": true,
+            "embedding_backfill_inter_batch_ms": 250,
+            "embedding_backfill_open_p95_limit_ms": 120.0,
+            "embedding_backfill_search_p95_limit_ms": 107.0,
+            "intention_ledger": false,
+            "lexical_single_scan": false,
+            "materialize_token_budget": 24000,
+            "observability_timings_ms": true,
+            "read_path_roundtrip_v1": false,
+            "resume_deltas": false,
+            "search_char_cap": false,
+            "search_fair_share": false,
+            "search_section_demotion_top_n": null,
+            "search_top1_hydration": false,
+            "semantic_deadline_ms": 300,
+            "semantic_lane": false,
+            "supersession_demotion": true,
+            "supersession_demotion_weight": 1.5,
+            "verbatim_spans": false
+          },
+          "embeddings": {
+            "dimensions": 1536,
+            "model": "straylight-hashing-v1",
+            "provider": "hashing",
+            "status": "degraded"
+          },
+          "semantic_runtime": {
+            "cache_bypasses": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "deferrals": 0,
+            "disabled": 0,
+            "failures": 0,
+            "negative_cache_hits": 0,
+            "requested": 0,
+            "successes": 0
+          }
+        },
+        "runtime_snapshot_sha256": "8eea4e4067e6cd082c2abbb2a452e4c42b3f02206f2bf6028238de37a87b91fd",
+        "runtime_features": {
+          "allow_degraded_embeddings": false,
+          "embed_cache": false,
+          "embedding_backfill_batch_chunks": 64,
+          "embedding_backfill_foreground_status_timeout_ms": 1000,
+          "embedding_backfill_foreground_status_url_configured": false,
+          "embedding_backfill_guard": true,
+          "embedding_backfill_inter_batch_ms": 250,
+          "embedding_backfill_open_p95_limit_ms": 120.0,
+          "embedding_backfill_search_p95_limit_ms": 107.0,
+          "intention_ledger": false,
+          "lexical_single_scan": false,
+          "materialize_token_budget": 24000,
+          "observability_timings_ms": true,
+          "read_path_roundtrip_v1": false,
+          "resume_deltas": false,
+          "search_char_cap": false,
+          "search_fair_share": false,
+          "search_section_demotion_top_n": null,
+          "search_top1_hydration": false,
+          "semantic_deadline_ms": 300,
+          "semantic_lane": false,
+          "supersession_demotion": true,
+          "supersession_demotion_weight": 1.5,
+          "verbatim_spans": false
+        },
+        "expected_runtime_features": {
+          "semantic_lane": false,
+          "verbatim_spans": false,
+          "supersession_demotion": true,
+          "intention_ledger": false,
+          "resume_deltas": false,
+          "supersession_demotion_weight": 1.5
+        },
+        "service_retrieval_modes": [
+          "exact",
+          "lexical"
+        ],
+        "reasoning_billing": {
+          "route": "chatgpt_subscription",
+          "api_fallback": "forbidden",
+          "auth_status": "Logged in using ChatGPT"
+        }
+      },
+      "by_feature": {
+        "supersession": {
+          "eligible_sessions": 6,
+          "emitted_sessions": 3,
+          "adoption_rate": 0.5
+        },
+        "intention": {
+          "eligible_sessions": 6,
+          "emitted_sessions": 4,
+          "adoption_rate": 0.6666666666666666
+        }
+      }
+    },
+    {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-adoption-draw3.json",
+      "sha256": "94c383e884c95a8a3597708c32cdc71b31e9317fe14f172c5d4894912d0ba0da",
+      "source_artifact": {
+        "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-adoption-raw-draw3.json",
+        "sha256": "fc87b5773add93003d5f8204795792aba77d38ab732ba161d80943c6896f570e"
+      },
+      "provenance": {
+        "schema": "straylight-definitive-service-run-provenance@v1",
+        "run_id": "e07-adoption-run3",
+        "experiment_arm": "e07-adoption",
+        "paired_draw_id": "e07-adoption-draw3",
+        "benchmark_version": "frontmatter-adoption-v0.1",
+        "manifest_sha256": "74c11eeeaa00b4013e8dce2c689e09fcaa4560e863d7ec0bb1de9537780fbae8",
+        "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+        "harness_sha256": "59ce22f34e31ac240543cf1366560a73b976f5c056761570f199d238e15e6030",
+        "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "build_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+        "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "service_image_provenance": {
+          "schema": "straylight-service-image-provenance@v1",
+          "stable": true,
+          "before": {
+            "schema": "straylight-service-image-fingerprint@v1",
+            "api_container": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_id": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_started_at": "2026-07-28T22:48:16.529961834Z",
+            "api_container_running": true,
+            "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+            "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3"
+          },
+          "after": {
+            "schema": "straylight-service-image-fingerprint@v1",
+            "api_container": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_id": "ed9f1651bcc72962a17f76c02e6f8e3fd58e1eed5f11bbf60b08322e9ae65df7",
+            "api_container_started_at": "2026-07-28T22:48:16.529961834Z",
+            "api_container_running": true,
+            "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+            "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3"
+          }
+        },
+        "runtime_snapshot": {
+          "schema": "straylight-service-runtime-snapshot@v1",
+          "captured_at": "2026-07-28T16:23:19-07:00",
+          "status": "ready",
+          "build_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+          "corpus_revision": null,
+          "revision_sequence": null,
+          "read_only": false,
+          "runtime_features": {
+            "allow_degraded_embeddings": false,
+            "embed_cache": false,
+            "embedding_backfill_batch_chunks": 64,
+            "embedding_backfill_foreground_status_timeout_ms": 1000,
+            "embedding_backfill_foreground_status_url_configured": false,
+            "embedding_backfill_guard": true,
+            "embedding_backfill_inter_batch_ms": 250,
+            "embedding_backfill_open_p95_limit_ms": 120.0,
+            "embedding_backfill_search_p95_limit_ms": 107.0,
+            "intention_ledger": false,
+            "lexical_single_scan": false,
+            "materialize_token_budget": 24000,
+            "observability_timings_ms": true,
+            "read_path_roundtrip_v1": false,
+            "resume_deltas": false,
+            "search_char_cap": false,
+            "search_fair_share": false,
+            "search_section_demotion_top_n": null,
+            "search_top1_hydration": false,
+            "semantic_deadline_ms": 300,
+            "semantic_lane": false,
+            "supersession_demotion": true,
+            "supersession_demotion_weight": 1.5,
+            "verbatim_spans": false
+          },
+          "embeddings": {
+            "dimensions": 1536,
+            "model": "straylight-hashing-v1",
+            "provider": "hashing",
+            "status": "degraded"
+          },
+          "semantic_runtime": {
+            "cache_bypasses": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "deferrals": 0,
+            "disabled": 0,
+            "failures": 0,
+            "negative_cache_hits": 0,
+            "requested": 0,
+            "successes": 0
+          }
+        },
+        "runtime_snapshot_sha256": "601aa20327c8daa24309c0c3f5e6bb0637a76e44e18f9dc1427ec7aadca35525",
+        "runtime_features": {
+          "allow_degraded_embeddings": false,
+          "embed_cache": false,
+          "embedding_backfill_batch_chunks": 64,
+          "embedding_backfill_foreground_status_timeout_ms": 1000,
+          "embedding_backfill_foreground_status_url_configured": false,
+          "embedding_backfill_guard": true,
+          "embedding_backfill_inter_batch_ms": 250,
+          "embedding_backfill_open_p95_limit_ms": 120.0,
+          "embedding_backfill_search_p95_limit_ms": 107.0,
+          "intention_ledger": false,
+          "lexical_single_scan": false,
+          "materialize_token_budget": 24000,
+          "observability_timings_ms": true,
+          "read_path_roundtrip_v1": false,
+          "resume_deltas": false,
+          "search_char_cap": false,
+          "search_fair_share": false,
+          "search_section_demotion_top_n": null,
+          "search_top1_hydration": false,
+          "semantic_deadline_ms": 300,
+          "semantic_lane": false,
+          "supersession_demotion": true,
+          "supersession_demotion_weight": 1.5,
+          "verbatim_spans": false
+        },
+        "expected_runtime_features": {
+          "semantic_lane": false,
+          "verbatim_spans": false,
+          "supersession_demotion": true,
+          "intention_ledger": false,
+          "resume_deltas": false,
+          "supersession_demotion_weight": 1.5
+        },
+        "service_retrieval_modes": [
+          "exact",
+          "lexical"
+        ],
+        "reasoning_billing": {
+          "route": "chatgpt_subscription",
+          "api_fallback": "forbidden",
+          "auth_status": "Logged in using ChatGPT"
+        }
+      },
+      "by_feature": {
+        "supersession": {
+          "eligible_sessions": 6,
+          "emitted_sessions": 2,
+          "adoption_rate": 0.3333333333333333
+        },
+        "intention": {
+          "eligible_sessions": 6,
+          "emitted_sessions": 4,
+          "adoption_rate": 0.6666666666666666
+        }
+      }
+    }
+  ],
+  "provenance": {
+    "manifest_sha256": "74c11eeeaa00b4013e8dce2c689e09fcaa4560e863d7ec0bb1de9537780fbae8",
+    "schema_sha256": "8465ec81ddbdb7f9f84316d6fe651fbc1f358fbd5367826d7ae1e76eb5e6fc3b",
+    "harness_sha256": "59ce22f34e31ac240543cf1366560a73b976f5c056761570f199d238e15e6030",
+    "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+    "build_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+    "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+    "api_image_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+    "runtime_features": {
+      "allow_degraded_embeddings": false,
+      "embed_cache": false,
+      "embedding_backfill_batch_chunks": 64,
+      "embedding_backfill_foreground_status_timeout_ms": 1000,
+      "embedding_backfill_foreground_status_url_configured": false,
+      "embedding_backfill_guard": true,
+      "embedding_backfill_inter_batch_ms": 250,
+      "embedding_backfill_open_p95_limit_ms": 120.0,
+      "embedding_backfill_search_p95_limit_ms": 107.0,
+      "intention_ledger": false,
+      "lexical_single_scan": false,
+      "materialize_token_budget": 24000,
+      "observability_timings_ms": true,
+      "read_path_roundtrip_v1": false,
+      "resume_deltas": false,
+      "search_char_cap": false,
+      "search_fair_share": false,
+      "search_section_demotion_top_n": null,
+      "search_top1_hydration": false,
+      "semantic_deadline_ms": 300,
+      "semantic_lane": false,
+      "supersession_demotion": true,
+      "supersession_demotion_weight": 1.5,
+      "verbatim_spans": false
+    },
+    "service_retrieval_modes": [
+      "exact",
+      "lexical"
+    ]
+  },
+  "eligible_sessions": 36,
+  "emitted_sessions": 20,
+  "adoption_rate": 0.5555555555555556,
+  "by_feature": {
+    "supersession": {
+      "eligible_sessions": 18,
+      "emitted_sessions": 7,
+      "adoption_rate": 0.3888888888888889,
+      "minimum_rate": 0.5,
+      "pass": false
+    },
+    "intention": {
+      "eligible_sessions": 18,
+      "emitted_sessions": 13,
+      "adoption_rate": 0.7222222222222222,
+      "minimum_rate": 0.5,
+      "pass": true
+    }
+  },
+  "pass": false
+}

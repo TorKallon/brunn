@@ -1,10 +1,59 @@
 # D04 — Explicit Supersession and the Current-Truth View
 
-Status: Proposed — not started
-Date: 2026-07-27
+Status: Implemented behind flag — E07 mechanism passed; Tier C blocked
+Date: 2026-07-28
 Depends on: none
 Gated by: E07 (E07-supersession-experiment.md)
 Runtime flag: supersession_demotion
+
+## Experiment decision
+
+E07 completed at revision
+`791fac70f7345e51d732e3965f4e770e9107d0e3`. The mechanism passed its frozen
+quality, safety, deterministic, and overfetch gates:
+
+- supersession-family paired case-instances were 6 flag wins / 2 baseline
+  wins / 4 ties, net +4 against the +3 minimum;
+- family claim slots were 29/48 flag versus 25/48 baseline; the
+  case-clustered expected per-draw delta was +1.333 claims with 95% CI
+  [-2.333, 3.667], and majority-collapsed exact McNemar p = 1.0;
+- there were zero new forbidden assertions outside the family and no
+  significantly negative outside-family asymmetry;
+- flag/base model-visible context ratio was 1.00812659, below 1.05; and
+- flag-on 64K/30 write p95 was 27.401 ms, below 58.0 ms, with the reviewed
+  query-count contract green.
+
+This accepts the mechanism under the predeclared gate, but not as a precise
+effect-size estimate: the bootstrap interval includes zero and the collapsed
+McNemar comparison has no discordant full-case outcomes.
+
+The load-bearing adoption gate failed. Only 7/18 eligible unprompted
+supersession sessions emitted syntactically valid frontmatter (38.889%).
+Companion replay against the exact projection implementation found 6/18
+resolvable distinct edges, 5/18 selected projected edges, and 3/18
+noncompeting selected emissions. The gap is material:
+
+- one syntactically accepted edge superseded its own write path and was
+  filtered by the projection;
+- three calendar emissions created parallel successors for a target that
+  already had a canonical successor; two happened to win the lexical
+  tie-break and one was shadowed; and
+- no emitted target was unresolved and no actual projection cycle was
+  created.
+
+Decision: D04 remains default-off and is not Tier-C ready. Implement the
+predeclared assisted-authoring path before relying on it: use
+`supersession_warnings` to suggest a target when a write appears to correct an
+existing note. The follow-up should also reject self-edges in adoption
+measurement and surface parallel-successor ambiguity instead of counting every
+syntactically valid declaration as equally useful. Requalify adoption after
+those changes; do not rewrite or regrade the frozen E07 result.
+
+Evidence:
+[results/2026-07-28-e07-aggregate.md](../../results/2026-07-28-e07-aggregate.md),
+[results/2026-07-28-e07-conclusion-audit.json](../../results/2026-07-28-e07-conclusion-audit.json),
+and
+[results/2026-07-28-e07-adoption-semantic-audit.json](../../results/2026-07-28-e07-adoption-semantic-audit.json).
 
 ## Problem and evidence
 

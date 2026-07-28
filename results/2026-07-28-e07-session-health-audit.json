@@ -1,0 +1,403 @@
+{
+  "schema": "straylight-e07-session-health-audit@v1",
+  "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+  "audit_scope": {
+    "experiment": "E07",
+    "expected_sessions": 162,
+    "claim_scored_sessions": 126,
+    "adoption_sessions": 36
+  },
+  "official_aggregate_bindings": {
+    "main": {
+      "path": "results/2026-07-28-e07-aggregate.json",
+      "sha256": "3d2d52159383c196930924b0e75e98c631dbdd7b61bb5d8bc5a830ffdd471f40"
+    },
+    "adoption": {
+      "path": "results/2026-07-28-e07-adoption-aggregate.json",
+      "sha256": "d12c593f3a647861503d735fd5b875fb3a5adca4b6b89b84ffd858146ab1acba"
+    },
+    "conclusion": {
+      "path": "results/2026-07-28-e07-conclusion-audit.json",
+      "sha256": "f2eecc31b3ec4df4db622db04f570bf2710ddb75b82c3d96c87625a844be72ed"
+    }
+  },
+  "definitive_session_artifacts": [
+    {
+      "path": "results/2026-07-28-e07-supersession-flag-draw1.json",
+      "sha256": "12341fbd5d49b3562ba9cc6d95c78a5d4e24de9e8998391fe56ea83227148b87",
+      "run_id": "e07-flag-run1",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-supersession-base-draw1.json",
+      "sha256": "47b5adfc036e13052b92bf155a5022d954fae8e27de27907e82213a12e3fc1c7",
+      "run_id": "e07-base-run1",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-supersession-filesystem-draw1.json",
+      "sha256": "d4d5393b02c15158ab18efde1f6fa15dd10e3c305f5ba1b0f481df29b141ee46",
+      "run_id": "e07-filesystem-run1",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-adoption-raw-draw1.json",
+      "sha256": "1a8b8fe34f8e1a66d9b35d6654eb6485691a739053cf457b51c0b8a9974f7d8e",
+      "run_id": "e07-adoption-run1",
+      "records": 12
+    },
+    {
+      "path": "results/2026-07-28-e07-supersession-flag-draw2.json",
+      "sha256": "f13f10de5cb81960720d827c55bbe9190449d1b9f98899ce42501973865c4fb4",
+      "run_id": "e07-flag-run2",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-supersession-base-draw2.json",
+      "sha256": "78f71fa01a6d704e447390cc94fb6819763160ae5d6634ea0b69de392dd2750d",
+      "run_id": "e07-base-run2",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-supersession-filesystem-draw2.json",
+      "sha256": "b3245f313f87d196308584e7b75fbf2169f4ef7c1a6782aa54db854a5d1630a7",
+      "run_id": "e07-filesystem-run2",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-adoption-raw-draw2.json",
+      "sha256": "361ca4923f4b04b0ca8f8b3b02808b13137a071300117857ee7c0a28a6279932",
+      "run_id": "e07-adoption-run2",
+      "records": 12
+    },
+    {
+      "path": "results/2026-07-28-e07-supersession-flag-draw3.json",
+      "sha256": "40f19fefc071d6db7193cdcdadd04fe3a35ac49ac82e7970a2f12470757d110f",
+      "run_id": "e07-flag-run3",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-supersession-base-draw3.json",
+      "sha256": "c6d5b176fc4e9725292bbae6d2aaaa95fc8d89e315665b9ac10fee8d3a03e3c6",
+      "run_id": "e07-base-run3",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-supersession-filesystem-draw3.json",
+      "sha256": "6c7698b36b7a5f515d0fbdacca6076b141d43c31403a5126bee7ec993828ea6a",
+      "run_id": "e07-filesystem-run3",
+      "records": 14
+    },
+    {
+      "path": "results/2026-07-28-e07-adoption-raw-draw3.json",
+      "sha256": "fc87b5773add93003d5f8204795792aba77d38ab732ba161d80943c6896f570e",
+      "run_id": "e07-adoption-run3",
+      "records": 12
+    }
+  ],
+  "final_record_health": {
+    "records": 162,
+    "unique_event_transcripts": 162,
+    "exit_code_nonzero": 0,
+    "timed_out": 0,
+    "error_non_null": 0,
+    "status": "clean"
+  },
+  "billing_and_embeddings": {
+    "reasoning_route": "chatgpt_subscription",
+    "api_fallback": "forbidden",
+    "usage_billed_reasoning_usd": 0.0,
+    "embedding_provider": "hashing",
+    "embeddings_usd": 0.0
+  },
+  "event_inventory": {
+    "files": 162,
+    "unique_paths": 162,
+    "all_present_at_audit": true,
+    "canonical_sha256": "179b7cb12c24ab7d0f7ef4cf1a711d3bcc6d4c88a6f7003cbb95c81b6c8e84d2",
+    "canonicalization": "Sort objects containing path and sha256 by path, then SHA-256 the UTF-8 JSON encoded with sort_keys=true and separators=(',',':'). Paths are workspace-relative."
+  },
+  "artifact_recorded_local_cli_failures": {
+    "attempts": 13,
+    "session_instances": 13,
+    "by_operation": {
+      "failed:checkpoint": 10,
+      "failed:save": 3
+    },
+    "rows": [
+      {
+        "run_id": "e07-flag-run1",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-adoption-run1",
+        "case_id": "adopt-correction-briefing",
+        "operation": "failed:save"
+      },
+      {
+        "run_id": "e07-adoption-run1",
+        "case_id": "adopt-intention-receipt",
+        "operation": "failed:save"
+      },
+      {
+        "run_id": "e07-adoption-run1",
+        "case_id": "adopt-intention-rail",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-base-run2",
+        "case_id": "recent-aether-heartbeat-healthy",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-base-run2",
+        "case_id": "recent-aether-gmail-no-action",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-base-run2",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-adoption-run2",
+        "case_id": "adopt-correction-flight-watch",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-flag-run3",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-base-run3",
+        "case_id": "recent-aether-heartbeat-failure",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-base-run3",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-base-run3",
+        "case_id": "recent-intention-expiry-negative",
+        "operation": "failed:checkpoint"
+      },
+      {
+        "run_id": "e07-adoption-run3",
+        "case_id": "adopt-correction-heartbeat",
+        "operation": "failed:save"
+      }
+    ]
+  },
+  "raw_nonzero_command_attempts": {
+    "attempts": 20,
+    "session_instances": 19,
+    "by_operation": {
+      "checkpoint": 11,
+      "save": 4,
+      "write": 2,
+      "adopt": 2,
+      "help": 1
+    },
+    "by_failure_kind": {
+      "native_invalid_request": 13,
+      "unsupported_cli_usage": 6,
+      "shell_quoting_error": 1
+    },
+    "rows": [
+      {
+        "event_path": "runs/e07-adoption-run1/service_api/adopt-correction-briefing/events.jsonl",
+        "event_sha256": "9092ed6e535803e779da24541deb90a0f403ffa7dce7b8feae79030618bf6028",
+        "item_id": "item_6",
+        "case_id": "adopt-correction-briefing",
+        "operation": "save",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-adoption-run1/service_api/adopt-correction-calendar/events.jsonl",
+        "event_sha256": "b0ecec243e90357c2e3426b09432d288c7363c1ad3cd58a0d92ea6c3b7e0404f",
+        "item_id": "item_3",
+        "case_id": "adopt-correction-calendar",
+        "operation": "write",
+        "exit_code": 2,
+        "failure_kind": "unsupported_cli_usage"
+      },
+      {
+        "event_path": "runs/e07-adoption-run1/service_api/adopt-correction-calendar/events.jsonl",
+        "event_sha256": "b0ecec243e90357c2e3426b09432d288c7363c1ad3cd58a0d92ea6c3b7e0404f",
+        "item_id": "item_4",
+        "case_id": "adopt-correction-calendar",
+        "operation": "save",
+        "exit_code": 2,
+        "failure_kind": "unsupported_cli_usage"
+      },
+      {
+        "event_path": "runs/e07-adoption-run1/service_api/adopt-intention-rail/events.jsonl",
+        "event_sha256": "2a92761ba9038f6df914262105dfa2d32c5f4b694c22bd223f4be982ea5beb57",
+        "item_id": "item_6",
+        "case_id": "adopt-intention-rail",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-adoption-run1/service_api/adopt-intention-receipt/events.jsonl",
+        "event_sha256": "959e50b7ddb527d9e0a42659e6ee42929a88c95848a38f710c5ba218b331e8ef",
+        "item_id": "item_5",
+        "case_id": "adopt-intention-receipt",
+        "operation": "save",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-adoption-run1/service_api/adopt-intention-winter/events.jsonl",
+        "event_sha256": "77ed9dcad305caf51c3668f95aedc7e5d834513ddfb6fb9c0a808f9b74ea67c0",
+        "item_id": "item_3",
+        "case_id": "adopt-intention-winter",
+        "operation": "help",
+        "exit_code": 2,
+        "failure_kind": "unsupported_cli_usage"
+      },
+      {
+        "event_path": "runs/e07-adoption-run2/service_api/adopt-correction-flight-watch/events.jsonl",
+        "event_sha256": "23ccb2cf22b9e651dff96e0c0baa5be1754d80fe2b567e67a430dfa27678391d",
+        "item_id": "item_6",
+        "case_id": "adopt-correction-flight-watch",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-adoption-run2/service_api/adopt-intention-rail/events.jsonl",
+        "event_sha256": "5756bef939147c0f306210a662f6a99bf8434e000f76eb0898ee150edcd022e2",
+        "item_id": "item_3",
+        "case_id": "adopt-intention-rail",
+        "operation": "write",
+        "exit_code": 2,
+        "failure_kind": "unsupported_cli_usage"
+      },
+      {
+        "event_path": "runs/e07-adoption-run2/service_api/adopt-intention-receipt/events.jsonl",
+        "event_sha256": "774b829e3da1bee859b5212d0cfe7cc3b8c701b05bcd1508ddc231bac9cb58a7",
+        "item_id": "item_3",
+        "case_id": "adopt-intention-receipt",
+        "operation": "adopt",
+        "exit_code": 2,
+        "failure_kind": "unsupported_cli_usage"
+      },
+      {
+        "event_path": "runs/e07-adoption-run3/service_api/adopt-correction-heartbeat/events.jsonl",
+        "event_sha256": "06c6b51a7bc0dfc45293134e9ff74239cc6458cef94e40de5069c3b9cf94fc23",
+        "item_id": "item_8",
+        "case_id": "adopt-correction-heartbeat",
+        "operation": "save",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-adoption-run3/service_api/adopt-intention-receipt/events.jsonl",
+        "event_sha256": "6b7cf08f2765a4b27cc1c52b5924e174ccd3890e0258f5b3217e2d09394909bb",
+        "item_id": "item_3",
+        "case_id": "adopt-intention-receipt",
+        "operation": "adopt",
+        "exit_code": 2,
+        "failure_kind": "unsupported_cli_usage"
+      },
+      {
+        "event_path": "runs/e07-base-run2/service_api/recent-aether-gmail-no-action/events.jsonl",
+        "event_sha256": "061041d54cd357b7e88419d25151156cf5d9d4da43b56fc917cb3e8c16551dd9",
+        "item_id": "item_6",
+        "case_id": "recent-aether-gmail-no-action",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-base-run2/service_api/recent-aether-heartbeat-healthy/events.jsonl",
+        "event_sha256": "830d1700c127839f8bcf1ae59bc68b5e608e70043e6dadb305e7be97734c5457",
+        "item_id": "item_6",
+        "case_id": "recent-aether-heartbeat-healthy",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-base-run2/service_api/recent-aether-morning-brief/events.jsonl",
+        "event_sha256": "5e74e87f779118dd081b1aa87ff4df42aba98ff433c0bac6ac9c7a53d1b9e50e",
+        "item_id": "item_4",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-base-run3/service_api/recent-aether-heartbeat-failure/events.jsonl",
+        "event_sha256": "1b49314f2838c4e568c2b37e07688df31ab3593f805258f8027780aebc8341d5",
+        "item_id": "item_6",
+        "case_id": "recent-aether-heartbeat-failure",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-base-run3/service_api/recent-aether-morning-brief/events.jsonl",
+        "event_sha256": "0ad1841bc3f469125adb126686d90006f9e66167f21b69379b8fdfaaac03ba91",
+        "item_id": "item_6",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-base-run3/service_api/recent-intention-expiry-negative/events.jsonl",
+        "event_sha256": "0c92cc40c030b06f67f11c1cf0bbd957ddfeae732fb9911828d74f6b6f9e5454",
+        "item_id": "item_4",
+        "case_id": "recent-intention-expiry-negative",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-flag-run1/service_api/recent-aether-morning-brief/events.jsonl",
+        "event_sha256": "1bf9520be453fdc233147179a384c6b09c625497b2e3a7e5dcac8c6253d10727",
+        "item_id": "item_6",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      },
+      {
+        "event_path": "runs/e07-flag-run2/service_api/recent-aether-morning-brief/events.jsonl",
+        "event_sha256": "43a4ca9a3b3671c20f10938d81cd95725ac4295e2809fb4030333159ea9417a8",
+        "item_id": "item_6",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "checkpoint",
+        "exit_code": 1,
+        "failure_kind": "shell_quoting_error"
+      },
+      {
+        "event_path": "runs/e07-flag-run3/service_api/recent-aether-morning-brief/events.jsonl",
+        "event_sha256": "ab19ad1688ca480ebbc908058605546b5471f6ba4ff6d04bb756746b8ef09b42",
+        "item_id": "item_7",
+        "case_id": "recent-aether-morning-brief",
+        "operation": "checkpoint",
+        "exit_code": 2,
+        "failure_kind": "native_invalid_request"
+      }
+    ]
+  },
+  "instrumentation_delta": {
+    "raw_attempts_not_in_artifact_local_cli_failures": 7,
+    "explanation": "The artifact summary records all 13 native invalid_request responses. The raw transcript layer additionally contains six unsupported CLI usage attempts and one shell quoting error."
+  },
+  "interpretation": {
+    "harness_failures": 0,
+    "draws_invalidated": 0,
+    "recovered_attempts_are_model_behavior": true,
+    "note": "Every nonzero local command attempt was recovered inside its session. Its output remained part of the measured model-visible context and token accounting; no attempt was removed or rerun out of the definitive draw."
+  }
+}

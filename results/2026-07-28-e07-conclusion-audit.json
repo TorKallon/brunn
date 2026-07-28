@@ -1,0 +1,161 @@
+{
+  "schema": "straylight-e07-conclusion-audit@v1",
+  "created_at": "2026-07-28T16:35:27-07:00",
+  "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+  "inputs": {
+    "main": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-aggregate.json",
+      "sha256": "3d2d52159383c196930924b0e75e98c631dbdd7b61bb5d8bc5a830ffdd471f40"
+    },
+    "adoption": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-adoption-aggregate.json",
+      "sha256": "d12c593f3a647861503d735fd5b875fb3a5adca4b6b89b84ffd858146ab1acba"
+    },
+    "base_performance": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-base-write-latency.json",
+      "sha256": "46fc0dca3d5aa143d42aaf30a4162c39ff386ccd37b98159c2bb735aeed209c9"
+    },
+    "flag_performance": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-supersession-write-latency.json",
+      "sha256": "5a6eff2805bbb308e0e3b913fbaafb16d4a71fb8e44874b920312a5213bbd030"
+    },
+    "query_budget_contract": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-supersession-query-budgets.json",
+      "sha256": "4148bf6517305c7f826f7d905d211d4acd1a4a9e5aec349d99be5506271667fa"
+    },
+    "deterministic_ready": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/experiment-private-791fac7/e07-deterministic-ready.json",
+      "sha256": "210547de64ee39383cfaf24b7689f6ee27290662d6d3d8c76de23cd1ea9777cc"
+    },
+    "acceptance_stack_reset": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/experiment-private-791fac7/e07-acceptance-stack-reset.json",
+      "sha256": "bb5fd927fe568b8324d200e37cbb9dda402369673877687d405b5a831867cb2f"
+    },
+    "reasoning_stack_reset": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/experiment-private-791fac7/e07-reasoning-stacks-ready.json",
+      "sha256": "d76c2e0850d4d15e368b54b24986e9a549ed450b2a93e8ac73d264736849b2c6"
+    },
+    "reasoning_order_predeclaration": {
+      "path": "/Users/Shared/projects/.codex-straylight-worktrees/experiment-private-791fac7/e07/e07-reasoning-order-predeclaration.json",
+      "sha256": "f9e6962ed581e33051c7079b5cf434fe5e95ef34bf5c65ef8b2443e8bc6ee13d"
+    }
+  },
+  "criteria": {
+    "deterministic": {
+      "pass": true,
+      "flag_write_p95_ms": 27.401,
+      "limit_ms": 58.0
+    },
+    "primary": {
+      "pass": true,
+      "flag_case_instance_wins": 6,
+      "base_case_instance_wins": 2,
+      "ties": 4,
+      "net_flag_minus_base": 4,
+      "minimum_net": 3,
+      "mcnemar": {
+        "a_pass_b_fail": 0,
+        "a_fail_b_pass": 0,
+        "discordant_cases": 0,
+        "two_sided_exact_p": 1.0,
+        "interpretation": "Tests asymmetry of collapsed binary case outcomes; a non-significant p-value is not evidence of non-inferiority."
+      },
+      "bootstrap_claim_delta": {
+        "point": 1.333333,
+        "rate": 0.08333333,
+        "bootstrap_95_ci_claims": {
+          "lower": -2.333333,
+          "upper": 3.666667
+        },
+        "bootstrap_95_ci_rate": {
+          "lower": -0.145833,
+          "upper": 0.229167
+        },
+        "method": "Cases are resampled with replacement. Repeated draws are averaged within each case before resampling, preserving the case cluster."
+      }
+    },
+    "safety": {
+      "pass": true,
+      "outside_family_new_forbidden_in_flag": 0,
+      "outside_family_mcnemar": {
+        "a_pass_b_fail": 1,
+        "a_fail_b_pass": 1,
+        "discordant_cases": 2,
+        "two_sided_exact_p": 1.0,
+        "interpretation": "Tests asymmetry of collapsed binary case outcomes; a non-significant p-value is not evidence of non-inferiority."
+      },
+      "significantly_negative": false
+    },
+    "overfetch": {
+      "pass": true,
+      "flag_mean_model_visible_tool_output_chars": 5685.714,
+      "base_mean_model_visible_tool_output_chars": 5639.881,
+      "flag_to_base_ratio": 1.00812659,
+      "maximum_ratio": 1.05
+    },
+    "adoption_d04": {
+      "pass": false,
+      "eligible_sessions": 18,
+      "emitted_sessions": 7,
+      "adoption_rate": 0.3888888888888889,
+      "minimum_rate": 0.5,
+      "if_failed": "assisted authoring is required before Tier C reliance"
+    }
+  },
+  "shared_adoption_aggregate": {
+    "pass": false,
+    "supersession": {
+      "eligible_sessions": 18,
+      "emitted_sessions": 7,
+      "adoption_rate": 0.3888888888888889,
+      "minimum_rate": 0.5,
+      "pass": false
+    },
+    "intention": {
+      "eligible_sessions": 18,
+      "emitted_sessions": 13,
+      "adoption_rate": 0.7222222222222222,
+      "minimum_rate": 0.5,
+      "pass": true
+    },
+    "interpretation": "The shared E07/E08 aggregate requires both features at 50%. E07's D04 conclusion uses only supersession adoption; intention is reported separately and must not invalidate the D04 mechanism result."
+  },
+  "conclusions": {
+    "mechanism_pass": true,
+    "d04_tier_c_ready": false,
+    "assisted_authoring_required": true
+  },
+  "cost": {
+    "reasoning_route": "ChatGPT subscription",
+    "case_runs": 162,
+    "subscription_equivalent_usd": 38.88,
+    "usage_billed_reasoning_usd": 0.0,
+    "embeddings_usd": 0.0,
+    "hard_ceiling_usd": 60.0
+  },
+  "scheduler": {
+    "simultaneous_harness_processes": 1,
+    "concurrency_per_harness": 3,
+    "maximum_simultaneous_codex_children": 3,
+    "draw_orders": {
+      "1": [
+        "e07-base",
+        "e07-flag",
+        "e07-filesystem",
+        "e07-adoption"
+      ],
+      "2": [
+        "e07-flag",
+        "e07-base",
+        "e07-adoption",
+        "e07-filesystem"
+      ],
+      "3": [
+        "e07-adoption",
+        "e07-filesystem",
+        "e07-base",
+        "e07-flag"
+      ]
+    }
+  }
+}

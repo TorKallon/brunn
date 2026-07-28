@@ -1,0 +1,103 @@
+{
+  "schema": "straylight-query-budgets@v1",
+  "profile": "e07-supersession",
+  "retrieval_modes": [
+    "exact",
+    "lexical"
+  ],
+  "runtime_features": {
+    "allow_degraded_embeddings": false,
+    "embed_cache": false,
+    "embedding_backfill_batch_chunks": 64,
+    "embedding_backfill_foreground_status_timeout_ms": 1000,
+    "embedding_backfill_foreground_status_url_configured": true,
+    "embedding_backfill_guard": true,
+    "embedding_backfill_inter_batch_ms": 250,
+    "embedding_backfill_open_p95_limit_ms": 120.0,
+    "embedding_backfill_search_p95_limit_ms": 107.0,
+    "intention_ledger": false,
+    "lexical_single_scan": false,
+    "materialize_token_budget": 24000,
+    "observability_timings_ms": true,
+    "read_path_roundtrip_v1": false,
+    "resume_deltas": false,
+    "search_char_cap": false,
+    "search_fair_share": false,
+    "search_section_demotion_top_n": null,
+    "search_top1_hydration": false,
+    "semantic_deadline_ms": 300,
+    "semantic_lane": false,
+    "supersession_demotion": true,
+    "supersession_demotion_weight": 1.5,
+    "verbatim_spans": false
+  },
+  "definition": "completed sqlx::query events within the request scope; includes authentication, transaction context/setup, application SQL, and COMMIT; excludes SQLx's unlogged protocol-level BEGIN",
+  "baseline": {
+    "corpus": "E07 synthetic performance fixture at 64K records",
+    "calibration_artifact": "/Users/Shared/projects/.codex-straylight-worktrees/e07-run/results/2026-07-28-e07-supersession-write-calibration.json",
+    "calibration_sha256": "7c24d728828b4efe3f2408a82661b8e41320e97ee9a859619c9276db42702bda",
+    "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+    "method": "Reviewed observed counts from the intentionally ineligible 64K/30 calibration's six canonical same-named operation samples. Boundary probes such as max_batch_read and max_checkpoint_sources are excluded. Exact counts are frozen when invariant; otherwise the observed maximum is frozen with zero headroom."
+  },
+  "review": {
+    "reviewer": "Codex E07 independent contract auditor",
+    "reviewed_at": "2026-07-28T15:44:00-07:00",
+    "decision": "approved_no_headroom_from_observed_min_max"
+  },
+  "operations": {
+    "open": {
+      "comparison": "at_most",
+      "max": 22,
+      "sample_name": "open",
+      "observed_min": 17,
+      "observed_max": 22,
+      "observed_samples": 30,
+      "headroom": 0
+    },
+    "search": {
+      "comparison": "exact",
+      "count": 11,
+      "sample_name": "search",
+      "observed_min": 11,
+      "observed_max": 11,
+      "observed_samples": 30,
+      "headroom": 0
+    },
+    "read": {
+      "comparison": "exact",
+      "count": 11,
+      "sample_name": "read",
+      "observed_min": 11,
+      "observed_max": 11,
+      "observed_samples": 30,
+      "headroom": 0
+    },
+    "write": {
+      "comparison": "exact",
+      "count": 14,
+      "sample_name": "write",
+      "observed_min": 14,
+      "observed_max": 14,
+      "observed_samples": 30,
+      "headroom": 0
+    },
+    "checkpoint": {
+      "comparison": "exact",
+      "count": 28,
+      "sample_name": "checkpoint",
+      "observed_min": 28,
+      "observed_max": 28,
+      "observed_samples": 1,
+      "headroom": 0
+    },
+    "resume": {
+      "comparison": "at_most",
+      "max": 37,
+      "sample_name": "resume",
+      "observed_min": 32,
+      "observed_max": 37,
+      "observed_samples": 30,
+      "headroom": 0
+    }
+  }
+}
