@@ -451,6 +451,7 @@ QUERY_COUNT_SAMPLE_OPERATIONS = {
     "max_batch_read": "read",
     "write": "write",
     "checkpoint": "checkpoint",
+    "resume_delta_checkpoint": "checkpoint",
     "max_checkpoint_sources": "checkpoint",
     "resume": "resume",
 }
@@ -463,6 +464,7 @@ def expected_query_count_sample_cardinality(
     verbatim_identifier_probes: int,
     concurrent_rounds: int,
     concurrent_searches_per_round: int,
+    resume_delta_fixture_checkpoint: bool = False,
 ) -> dict[str, int]:
     integer_fields = {
         "scale": scale,
@@ -488,6 +490,15 @@ def expected_query_count_sample_cardinality(
             "query-count scale, retrieval samples, concurrent rounds, and "
             "searches per round must be positive"
         )
+    if not isinstance(resume_delta_fixture_checkpoint, bool):
+        raise ValueError(
+            "resume-delta fixture checkpoint classification must be boolean"
+        )
+    checkpoint_sample_name = (
+        "resume_delta_checkpoint"
+        if resume_delta_fixture_checkpoint
+        else "checkpoint"
+    )
     expected = {
         "open": samples_per_retrieval,
         "search": samples_per_retrieval,
@@ -496,7 +507,7 @@ def expected_query_count_sample_cardinality(
         "old_source_search": samples_per_retrieval,
         "verbatim_identifier_search": verbatim_identifier_probes,
         "read": samples_per_retrieval,
-        "checkpoint": 1,
+        checkpoint_sample_name: 1,
         "resume": samples_per_retrieval,
         "write": concurrent_rounds,
         "concurrent_search": (
@@ -4867,7 +4878,12 @@ def benchmark_scale(
             "source_refs": [target_path] if exercise_resume_delta else [],
         },
     )
-    response_samples.append(("checkpoint", checkpoint))
+    checkpoint_sample_name = (
+        "resume_delta_checkpoint"
+        if exercise_resume_delta
+        else "checkpoint"
+    )
+    response_samples.append((checkpoint_sample_name, checkpoint))
     checkpoint_id = str(
         recursive_find(checkpoint, "checkpoint_id")
         or recursive_find(checkpoint, "checkpoint_ref")
@@ -5266,6 +5282,7 @@ def benchmark_scale(
                 concurrent_searches_per_round=(
                     CONCURRENT_SEARCHES_PER_ROUND
                 ),
+                resume_delta_fixture_checkpoint=exercise_resume_delta,
             )
             if protocol == "simple"
             else None

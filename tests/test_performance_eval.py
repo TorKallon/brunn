@@ -345,6 +345,10 @@ class PerformanceEvalTests(unittest.TestCase):
                         "operation": "checkpoint",
                         "counts": [28],
                     },
+                    "resume_delta_checkpoint": {
+                        "operation": "checkpoint",
+                        "counts": [33],
+                    },
                     "max_checkpoint_sources": {
                         "operation": "checkpoint",
                         "counts": [343],
@@ -412,6 +416,10 @@ class PerformanceEvalTests(unittest.TestCase):
             gates["query_budget_read"]["observed"]["sample_name"],
             "read",
         )
+        self.assertEqual(
+            gates["query_budget_checkpoint"]["observed"]["counts"],
+            [28],
+        )
 
         scale["query_counts"]["by_sample_name"]["read"]["counts"] = [12]
         gates = {
@@ -425,6 +433,23 @@ class PerformanceEvalTests(unittest.TestCase):
         }
         self.assertFalse(gates["query_budget_read"]["pass"])
 
+        scale["query_counts"]["by_sample_name"]["read"]["counts"] = [11]
+        scale["query_counts"]["by_sample_name"]["checkpoint"]["counts"] = [29]
+        gates = {
+            gate["name"]: gate
+            for gate in evaluate_gates(
+                [scale],
+                DEFAULT_THRESHOLDS,
+                require_gin_index=False,
+                query_budgets=budgets,
+            )
+        }
+        self.assertFalse(gates["query_budget_checkpoint"]["pass"])
+        self.assertEqual(
+            gates["query_budget_checkpoint"]["observed"]["counts"],
+            [29],
+        )
+
         del scale["query_counts"]["by_sample_name"]["read"]
         gates = {
             gate["name"]: gate
@@ -436,6 +461,30 @@ class PerformanceEvalTests(unittest.TestCase):
             )
         }
         self.assertFalse(gates["query_budget_read"]["pass"])
+
+    def test_resume_delta_checkpoint_is_separately_classified_and_audited(self):
+        expected = expected_query_count_sample_cardinality(
+            scale=FUTURE_RECORDS,
+            samples_per_retrieval=1,
+            verbatim_identifier_probes=1,
+            concurrent_rounds=1,
+            concurrent_searches_per_round=1,
+            resume_delta_fixture_checkpoint=True,
+        )
+        self.assertNotIn("checkpoint", expected)
+        self.assertEqual(expected["resume_delta_checkpoint"], 1)
+
+        summary = summarize_query_counts(
+            [("resume_delta_checkpoint", {"query_count": 33})],
+            expected_cardinality={"resume_delta_checkpoint": 1},
+        )
+
+        self.assertTrue(summary["sample_cardinality"]["pass"])
+        self.assertEqual(
+            summary["by_sample_name"]["resume_delta_checkpoint"]["counts"],
+            [33],
+        )
+        self.assertEqual(summary["by_operation"]["checkpoint"]["counts"], [33])
 
     def test_query_count_summary_enforces_authoritative_sample_cardinality(self):
         expected = expected_query_count_sample_cardinality(
