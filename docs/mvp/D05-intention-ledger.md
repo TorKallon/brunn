@@ -1,7 +1,7 @@
 # D05 — Intention Ledger: Agent-Authored Prospective Memory
 
-Status: Proposed — not started
-Date: 2026-07-27
+Status: Implemented default-off — E08 deterministic preflight stopped; no ship verdict
+Date: 2026-07-28
 Depends on: none
 Gated by: E08 (E08-intention-ledger-experiment.md)
 Runtime flag: intention_ledger
@@ -11,6 +11,22 @@ Runtime flag: intention_ledger
 The prospective chronic family fails in every run: recent-aether-gmail-actions (0–2/4), coord-deadline-readiness (2/4), recent-aether-morning-brief. These cases require acting on a *future obligation* recorded in a past session. Nothing in the current task's queries mentions the obligation, so no retrieval lane surfaces it — retrieval answers the question asked, not the question that should have been asked. Unlike the compilation losses (21/22 disputed answers had an accepted source in context), prospective misses are frequently true retrieval absences: the obligation note never enters context at all.
 
 Files do not fix this. A vault surfaces an intention only if the agent happens to open the right note. This design targets a capability that is files-impossible: an intention written by agent A in one client surfaces at agent B's next open in a different client. Given the interface result (files 194/228 vs native API 186/228), the right move is to build where the service can do what files cannot, rather than re-fighting ground where files win.
+
+## Current experiment gate
+
+D05 is implemented behind the default-off `intention_ledger` flag, but E08
+stopped before any feature comparison. Its flag-on query-budget calibration
+recorded complete canonical counts and then failed the nonintentional 64K
+concurrent-search regression gate at 874.535 ms p95 against a 750.0 ms
+ceiling. Because no query-budget contract could be authored, no latency
+contrast or reasoning draw ran.
+
+This is not a D05 ship/kill verdict. Keep the feature default-off and do not
+enable it on Nyx. A rerun requires a prospectively approved amended E08
+protocol. Exact evidence:
+`results/2026-07-28-e08-query-budget-calibration.json`,
+`results/2026-07-28-e08-deterministic-preflight-stop.json`, and
+`results/2026-07-28-e08-report.md`.
 
 ## Design
 
@@ -76,7 +92,12 @@ Experiment: E08 (E08-intention-ledger-experiment.md) must pass — prospective c
 
 ## Rollout and kill switch
 
-`intention_ledger` is a runtime config flag — no deploy to disable. Off: no response section, no matching work, byte-identical baseline. Sequence: ship dark → E08 → enable on Nyx in the Tier B window (D14 authority tiers) → owner data. Kill switch is instant; because the projection is derived and read-only, disabling leaves no state to clean up.
+`intention_ledger` is a runtime config flag — no deploy to disable. Off: no
+response section, no matching work, byte-identical baseline. Current sequence:
+keep dark → prospectively approve an amended E08 protocol → obtain an accepted
+E08 verdict → only then consider enablement on Nyx in the Tier B window (D14
+authority tiers) → owner data. Kill switch is instant; because the projection
+is derived and read-only, disabling leaves no state to clean up.
 
 ## References
 

@@ -38,6 +38,12 @@ deltas) proven in real use.
   The D02 flag-on arm recovered only the four byte-2,600 probes at each scale
   and lost every deeper identifier. D02 remains default-off pending repair;
   the 640K soak and reasoning draws were aborted.
+- E08 stopped at deterministic preflight without a feature verdict. Its
+  flag-on calibration recorded complete canonical query counts but failed the
+  nonintentional 64K concurrent-search p95 gate at 874.535 ms against the
+  750.0 ms ceiling. No query-budget contract, latency contrast, or reasoning
+  draw ran; D05 remains default-off and any rerun needs a prospectively
+  approved amended protocol.
 - Downstream E04–E08 runs therefore freeze `verbatim_spans=off`; none can
   rehabilitate D02. E09 is prerequisite-aborted by E03's failed Mode 2 and
   missing quality backfill. E10 lacks an accepted immutable launch flag
@@ -104,7 +110,7 @@ Features — flag + experiment gated:
 | [D03](mvp/D03-resume-delta-packets.md) | Resume delta packets ("changes since your checkpoint") | Implemented default-off, rejected by E06 | Closed; keep `resume_deltas` off |
 | [E06](mvp/E06-resume-delta-experiment.md) | Resume delta experiment | Complete negative — no case win or paired claim improvement; payload larger in 15/15 pairs | D03 rejected |
 | [D04](mvp/D04-supersession-current-truth.md) | Supersession / current-truth (Markdown frontmatter round-trip) | Proposed — not started | [E07](mvp/E07-supersession-experiment.md) |
-| [D05](mvp/D05-intention-ledger.md) | Intention ledger at open | Proposed — not started | [E08](mvp/E08-intention-ledger-experiment.md) |
+| [D05](mvp/D05-intention-ledger.md) | Intention ledger at open | Implemented default-off — E08 deterministic preflight stopped; no feature verdict | Prospectively approve an amended [E08](mvp/E08-intention-ledger-experiment.md) protocol before rerun |
 | [D11](mvp/D11-semantic-lane-policy.md) | Semantic lane policy: existence question, embed cache + deadline | Implemented behind default-off flags — E09 prerequisite-aborted | Repair E03 Mode 2 and complete quality backfill before [E09](mvp/E09-semantic-existence-experiment.md) |
 
 Readiness — clients, migration, authority:
@@ -144,7 +150,9 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 1. Preserve E01's completed paired-draw baseline. E02 and E03 have definitive
    failures: repair D02 and the semantic timeout path, then rerun their free
-   deterministic prerequisites before any paid or reasoning arms.
+   deterministic prerequisites before any paid or reasoning arms. Keep D05
+   default-off; do not rerun E08 until an amended protocol is prospectively
+   approved.
 2. Ship the immediate D08 items: dream-retry permanent-failure fix, MCP legacy
    residue removal, legacy cargo-feature freeze.
 3. Run D09's isolated 64K/640K acceptance and calibrate the fail-closed
@@ -156,6 +164,12 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Change log
 
+- 2026-07-28: E08 stopped at deterministic preflight with no D05 feature
+  verdict. Its exact flag-on calibration recorded complete canonical query
+  counts but failed concurrent-search p95 at 874.535 ms against the 750.0 ms
+  gate. No query-budget contract, latency contrast, reasoning case-run, draw,
+  audit, aggregate, embedding request, or billable inference ran. D05 remains
+  default-off; a rerun requires a prospectively approved amended protocol.
 - 2026-07-28: E06 completed 45/45 reasoning case-runs with zero timeout/error.
   D03 passed its deterministic 640K mechanism gates (77.606 ms resume p95,
   exact +5 SQL statements in 30/30 pairs, exact lineage in 30/30) but failed

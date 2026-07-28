@@ -1,0 +1,278 @@
+{
+  "schema": "straylight-e08-deterministic-preflight-stop@v1",
+  "recorded_at": "2026-07-28",
+  "experiment": "E08",
+  "design": "D05",
+  "status": "stopped_at_deterministic_preflight",
+  "resolution": "blocked_pending_prospectively_approved_amended_protocol",
+  "feature_verdict": null,
+  "d05_verdict": null,
+  "conclusion": "The intention-ledger calibration recorded complete canonical query-count samples, but its nonintentional concurrent-search regression gate failed. No query-budget contract could be authored, so all latency contrasts and reasoning arms remained ineligible. This is not a D05 feature verdict.",
+  "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+  "frozen_inputs": {
+    "full_manifest": {
+      "path": "eval/recent_work_cases.json",
+      "cases": 14,
+      "claims": 56,
+      "sha256": "24729dd91a7f3f3c21a83a5ba7f7c2b52f5dcba4de9067e55ff622a0bf807d49"
+    },
+    "prospective_manifest": {
+      "path": "eval/e08_prospective_cases.json",
+      "cases": 5,
+      "claims": 20,
+      "sha256": "8daa7d09ca0e4b03110af7255130770ac523dd51c6b45617d2867850e908f66b"
+    },
+    "corpus_sha256": "6bc83dbf4366fc3a716799ba300c32f841f9f644dfcc497b2aea0e138ddcb10b",
+    "planned_invocations": 15,
+    "planned_case_runs": 129,
+    "planned_draws": 3
+  },
+  "calibration": {
+    "path": "results/2026-07-28-e08-query-budget-calibration.json",
+    "sha256": "d0780b4fb5d705ca09f4630cd9dad63b50dfa8b451b1e877964902ff33240084",
+    "bytes": 208017,
+    "schema": "straylight-performance-eval@v2",
+    "label": "e08-query-budget-calibration",
+    "pass": false,
+    "errors": [],
+    "failed_gates": [
+      {
+        "name": "regression_tier_64000_concurrent_search_p95_ms",
+        "classification": "nonintentional_blocking_failure",
+        "observed_ms": 874.535,
+        "threshold_ms": 750.0
+      },
+      {
+        "name": "query_budget_calibration_is_not_acceptance",
+        "classification": "intentional_calibration_gate",
+        "observed": {
+          "profile": "calibration",
+          "query_counts_recorded": true
+        },
+        "threshold": "author and review a runtime-bound query-budget contract, then rerun with that named profile"
+      }
+    ],
+    "canonical_query_counts": {
+      "cardinality_complete": true,
+      "missing_query_counts": 0,
+      "unexpected_samples": 0,
+      "samples": {
+        "open": {
+          "expected": 30,
+          "observed": 30,
+          "min": 17,
+          "max": 22,
+          "distribution": {
+            "17": 29,
+            "22": 1
+          }
+        },
+        "search": {
+          "expected": 30,
+          "observed": 30,
+          "min": 11,
+          "max": 11,
+          "distribution": {
+            "11": 30
+          }
+        },
+        "read": {
+          "expected": 30,
+          "observed": 30,
+          "min": 11,
+          "max": 11,
+          "distribution": {
+            "11": 30
+          }
+        },
+        "write": {
+          "expected": 30,
+          "observed": 30,
+          "min": 14,
+          "max": 14,
+          "distribution": {
+            "14": 30
+          }
+        },
+        "checkpoint": {
+          "expected": 1,
+          "observed": 1,
+          "min": 28,
+          "max": 28,
+          "distribution": {
+            "28": 1
+          }
+        },
+        "resume": {
+          "expected": 30,
+          "observed": 30,
+          "min": 32,
+          "max": 37,
+          "distribution": {
+            "32": 29,
+            "37": 1
+          }
+        }
+      }
+    },
+    "excluded_noncanonical_query_counts": {
+      "reason": "Boundary, concurrency, and special-shape probes are not pooled into the canonical same-named operation contract.",
+      "samples": {
+        "bounded_overflow_search": {
+          "observed": 30,
+          "min": 11,
+          "max": 11
+        },
+        "broad_search": {
+          "observed": 30,
+          "min": 11,
+          "max": 11
+        },
+        "old_source_search": {
+          "observed": 30,
+          "min": 11,
+          "max": 11
+        },
+        "verbatim_identifier_search": {
+          "observed": 30,
+          "min": 11,
+          "max": 11
+        },
+        "concurrent_search": {
+          "observed": 150,
+          "min": 16,
+          "max": 16
+        },
+        "max_batch_read": {
+          "observed": 1,
+          "min": 166,
+          "max": 166
+        },
+        "max_checkpoint_sources": {
+          "observed": 1,
+          "min": 343,
+          "max": 343
+        }
+      }
+    },
+    "performance_ms": {
+      "open_p95": 118.965,
+      "search_p95": 76.642,
+      "read_p95": 45.023,
+      "broad_search_p95": 272.724,
+      "old_source_search_p95": 59.748,
+      "bounded_overflow_search_p95": 58.221,
+      "concurrent_write_p95": 33.29,
+      "concurrent_search_p95": 874.535
+    },
+    "functional_observations": {
+      "open_found_all": true,
+      "search_found_all": true,
+      "read_found_all": true,
+      "broad_search_found_all": true,
+      "old_source_search_found_all": true,
+      "bounded_overflow_search_found_all": true,
+      "concurrent_search_found_all": true,
+      "critical_lane_failure_observed": false
+    },
+    "runtime": {
+      "before_after_stable": true,
+      "build_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+      "intention_ledger": true,
+      "semantic_lane": false,
+      "verbatim_spans": false,
+      "supersession_demotion": false,
+      "resume_deltas": false,
+      "lexical_single_scan": false,
+      "embedding_provider": "hashing",
+      "embedding_model": "straylight-hashing-v1",
+      "embedding_backfill_foreground_status_url_configured": false,
+      "worker_present": false
+    },
+    "provenance": {
+      "source_clean": true,
+      "api_container_id": "8b9aabb2ab57444909636949922bc1c7ba71ce333346daebc3e8e64ce32c8649",
+      "api_container_started_at": "2026-07-28T23:39:53.760787212Z",
+      "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+      "database_image_id": "sha256:34091dedcdc23f3d3b03d2c2e6c1cb8ac6d08aa68e1e517e181539f5c8100cd6"
+    }
+  },
+  "protocol_consequence": {
+    "query_budget_contract_authored": false,
+    "query_budget_contract_path": null,
+    "latency_contrast_arms_run": 0,
+    "reasoning_invocations_run": 0,
+    "reasoning_case_runs_run": 0,
+    "draws_run": 0,
+    "draw1_abort_audit_run": false,
+    "final_audit_run": false,
+    "aggregates_run": 0
+  },
+  "diagnostics": {
+    "suspected_contention": {
+      "status": "diagnostic_only_not_proven_invalidation",
+      "observations": [
+        "The calibration launcher used a PTY.",
+        "Docker Compose emitted approximately 1697 animated progress lines and approximately 33000 tool-output tokens.",
+        "Afterward the Codex renderer was observed at approximately 97 percent CPU and Nyx load was 9.99, 8.44, 6.34.",
+        "A separate same-revision E07 non-PTY calibration and acceptance recorded concurrent-search p95 values of 587.546 ms and 580.013 ms."
+      ],
+      "interpretation": "These observations make renderer or PTY contention plausible, but do not invalidate or causally explain the exact E08 artifact. The recorded red gate remains binding."
+    }
+  },
+  "private_helper_integrity_repairs": [
+    {
+      "defect": "The pre-run query-budget reviewer pooled boundary probes through query_counts.by_operation.",
+      "repair": "Before calibration, the private reviewer was changed to use canonical same-named by_sample_name cardinalities.",
+      "helper_sha256_after": "b098edc2745a9782bddcccc6174c46d8d4073e219fb19dbfbd4ab1be77cafb90",
+      "measurement_effect": "none; repaired before the recorded calibration"
+    },
+    {
+      "defect": "An empty STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL inherited a Compose default through ${VAR:-default}.",
+      "repair": "Before calibration, an explicit empty service override was added and the authenticated runtime snapshot confirmed the URL was unconfigured.",
+      "helper_sha256_after": "e3741d726ed6702cf5b97914926aaee2300c984d53ee98d5f30a691c491821c8",
+      "measurement_effect": "none; repaired before the recorded calibration"
+    },
+    {
+      "defect": "The failure cleanup trap did not remove the calibration project after red validation.",
+      "repair": "The exact project resources were explicitly removed, then the private cleanup trap was strengthened.",
+      "helper_sha256_before": "87bc39a0f8cd0e16aff7d4d9e66fe54079e594a8f8ecb738c39a1d42c0481d49",
+      "helper_sha256_after": "3b08cb3ee39b2bb3779701ca9305a379c050e7b00bf3d2931477f962c46cdce0",
+      "measurement_effect": "none; cleanup-only repair after capture"
+    }
+  ],
+  "cost": {
+    "actual_usage_billed_reasoning_usd": 0.0,
+    "actual_embeddings_usd": 0.0,
+    "actual_subscription_equivalent_incurred_usd": 0.0,
+    "executed_reasoning_case_runs": 0,
+    "planned_subscription_equivalent_not_incurred_usd": 30.96,
+    "embedding_warning_threshold_usd": 20.0,
+    "embedding_warning_triggered": false
+  },
+  "current_posture": {
+    "intention_ledger_default_enabled": false,
+    "enablement_authorized": false,
+    "rerun_under_frozen_protocol_authorized": false,
+    "rerun_requirement": "A prospectively approved amended protocol is required before any rerun."
+  },
+  "resource_cleanup": {
+    "e08_containers_remaining": 0,
+    "e08_volumes_remaining": 0,
+    "e08_networks_remaining": 0,
+    "fresh_volumes_destroyed": [
+      "slx-e08-perf-cal-791fac7_postgres_data",
+      "slx-e08-perf-cal-791fac7_minio_data"
+    ],
+    "ports_confirmed_free": [
+      15220,
+      15221,
+      18220,
+      18221,
+      19220,
+      19221,
+      19222,
+      19223
+    ]
+  }
+}

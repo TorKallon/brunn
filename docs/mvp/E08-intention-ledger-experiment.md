@@ -1,13 +1,37 @@
 # E08 — Intention Ledger Experiment
 
-Status: Specified — not run
-Date: 2026-07-27
+Status: Deterministic preflight stopped — no feature verdict
+Date: 2026-07-28
 Gates: D05 (D05-intention-ledger.md)
 Phase: 1 (requires flagged feature build)
 
 ## Question
 
 Does surfacing ≤5 pointer-only pending intentions at open (D05-intention-ledger.md) recover prospective-memory claim slots, without false surfacing, without regressing non-prospective cases, and without measurable open latency cost?
+
+## Recorded outcome (2026-07-28)
+
+The flag-on 64K query-budget calibration recorded every canonical query-count
+sample, but failed the nonintentional
+`regression_tier_64000_concurrent_search_p95_ms` gate: **874.535 ms p95
+against the 750.0 ms ceiling**. Its other red gate,
+`query_budget_calibration_is_not_acceptance`, is intentional for calibration
+artifacts. The exact red artifact is
+`results/2026-07-28-e08-query-budget-calibration.json`, SHA-256
+`d0780b4fb5d705ca09f4630cd9dad63b50dfa8b451b1e877964902ff33240084`.
+
+The frozen procedure requires an acceptable calibration before authoring the
+runtime-bound `e08-intention-ledger` query-budget contract. No contract was
+therefore authored; no latency contrast, reasoning case-run, draw, audit, or
+aggregate ran. This is a deterministic-preflight stop, **not** an E08 pass or
+failure on feature value and not a D05 ship/kill verdict. `intention_ledger`
+remains default-off.
+
+PTY/renderer contention is recorded as a suspected diagnostic only, not a
+proven cause or invalidation. A rerun requires a prospectively approved amended
+protocol; the frozen protocol must not simply be rerun. See
+`results/2026-07-28-e08-report.md` and
+`results/2026-07-28-e08-deterministic-preflight-stop.json`.
 
 ## Preconditions and build items
 
