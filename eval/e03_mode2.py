@@ -88,6 +88,18 @@ def build_performance_command(args: argparse.Namespace) -> list[str]:
         "--protocol",
         "simple",
         "--wait-semantic",
+        "--semantic-failure-probe",
+        "required",
+        "--expect-feature-flag",
+        "semantic_lane=on",
+        "--expect-feature-flag",
+        "embed_cache=off",
+        "--expect-feature-flag",
+        "embedding_backfill_guard=on",
+        "--expect-feature-flag",
+        "verbatim_spans=on",
+        "--expect-runtime-config",
+        "semantic_deadline_ms=null",
         "--label",
         args.label,
         "--out",
@@ -111,8 +123,23 @@ def build_performance_command(args: argparse.Namespace) -> list[str]:
         command.extend(["--api-container", args.api_container])
     if args.db_container:
         command.extend(["--db-container", args.db_container])
+    if args.expect_build_revision:
+        command.extend([
+            "--expect-build-revision",
+            args.expect_build_revision,
+        ])
+    command.extend(["--query-budget-profile", args.query_budget_profile])
+    if args.query_budget_contract:
+        command.extend([
+            "--query-budget-contract",
+            str(args.query_budget_contract),
+        ])
     for state in args.feature_state:
         command.extend(["--feature-state", state])
+    for state in args.expect_feature_flag:
+        command.extend(["--expect-feature-flag", state])
+    for value in args.expect_runtime_config:
+        command.extend(["--expect-runtime-config", value])
     return command
 
 
@@ -151,11 +178,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mock-config", type=Path, required=True)
     parser.add_argument("--api-container")
     parser.add_argument("--db-container")
+    parser.add_argument("--expect-build-revision")
     parser.add_argument("--scales", type=int, nargs="+")
     parser.add_argument("--samples", type=int, default=30)
     parser.add_argument("--quick", action="store_true")
     parser.add_argument("--future-soak", action="store_true")
     parser.add_argument("--feature-state", action="append", default=[])
+    parser.add_argument("--expect-feature-flag", action="append", default=[])
+    parser.add_argument("--expect-runtime-config", action="append", default=[])
+    parser.add_argument("--query-budget-profile", default="default-safe")
+    parser.add_argument("--query-budget-contract", type=Path)
     parser.add_argument("--failure-settle-seconds", type=float, default=0.25)
     parser.add_argument("--timeout", type=float, default=14_400.0)
     parser.add_argument("--out", type=Path, required=True)

@@ -8,7 +8,13 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from agent_work_eval import (  # noqa: E402
+    CURRENT_RUNTIME_FEATURES as AGENT_CURRENT_RUNTIME_FEATURES,
+)
 from performance_eval import (  # noqa: E402
+    BOOLEAN_RUNTIME_FEATURES,
+    CURRENT_RUNTIME_FEATURES,
+    D03_RESUME_DELTAS_GATE_PROFILE,
     DEFAULT_THRESHOLDS,
     DEFINITIVE_SAMPLES,
     FUTURE_RECORDS,
@@ -20,8 +26,10 @@ from performance_eval import (  # noqa: E402
     benchmark_flat_files,
     build_parser,
     compare_results,
+    capture_service_runtime_snapshot,
     counter_growth,
     evaluate_gates,
+    evaluate_d03_resume_delta_gates,
     evaluate_query_budgets,
     evaluate_retrieval_plan,
     extract_sql_function_body,
@@ -29,19 +37,25 @@ from performance_eval import (  # noqa: E402
     load_reused_flat_controls,
     old_source_marker,
     parse_feature_states,
+    expected_runtime_features,
     percentile,
     resolve_run_profile,
+    resolve_query_budget_contract,
     response_character_metrics,
     response_reports_lane_failure,
     response_reports_gap_kind,
     semantic_failure_probe,
     source_text_contains,
+    require_stable_runtime_configuration,
     response_timings,
     sql_fingerprint,
     summarize_query_counts,
     summarize_timing_samples,
     timing_phase_sum_sane,
     verify_service_feature_states,
+    validate_e09_request_modes,
+    validate_d03_resume_control_compatibility,
+    validate_semantic_failure_probe_posture,
     lexical_overflow_marker,
     simple_checkpoint_footprint,
     summarize_response_accounting,
@@ -53,7 +67,34 @@ from performance_eval import (  # noqa: E402
 )
 
 
+def runtime_features(**overrides):
+    values = {name: False for name in BOOLEAN_RUNTIME_FEATURES}
+    values.update({
+        "embed_cache": True,
+        "embedding_backfill_guard": True,
+        "observability_timings_ms": True,
+        "embedding_backfill_batch_chunks": 64,
+        "embedding_backfill_foreground_status_timeout_ms": 1_000,
+        "embedding_backfill_inter_batch_ms": 250,
+        "embedding_backfill_open_p95_limit_ms": 120,
+        "embedding_backfill_search_p95_limit_ms": 107,
+        "materialize_token_budget": 24_000,
+        "search_section_demotion_top_n": None,
+        "semantic_deadline_ms": 300,
+        "supersession_demotion_weight": 1.5,
+    })
+    values.update(overrides)
+    assert set(values) == set(CURRENT_RUNTIME_FEATURES)
+    return values
+
+
 class PerformanceEvalTests(unittest.TestCase):
+    def test_runtime_feature_contract_matches_reasoning_harness(self):
+        self.assertEqual(
+            CURRENT_RUNTIME_FEATURES,
+            AGENT_CURRENT_RUNTIME_FEATURES,
+        )
+
     def test_feature_states_are_normalized_and_conflicts_fail(self):
         self.assertEqual(
             parse_feature_states([
@@ -70,13 +111,40 @@ class PerformanceEvalTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown service feature"):
             parse_feature_states(["unreported_experiment=on"])
 
+    def test_expected_runtime_features_cover_boolean_and_typed_controls(self):
+        self.assertEqual(
+            expected_runtime_features(
+                ["resume_deltas=on", "semantic_lane=off"],
+                [
+                    "semantic_deadline_ms=null",
+                    "search_section_demotion_top_n=8",
+                    "supersession_demotion_weight=1.5",
+                ],
+            ),
+            {
+                "resume_deltas": True,
+                "search_section_demotion_top_n": 8,
+                "semantic_deadline_ms": None,
+                "semantic_lane": False,
+                "supersession_demotion_weight": 1.5,
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            expected_runtime_features(
+                ["semantic_lane=off"],
+                ["semantic_lane=false"],
+            )
+
     def test_feature_state_preflight_matches_the_service_snapshot(self):
         class Response:
             data = {
-                "feature_flags": {
-                    "lexical_single_scan": True,
-                    "read_path_roundtrip_v1": False,
-                },
+                "status": "ready",
+                "build_revision": "abc123",
+                "runtime_features": runtime_features(
+                    lexical_single_scan=True,
+                    read_path_roundtrip_v1=False,
+                ),
+                "embeddings": {"provider": "hashing"},
             }
 
         class Client:
@@ -103,6 +171,48 @@ class PerformanceEvalTests(unittest.TestCase):
             verify_service_feature_states(
                 client,
                 {"lexical_single_scan": False},
+            )
+
+    def test_runtime_snapshot_checks_all_features_build_and_stability(self):
+        status = {
+            "status": "ready",
+            "build_revision": "abc123",
+            "runtime_features": runtime_features(resume_deltas=True),
+            "embeddings": {"provider": "hashing", "status": "ready"},
+            "semantic_runtime": {"requested": 0},
+        }
+        before = capture_service_runtime_snapshot(
+            status,
+            expected_features={"resume_deltas": True},
+            expected_build_revision="abc123",
+        )
+        after = capture_service_runtime_snapshot(
+            status,
+            expected_features={"resume_deltas": True},
+            expected_build_revision="abc123",
+        )
+        require_stable_runtime_configuration(before, after)
+
+        drifted = {
+            **after,
+            "runtime_features": {
+                **after["runtime_features"],
+                "resume_deltas": False,
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "runtime_features drifted"):
+            require_stable_runtime_configuration(before, drifted)
+        incomplete = {
+            **status,
+            "runtime_features": {
+                "resume_deltas": True,
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            capture_service_runtime_snapshot(
+                incomplete,
+                expected_features={},
+                expected_build_revision="abc123",
             )
 
     def test_e05_gate_profile_uses_the_two_shipped_guard_names(self):
@@ -144,11 +254,126 @@ class PerformanceEvalTests(unittest.TestCase):
 
     def test_checked_in_query_budget_contract_covers_six_operations(self):
         contract = load_query_budgets()
+        self.assertEqual(contract["profile"], "default-safe")
         self.assertEqual(
             set(contract["operations"]),
             {"open", "search", "read", "write", "checkpoint", "resume"},
         )
         self.assertEqual(QUERY_BUDGETS_PATH.name, "query_budgets.json")
+
+    def test_query_budget_selection_is_profile_and_runtime_bound(self):
+        snapshot = {"runtime_features": runtime_features()}
+        selected = resolve_query_budget_contract(
+            profile="default-safe",
+            path=None,
+            runtime_snapshot=snapshot,
+            gate_profile=None,
+            protocol="simple",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["profile"], "default-safe")
+
+        with self.assertRaisesRegex(ValueError, "not applicable"):
+            resolve_query_budget_contract(
+                profile="default-safe",
+                path=None,
+                runtime_snapshot={
+                    "runtime_features": runtime_features(
+                        read_path_roundtrip_v1=True,
+                    ),
+                },
+                gate_profile=None,
+                protocol="simple",
+            )
+        with self.assertRaisesRegex(ValueError, "explicit"):
+            resolve_query_budget_contract(
+                profile="launch",
+                path=None,
+                runtime_snapshot=snapshot,
+                gate_profile=None,
+                protocol="simple",
+            )
+        calibration = resolve_query_budget_contract(
+            profile="calibration",
+            path=None,
+            runtime_snapshot=snapshot,
+            gate_profile=None,
+            protocol="simple",
+        )
+        self.assertFalse(calibration["acceptance_eligible"])
+        self.assertEqual(calibration["contract"]["operations"], {})
+        d03 = resolve_query_budget_contract(
+            profile=D03_RESUME_DELTAS_GATE_PROFILE,
+            path=None,
+            runtime_snapshot={
+                "runtime_features": runtime_features(resume_deltas=True),
+            },
+            gate_profile=D03_RESUME_DELTAS_GATE_PROFILE,
+            protocol="simple",
+        )
+        self.assertNotIn("resume", d03["contract"]["operations"])
+
+    def test_d03_gate_pairs_query_counts_and_enforces_150ms(self):
+        control = {
+            "resume_query_counts": [44] * DEFINITIVE_SAMPLES,
+            "label": "d03-control",
+        }
+        scale = {
+            "scale": FUTURE_RECORDS,
+            "resume_ms": 149.9,
+            "query_counts": {
+                "by_operation": {
+                    "resume": {
+                        "counts": [45] * DEFINITIVE_SAMPLES,
+                    },
+                },
+            },
+        }
+        gates, record = evaluate_d03_resume_delta_gates([scale], control)
+        self.assertTrue(all(gate["pass"] for gate in gates))
+        self.assertEqual(
+            record["paired_query_count_deltas"],
+            [1] * DEFINITIVE_SAMPLES,
+        )
+
+        scale["resume_ms"] = 150.1
+        scale["query_counts"]["by_operation"]["resume"]["counts"][-1] = 46
+        gates, _ = evaluate_d03_resume_delta_gates([scale], control)
+        self.assertFalse(gates[0]["pass"])
+        self.assertFalse(gates[1]["pass"])
+
+    def test_d03_pair_requires_identical_runtime_except_resume_flag(self):
+        treatment_features = runtime_features(resume_deltas=True)
+        control = {
+            "source_revision": "abc123",
+            "build_revision": "abc123",
+            "retrieval_modes": ["exact", "lexical"],
+            "runtime_features": {
+                **treatment_features,
+                "resume_deltas": False,
+            },
+        }
+        validate_d03_resume_control_compatibility(
+            control,
+            runtime_snapshot={
+                "build_revision": "abc123",
+                "runtime_features": treatment_features,
+            },
+            implementation={"source_revision": "abc123"},
+            retrieval_modes=["exact", "lexical"],
+        )
+
+        control["runtime_features"]["read_path_roundtrip_v1"] = True
+        with self.assertRaisesRegex(ValueError, "identical"):
+            validate_d03_resume_control_compatibility(
+                control,
+                runtime_snapshot={
+                    "build_revision": "abc123",
+                    "runtime_features": treatment_features,
+                },
+                implementation={"source_revision": "abc123"},
+                retrieval_modes=["exact", "lexical"],
+            )
 
     def test_plan_assertion_rejects_missing_index_and_search_chunk_seq_scan(self):
         healthy = [{
@@ -370,6 +595,123 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertNotIn(FUTURE_RECORDS, profile.scales)
         self.assertTrue(profile.semantic_failure_required)
 
+    def test_semantic_failure_probe_defaults_required_and_opt_out_is_explicit(self):
+        parser = build_parser()
+        required = parser.parse_args([
+            "run",
+            "--label",
+            "required",
+            "--out",
+            "result.json",
+        ])
+        not_applicable = parser.parse_args([
+            "run",
+            "--label",
+            "not-applicable",
+            "--semantic-failure-probe",
+            "not-applicable",
+            "--out",
+            "result.json",
+        ])
+
+        self.assertEqual(required.semantic_failure_probe, "required")
+        self.assertTrue(resolve_run_profile(required).semantic_failure_required)
+        self.assertFalse(
+            resolve_run_profile(not_applicable).semantic_failure_required
+        )
+
+    def test_semantic_failure_not_applicable_is_fail_closed_from_runtime(self):
+        snapshot = {"runtime_features": runtime_features(semantic_lane=False)}
+        accepted = validate_semantic_failure_probe_posture(
+            posture="not-applicable",
+            runtime_snapshot=snapshot,
+            retrieval_modes=["exact", "lexical"],
+            wait_for_semantic=False,
+            e09_arm="no_semantic",
+            protocol="simple",
+            hooks_configured=False,
+        )
+        self.assertTrue(accepted["eligible"])
+        self.assertEqual(accepted["posture"], "not-applicable")
+
+        with self.assertRaisesRegex(ValueError, "not-applicable"):
+            validate_semantic_failure_probe_posture(
+                posture="not-applicable",
+                runtime_snapshot={
+                    "runtime_features": runtime_features(semantic_lane=True),
+                },
+                retrieval_modes=["exact", "lexical"],
+                wait_for_semantic=False,
+                e09_arm=None,
+                protocol="simple",
+                hooks_configured=False,
+            )
+        with self.assertRaisesRegex(ValueError, "not-applicable"):
+            validate_semantic_failure_probe_posture(
+                posture="not-applicable",
+                runtime_snapshot=snapshot,
+                retrieval_modes=["exact", "lexical", "semantic"],
+                wait_for_semantic=False,
+                e09_arm=None,
+                protocol="simple",
+                hooks_configured=False,
+            )
+
+    def test_required_semantic_failure_probe_needs_active_lane_and_hooks(self):
+        accepted = validate_semantic_failure_probe_posture(
+            posture="required",
+            runtime_snapshot={
+                "runtime_features": runtime_features(semantic_lane=True),
+            },
+            retrieval_modes=["exact", "lexical", "semantic"],
+            wait_for_semantic=True,
+            e09_arm="deadline_cache",
+            protocol="simple",
+            hooks_configured=True,
+        )
+        self.assertTrue(accepted["eligible"])
+        with self.assertRaisesRegex(ValueError, "--wait-semantic"):
+            validate_semantic_failure_probe_posture(
+                posture="required",
+                runtime_snapshot={
+                    "runtime_features": runtime_features(semantic_lane=True),
+                },
+                retrieval_modes=["exact", "lexical", "semantic"],
+                wait_for_semantic=False,
+                e09_arm=None,
+                protocol="simple",
+                hooks_configured=True,
+            )
+        with self.assertRaisesRegex(ValueError, "needs --protocol simple"):
+            validate_semantic_failure_probe_posture(
+                posture="required",
+                runtime_snapshot={
+                    "runtime_features": runtime_features(semantic_lane=False),
+                },
+                retrieval_modes=["exact", "lexical"],
+                wait_for_semantic=False,
+                e09_arm=None,
+                protocol="simple",
+                hooks_configured=False,
+            )
+
+    def test_e09_no_semantic_requires_exact_then_lexical_modes(self):
+        validate_e09_request_modes("no_semantic", ["exact", "lexical"])
+        validate_e09_request_modes(
+            "deadline_cache",
+            ["exact", "lexical", "semantic"],
+        )
+        with self.assertRaisesRegex(ValueError, "exact lexical"):
+            validate_e09_request_modes(
+                "no_semantic",
+                ["exact", "lexical", "semantic"],
+            )
+        with self.assertRaisesRegex(ValueError, "exact lexical"):
+            validate_e09_request_modes(
+                "no_semantic",
+                ["lexical", "exact"],
+            )
+
     def test_future_soak_is_explicit_and_adds_640k(self):
         parser = build_parser()
         args = parser.parse_args([
@@ -451,7 +793,8 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertFalse(profile.definitive)
         self.assertEqual(profile.samples, 3)
         self.assertEqual(profile.scales, (20,))
-        self.assertFalse(profile.semantic_failure_required)
+        self.assertTrue(profile.semantic_failure_required)
+        self.assertEqual(profile.semantic_failure_probe_posture, "required")
 
     def test_definitive_profile_rejects_missing_64k_or_too_few_samples(self):
         base = {

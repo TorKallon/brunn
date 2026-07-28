@@ -34,16 +34,31 @@ Transitions are 0/5 in every run to date; failures are claim-slot omissions, nev
 
 ## Procedure
 
-1. Land B1–B4 on a clean git tree (implementation fingerprint gate).
-2. Validate the deterministic mutation plans: `python3 transition_eval.py validate --mutation-script eval/e06_mutate.py --mutation-seed e06-draw<N>`. Validation requires exactly 3 unique author-ordered checkpoint paths per card, at least one source that remains ≤2,400 chars/version for `whole_pair`, and at least one larger source for `unified_diff`. Runtime receipts prove workspace/vault byte equality.
-3. For draw N in 1..3, run the three arms with identical mutation seeds per card:
-   - Arm A (isolated stack with `STRAYLIGHT_RESUME_DELTAS=false`): `python3 transition_eval.py --manifest eval/transition_cases.json run --condition service_api_resume --service-protocol simple --experiment-arm e06-A --paired-draw-id e06-draw<N> --expect-feature-flag resume_deltas=off --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed e06-draw<N> --run-id resume-deltas-a-draw<N> --out results/2026-MM-DD-resume-deltas-a-draw<N>.json --report results/2026-MM-DD-resume-deltas-a-draw<N>.md`
+1. Land B1–B4 on a clean git tree and allocate separate project-scoped
+   resume-off and resume-on stacks.
+2. Validate each deterministic mutation plan before any model run:
+   `python3 transition_eval.py --manifest eval/transition_cases.json validate --mutation-script eval/e06_mutate.py --mutation-seed "e06-draw${N}"`.
+   Validation requires exactly 3 unique author-ordered checkpoint paths per
+   card, at least one source that remains ≤2,400 chars/version for
+   `whole_pair`, and at least one larger source for `unified_diff`.
+3. Run the cheap paired 640K performance control/treatment before reasoning.
+   On the resume-off stack:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e06-resume-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag resume_deltas=off --out results/2026-MM-DD-e06-resume-control.json`.
+   Then, against the same image revision on the isolated resume-on stack:
+   `python3 performance_eval.py run --gate-profile d03-resume-deltas --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile d03-resume-deltas --query-budget-contract eval/query_budgets.d03-resume-deltas.json --resume-control-from results/2026-MM-DD-e06-resume-control.json --label e06-resume-treatment --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag resume_deltas=on --out results/2026-MM-DD-e06-resume-treatment.json`.
+   The treatment artifact must prove 640K resume p95 ≤150ms and exactly +1
+   query in every paired resume sample. Any red gate stops the reasoning grid.
+4. For draw N in 1..3, run the three arms with identical mutation seeds per card:
+   - Arm A (isolated stack with `STRAYLIGHT_RESUME_DELTAS=false`): `python3 transition_eval.py --manifest eval/transition_cases.json run --condition service_api_resume --service-protocol simple --experiment-arm e06-A --paired-draw-id "e06-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag resume_deltas=off --embeddings hashing --mutation-script eval/e06_mutate.py --mutation-seed "e06-draw${N}" --run-id "resume-deltas-a-draw${N}" --out "results/2026-MM-DD-resume-deltas-a-draw${N}.json" --report "results/2026-MM-DD-resume-deltas-a-draw${N}.md"`
    - Arm B (separate isolated stack with `STRAYLIGHT_RESUME_DELTAS=true`): the same command with `--experiment-arm e06-B`, `--expect-feature-flag resume_deltas=on`, and a distinct B run ID. Never flip the flag on a stack serving another concurrent arm.
    - Arm C: the same seed and `--mutation-script` with `--condition filesystem_rebuild --experiment-arm e06-C --paired-draw-id e06-draw<N>` and a distinct C run ID; omit runtime expectations because this arm does not use the service.
-4. Aggregate with B first because the directional alternative is load-bearing: `python3 eval/aggregate_draws.py results/2026-MM-DD-resume-deltas-*-draw*.json --expected-arm e06-B --expected-arm e06-A --expected-arm e06-C --claim-mcnemar-alternative a_greater --out results/2026-MM-DD-resume-deltas-aggregate.json`. This emits the required one-sided claim-level tests for B-vs-A and B-vs-C while retaining the default two-sided case-level McNemar and card-clustered bootstrap.
-5. `python performance_eval.py run --label resume-deltas-soak --future-soak --out results/2026-MM-DD-resume-deltas-soak.json` with resume_deltas on; read resume p95, concurrent write/search probe, checkpoint footprint, protocol-to-evidence ratio, and the query-count assertion.
+5. Aggregate with B first because the directional alternative is load-bearing:
+   `E06_MAIN=(results/2026-MM-DD-resume-deltas-{a,b,c}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E06_MAIN[@]}" --expected-arm e06-B --expected-arm e06-A --expected-arm e06-C --claim-mcnemar-alternative a_greater --out results/2026-MM-DD-resume-deltas-aggregate.json`.
+   This emits the required one-sided claim-level tests for B-vs-A and B-vs-C
+   while retaining the default two-sided case-level McNemar and clustered
+   bootstrap.
 6. If the headline is inside the noise floor but straylight-api-gate-transition moves, run a targeted 5-draw repeat on that card, all three arms, adding `--case straylight-api-gate-transition` to every invocation and using targeted-specific paired-draw IDs.
-7. Use `transition_eval.py regrade` for rubric corrections; never regenerate answers to fix grading.
+7. Use `python3 transition_eval.py --manifest eval/transition_cases.json regrade ...` for rubric corrections; never regenerate answers to fix grading.
 
 The run JSON fingerprints the mutation script, embeds every per-card plan and receipt, records the feature-flag state, and uses the mutated authority path in grading/lineage checks. The control sees only its prior checkpoint plus the post-mutation file tree; it is not handed a synthetic change-log file.
 
@@ -78,7 +93,8 @@ Subscription rule: all reasoning runs via the ChatGPT-authenticated Codex subscr
 - Any checkpoint-lineage incident — parent_checkpoint_id fails to resolve, pinned-version sha256 mismatch, or a delta pairs the wrong versions: immediate abort of the experiment and flag-off, mirroring the Tier C lineage tripwire.
 - Workspace/vault mutation divergence detected in any draw: invalidate that draw, fix B2, restart the draw (all arms).
 - Any reasoning run bills an API key (fail-closed breach): abort, file defect.
-- Resume p95 exceeds 500ms mid-experiment (grossly off the 150ms gate): abort the perf claim, continue reasoning draws only if lineage is intact.
+- Either D03 deterministic gate fails (150ms p95 or paired exact +1 query):
+  abort before reasoning; do not average the failure away.
 - Spend reaches $30.
 
 ## Reporting

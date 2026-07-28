@@ -45,15 +45,27 @@ Scales 1k/10k/64k (default), 640k via `--future-soak` for modes 1 and 2 (mode 2 
 
 MM-DD is the run date.
 
-1. Land build items 1-4; verify `timings_ms` phase-sum sanity (D09 acceptance gate 1) on a `--quick` run.
-2. Mode 1: `python performance_eval.py run --label e03-mode1-64k --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode1-64k.json` (the harness lives at repo root), then `python performance_eval.py run --label e03-mode1-640k --future-soak --out results/2026-MM-DD-e03-mode1-640k.json` for the 640k point.
+1. Use separate project-scoped stacks and container IDs from
+   [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
+   Verify `timings_ms` phase-sum sanity on a quick, explicitly
+   semantic-disabled smoke:
+   `python3 performance_eval.py run --quick --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e03-mode1-smoke --scales 1000 --api-container "$API_CONTAINER" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --out results/2026-MM-DD-e03-mode1-smoke.json`.
+2. Mode 1 uses the authenticated semantic-disabled runtime and no worker:
+   `E03_MODE1=(--protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on)`;
+   then
+   `python3 performance_eval.py run "${E03_MODE1[@]}" --label e03-mode1-64k --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode1-64k.json`
+   and
+   `python3 performance_eval.py run "${E03_MODE1[@]}" --label e03-mode1-640k --future-soak --out results/2026-MM-DD-e03-mode1-640k.json`.
 3. Mode 2: configure the isolated API stack to use the run-unique mock endpoint,
    then invoke `python3 eval/e03_mode2.py` with unique `--mock-port`,
    `--mock-state`, `--mock-log`, and `--mock-config` paths. The wrapper refuses
    to adopt a pre-existing mock, runs `performance_eval.py --wait-semantic`,
    verifies fast state after the failure hook is restored, and tears down only
    the process it started. Produce the 64k and `--future-soak` artifacts and
-   record backfill wall-clock and rate-limit behavior.
+   record backfill wall-clock and rate-limit behavior. The definitive 64K form
+   is:
+   `python3 eval/e03_mode2.py --label e03-mode2-64k --mock-port "$MOCK_PORT" --mock-state "$MOCK_STATE" --mock-log "$MOCK_LOG" --mock-config "$MOCK_CONFIG" --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --scales 64000 --samples 30 --out results/2026-MM-DD-e03-mode2-64k.json`.
+   Add `--future-soak` and a distinct output for the 640K run.
 4. Semantic-failure probe (within mode 2 config): the mode-2 wrapper wires the
    mock's injected-503 configure command and distinct fast-state restore
    command into `--semantic-failure-start-command` /
@@ -63,7 +75,14 @@ MM-DD is the run date.
    defer semantic before provider delay, the identical query to succeed from
    the asynchronously warmed cache, and a new semantic query to succeed after
    restore.
-5. Mode 3: real OpenAI embeddings, 64k, `--wait-semantic`; two sub-runs — cache-miss (unique queries) then warm (repeat queries): results/2026-MM-DD-e03-mode3-cold-64k.json, results/2026-MM-DD-e03-mode3-warm-64k.json.
+5. Mode 3 uses real OpenAI embeddings, semantic lane on, cache off, and an
+   unbounded semantic deadline. A controllable per-stack provider proxy is
+   mandatory; set `SEMANTIC_FAILURE_START` and `SEMANTIC_FAILURE_STOP` to its
+   distinct failure/restore commands. Run cold first:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical semantic --semantic-failure-probe required --semantic-failure-start-command "$SEMANTIC_FAILURE_START" --semantic-failure-stop-command "$SEMANTIC_FAILURE_STOP" --wait-semantic --unique-queries --query-budget-profile default-safe --label e03-mode3-cold-64k --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=on --expect-feature-flag embed_cache=off --expect-feature-flag verbatim_spans=on --expect-runtime-config semantic_deadline_ms=null --out results/2026-MM-DD-e03-mode3-cold-64k.json`.
+   Then repeat without `--unique-queries`, against the same API process, as
+   `e03-mode3-warm-64k`. Do not substitute the deterministic mock for the
+   real-provider failure proof.
 6. Eval-corpus backfill (build item 6): first run
    `python3 eval/e03_quality_backfill.py --provider-mode openai estimate
    --out results/2026-MM-DD-e03-eval-corpus-backfill-estimate.json`. Only after
@@ -71,8 +90,10 @@ MM-DD is the run date.
    with a unique run ID. It imports all three quality corpora through the
    ordinary guarded worker path and records wall-clock, machine-readable
    preflight/actual spend accounting, and a zero-gap semantic-only warm probe
-   in `results/2026-MM-DD-e03-eval-corpus-backfill.json`. This unblocks E09
-   precondition 1.
+   in `results/2026-MM-DD-e03-eval-corpus-backfill.json`. This rehearses and
+   prices the shared backfill path; it is not persistent coverage proof for
+   E09, whose quality harness provisions isolated per-case users and must
+   independently wait for and verify semantic coverage.
 7. Report per-phase p50/p95/p99 tables per mode from `timings_ms`; diff against the v8 baselines.
 
 ## Metrics

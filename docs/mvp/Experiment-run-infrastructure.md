@@ -3,6 +3,68 @@
 Status: Implemented in harnesses; product-specific flags still require their
 own Dxx implementation and status exposure
 
+## Isolated Nyx execution preamble
+
+Every experiment runs from a clean detached worktree at one immutable full
+revision. One coordinator builds the shared local image once; agents must not
+rebuild the static `straylight-api:local` tag concurrently. Every subsequent
+Compose command uses `--no-build`, a unique project name, and a private env
+file/port allocation:
+
+```bash
+FREEZE="$(git rev-parse --show-toplevel)"
+REV="$(git rev-parse HEAD)"
+PROJECT="slx-eNN-arm"
+ENV_FILE="$FREEZE/runs/private/$PROJECT.env"
+COMPOSE=(docker compose --project-name "$PROJECT" --env-file "$ENV_FILE" -f "$FREEZE/compose.yaml")
+
+DD_VERSION="$REV" "${COMPOSE[@]}" build api migrate worker
+"${COMPOSE[@]}" up -d --no-build api
+API_CONTAINER="$("${COMPOSE[@]}" ps -q api)"
+DB_CONTAINER="$("${COMPOSE[@]}" ps -q db)"
+test -n "$API_CONTAINER"
+test -n "$DB_CONTAINER"
+```
+
+Only the coordinator runs the build line. Start `worker` only for an arm that
+must backfill real or mock semantic embeddings. Never run bare
+`docker compose`: `compose.yaml` has a static project name and an unscoped
+command can target the owner stack. Performance runs are exclusive on Nyx;
+reasoning draws may use separate project/port/volume lanes after deterministic
+gates pass.
+
+Every definitive performance command supplies:
+
+```text
+--protocol simple
+--api-container "$API_CONTAINER"
+--db-container "$DB_CONTAINER"
+--expect-build-revision "$REV"
+```
+
+It also declares every arm-specific boolean with
+`--expect-feature-flag`, every typed knob with `--expect-runtime-config`, and
+one semantic-failure posture:
+
+- `required`, with `--wait-semantic` plus distinct provider-failure and restore
+  hooks, for any semantic-enabled arm;
+- `not-applicable` only for a service whose authenticated runtime has
+  `semantic_lane=false`, whose requested modes exclude semantic, and which is
+  not waiting for semantic readiness.
+
+The default query-count contract is runtime-bound to the default-safe query
+shape. Any non-default query shape uses a named
+`--query-budget-profile` and an explicit `--query-budget-contract`. A launch
+profile never inherits `eval/query_budgets.json`; absence of the calibrated
+launch contract is a preflight failure.
+
+Use `--query-budget-profile calibration` only to capture counts for a new
+shape. A calibration run records all measurements but contains an intentionally
+failing `query_budget_calibration_is_not_acceptance` gate and can never serve as
+acceptance evidence. Review its counts, author a contract whose `profile` and
+`runtime_features` bind the intended shape, then rerun with that named profile
+and contract path.
+
 ## Separate-arm identity
 
 When multiple arms use the same harness condition in separate invocations,
@@ -77,10 +139,15 @@ citations do not count as returned context. It emits
 `straylight-accepted-source-context-audit@v1`:
 
 ```bash
-python3 eval/audit_accepted_sources.py results/2026-MM-DD-e04-*.json \
+python3 eval/audit_accepted_sources.py \
+  results/2026-MM-DD-e04-A-*-draw*.json \
+  results/2026-MM-DD-e04-B-*-draw*.json \
+  results/2026-MM-DD-e04-C-*-draw*.json \
   --out results/2026-MM-DD-e04-accepted-source-context.json
 ```
 
 The artifact reports all-claim and missed-claim rates overall, by arm, and by
 suite, plus a per-claim evidence table. Missing run provenance, structured
-grades, operation receipts, or source-path metrics fails closed.
+grades, operation receipts, or source-path metrics fails closed. Filesystem
+artifacts, aggregates, prior audits, and performance soaks are deliberately
+excluded.

@@ -19,7 +19,8 @@ Can the up-to-3 sequential lexical candidate scans in the search path be consoli
    are stored under `old_source_found`; must be 30/30) and
    `bounded_lexical_overflow_returns_late_relevant_source`.
 5. **(implemented) Reproducible arm state** — both evaluators accept
-   repeatable `--feature-state NAME=on|off` and `--run-tag TAG` arguments and
+   repeatable `--expect-feature-flag NAME=on|off` and `--run-tag TAG`
+   arguments and
    record them in the JSON artifact. Feature-state declarations are checked
    against `/v1/status` before measurements begin; they describe rather than
    mutate the already configured API.
@@ -33,35 +34,46 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
 
 ## Corpus and fixtures
 
-- Reasoning: agent-work suite (`eval/work_cases.json`, 14 cases / 56 claims) — the suite containing the historical lexical-collapse cases.
+- Reasoning: agent-work suite (`eval/work_cases.json`, 13 active cases / 52
+  claims) — the suite containing the historical lexical-collapse cases.
 - Targeted: `star-rupture-plan-revision` (the v6 0/3 case) and `warmind-parser-learning`, via the targeted manifest.
 - Deterministic: 640K future-soak fixture (guards); 3,340-record clean fixture optional for latency comparison against results/2026-07-27-3340-clean-30-sample.json.
 - All runs exact+lexical (no semantic profile exists; embeddings pending), which is also the worst case for this change — the lexical lane carries everything.
 
 ## Procedure
 
-1. Preflight: clean git tree (implementation fingerprint requires it);
+1. Preflight: use the project-scoped isolated Nyx preamble and a clean git
+   tree (implementation fingerprint requires it);
    `python3 agent_work_eval.py --manifest eval/work_cases.json validate` and
    `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json validate`.
 2. Deterministic guards on Arm B first (cheap kill), against a disposable API
    already started with `STRAYLIGHT_LEXICAL_SINGLE_SCAN=true`:
-   `python3 performance_eval.py run --label e05-armB-guards --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --feature-state lexical_single_scan=on --run-tag E05 --run-tag armB-guards --future-soak --api-container <container> --db-container <container> --out results/2026-MM-DD-e05-armB-guards-soak.json`.
+   `python3 performance_eval.py run --label e05-armB-guards --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile not-applicable --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag lexical_single_scan=on --expect-build-revision "$REV" --run-tag E05 --run-tag armB-guards --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --out results/2026-MM-DD-e05-armB-guards-soak.json`.
    Require `old_relevant_source_survives_many_newer_writes` 30/30 and
    `bounded_lexical_overflow_returns_late_relevant_source` pass. Any failure →
    drop the consolidation, stop the experiment, skip all reasoning runs.
-3. Paired draws, N = 1..3, alternating arms per draw to avoid drift:
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --experiment-arm e05-A --paired-draw-id e05-work-draw<N> --feature-state lexical_single_scan=off --run-tag E05 --run-tag armA --concurrency 3 --timeout 360 --run-id e05-armA-draw<N> --out results/2026-MM-DD-e05-lexical-armA-draw<N>.json --report results/2026-MM-DD-e05-lexical-armA-draw<N>.md` (flag off), then the same with `--experiment-arm e05-B`, `--feature-state lexical_single_scan=on`, and an API actually started with the treatment flag on. Both arms use the same paired-draw ID and distinct run IDs.
-4. Targeted 5-draw repeats, N = 1..5, both arms:
+3. After Arm B passes, run a matched Arm A soak on the isolated flag-off
+   stack with the same corpus/sample shape and provenance options, omitting
+   `--gate-profile` and using
+   `--query-budget-profile default-safe`,
+   `--expect-feature-flag lexical_single_scan=off`. This supplies the
+   comparative latency and query-count control; it does not weaken the Arm B
+   cheap-kill gate.
+4. Paired draws, N = 1..3, alternating arms per draw to avoid drift:
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --condition service_api --experiment-arm e05-A --paired-draw-id "e05-work-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag lexical_single_scan=off --run-tag E05 --run-tag armA --concurrency 3 --timeout 360 --run-id "e05-armA-draw${N}" --out "results/2026-MM-DD-e05-lexical-armA-draw${N}.json" --report "results/2026-MM-DD-e05-lexical-armA-draw${N}.md"` (flag off), then the same with `--experiment-arm e05-B`, `--expect-feature-flag lexical_single_scan=on`, and an API actually started with the treatment flag on. Both arms use the same paired-draw ID and distinct run IDs.
+5. Targeted 5-draw repeats, N = 1..5, both arms:
    Use the same arm identities and feature-state declarations with `--manifest eval/e05_targeted_cases.json`, shared `--paired-draw-id e05-targeted-draw<N>`, and distinct run IDs.
-5. Aggregate full and targeted manifests separately with `--expected-arm e05-B --expected-arm e05-A`; do not mix their case sets in one aggregate.
-6. Record per-lane latency metrics and per-operation lexical query counts from both arms (the D09 assertion delta this would lock in if shipped).
+6. Aggregate exact arrays separately:
+   `E05_FULL=(results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E05_FULL[@]}" --expected-arm e05-B --expected-arm e05-A --out results/2026-MM-DD-e05-full-aggregate.json`.
+   Use the analogous targeted-only array for draws 1-5; do not mix case sets.
+7. Record per-lane latency metrics and per-operation lexical query counts from both arms (the D09 assertion delta this would lock in if shipped).
 
 The query-count comparison remains a hard dependency on D09. The current
 execution harness does not infer counts from latency or logs.
 
 ## Metrics
 
-- Claims scored (x/56) per draw per arm; per-case paired win/loss/tie; exact-binomial McNemar p; bootstrap CI on the case-level difference.
+- Claims scored (x/52) per draw per arm; per-case paired win/loss/tie; exact-binomial McNemar p; bootstrap CI on the case-level difference.
 - Targeted cases: pass count out of 5 draws per case per arm.
 - Deterministic: guard pass/fail; search p95 and lexical query count per operation, both arms, vs the v8 baseline (search 53.1ms).
 
@@ -79,9 +91,9 @@ Ship the consolidation only if ALL hold; otherwise drop it permanently and recor
 
 Subscription rule: all reasoning runs go through the ChatGPT-authenticated Codex subscription, fail-closed (`require_codex_subscription` rejects API keys). All-in equivalent cost ≈ $0.24/agent-run (470-run audit, $113.18).
 
-- Paired draws: 14 cases × 2 arms × 3 draws = 84 runs.
+- Paired draws: 13 cases × 2 arms × 3 draws = 78 runs.
 - Targeted: 2 cases × 2 arms × 5 draws = 20 runs.
-- Total 104 runs × $0.24 = $24.96 all-in equivalent.
+- Total 98 runs × $0.24 = $23.52 all-in equivalent.
 - Embeddings-exempt spend: $0 — no semantic lane in these runs (embeddings pending across all fixtures).
 - Deterministic soak runs: compute-local, no reasoning spend.
 
@@ -97,7 +109,7 @@ Hard ceiling: **$40**. Headroom (~$16) covers at most ~2 rerun draws for infrast
 
 ## Reporting
 
-The run record must contain: all artifact paths (`results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1..3}.json`, targeted draws, soak JSONs); aggregator output (win/loss/tie table, McNemar p, bootstrap CI); guard results verbatim; per-lane latency and query-count deltas; git commit fingerprint and flag states per run; actual spend vs the $24.96 preflight; and a one-line verdict — "provably free: ship behind `lexical_single_scan` per D10" or "not free: dropped, negative result recorded alongside v6 recent-first." If dropped, D10's deferred item is closed, not merely postponed.
+The run record must contain: all artifact paths (`results/2026-MM-DD-e05-lexical-arm{A,B}-draw{1..3}.json`, targeted draws, soak JSONs); aggregator output (win/loss/tie table, McNemar p, bootstrap CI); guard results verbatim; per-lane latency and query-count deltas; git commit fingerprint and flag states per run; actual spend vs the $23.52 preflight; and a one-line verdict — "provably free: ship behind `lexical_single_scan` per D10" or "not free: dropped, negative result recorded alongside v6 recent-first." If dropped, D10's deferred item is closed, not merely postponed.
 
 ## References
 

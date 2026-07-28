@@ -32,18 +32,38 @@ All arms use the manifest model (gpt-5.6-sol) via the Codex subscription.
 
 ## Corpus and fixtures
 
-Full 5-suite matrix, 60 cases / 240 claims: agent-work 14/56, recent 14/56, rupture 12/48, personal 15/60, transitions 5/20. Same fixtures across all draws and arms; implementation fingerprint requires a clean git tree recorded per draw.
+Full 5-suite matrix at the checked-in active manifests, 59 cases / 236
+claims: agent-work 13/52, recent 14/56, rupture 12/48, personal 15/60,
+transitions 5/20. Same fixtures across all draws and arms; implementation
+fingerprint requires a clean git tree recorded per draw.
 
 ## Procedure
 
 MM-DD below is the actual run date.
 
-1. Validate: `python3 agent_work_eval.py --manifest eval/work_cases.json validate` (repeat for eval/recent_work_cases.json, eval/rupture_ops_cases.json, eval/personal_coordination_cases.json); `python3 transition_eval.py --manifest eval/transition_cases.json validate`. (`--manifest` is a global option and must precede the subcommand.)
-2. For each draw N in 1..3, for each manifest M in {work, recent_work, rupture_ops, personal_coordination}:
-   `python3 agent_work_eval.py --manifest eval/M_cases.json run --service-protocol simple --condition service_api --condition filesystem --condition filesystem_sidecar --concurrency 3 --timeout 360 --run-id e01-M-draw<N> --out results/2026-MM-DD-e01-M-draw<N>.json --report results/2026-MM-DD-e01-M-draw<N>.md`
-3. For each draw N: `python3 transition_eval.py --manifest eval/transition_cases.json run --service-protocol simple --condition service_api_resume --condition filesystem_rebuild --condition filesystem_sidecar --embeddings none --run-id e01-transitions-draw<N> --out results/2026-MM-DD-e01-transitions-draw<N>.json --report results/2026-MM-DD-e01-transitions-draw<N>.md`.
-4. Scoring iteration uses regrade only — `python3 agent_work_eval.py --manifest eval/M_cases.json regrade --input results/... --out results/...` rescores saved answers without regeneration; never re-run generation to fix a rubric.
-5. Aggregate: `python3 eval/aggregate_draws.py results/2026-MM-DD-e01-*-draw*.json --out results/2026-MM-DD-e01-aggregate.json`.
+1. Use the isolated Nyx preamble in
+   [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md), then
+   validate all five real manifests. `--manifest` is global and precedes the
+   subcommand:
+   `python3 agent_work_eval.py --manifest eval/work_cases.json validate`
+   (repeat for `recent_work_cases.json`, `rupture_ops_cases.json`, and
+   `personal_coordination_cases.json`), then
+   `python3 transition_eval.py --manifest eval/transition_cases.json validate`.
+2. Define the service runtime contract once:
+   `E01_RUNTIME=(--expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag search_fair_share=off --expect-feature-flag search_top1_hydration=off --expect-feature-flag search_char_cap=off --expect-runtime-config search_section_demotion_top_n=null --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=off --expect-feature-flag supersession_demotion=off --expect-feature-flag intention_ledger=off --expect-feature-flag read_path_roundtrip_v1=off --expect-feature-flag lexical_single_scan=off)`.
+3. For each draw `N` in `1 2 3`, invoke each real manifest explicitly:
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --condition service_api --condition filesystem --condition filesystem_sidecar "${E01_RUNTIME[@]}" --concurrency 3 --timeout 360 --run-id "e01-work-draw${N}" --out "results/2026-MM-DD-e01-work-draw${N}.json" --report "results/2026-MM-DD-e01-work-draw${N}.md"`.
+   Repeat with manifest/slug pairs `recent_work_cases.json`/`recent`,
+   `rupture_ops_cases.json`/`rupture`, and
+   `personal_coordination_cases.json`/`personal`.
+4. For each draw:
+   `python3 transition_eval.py --manifest eval/transition_cases.json run --service-protocol simple --condition service_api_resume --condition filesystem_rebuild --condition filesystem_sidecar "${E01_RUNTIME[@]}" --embeddings none --run-id "e01-transitions-draw${N}" --out "results/2026-MM-DD-e01-transitions-draw${N}.json" --report "results/2026-MM-DD-e01-transitions-draw${N}.md"`.
+5. Scoring iteration uses regrade only. For example:
+   `python3 agent_work_eval.py --manifest eval/work_cases.json regrade --input results/2026-MM-DD-e01-work-draw1.json --out results/2026-MM-DD-e01-work-draw1-regraded.json`.
+   Never regenerate to fix a rubric, and do not mix original and regraded
+   versions of the same draw in aggregation.
+6. Build an explicit draw-only input array and aggregate:
+   `E01_ARTIFACTS=(results/2026-MM-DD-e01-{work,recent,rupture,personal,transitions}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E01_ARTIFACTS[@]}" --out results/2026-MM-DD-e01-aggregate.json`.
 
 ## Metrics
 
@@ -61,7 +81,16 @@ MM-DD below is the actual run date.
 
 ## Cost preflight and ceiling
 
-Reasoning runs: 55 agent-suite cases × 3 conditions × 3 draws = 495, plus transitions 5 cases × 3 conditions × 3 draws = 45, for 540 case-runs. At the observed all-in $0.24/agent-run equivalent (470-run audit, $113.18), 540 × $0.24 = $129.60. All reasoning goes through the ChatGPT-authenticated Codex subscription, fail-closed (`require_codex_subscription` rejects API keys); the $0.24 is an audited subscription-equivalent rate, not API usage billing. Regrades regenerate nothing and are treated as marginal. Embeddings-exempt spend: $0 — run the isolated E01 stack without a real embedding worker so semantic state cannot change mid-draw.
+Reasoning runs at the checked-in active manifest counts: 54 agent-suite cases
+(work 13, recent 14, rupture 12, personal 15) × 3 conditions × 3 draws =
+486, plus transitions 5 × 3 × 3 = 45, for **531 case-runs**. At the observed
+all-in $0.24/agent-run equivalent (470-run audit, $113.18), 531 × $0.24 =
+**$127.44**. All reasoning goes through the ChatGPT-authenticated Codex
+subscription, fail-closed (`require_codex_subscription` rejects API keys); the
+$0.24 is an audited subscription-equivalent rate, not API usage billing.
+Regrades regenerate nothing and are treated as marginal. Embeddings-exempt
+spend: $0 — run the isolated E01 stack without a real embedding worker so
+semantic state cannot change mid-draw.
 
 Ceiling: **$150** hard. OWNER DECISION: explicit owner approval required before launching the draws (2026-07-27 cost-audit rule); this spec is not that approval.
 
@@ -74,7 +103,7 @@ Ceiling: **$150** hard. OWNER DECISION: explicit owner approval required before 
 
 ## Reporting
 
-The run record (results/2026-MM-DD-e01-aggregate.json + companion Markdown) must contain: immutable run ledgers with git SHA/clean state and Codex path/version/auth timestamp per draw; all run-ids and per-draw artifact paths/hashes; per-suite paired tables with McNemar p and clustered CIs; comparable chars/case per condition with the paired overfetch verdict stated in one sentence; the two-sided checkpoint comparison; chronic-case per-draw outcomes; cost actuals vs the $129.60 preflight; and the parity statement in the exact non-inferiority language of acceptance criterion 2. This record becomes the baseline every later experiment (E10-combined-preflight.md) diffs against.
+The run record (results/2026-MM-DD-e01-aggregate.json + companion Markdown) must contain: immutable run ledgers with git SHA/clean state and Codex path/version/auth timestamp per draw; all run-ids and per-draw artifact paths/hashes; per-suite paired tables with McNemar p and clustered CIs; comparable chars/case per condition with the paired overfetch verdict stated in one sentence; the two-sided checkpoint comparison; chronic-case per-draw outcomes; cost actuals vs the $127.44 preflight; and the parity statement in the exact non-inferiority language of acceptance criterion 2. This record becomes the baseline every later experiment (E10-combined-preflight.md) diffs against.
 
 ## References
 

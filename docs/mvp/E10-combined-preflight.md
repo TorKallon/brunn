@@ -30,20 +30,53 @@ Two arms only; this is a launch gate, not a factorial study. Per-flag attributio
 
 ## Corpus and fixtures
 
-Full 5-suite matrix, 60 cases / 240 claims (agent-work 14/56, recent 14/56, rupture 12/48, personal 15/60, transitions 5/20). n≥3 paired draws, identical fixtures across draws and arms. Deterministic gates run on the standard performance corpora: 64K default scale and 640K `--future-soak`.
+Full 5-suite matrix at the checked-in active manifests, 59 cases / 236 claims
+(agent-work 13/52, recent 14/56, rupture 12/48, personal 15/60,
+transitions 5/20). n≥3 paired draws, identical fixtures across draws and
+arms. Deterministic gates run on the standard performance corpora: 64K default
+scale and 640K `--future-soak`.
 
 ## Procedure
 
 MM-DD is the run date.
 
-1. Freeze the launch flag set; record the flag manifest; verify clean git tree.
-2. Deterministic pass first (cheap, fails fast), against the exact isolated API image and database container: `python performance_eval.py run --protocol simple --label e10-perf-64k --scales 64000 --samples 30 --api-container <api> --db-container <db> --out results/2026-MM-DD-e10-perf-64k.json` with all flags on — all D09 gates (regression tier, query-count budgets vs `eval/query_budgets.json`, app-role/function-body EXPLAIN plan assertions, SQL-drift fingerprints, phase-sum sanity), then `python performance_eval.py run --protocol simple --label e10-perf-640k --future-soak --api-container <api> --db-container <db> --out results/2026-MM-DD-e10-perf-640k.json` including the concurrent write/search probe, semantic-failure probe, checkpoint footprint (≤100 rows/4MiB), protocol-to-evidence ratio ≤1.0, and flat-file control. Supply both semantic-failure hooks required by the harness. Any red gate stops the experiment before a single reasoning dollar is spent. The first D09-enabled run must also confirm that the checked-in code-shape query budgets are the observed default-safe counts before they are described as measured baselines.
-3. For each draw N in 1..3, for each manifest M in {work, recent_work, rupture_ops, personal_coordination}:
-   `python3 agent_work_eval.py --manifest eval/M_cases.json run --condition service_api --condition filesystem_sidecar --concurrency 3 --timeout 360 --run-id e10-M-draw<N> --out results/2026-MM-DD-e10-M-draw<N>.json --report results/2026-MM-DD-e10-M-draw<N>.md` (same-invocation conditions are already arm identities; do not add separate-arm options)
-4. For each draw N: `python transition_eval.py run --condition service_api_resume --condition filesystem_sidecar --embeddings none --run-id e10-transitions-draw<N> --out results/2026-MM-DD-e10-transitions-draw<N>.json --report results/2026-MM-DD-e10-transitions-draw<N>.md` (condition name per the E01 build item's final spelling).
-5. Scoring iteration via regrade only; no regeneration to chase rubric issues.
-6. Aggregate: `python eval/aggregate_draws.py results/2026-MM-DD-e10-*-draw*.json --out results/2026-MM-DD-e10-aggregate.json`.
-7. If corpus-wide non-inferiority holds but no suite reaches superiority, one additional draw (N=4) may be run to resolve it, inside the ceiling; the aggregate then reports n=4 everywhere (no cherry-picking draws).
+1. Use the isolated Nyx preamble and freeze the exact final launch-candidate
+   revision—not an earlier experiment
+   SHA—and the complete runtime manifest. Use one immutable image across all
+   stacks. For the currently proposed semantic-off launch posture:
+   `E10_RUNTIME=(--expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_top1_hydration=on --expect-feature-flag search_char_cap=on --expect-runtime-config search_section_demotion_top_n=8 --expect-feature-flag verbatim_spans=on --expect-feature-flag resume_deltas=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --expect-feature-flag intention_ledger=on --expect-feature-flag read_path_roundtrip_v1=on --expect-feature-flag lexical_single_scan=on)`.
+   Remove any rejected feature instead of pretending it shipped.
+2. The default-safe query contract is forbidden for this combined shape.
+   First run explicit count-capture calibrations with
+   `--query-budget-profile calibration` for both the launch manifest and the
+   otherwise-identical `resume_deltas=off` control. Calibration artifacts
+   intentionally fail acceptance. Review their 30-sample counts and freeze two
+   runtime-bound contracts as `LAUNCH_QUERY_BUDGET_CONTRACT` and
+   `LAUNCH_RESUME_CONTROL_BUDGET_CONTRACT`; absence of either is a hard
+   preflight failure. The launch calibration command is:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile calibration --label e10-launch-budget-calibration --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" "${E10_RUNTIME[@]}" --out results/2026-MM-DD-e10-launch-budget-calibration.json`.
+   Repeat on the control stack with the same manifest except
+   `resume_deltas=off` and a distinct label/output.
+3. Produce a passing, same-build 640K resume-off control:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile launch-resume-control --query-budget-contract "$LAUNCH_RESUME_CONTROL_BUDGET_CONTRACT" --label e10-resume-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag resume_deltas=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_top1_hydration=on --expect-feature-flag search_char_cap=on --expect-runtime-config search_section_demotion_top_n=8 --expect-feature-flag verbatim_spans=on --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --expect-feature-flag intention_ledger=on --expect-feature-flag read_path_roundtrip_v1=on --expect-feature-flag lexical_single_scan=on --out results/2026-MM-DD-e10-resume-control.json`.
+4. Run the cheap launch candidate gates before reasoning. The 64K command is:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile launch --query-budget-contract "$LAUNCH_QUERY_BUDGET_CONTRACT" --label e10-perf-64k --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" "${E10_RUNTIME[@]}" --out results/2026-MM-DD-e10-perf-64k.json`.
+   Then run the 640K/D03 form:
+   `python3 performance_eval.py run --gate-profile d03-resume-deltas --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile launch --query-budget-contract "$LAUNCH_QUERY_BUDGET_CONTRACT" --resume-control-from results/2026-MM-DD-e10-resume-control.json --label e10-perf-640k --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" "${E10_RUNTIME[@]}" --out results/2026-MM-DD-e10-perf-640k.json`.
+   This runs every generic D09 gate plus D03's ≤150ms and paired exact +1
+   query gates. Any red gate stops before reasoning.
+5. For each draw `N` in `1 2 3`, invoke each real agent manifest explicitly:
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --service-protocol simple --condition service_api --condition filesystem_sidecar "${E10_RUNTIME[@]}" --concurrency 3 --timeout 360 --run-id "e10-work-draw${N}" --out "results/2026-MM-DD-e10-work-draw${N}.json" --report "results/2026-MM-DD-e10-work-draw${N}.md"`.
+   Repeat with manifest/slug pairs `recent_work_cases.json`/`recent`,
+   `rupture_ops_cases.json`/`rupture`, and
+   `personal_coordination_cases.json`/`personal`.
+6. For each draw:
+   `python3 transition_eval.py --manifest eval/transition_cases.json run --service-protocol simple --condition service_api_resume --condition filesystem_sidecar "${E10_RUNTIME[@]}" --embeddings none --run-id "e10-transitions-draw${N}" --out "results/2026-MM-DD-e10-transitions-draw${N}.json" --report "results/2026-MM-DD-e10-transitions-draw${N}.md"`.
+7. Scoring iteration uses regrade only with the correct global manifest; no
+   regeneration to chase rubric issues.
+8. Aggregate only the declared draw artifacts:
+   `E10_DRAWS=(results/2026-MM-DD-e10-{work,recent,rupture,personal,transitions}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E10_DRAWS[@]}" --out results/2026-MM-DD-e10-aggregate.json`.
+9. If corpus-wide non-inferiority holds but no suite reaches superiority, one additional draw (N=4) may be run to resolve it, inside the ceiling; the aggregate then reports n=4 everywhere (no cherry-picking draws).
 
 ## Metrics
 
@@ -64,7 +97,13 @@ All five must hold; any miss means no Tier C cutover:
 
 ## Cost preflight and ceiling
 
-Reasoning runs: 60 cases × 2 conditions × 3 draws = 360 runs × $0.24 = **$86.40**. Optional draw 4: +120 runs = $28.80; worst case = $115.20. All reasoning via the ChatGPT-authenticated Codex subscription, fail-closed (`require_codex_subscription` rejects API keys). Deterministic performance runs: $0 reasoning. Embeddings-exempt spend, listed separately: $0 if the corpus is already embedded from prior work; at most one backfill ≈ $0.19-2 (usage-billed OpenAI, exempt per Decisions.md).
+Reasoning runs: 59 cases × 2 conditions × 3 draws = 354 runs × $0.24 =
+**$84.96**. Optional draw 4: +118 runs = $28.32; worst case = **$113.28**.
+All reasoning uses the ChatGPT-authenticated Codex subscription, fail-closed
+(`require_codex_subscription` rejects API keys). Deterministic performance
+runs cost $0 reasoning. Under the specified semantic-off launch posture,
+embeddings-exempt spend is $0; if E09 changes that posture, this procedure and
+its failure-probe mechanism must be revised before execution.
 
 Ceiling: **$120** hard. OWNER DECISION: explicit owner approval required before launching the draws (2026-07-27 cost-audit rule); approval of this spec is not approval of the spend.
 

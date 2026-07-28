@@ -47,16 +47,36 @@ Prospective cases (5, in eval/e08_prospective_cases.json):
 
 ## Procedure
 
-1. Preflight: clean git tree, record commit; flags default off.
+1. Preflight: use separate project-scoped stacks from
+   [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md), record
+   the clean immutable build revision, and confirm flags default off.
 2. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json validate` and `python3 agent_work_eval.py --manifest eval/e08_prospective_cases.json validate` — both must pass.
-3. For draw N in 1..3:
-   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --condition service_api --experiment-arm e08-base --paired-draw-id e08-full-draw<N> --expect-feature-flag intention_ledger=off --concurrency 3 --timeout 360 --run-id e08-base-full-run<N> --out results/2026-MM-DD-e08-intention-base-draw<N>.json --report results/2026-MM-DD-e08-intention-base-draw<N>.md`.
+3. Calibrate the flag-on query shape before its acceptance run:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile calibration --label e08-query-budget-calibration --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=on --out results/2026-MM-DD-e08-query-budget-calibration.json`.
+   This command intentionally exits nonzero because calibration artifacts are
+   never acceptance evidence. Review its counts and check in or otherwise
+   freeze a runtime-bound `e08-intention-ledger` contract as
+   `E08_QUERY_BUDGET_CONTRACT`.
+4. Run both cheap 64K latency arms before reasoning. Flag off:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e08-open-latency-off --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag intention_ledger=off --out results/2026-MM-DD-e08-open-latency-off.json`.
+   Flag on uses
+   `--query-budget-profile e08-intention-ledger --query-budget-contract "$E08_QUERY_BUDGET_CONTRACT"`
+   and `--expect-feature-flag intention_ledger=on`. Any red gate or open p95
+   delta ≥10ms stops all reasoning.
+5. For draw N in 1..3:
+   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e08-base --paired-draw-id "e08-full-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag intention_ledger=off --concurrency 3 --timeout 360 --run-id "e08-base-full-run${N}" --out "results/2026-MM-DD-e08-intention-base-draw${N}.json" --report "results/2026-MM-DD-e08-intention-base-draw${N}.md"`.
    2. Same paired-draw ID with `--experiment-arm e08-flag --expect-feature-flag intention_ledger=on`, a unique run ID, and the flag artifact.
    3. Prospective subset, both service arms, uses `--manifest eval/e08_prospective_cases.json` and shared `--paired-draw-id e08-prospective-draw<N>`.
    4. Filesystem subset control uses `--condition filesystem --experiment-arm e08-filesystem --paired-draw-id e08-prospective-draw<N>`.
-4. Latency: `python performance_eval.py run --label e08-open-latency-off --scales 64000 --samples 30 --out results/2026-MM-DD-e08-open-latency-off.json` with the flag off, then the same with `--label e08-open-latency-on` and the flag on (embeddings pending, as in every baseline; no reasoning cost).
-5. False-surfacing audit: `python3 eval/audit_intentions.py results/2026-MM-DD-e08-*flag*-draw*.json --out results/2026-MM-DD-e08-intention-audit.json`.
-6. `regrade` disputed answers; aggregate full-suite and prospective manifests separately because their arm/case sets differ. Full: `--expected-arm e08-flag --expected-arm e08-base`; prospective: add `--expected-arm e08-filesystem`.
+6. False-surfacing audit uses only exact flag-on draw artifacts:
+   `E08_FLAG=(results/2026-MM-DD-e08-intention-flag-draw{1,2,3}.json results/2026-MM-DD-e08-prospective-flag-draw{1,2,3}.json); python3 eval/audit_intentions.py "${E08_FLAG[@]}" --out results/2026-MM-DD-e08-intention-audit.json`.
+7. Regrade disputed answers with the correct global `--manifest` before
+   `regrade`. Aggregate exact arrays separately because their case/arm sets
+   differ:
+   `E08_FULL=(results/2026-MM-DD-e08-intention-{flag,base}-draw{1,2,3}.json)`
+   with `--expected-arm e08-flag --expected-arm e08-base`; the prospective
+   array additionally contains the three filesystem artifacts and declares
+   `--expected-arm e08-filesystem`.
 
 ## Metrics
 
@@ -85,7 +105,8 @@ All-in equivalent ≈ $0.24/agent-run (470-run audit, $113.18).
 - Filesystem subset runs: 5 × 3 = 15.
 - Total 129 runs × $0.24 ≈ **$30.96**. Regrade ≈ $0; performance_eval runs involve no reasoning model, $0.
 
-Embeddings (usage-billed OpenAI, exempt, listed separately): none — exact+lexical only; performance_eval.py runs with embeddings pending (it has no embeddings flag; tests/mock_openai_embeddings.py provides a deterministic local server if a run ever insists on semantic coverage). $0.00.
+Embeddings (usage-billed OpenAI, exempt, listed separately): none —
+exact+lexical only, semantic lane explicitly disabled, and no worker. $0.00.
 
 **Hard ceiling: $40** all-in equivalent; ~$9 headroom covers one invalidated-draw rerun.
 

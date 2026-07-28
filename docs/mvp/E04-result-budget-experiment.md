@@ -13,7 +13,11 @@ Does budget-contracted retrieval — fair-share allocation + token-tied char cap
 
 1. (M) D01 feature behind flags `search.fair_share` / `search.top1_hydration` / `search.char_cap` in apps/api/src/simple_core.rs: response-assembly budget allocation; hydration reusing open's complete-source path (`MAX_OPEN_COMPLETE_SOURCE_CHARS`); single batched hydration fetch; `section_demotion_top_n` knob.
 2. (implemented) Arm-aware n≥3 aggregator and immutable arm/draw ledger binding — see [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
-3. (S) Personal suite clean 60-claim run: the last run graded only 40/60. Diagnose with `python agent_work_eval.py regrade` on the saved answers; fix grading against eval/personal_coordination_cases.json; verify one full-grade run before any scored draw. Any draw where personal grades <60 claims is invalid.
+3. (S) Personal suite clean 60-claim run: the last run graded only 40/60.
+   Diagnose the saved answers with
+   `python3 agent_work_eval.py --manifest eval/personal_coordination_cases.json regrade --input "$INPUT" --out "$OUTPUT"`;
+   verify one full-grade run before any scored draw. Any draw where personal
+   grades <60 claims is invalid.
 4. (S) Chronic-subset manifests: eval/e04_chronic_rupture_cases.json (ruptureops-archive-import-reconciliation, ruptureops-flowworks-campaign-revision, ruptureops-spatial-evidence, ruptureops-forked-agent-idempotency — from eval/rupture_ops_cases.json) and eval/e04_chronic_guard_cases.json (star-rupture-plan-revision, warmind-parser-learning — from eval/work_cases.json).
 5. (S) Exact-value claim-slot tagging: annotate rubric slots requiring verbatim values (dates, IDs, numbers, paths) in the three manifests; grader carries the tag into results (pointer-demotion risk per D01).
 6. (S) Verify agent_work_eval.py emits per-case `response_character_metrics` service chars; add if missing.
@@ -28,18 +32,37 @@ Does budget-contracted retrieval — fair-share allocation + token-tied char cap
 
 ## Corpus and fixtures
 
-Same corpus and fixtures as the strict-draw runs, exact+lexical only with embeddings pending. Suites: rupture_ops (primary, 12 cases/48 claims), work (guard, 14/56), and personal_coordination (guard, 15/60) — 41 cases/164 claims per arm-draw. The recent suite is excluded: no D01-specific hypothesis, and cost control. Preflight must recount every manifest and use the on-disk counts in the cost ledger.
+Same corpus and fixtures as the strict-draw runs, exact+lexical only with
+embeddings pending. Suites: rupture_ops (primary, 12 cases/48 claims), work
+(guard, 13/52 active), and personal_coordination (guard, 15/60) — **40
+cases/160 claims per arm-draw**. The recent suite is excluded: no D01-specific
+hypothesis, and cost control. Preflight must recount every manifest and use the
+on-disk counts in the cost ledger.
 
 ## Procedure
 
-1. Preflight: clean git tree (implementation fingerprint requires it). Validate every manifest: `python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json validate` (repeat for eval/work_cases.json, eval/personal_coordination_cases.json, and both chronic manifests). Confirm precondition 3's clean personal run exists.
-2. Confirm reasoning runs on the ChatGPT-authenticated Codex subscription; `require_codex_subscription` must reject API keys (fail-closed).
-3. For draw N in 1..3, complete all four arms before starting draw N+1. Per arm, use a unique `--run-id`, stable `--experiment-arm e04-A|B|C|F`, and one shared `--paired-draw-id e04-<suite>-draw<N>` per suite/draw. Example control:
-   `python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json run --condition service_api --experiment-arm e04-A --paired-draw-id e04-rupture-draw<N> --expect-feature-flag search_fair_share=off --expect-feature-flag search_top1_hydration=off --expect-feature-flag search_char_cap=off --expect-runtime-config search_section_demotion_top_n=null --concurrency 3 --timeout 360 --run-id e04-A-rupture-run<N> --out results/2026-MM-DD-e04-A-rupture-draw<N>.json --report results/2026-MM-DD-e04-A-rupture-draw<N>.md`
+1. Preflight: use the isolated Nyx preamble, verify the clean revision, and
+   validate every manifest. For the personal grading repair use the correct
+   global manifest position:
+   `python3 agent_work_eval.py --manifest eval/personal_coordination_cases.json regrade --input "$PERSONAL_INPUT" --out "$PERSONAL_REGRADE"`.
+   Confirm a complete 60-claim personal artifact before any scored draw.
+2. Before reasoning, run definitive 640K guards for both candidate service
+   configurations, one performance stack at a time. The B command is:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e04-B-soak --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=on --expect-feature-flag search_fair_share=on --expect-feature-flag search_char_cap=on --expect-feature-flag search_top1_hydration=off --expect-runtime-config search_section_demotion_top_n=8 --out results/2026-MM-DD-e04-B-soak.json`.
+   Run C against its isolated stack by changing hydration to `on`, the label,
+   and output. Any red deterministic gate stops all E04 reasoning.
+3. Confirm reasoning runs on the ChatGPT-authenticated Codex subscription;
+   `require_codex_subscription` must reject API keys.
+4. For draw N in 1..3, complete all four arms before starting draw N+1. Per arm, use a unique `--run-id`, stable `--experiment-arm e04-A|B|C|F`, and one shared `--paired-draw-id e04-<suite>-draw<N>` per suite/draw. Example control:
+   `python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json run --condition service_api --service-protocol simple --experiment-arm e04-A --paired-draw-id "e04-rupture-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag search_fair_share=off --expect-feature-flag search_top1_hydration=off --expect-feature-flag search_char_cap=off --expect-runtime-config search_section_demotion_top_n=null --concurrency 3 --timeout 360 --run-id "e04-A-rupture-run${N}" --out "results/2026-MM-DD-e04-A-rupture-draw${N}.json" --report "results/2026-MM-DD-e04-A-rupture-draw${N}.md"`
    Substitute B/C and suites work/personal with their exact expected flag/knob values. Arm F uses `--condition filesystem --experiment-arm e04-F` with the same paired-draw ID. Artifact naming: `results/2026-MM-DD-e04-<arm>-<suite>-draw<N>.json`.
-4. Draws 4-5, chronic subsets only, all four arms: retain each parent manifest fingerprint and select the frozen IDs with repeated `--case` options. For rupture use `--manifest eval/rupture_ops_cases.json` with the four IDs listed in `eval/e04_chronic_rupture_cases.json`; for work use `--manifest eval/work_cases.json` with the two IDs in `eval/e04_chronic_guard_cases.json`. Combined with draws 1-3 this yields 5 paired draws for the six chronic cases. Do not run the separately fingerprinted subset manifests as aggregate inputs.
-5. Aggregate: `python3 eval/aggregate_draws.py results/2026-MM-DD-e04-*.json --expected-arm e04-A --expected-arm e04-B --expected-arm e04-C --expected-arm e04-F --allow-case-extension --out results/2026-MM-DD-e04-aggregate.json` — the opt-in extension permits only the predeclared chronic cases to have five draws; arm completeness remains mandatory. Then run `python3 eval/audit_accepted_sources.py results/2026-MM-DD-e04-*.json --out results/2026-MM-DD-e04-accepted-source-context.json`.
-6. Winning-config soak: `python performance_eval.py run --label e04-winning-soak --future-soak --out results/2026-MM-DD-e04-winning-soak.json` (30 samples, definitive) with that config's flags on.
+5. Draws 4-5, chronic subsets only, all four arms: retain each parent manifest fingerprint and select the frozen IDs with repeated `--case` options. For rupture use `--manifest eval/rupture_ops_cases.json` with the four IDs listed in `eval/e04_chronic_rupture_cases.json`; for work use `--manifest eval/work_cases.json` with the two IDs in `eval/e04_chronic_guard_cases.json`. Combined with draws 1-3 this yields 5 paired draws for the six chronic cases. Do not run the separately fingerprinted subset manifests as aggregate inputs.
+6. Build exact input arrays:
+   `E04_FULL=(results/2026-MM-DD-e04-{A,B,C,F}-{rupture,work,personal}-draw{1,2,3}.json); E04_CHRONIC=(results/2026-MM-DD-e04-{A,B,C,F}-{rupture,work}-draw{4,5}.json); E04_ALL=("${E04_FULL[@]}" "${E04_CHRONIC[@]}")`.
+   Aggregate with
+   `python3 eval/aggregate_draws.py "${E04_ALL[@]}" --expected-arm e04-A --expected-arm e04-B --expected-arm e04-C --expected-arm e04-F --allow-case-extension --out results/2026-MM-DD-e04-aggregate.json`.
+   Audit service artifacts only:
+   `E04_SERVICE=(results/2026-MM-DD-e04-{A,B,C}-{rupture,work,personal}-draw{1,2,3}.json results/2026-MM-DD-e04-{A,B,C}-{rupture,work}-draw{4,5}.json); python3 eval/audit_accepted_sources.py "${E04_SERVICE[@]}" --out results/2026-MM-DD-e04-accepted-source-context.json`.
 7. On regression only: one-factor-at-a-time bisection of the three bounds before abandoning D01 — `char_cap` only; `fair_share` only; demotion isolated via `section_demotion_top_n` unset vs 8 — chronic subsets, 3 draws per configuration.
 
 ## Metrics
@@ -66,10 +89,10 @@ Single-draw deltas decide nothing: the noise floor is ±3-5 claims (agent-work n
 
 Subscription rule (Decisions.md): all reasoning runs on the ChatGPT-authenticated Codex subscription, fail-closed in code (`require_codex_subscription` rejects API keys); observed all-in cost ≈$0.24/agent-run (470-run audit, $113.18).
 
-- Full draws: 4 arms × 41 cases × 3 draws = 492 runs × $0.24 = **$118.08**.
+- Full draws: 4 arms × 40 cases × 3 draws = 480 runs × $0.24 = **$115.20**.
 - Chronic draws 4-5: 4 arms × 6 cases × 2 draws = 48 runs × $0.24 = **$11.52**
 - Contingency (personal re-grade/re-run plus bisection: 3 configs × 6 cases × 3 draws = 54 runs): ≤ **$12.96**
-- Planned ≈ $129.60; with full contingency ≈ $142.56. **Hard ceiling: $150.**
+- Planned ≈ $126.72; with full contingency ≈ $139.68. **Hard ceiling: $150.**
 
 Embeddings-exempt spend (usage-billed OpenAI, listed separately): **$0 planned** — all arms run exact+lexical with embeddings pending, matching every baseline. For reference, indexing would cost ~$0.19 per 9.6M-token corpus; it is not part of this experiment. Soak and aggregator runs use no reasoning model: $0.
 

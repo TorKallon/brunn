@@ -31,7 +31,10 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
 
 - Quality suites at the checked-in manifest revisions: agent-work (13 cases / 52 claims), rupture (12 / 48), recent (14 / 56) = 39 cases / 156 claims per draw. Personal-coordination is excluded for cost control and because it carries no semantic-lane-specific hypothesis (its chronic case, coord-deadline-readiness, is a prospective-memory failure — E08's domain, not a retrieval-lane question). Transitions are excluded because they are stuck at 0/5 on claim-slot omissions unrelated to retrieval lanes.
 - Condition: service_api only (the lane under test lives behind the service).
-- Corpus: the standard eval corpus for these manifests, embedded per E03. Coverage check before any semantic-arm draw (precondition 1).
+- Corpus: the standard eval corpus for these manifests. E03 rehearses and
+  prices backfill, but each E09 case is provisioned under an isolated user;
+  the E09 harness must independently wait for and prove coverage before every
+  semantic-arm case.
 - Latency fixture: performance_eval 64K scale, 30 samples (definitive), per arm.
 
 ## Procedure
@@ -40,25 +43,33 @@ Does the semantic lane improve reasoning quality at all — and if it does, does
    Run the coverage probe; abort if any `semantic_unavailable` at warm start in
    arms B/C. `--e09-arm` fails before reasoning on source dirtiness, API build
    mismatch, or runtime flag drift.
-2. Set arm environment on the disposable stack and restart that stack (no new
-   image/deploy): A = lane off/cache on/deadline 300; B = lane on/cache
-   off/deadline 0; C = lane on/cache on/deadline 300. For each arm ∈
+2. Allocate three project-scoped stacks from the shared preamble. Restart the
+   relevant API process before **every artifact** so process-global semantic
+   counters and cache entries cannot cross draws; do not rebuild the image.
+   A = lane off/cache on/deadline 300; B = lane on/cache off/deadline 0;
+   C = lane on/cache on/deadline 300. For each arm ∈
    {no_semantic, unbounded_semantic, deadline_cache}, each suite manifest ∈
    {work, rupture_ops, recent_work}, each draw N ∈ {1,2,3}:
 
-   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --service-protocol simple --e09-arm <arm> --experiment-arm e09-<arm-with-hyphens> --paired-draw-id e09-work-draw<N> --concurrency 3 --timeout 360 --run-id e09-<arm>-work-draw<N> --out results/2026-MM-DD-e09-<arm>-work-draw<N>.json --report results/2026-MM-DD-e09-<arm>-work-draw<N>.md`
+   `python3 agent_work_eval.py --manifest eval/work_cases.json run --condition service_api --service-protocol simple --e09-arm "$ARM" --experiment-arm "$EXPERIMENT_ARM" --paired-draw-id "e09-work-draw${N}" --expect-build-revision "$REV" --expect-feature-flag verbatim_spans=on --concurrency 3 --timeout 360 --run-id "e09-${ARM}-work-draw${N}" --out "results/2026-MM-DD-e09-${ARM}-work-draw${N}.json" --report "results/2026-MM-DD-e09-${ARM}-work-draw${N}.md"`
 
    The exact arm identities are `e09-no-semantic`, `e09-unbounded-semantic`, and `e09-deadline-cache`. `--e09-arm` derives and validates the full semantic policy before reasoning: no-semantic = lane off/cache on/deadline 300ms/backfill guard on; unbounded-semantic = lane on/cache off/no embedding deadline/backfill guard on; deadline-cache = lane on/cache on/deadline 300ms/backfill guard on. Conflicting explicit runtime expectations fail closed.
 
    (substitute eval/rupture_ops_cases.json and eval/recent_work_cases.json with matching slugs: results/2026-MM-DD-e09-<arm>-<suite>-draw<N>.json). Model comes from the manifest (gpt-5.6-sol). 27 harness invocations total.
-3. Interleave draws across arms (arm order rotated per draw) so time-of-day drift is not confounded with arm.
+3. Serialize E09 quality invocations because provider rate limits and
+   process-global counters are shared. Rotate arm order A/B/C, B/C/A, C/A/B
+   across draws, and rotate suite order inside each draw.
 4. After each run, confirm the run JSON contains cache hit rate (arm C), deferral rate (arms B/C), and per-lane latency.
-5. Latency:
-   `python3 performance_eval.py run --protocol simple --e09-arm <arm> --label e09-<arm>-64k-latency --scales 64000 --samples 30 --api-container <api-container> --db-container <db-container> --out results/2026-MM-DD-e09-<arm>-64k-latency.json`
-   per arm under that arm's flags. Definitive mode also requires the
-   semantic-failure start/stop hooks already specified by the performance
-   harness.
-6. Aggregate: `python3 eval/aggregate_draws.py results/2026-MM-DD-e09-*-draw*.json --expected-arm e09-deadline-cache --expected-arm e09-unbounded-semantic --expected-arm e09-no-semantic --out results/2026-MM-DD-e09-aggregate.json`.
+5. Run latency one stack at a time. Arm A is explicitly nonsemantic:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --e09-arm no_semantic --label e09-no-semantic-64k-latency --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag embed_cache=on --expect-feature-flag embedding_backfill_guard=on --expect-feature-flag verbatim_spans=on --expect-runtime-config semantic_deadline_ms=300 --out results/2026-MM-DD-e09-no-semantic-64k-latency.json`.
+   Arm B uses its lane-local controllable provider proxy:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical semantic --semantic-failure-probe required --semantic-failure-start-command "$SEMANTIC_FAILURE_START" --semantic-failure-stop-command "$SEMANTIC_FAILURE_STOP" --wait-semantic --query-budget-profile default-safe --e09-arm unbounded_semantic --label e09-unbounded-semantic-64k-latency --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=on --expect-feature-flag embed_cache=off --expect-feature-flag embedding_backfill_guard=on --expect-feature-flag verbatim_spans=on --expect-runtime-config semantic_deadline_ms=null --out results/2026-MM-DD-e09-unbounded-semantic-64k-latency.json`.
+   Arm C is:
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical semantic --semantic-failure-probe required --semantic-failure-start-command "$SEMANTIC_FAILURE_START" --semantic-failure-stop-command "$SEMANTIC_FAILURE_STOP" --wait-semantic --query-budget-profile default-safe --e09-arm deadline_cache --label e09-deadline-cache-64k-latency --scales 64000 --samples 30 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=on --expect-feature-flag embed_cache=on --expect-feature-flag embedding_backfill_guard=on --expect-feature-flag verbatim_spans=on --expect-runtime-config semantic_deadline_ms=300 --out results/2026-MM-DD-e09-deadline-cache-64k-latency.json`.
+   The failure and restore commands must target only the current stack's
+   proxy.
+6. Aggregate an explicit quality-only array:
+   `E09_QUALITY=(results/2026-MM-DD-e09-{no_semantic,unbounded_semantic,deadline_cache}-{work,rupture,recent}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E09_QUALITY[@]}" --expected-arm e09-deadline-cache --expected-arm e09-unbounded-semantic --expected-arm e09-no-semantic --out results/2026-MM-DD-e09-aggregate.json`.
 7. Deadline stepping: only if C loses to B with McNemar significance, generate
    `eval/e09_step_policy.py --losing-suite <suite> --out
    results/2026-MM-DD-e09-step-policy.json`, supplying actual base spend when

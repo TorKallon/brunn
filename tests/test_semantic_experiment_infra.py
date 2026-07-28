@@ -114,7 +114,12 @@ class SemanticExperimentInfrastructureTest(unittest.TestCase):
                 scales=[64_000],
                 api_container=None,
                 db_container=None,
+                expect_build_revision=None,
                 feature_state=[],
+                expect_feature_flag=[],
+                expect_runtime_config=[],
+                query_budget_profile="default-safe",
+                query_budget_contract=None,
             )
             command = build_performance_command(args)
         failed = command[
@@ -126,6 +131,8 @@ class SemanticExperimentInfrastructureTest(unittest.TestCase):
         self.assertNotEqual(shlex.split(failed), shlex.split(restored))
         self.assertEqual(shlex.split(failed)[-1], "503")
         self.assertEqual(shlex.split(restored)[-1], "0")
+        self.assertIn("semantic_lane=on", command)
+        self.assertIn("semantic_deadline_ms=null", command)
 
     def test_slow_provider_probe_proves_full_http_deadline_and_warm_cache(
         self,

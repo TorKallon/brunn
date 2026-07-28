@@ -34,17 +34,35 @@ Stage 1 requires only B1+B2. Embeddings are unnecessary: the probe is exact-lane
 
 ## Procedure
 
-1. Land B1+B2 on a clean git tree (implementation fingerprint gate requires it).
-2. Resolve the isolated stack's exact container IDs (`API_CONTAINER=$(docker compose ps -q api)` and `DB_CONTAINER=$(docker compose ps -q db)`). A definitive run must record both and must configure the semantic-provider failure/restore hooks even though the identifier probe itself is exact-only.
-   Start the isolated mock embedding provider in its healthy state and wire the service to it before the run; the hooks below deliberately stop and restore that already-running provider.
+1. Land B1+B2 on a clean git tree and use the project-scoped isolated Nyx
+   preamble in
+   [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md).
+   Resolve `API_CONTAINER` and `DB_CONTAINER` through that exact Compose
+   project, never through bare `docker compose`.
+2. These runs deliberately request only exact+lexical retrieval from a
+   semantic-disabled stack. Record that posture explicitly:
+   `E02_PERF=(--protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off)`.
 3. Stage 1 run at default scales and 30 samples:
-   `python3 performance_eval.py run --protocol simple --label verbatim-identifier-stage1 --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --semantic-failure-start-command "python3 tests/mock_openai_embeddings.py stop" --semantic-failure-stop-command "python3 tests/mock_openai_embeddings.py start" --out results/2026-MM-DD-verbatim-identifier-stage1.json`.
+   `python3 performance_eval.py run "${E02_PERF[@]}" --expect-feature-flag verbatim_spans=off --label verbatim-identifier-stage1 --out results/2026-MM-DD-verbatim-identifier-stage1.json`.
    The command is expected to exit nonzero because `verbatim_identifier` is a blocking known-failing gate before D02. `--quick` is acceptable only for smoke.
 4. Record the expected failure per scale (target: 0/30 exact-only source payloads). If any identifier does return verbatim, record its position and response field and re-scope D02 before proceeding.
 5. Keep `verbatim_identifier` blocking but document the stage-1 failure until D02 ships. Stage 1 is complete; no model runs occurred.
-6. Stage 2 begins only after B3 lands on a clean tree. Repeat the same definitive `--protocol simple`, container-fingerprint, and semantic-hook flags for `verbatim-identifier-stage2-off` and `verbatim-identifier-stage2-on`; add `--future-soak` for `verbatim-identifier-stage2-soak`. Flag off must preserve the failure; flag on must reach 30/30 at every scale.
-7. Reasoning pass, paired draws. For N in 1..3, flag off: `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm verbatim-off --paired-draw-id verbatim-draw<N> --expect-feature-flag verbatim_spans=off --concurrency 3 --timeout 360 --run-id verbatim-off-run<N> --out results/2026-MM-DD-verbatim-off-draw<N>.json --report results/2026-MM-DD-verbatim-off-draw<N>.md`. Flip the isolated stack flag on and repeat with `--experiment-arm verbatim-on --paired-draw-id verbatim-draw<N> --expect-feature-flag verbatim_spans=on --run-id verbatim-on-run<N>`.
-8. Aggregate with B4: `python3 eval/aggregate_draws.py results/2026-MM-DD-verbatim-*-draw*.json --expected-arm verbatim-on --expected-arm verbatim-off --out results/2026-MM-DD-verbatim-aggregate.json` — repeated draws remain clustered by case; McNemar is reported separately from the claim-difference bootstrap.
+6. Stage 2 begins only after B3 lands on a clean tree. Run distinct isolated
+   flag-off and flag-on stacks with the corresponding authenticated
+   `--expect-feature-flag verbatim_spans=off|on`. Use the E02 performance
+   array above for `verbatim-identifier-stage2-off` and
+   `verbatim-identifier-stage2-on`; add `--future-soak` to the flag-on
+   `verbatim-identifier-stage2-soak`. Flag off must preserve the failure; flag
+   on must reach 30/30 at every scale.
+7. Reasoning pass, paired draws. For `N` in `1 2 3`, flag off:
+   `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm verbatim-off --paired-draw-id "verbatim-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --concurrency 3 --timeout 360 --run-id "verbatim-off-run${N}" --out "results/2026-MM-DD-verbatim-off-draw${N}.json" --report "results/2026-MM-DD-verbatim-off-draw${N}.md"`.
+   Run the same draw against the isolated flag-on stack with
+   `--experiment-arm verbatim-on`,
+   `--expect-feature-flag verbatim_spans=on`, and unique on-arm paths.
+8. Aggregate only the six declared full-draw artifacts:
+   `VERBATIM_FULL=(results/2026-MM-DD-verbatim-{on,off}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${VERBATIM_FULL[@]}" --expected-arm verbatim-on --expected-arm verbatim-off --out results/2026-MM-DD-verbatim-aggregate.json`.
+   Repeated draws remain clustered by case; McNemar is separate from the
+   claim-difference bootstrap.
 9. If overall delta is inside the noise floor but identifier-tagged cases move, repeat step 7 for 5 draws with `--manifest eval/e02_identifier_cases.json`, using targeted-specific run and paired-draw IDs, and aggregate separately.
 10. Use `agent_work_eval.py regrade` for any rubric corrections; never regenerate answers to fix grading.
 11. Promote `verbatim_identifier` to a permanent, blocking performance_eval gate: with flag on it fails closed below 30/30; with flag off it remains a documented expected-fail.

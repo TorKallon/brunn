@@ -49,6 +49,10 @@ OLD_SOURCE_QUERY = (
     "durable workspace source authority for a fresh agent."
 )
 LEXICAL_CONSOLIDATION_GATE_PROFILE = "e05-lexical-consolidation"
+D03_RESUME_DELTAS_GATE_PROFILE = "d03-resume-deltas"
+SEMANTIC_FAILURE_PROBE_REQUIRED = "required"
+SEMANTIC_FAILURE_PROBE_NOT_APPLICABLE = "not-applicable"
+DEFAULT_QUERY_BUDGET_PROFILE = "default-safe"
 LEXICAL_CONSOLIDATION_REQUIRED_GATES = frozenset({
     "all_required_scales_completed",
     "retrieval_sample_count_is_definitive",
@@ -60,12 +64,36 @@ LEXICAL_CONSOLIDATION_REQUIRED_GATES = frozenset({
     "concurrent_exact_and_lexical_lanes_remain_healthy",
     "foreground_write_sample_count_is_definitive",
 })
-SERVICE_BOOLEAN_FEATURE_FLAGS = frozenset({
+BOOLEAN_RUNTIME_FEATURES = frozenset({
+    "allow_degraded_embeddings",
+    "embed_cache",
+    "embedding_backfill_guard",
+    "embedding_backfill_foreground_status_url_configured",
     "supersession_demotion",
     "intention_ledger",
     "read_path_roundtrip_v1",
     "lexical_single_scan",
+    "observability_timings_ms",
+    "resume_deltas",
+    "search_char_cap",
+    "search_fair_share",
+    "search_top1_hydration",
+    "semantic_lane",
+    "verbatim_spans",
 })
+RUNTIME_FEATURES = BOOLEAN_RUNTIME_FEATURES | frozenset({
+    "embedding_backfill_batch_chunks",
+    "embedding_backfill_foreground_status_timeout_ms",
+    "embedding_backfill_inter_batch_ms",
+    "embedding_backfill_open_p95_limit_ms",
+    "embedding_backfill_search_p95_limit_ms",
+    "materialize_token_budget",
+    "search_section_demotion_top_n",
+    "semantic_deadline_ms",
+    "supersession_demotion_weight",
+})
+CURRENT_RUNTIME_FEATURES = frozenset(RUNTIME_FEATURES)
+SERVICE_BOOLEAN_FEATURE_FLAGS = BOOLEAN_RUNTIME_FEATURES
 SOURCE_TEXT_KEYS = frozenset({"content", "text", "excerpt", "source_text"})
 SOURCE_IDENTITY_KEYS = frozenset(
     {
@@ -109,6 +137,9 @@ REGRESSION_THRESHOLDS = {
     "concurrent_search_p95_ms": 750.0,
 }
 QUERY_BUDGETS_PATH = PROJECT_ROOT / "eval" / "query_budgets.json"
+D03_QUERY_BUDGETS_PATH = (
+    PROJECT_ROOT / "eval" / "query_budgets.d03-resume-deltas.json"
+)
 RETRIEVAL_PLAN_CONTRACT_PATH = (
     PROJECT_ROOT / "eval" / "retrieval_plan_contract.json"
 )
@@ -132,6 +163,7 @@ class RunProfile:
     future_soak_requested: bool
     import_timeout_seconds: float
     semantic_failure_required: bool
+    semantic_failure_probe_posture: str
 
 
 def percentile(values: Iterable[float], quantile: float) -> float:
@@ -174,23 +206,151 @@ def parse_feature_states(values: Sequence[str] | None) -> dict[str, bool]:
     return dict(sorted(states.items()))
 
 
+def expected_feature_flags(values: Sequence[str] | None) -> dict[str, bool]:
+    parsed: dict[str, bool] = {}
+    for value in values or ():
+        name, separator, state = value.partition("=")
+        if (
+            not separator
+            or name not in BOOLEAN_RUNTIME_FEATURES
+            or state not in {"on", "off"}
+        ):
+            raise ValueError(
+                "--expect-feature-flag requires a known boolean runtime feature "
+                "formatted as NAME=on|off"
+            )
+        if name in parsed:
+            raise ValueError(f"duplicate expected feature flag: {name}")
+        parsed[name] = state == "on"
+    return parsed
+
+
+def expected_runtime_features(
+    flag_values: Sequence[str] | None,
+    config_values: Sequence[str] | None,
+) -> dict[str, Any]:
+    parsed: dict[str, Any] = dict(expected_feature_flags(flag_values))
+    for value in config_values or ():
+        name, separator, rendered = value.partition("=")
+        if not separator or name not in RUNTIME_FEATURES:
+            raise ValueError(
+                "--expect-runtime-config requires a known runtime feature "
+                "formatted as NAME=<JSON value>"
+            )
+        if name in parsed:
+            raise ValueError(f"duplicate expected runtime feature: {name}")
+        try:
+            parsed[name] = json.loads(rendered)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"--expect-runtime-config value for {name} is not valid JSON"
+            ) from exc
+    return dict(sorted(parsed.items()))
+
+
+def capture_service_runtime_snapshot(
+    status: dict[str, Any],
+    *,
+    expected_features: dict[str, Any],
+    expected_build_revision: str | None,
+) -> dict[str, Any]:
+    if status.get("status") != "ready":
+        raise ValueError("service status is not ready")
+    build_revision = status.get("build_revision")
+    if (
+        not isinstance(build_revision, str)
+        or not build_revision
+        or build_revision == "unknown"
+    ):
+        raise ValueError("service status omitted a usable build_revision")
+    if (
+        expected_build_revision is not None
+        and build_revision != expected_build_revision
+    ):
+        raise ValueError(
+            "service build revision mismatch: "
+            f"expected {expected_build_revision}, actual {build_revision}"
+        )
+    actual_features = status.get("runtime_features")
+    if not isinstance(actual_features, dict):
+        raise ValueError(
+            "service status omitted the required runtime_features snapshot"
+        )
+    missing_current = sorted(CURRENT_RUNTIME_FEATURES - set(actual_features))
+    if missing_current:
+        raise ValueError(
+            "service runtime_features snapshot is incomplete; missing "
+            f"{missing_current}"
+        )
+    mismatches = {
+        name: {"expected": expected, "actual": actual_features.get(name)}
+        for name, expected in expected_features.items()
+        if (
+            name not in actual_features
+            or type(actual_features[name]) is not type(expected)
+            or actual_features[name] != expected
+        )
+    }
+    if mismatches:
+        raise ValueError(f"service runtime feature mismatch: {mismatches}")
+    embeddings = status.get("embeddings")
+    if not isinstance(embeddings, dict):
+        raise ValueError("service status omitted embeddings metadata")
+    snapshot = {
+        "schema": "straylight-service-runtime-snapshot@v1",
+        "captured_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "status": status["status"],
+        "build_revision": build_revision,
+        "corpus_revision": status.get("corpus_revision"),
+        "revision_sequence": status.get("revision_sequence"),
+        "read_only": status.get("read_only"),
+        "runtime_features": actual_features,
+        "embeddings": embeddings,
+    }
+    semantic_runtime = status.get("semantic_runtime")
+    if semantic_runtime is not None:
+        if not isinstance(semantic_runtime, dict):
+            raise ValueError("service semantic_runtime snapshot must be an object")
+        snapshot["semantic_runtime"] = semantic_runtime
+    return snapshot
+
+
+def fetch_service_runtime_snapshot(
+    client: NativeApiClient,
+    *,
+    expected_features: dict[str, Any],
+    expected_build_revision: str | None,
+) -> dict[str, Any]:
+    status = client.get("/v1/status").data
+    if not isinstance(status, dict):
+        raise ValueError("service status response was not an object")
+    return capture_service_runtime_snapshot(
+        status,
+        expected_features=expected_features,
+        expected_build_revision=expected_build_revision,
+    )
+
+
+def require_stable_runtime_configuration(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> None:
+    for field in ("build_revision", "runtime_features"):
+        if before.get(field) != after.get(field):
+            raise ValueError(f"service {field} drifted during the evaluation run")
+
+
 def verify_service_feature_states(
     client: NativeApiClient,
     expected: dict[str, bool],
 ) -> dict[str, bool]:
-    if not expected:
-        return {}
-    status = client.get("/v1/status").data
-    actual = status.get("feature_flags")
-    if not isinstance(actual, dict):
-        raise ValueError("service status omitted the required feature_flags snapshot")
-    mismatches = {
-        name: {"expected": value, "actual": actual.get(name)}
-        for name, value in expected.items()
-        if actual.get(name) is not value
-    }
-    if mismatches:
-        raise ValueError(f"service feature state mismatch: {mismatches}")
+    """Backward-compatible helper for callers that only need boolean checks."""
+    snapshot = fetch_service_runtime_snapshot(
+        client,
+        expected_features=expected,
+        expected_build_revision=None,
+    )
+    actual = snapshot["runtime_features"]
     return {name: bool(actual[name]) for name in sorted(expected)}
 
 
@@ -273,10 +433,30 @@ def summarize_query_counts(
 
 def load_query_budgets(
     path: Path = QUERY_BUDGETS_PATH,
+    *,
+    expected_profile: str | None = None,
 ) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if payload.get("schema") != "straylight-query-budgets@v1":
         raise ValueError(f"unsupported query-budget schema in {path}")
+    profile = payload.get("profile")
+    if not isinstance(profile, str) or not profile:
+        raise ValueError(f"query-budget profile is missing in {path}")
+    if expected_profile is not None and profile != expected_profile:
+        raise ValueError(
+            f"query-budget profile mismatch in {path}: "
+            f"expected {expected_profile}, actual {profile}"
+        )
+    runtime_features = payload.get("runtime_features")
+    if not isinstance(runtime_features, dict) or not runtime_features:
+        raise ValueError(
+            f"query-budget runtime_features applicability is missing in {path}"
+        )
+    unknown_features = sorted(set(runtime_features) - RUNTIME_FEATURES)
+    if unknown_features:
+        raise ValueError(
+            f"query-budget contract has unknown runtime features: {unknown_features}"
+        )
     operations = payload.get("operations")
     if not isinstance(operations, dict) or not operations:
         raise ValueError(f"query-budget operations are missing in {path}")
@@ -295,6 +475,102 @@ def load_query_budgets(
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise ValueError(f"query budget {operation} is not a non-negative integer")
     return payload
+
+
+def resolve_query_budget_contract(
+    *,
+    profile: str,
+    path: Path | None,
+    runtime_snapshot: dict[str, Any],
+    gate_profile: str | None,
+    protocol: str,
+) -> dict[str, Any] | None:
+    if gate_profile == LEXICAL_CONSOLIDATION_GATE_PROFILE:
+        if profile != "not-applicable" or path is not None:
+            raise ValueError(
+                "the E05 lexical-consolidation gate does not evaluate query "
+                "budgets; use --query-budget-profile not-applicable without "
+                "--query-budget-contract"
+            )
+        return None
+    if protocol != "simple":
+        if profile != "not-applicable" or path is not None:
+            raise ValueError(
+                "legacy protocol runs do not expose the simple-core query "
+                "budget contract; use --query-budget-profile not-applicable"
+            )
+        return None
+    if profile == "calibration":
+        if path is not None:
+            raise ValueError(
+                "query-budget calibration records observed counts and does not "
+                "accept --query-budget-contract"
+            )
+        return {
+            "profile": "calibration",
+            "path": None,
+            "sha256": None,
+            "contract": {
+                "schema": "straylight-query-budgets@v1",
+                "profile": "calibration",
+                "runtime_features": runtime_snapshot["runtime_features"],
+                "operations": {},
+            },
+            "acceptance_eligible": False,
+            "reason": (
+                "count-capture only; author and review a profile-specific "
+                "contract before an acceptance run"
+            ),
+        }
+    if profile == "not-applicable":
+        raise ValueError(
+            "--query-budget-profile not-applicable is allowed only for a "
+            "profile that does not evaluate simple-core query counts"
+        )
+    if path is None:
+        if profile == DEFAULT_QUERY_BUDGET_PROFILE:
+            path = QUERY_BUDGETS_PATH
+        elif (
+            profile == D03_RESUME_DELTAS_GATE_PROFILE
+            and gate_profile == D03_RESUME_DELTAS_GATE_PROFILE
+        ):
+            path = D03_QUERY_BUDGETS_PATH
+        else:
+            raise ValueError(
+                f"query-budget profile {profile!r} requires an explicit "
+                "--query-budget-contract; launch profiles never inherit the "
+                "default-safe contract"
+            )
+    payload = load_query_budgets(path, expected_profile=profile)
+    actual_features = runtime_snapshot.get("runtime_features")
+    if not isinstance(actual_features, dict):
+        raise ValueError("runtime snapshot omitted runtime_features")
+    expected_features = payload["runtime_features"]
+    mismatches = {
+        name: {"expected": expected, "actual": actual_features.get(name)}
+        for name, expected in expected_features.items()
+        if (
+            name not in actual_features
+            or type(actual_features[name]) is not type(expected)
+            or actual_features[name] != expected
+        )
+    }
+    if mismatches:
+        raise ValueError(
+            f"query-budget profile {profile!r} is not applicable to the "
+            f"authenticated runtime: {mismatches}"
+        )
+    resolved = path.resolve()
+    try:
+        rendered_path = str(resolved.relative_to(PROJECT_ROOT))
+    except ValueError:
+        rendered_path = str(resolved)
+    return {
+        "profile": profile,
+        "path": rendered_path,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "contract": payload,
+    }
 
 
 def evaluate_query_budgets(
@@ -327,6 +603,203 @@ def evaluate_query_budgets(
             },
         })
     return gates
+
+
+def load_d03_resume_control(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema") != "straylight-performance-eval@v2":
+        raise ValueError("D03 resume control is not a performance-eval v2 artifact")
+    if payload.get("pass") is not True:
+        raise ValueError("D03 resume control must be a passing definitive artifact")
+    if payload.get("protocol") != "simple":
+        raise ValueError("D03 resume control must use the simple protocol")
+    run_profile = payload.get("run_profile")
+    if (
+        not isinstance(run_profile, dict)
+        or run_profile.get("definitive") is not True
+    ):
+        raise ValueError("D03 resume control must be definitive")
+    if payload.get("retrieval_modes") != ["exact", "lexical"]:
+        raise ValueError(
+            "D03 resume control must use retrieval modes exact lexical"
+        )
+    runtime_configuration = payload.get("runtime_configuration")
+    if not isinstance(runtime_configuration, dict):
+        raise ValueError("D03 resume control omitted runtime_configuration")
+    snapshot = runtime_configuration.get("after")
+    if not isinstance(snapshot, dict):
+        raise ValueError("D03 resume control omitted its final runtime snapshot")
+    runtime_features = snapshot.get("runtime_features")
+    if (
+        not isinstance(runtime_features, dict)
+        or runtime_features.get("resume_deltas") is not False
+    ):
+        raise ValueError(
+            "D03 resume control must prove resume_deltas=false at runtime"
+        )
+    scale = next(
+        (
+            item
+            for item in payload.get("scales", [])
+            if isinstance(item, dict) and item.get("scale") == FUTURE_RECORDS
+        ),
+        None,
+    )
+    if scale is None:
+        raise ValueError(f"D03 resume control omitted the {FUTURE_RECORDS:,} scale")
+    counts = (
+        scale.get("query_counts", {})
+        .get("by_operation", {})
+        .get("resume", {})
+        .get("counts")
+    )
+    if (
+        not isinstance(counts, list)
+        or len(counts) < DEFINITIVE_SAMPLES
+        or any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in counts
+        )
+    ):
+        raise ValueError(
+            "D03 resume control needs at least 30 non-negative resume query counts"
+        )
+    fingerprint = payload.get("implementation_fingerprint")
+    if not isinstance(fingerprint, dict) or not fingerprint.get("reproducible"):
+        raise ValueError("D03 resume control omitted a reproducible fingerprint")
+    return {
+        "path": str(path.resolve()),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "label": payload.get("label"),
+        "build_revision": snapshot.get("build_revision"),
+        "source_revision": fingerprint.get("source_revision"),
+        "runtime_features": runtime_features,
+        "retrieval_modes": payload["retrieval_modes"],
+        "scale": FUTURE_RECORDS,
+        "resume_query_counts": list(counts),
+        "resume_p95_ms": scale.get("resume_ms"),
+    }
+
+
+def validate_d03_resume_control_compatibility(
+    control: dict[str, Any],
+    *,
+    runtime_snapshot: dict[str, Any],
+    implementation: dict[str, Any],
+    retrieval_modes: Sequence[str],
+) -> None:
+    if control.get("source_revision") != implementation.get("source_revision"):
+        raise ValueError(
+            "D03 control and treatment must use the same clean source revision"
+        )
+    if control.get("build_revision") != runtime_snapshot.get("build_revision"):
+        raise ValueError(
+            "D03 control and treatment must use the same API build revision"
+        )
+    if list(retrieval_modes) != control.get("retrieval_modes"):
+        raise ValueError(
+            "D03 control and treatment must use the same retrieval modes"
+        )
+    control_features = control.get("runtime_features")
+    treatment_features = runtime_snapshot.get("runtime_features")
+    if (
+        not isinstance(control_features, dict)
+        or not isinstance(treatment_features, dict)
+    ):
+        raise ValueError(
+            "D03 control and treatment must include full runtime snapshots"
+        )
+    mismatches = {
+        name: {
+            "control": control_features.get(name),
+            "treatment": treatment_features.get(name),
+        }
+        for name in sorted(set(control_features) | set(treatment_features))
+        if (
+            name != "resume_deltas"
+            and (
+                name not in control_features
+                or name not in treatment_features
+                or type(control_features[name])
+                is not type(treatment_features[name])
+                or control_features[name] != treatment_features[name]
+            )
+        )
+    }
+    if mismatches:
+        raise ValueError(
+            "D03 control and treatment runtime features must be identical "
+            f"except for resume_deltas: {mismatches}"
+        )
+
+
+def evaluate_d03_resume_delta_gates(
+    scales: Sequence[dict[str, Any]],
+    control: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    treatment = next(
+        (item for item in scales if item.get("scale") == FUTURE_RECORDS),
+        None,
+    )
+    treatment_counts = (
+        treatment.get("query_counts", {})
+        .get("by_operation", {})
+        .get("resume", {})
+        .get("counts")
+        if isinstance(treatment, dict)
+        else None
+    )
+    control_counts = control["resume_query_counts"]
+    paired = (
+        list(zip(control_counts, treatment_counts))
+        if isinstance(treatment_counts, list)
+        else []
+    )
+    deltas = [after - before for before, after in paired]
+    pairing_complete = (
+        isinstance(treatment_counts, list)
+        and len(control_counts) == len(treatment_counts)
+        and len(treatment_counts) >= DEFINITIVE_SAMPLES
+    )
+    resume_p95 = treatment.get("resume_ms") if isinstance(treatment, dict) else None
+    record = {
+        "control": control,
+        "treatment": {
+            "scale": FUTURE_RECORDS,
+            "resume_query_counts": treatment_counts,
+            "resume_p95_ms": resume_p95,
+        },
+        "paired_query_count_deltas": deltas,
+        "paired_samples": len(paired),
+    }
+    gates = [
+        {
+            "name": "d03_resume_p95_at_640000_is_at_most_150ms",
+            "pass": (
+                isinstance(resume_p95, (int, float))
+                and not isinstance(resume_p95, bool)
+                and float(resume_p95) <= 150.0
+            ),
+            "observed": resume_p95,
+            "threshold": {"comparison": "at_most", "milliseconds": 150.0},
+        },
+        {
+            "name": "d03_resume_query_count_delta_is_exactly_one",
+            "pass": pairing_complete and all(delta == 1 for delta in deltas),
+            "observed": {
+                "control_counts": control_counts,
+                "treatment_counts": treatment_counts,
+                "paired_deltas": deltas,
+                "paired_samples": len(paired),
+            },
+            "threshold": {
+                "comparison": "paired_exact_delta",
+                "delta": 1,
+                "minimum_samples": DEFINITIVE_SAMPLES,
+            },
+        },
+    ]
+    return gates, record
 
 
 def normalize_sql(value: str) -> str:
@@ -723,8 +1196,100 @@ def summarize_response_accounting(
     }
 
 
+def validate_semantic_failure_probe_posture(
+    *,
+    posture: str,
+    runtime_snapshot: dict[str, Any],
+    retrieval_modes: Sequence[str],
+    wait_for_semantic: bool,
+    e09_arm: str | None,
+    protocol: str,
+    hooks_configured: bool,
+) -> dict[str, Any]:
+    runtime_features = runtime_snapshot.get("runtime_features")
+    if not isinstance(runtime_features, dict):
+        raise ValueError("runtime snapshot omitted runtime_features")
+    semantic_lane = runtime_features.get("semantic_lane")
+    if not isinstance(semantic_lane, bool):
+        raise ValueError("runtime snapshot omitted boolean semantic_lane")
+    modes = list(dict.fromkeys(retrieval_modes))
+    observed = {
+        "semantic_lane": semantic_lane,
+        "retrieval_modes": modes,
+        "wait_for_semantic": bool(wait_for_semantic),
+        "e09_arm": e09_arm,
+        "protocol": protocol,
+        "hooks_configured": hooks_configured,
+    }
+    if posture == SEMANTIC_FAILURE_PROBE_REQUIRED:
+        eligible = (
+            protocol == "simple"
+            and semantic_lane
+            and "semantic" in modes
+            and wait_for_semantic
+            and e09_arm in {None, "unbounded_semantic", "deadline_cache"}
+            and hooks_configured
+        )
+        if not eligible:
+            raise ValueError(
+                "required semantic-failure probe needs --protocol simple, an "
+                "authenticated runtime with semantic_lane=true, semantic in "
+                "--retrieval-modes, --wait-semantic, an absent or semantic "
+                "E09 arm, and both failure/restore hooks"
+            )
+        reason = (
+            "semantic retrieval is active; provider failure and restoration "
+            "must be proven"
+        )
+    elif posture == SEMANTIC_FAILURE_PROBE_NOT_APPLICABLE:
+        eligible = (
+            not semantic_lane
+            and "semantic" not in modes
+            and not wait_for_semantic
+            and e09_arm in {None, "no_semantic"}
+            and not hooks_configured
+        )
+        if not eligible:
+            raise ValueError(
+                "semantic-failure probe may be not-applicable only when the "
+                "authenticated runtime has semantic_lane=false, retrieval "
+                "modes exclude semantic, --wait-semantic is absent, the E09 "
+                "arm is absent or no_semantic, and no failure hooks are supplied"
+            )
+        reason = (
+            "semantic retrieval is disabled in both the authenticated runtime "
+            "and the requested retrieval modes"
+        )
+    else:
+        raise ValueError(f"unknown semantic-failure probe posture {posture!r}")
+    return {
+        "posture": posture,
+        "eligible": eligible,
+        "reason": reason,
+        "observed": observed,
+    }
+
+
+def validate_e09_request_modes(
+    e09_arm: str | None,
+    retrieval_modes: Sequence[str],
+) -> None:
+    if (
+        e09_arm == "no_semantic"
+        and list(dict.fromkeys(retrieval_modes)) != ["exact", "lexical"]
+    ):
+        raise ValueError(
+            "E09 no_semantic requires --retrieval-modes exact lexical"
+        )
+
+
 def resolve_run_profile(args: argparse.Namespace) -> RunProfile:
     definitive = not bool(args.quick)
+    semantic_failure_probe = getattr(
+        args,
+        "semantic_failure_probe",
+        SEMANTIC_FAILURE_PROBE_REQUIRED,
+    )
     samples = (
         int(args.samples)
         if args.samples is not None
@@ -772,10 +1337,9 @@ def resolve_run_profile(args: argparse.Namespace) -> RunProfile:
         future_soak_requested=bool(args.future_soak),
         import_timeout_seconds=import_timeout,
         semantic_failure_required=(
-            definitive
-            and getattr(args, "gate_profile", None)
-            != LEXICAL_CONSOLIDATION_GATE_PROFILE
+            semantic_failure_probe == SEMANTIC_FAILURE_PROBE_REQUIRED
         ),
+        semantic_failure_probe_posture=semantic_failure_probe,
     )
 
 
@@ -2738,6 +3302,7 @@ def evaluate_gates(
     minimum_samples: int | None = None,
     semantic_failure_required: bool = False,
     require_gin_index: bool = True,
+    query_budgets: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     largest = max(scales, key=lambda item: item["scale"])
     smallest = min(scales, key=lambda item: item["scale"])
@@ -2817,6 +3382,8 @@ def evaluate_gates(
         if item.get("protocol") == "simple" and "query_counts" in item
     ]
     if query_count_scales:
+        if query_budgets is None:
+            query_budgets = load_query_budgets()
         combined_counts: dict[str, list[int]] = {}
         combined_missing: dict[str, int] = {}
         for item in query_count_scales:
@@ -2848,7 +3415,7 @@ def evaluate_gates(
             )
             for gate in evaluate_query_budgets(
                 combined_summary,
-                load_query_budgets(),
+                query_budgets,
             )
         )
     for item in scales:
@@ -3498,8 +4065,19 @@ def load_reused_flat_controls(
 
 
 def command_run(args: argparse.Namespace) -> int:
+    d03_control: dict[str, Any] | None = None
     try:
         feature_states = parse_feature_states(args.feature_state)
+        expected_features = expected_runtime_features(
+            args.expect_feature_flag,
+            args.expect_runtime_config,
+        )
+        for name, expected in feature_states.items():
+            if name in expected_features and expected_features[name] is not expected:
+                raise ValueError(
+                    f"conflicting expected feature states declared for {name}"
+                )
+            expected_features[name] = expected
         retrieval_modes = tuple(dict.fromkeys(args.retrieval_modes))
         profile = resolve_run_profile(args)
         if bool(args.semantic_failure_start_command) != bool(
@@ -3509,6 +4087,21 @@ def command_run(args: argparse.Namespace) -> int:
                 "semantic failure testing requires both the start and stop "
                 "hook commands"
             )
+        if profile.definitive and not args.expect_build_revision:
+            raise ValueError(
+                "definitive runs require --expect-build-revision"
+            )
+        if profile.definitive and not args.api_container:
+            raise ValueError("definitive runs require --api-container")
+        if (
+            profile.definitive
+            and args.protocol == "simple"
+            and not args.db_container
+        ):
+            raise ValueError(
+                "definitive simple-protocol runs require --db-container"
+            )
+        validate_e09_request_modes(args.e09_arm, retrieval_modes)
         if args.gate_profile == LEXICAL_CONSOLIDATION_GATE_PROFILE:
             if not args.future_soak or args.protocol != "simple":
                 raise ValueError(
@@ -3520,52 +4113,89 @@ def command_run(args: argparse.Namespace) -> int:
                     "the E05 lexical-consolidation guard profile requires "
                     "--retrieval-modes exact lexical"
                 )
-            if feature_states.get("lexical_single_scan") is not True:
+            if expected_features.get("lexical_single_scan") is not True:
                 raise ValueError(
                     "the E05 Arm B guard run must declare "
-                    "--feature-state lexical_single_scan=on"
+                    "--expect-feature-flag lexical_single_scan=on"
                 )
+        if args.gate_profile == D03_RESUME_DELTAS_GATE_PROFILE:
+            if (
+                not args.future_soak
+                or args.protocol != "simple"
+                or list(retrieval_modes) != ["exact", "lexical"]
+                or expected_features.get("resume_deltas") is not True
+            ):
+                raise ValueError(
+                    "the D03 resume-deltas profile requires --future-soak, "
+                    "--protocol simple, --retrieval-modes exact lexical, and "
+                    "--expect-feature-flag resume_deltas=on"
+                )
+            if args.resume_control_from is None:
+                raise ValueError(
+                    "the D03 resume-deltas profile requires "
+                    "--resume-control-from"
+                )
+            d03_control = load_d03_resume_control(args.resume_control_from)
+        elif args.resume_control_from is not None:
+            raise ValueError(
+                "--resume-control-from requires "
+                "--gate-profile d03-resume-deltas"
+            )
         reused_flat_controls = load_reused_flat_controls(
             args.reuse_flat_controls_from,
             profile,
         )
-    except ValueError as error:
+        admin = NativeApiClient(timeout=profile.import_timeout_seconds)
+        runtime_status_before = admin.get("/v1/status").data
+        if not isinstance(runtime_status_before, dict):
+            raise ValueError("service status response was not an object")
+        runtime_snapshot_before = capture_service_runtime_snapshot(
+            runtime_status_before,
+            expected_features=expected_features,
+            expected_build_revision=args.expect_build_revision,
+        )
+        semantic_failure_posture = validate_semantic_failure_probe_posture(
+            posture=args.semantic_failure_probe,
+            runtime_snapshot=runtime_snapshot_before,
+            retrieval_modes=retrieval_modes,
+            wait_for_semantic=args.wait_semantic,
+            e09_arm=args.e09_arm,
+            protocol=args.protocol,
+            hooks_configured=bool(
+                args.semantic_failure_start_command
+                and args.semantic_failure_stop_command
+            ),
+        )
+        query_budget_contract = resolve_query_budget_contract(
+            profile=args.query_budget_profile,
+            path=args.query_budget_contract,
+            runtime_snapshot=runtime_snapshot_before,
+            gate_profile=args.gate_profile,
+            protocol=args.protocol,
+        )
+        fingerprint_before = implementation_fingerprint(args.api_container)
+        if profile.definitive and not fingerprint_before["reproducible"]:
+            raise ValueError(
+                "definitive runs require a reproducible implementation "
+                f"fingerprint: {fingerprint_before}"
+            )
+        if d03_control is not None:
+            validate_d03_resume_control_compatibility(
+                d03_control,
+                runtime_snapshot=runtime_snapshot_before,
+                implementation=fingerprint_before,
+                retrieval_modes=retrieval_modes,
+            )
+    except (NativeApiError, OSError, ValueError, json.JSONDecodeError) as error:
         return write_configuration_error(args, error)
 
-    admin = NativeApiClient(timeout=profile.import_timeout_seconds)
-    try:
-        observed_feature_states = verify_service_feature_states(
-            admin,
-            feature_states,
-        )
-    except (NativeApiError, ValueError) as error:
-        result = {
-            "schema": "straylight-performance-eval@v2",
-            "created_at": datetime.now().astimezone().isoformat(),
-            "label": args.label,
-            "pass": False,
-            "declared_feature_states": feature_states,
-            "errors": [{
-                "type": type(error).__name__,
-                "message": str(error),
-            }],
-        }
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-        print(json.dumps(result, indent=2))
-        return 2
     e09_runtime_before: dict[str, Any] | None = None
     e09_provenance: dict[str, Any] | None = None
     if args.e09_arm:
         try:
             if args.protocol != "simple":
                 raise ValueError("E09 arms require --protocol simple")
-            fingerprint_before = implementation_fingerprint(args.api_container)
-            if not fingerprint_before["reproducible"]:
-                raise ValueError(
-                    f"E09 requires a reproducible implementation: {fingerprint_before}"
-                )
-            e09_runtime_before = admin.get("/v1/status").data
+            e09_runtime_before = runtime_status_before
             e09_provenance = validate_e09_runtime(
                 e09_runtime_before,
                 args.e09_arm,
@@ -3596,7 +4226,10 @@ def command_run(args: argparse.Namespace) -> int:
                 db_container=args.db_container,
                 protocol=args.protocol,
                 retrieval_modes=retrieval_modes,
-                run_semantic_failure=scale == largest_requested_scale,
+                run_semantic_failure=(
+                    profile.semantic_failure_required
+                    and scale == largest_requested_scale
+                ),
                 concurrent_rounds=(
                     profile.samples
                     if scale == largest_requested_scale
@@ -3660,16 +4293,45 @@ def command_run(args: argparse.Namespace) -> int:
             ),
             semantic_failure_required=profile.semantic_failure_required,
             require_gin_index=profile.definitive,
+            query_budgets=(
+                query_budget_contract["contract"]
+                if query_budget_contract is not None
+                else None
+            ),
         )
     else:
         gates = []
     fingerprint = implementation_fingerprint(args.api_container)
+    runtime_status_after: dict[str, Any] | None = None
+    runtime_snapshot_after: dict[str, Any] | None = None
+    try:
+        runtime_status_after = admin.get("/v1/status").data
+        if not isinstance(runtime_status_after, dict):
+            raise ValueError("service status response was not an object")
+        runtime_snapshot_after = capture_service_runtime_snapshot(
+            runtime_status_after,
+            expected_features=expected_features,
+            expected_build_revision=args.expect_build_revision,
+        )
+        require_stable_runtime_configuration(
+            runtime_snapshot_before,
+            runtime_snapshot_after,
+        )
+    except (NativeApiError, ValueError) as error:
+        errors.append({
+            "type": type(error).__name__,
+            "message": str(error),
+            "stage": "runtime_configuration_after",
+        })
     e09_runtime: dict[str, Any] | None = None
-    if args.e09_arm and e09_runtime_before is not None:
+    if (
+        args.e09_arm
+        and e09_runtime_before is not None
+        and runtime_status_after is not None
+    ):
         try:
-            e09_runtime_after = admin.get("/v1/status").data
             final_provenance = validate_e09_runtime(
-                e09_runtime_after,
+                runtime_status_after,
                 args.e09_arm,
             )
             if final_provenance != e09_provenance:
@@ -3678,7 +4340,7 @@ def command_run(args: argparse.Namespace) -> int:
                 )
             delta = semantic_counter_delta(
                 e09_runtime_before.get("semantic_runtime", {}),
-                e09_runtime_after.get("semantic_runtime", {}),
+                runtime_status_after.get("semantic_runtime", {}),
             )
             e09_runtime = {
                 "provenance": final_provenance,
@@ -3686,7 +4348,7 @@ def command_run(args: argparse.Namespace) -> int:
                     "semantic_runtime",
                     {},
                 ),
-                "counters_after": e09_runtime_after.get(
+                "counters_after": runtime_status_after.get(
                     "semantic_runtime",
                     {},
                 ),
@@ -3699,6 +4361,29 @@ def command_run(args: argparse.Namespace) -> int:
                 "message": str(error),
                 "stage": "e09_runtime_provenance",
             })
+    d03_resume_delta: dict[str, Any] | None = None
+    if args.gate_profile == D03_RESUME_DELTAS_GATE_PROFILE:
+        assert d03_control is not None
+        d03_gates, d03_resume_delta = evaluate_d03_resume_delta_gates(
+            scales,
+            d03_control,
+        )
+        gates.extend(d03_gates)
+    if args.query_budget_profile == "calibration":
+        gates.append({
+            "name": "query_budget_calibration_is_not_acceptance",
+            "pass": False,
+            "observed": {
+                "profile": "calibration",
+                "query_counts_recorded": bool(
+                    any(item.get("query_counts") for item in scales)
+                ),
+            },
+            "threshold": (
+                "author and review a runtime-bound query-budget contract, then "
+                "rerun with that named profile"
+            ),
+        })
     if profile.definitive:
         gates.append({
             "name": "implementation_fingerprint_is_reproducible",
@@ -3726,11 +4411,25 @@ def command_run(args: argparse.Namespace) -> int:
         "gate_profile": args.gate_profile,
         "retrieval_modes": list(retrieval_modes),
         "declared_feature_states": feature_states,
-        "observed_feature_states": observed_feature_states,
+        "expected_runtime_features": expected_features,
+        "expected_build_revision": args.expect_build_revision,
+        "semantic_failure_probe_posture": semantic_failure_posture,
+        "runtime_configuration": {
+            "before": runtime_snapshot_before,
+            "after": runtime_snapshot_after,
+            "stable": (
+                runtime_snapshot_after is not None
+                and runtime_snapshot_before.get("build_revision")
+                == runtime_snapshot_after.get("build_revision")
+                and runtime_snapshot_before.get("runtime_features")
+                == runtime_snapshot_after.get("runtime_features")
+            ),
+        },
         "run_tags": sorted(set(args.run_tag)),
         "api_url": admin.base_url,
         "implementation_fingerprint": fingerprint,
         "e09_runtime": e09_runtime,
+        "d03_resume_delta": d03_resume_delta,
         "run_profile": {
             "mode": "definitive" if profile.definitive else "quick",
             "definitive": profile.definitive,
@@ -3742,9 +4441,7 @@ def command_run(args: argparse.Namespace) -> int:
                 "records": FUTURE_RECORDS,
                 "status": future_soak_status,
             },
-            "semantic_failure_probe_required": (
-                profile.semantic_failure_required
-            ),
+            "semantic_failure_probe": semantic_failure_posture,
             "semantic_failure_hooks_configured": bool(
                 args.semantic_failure_start_command
                 and args.semantic_failure_stop_command
@@ -3758,13 +4455,7 @@ def command_run(args: argparse.Namespace) -> int:
         "scales": scales,
         "thresholds": DEFAULT_THRESHOLDS,
         "regression_thresholds": REGRESSION_THRESHOLDS,
-        "query_budget_contract": {
-            "path": str(QUERY_BUDGETS_PATH.relative_to(PROJECT_ROOT)),
-            "sha256": hashlib.sha256(
-                QUERY_BUDGETS_PATH.read_bytes()
-            ).hexdigest(),
-            "contract": load_query_budgets(),
-        },
+        "query_budget_contract": query_budget_contract,
         "retrieval_plan_contract": {
             "path": str(
                 RETRIEVAL_PLAN_CONTRACT_PATH.relative_to(PROJECT_ROOT)
@@ -3787,11 +4478,28 @@ def write_configuration_error(
     args: argparse.Namespace,
     error: Exception,
 ) -> int:
+    semantic_failure_posture = {
+        "posture": getattr(
+            args,
+            "semantic_failure_probe",
+            SEMANTIC_FAILURE_PROBE_REQUIRED,
+        ),
+        "eligible": False,
+        "reason": "configuration preflight failed before eligibility proof",
+    }
     result = {
         "schema": "straylight-performance-eval@v2",
         "created_at": datetime.now().astimezone().isoformat(),
         "label": args.label,
         "pass": False,
+        "semantic_failure_probe": semantic_failure_posture,
+        "semantic_failure_probe_posture": semantic_failure_posture,
+        "expected_build_revision": getattr(args, "expect_build_revision", None),
+        "query_budget_profile": getattr(
+            args,
+            "query_budget_profile",
+            DEFAULT_QUERY_BUDGET_PROFILE,
+        ),
         "errors": [{
             "type": "ConfigurationError",
             "message": str(error),
@@ -3831,7 +4539,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--label", required=True)
     run.add_argument(
         "--gate-profile",
-        choices=(LEXICAL_CONSOLIDATION_GATE_PROFILE,),
+        choices=(
+            D03_RESUME_DELTAS_GATE_PROFILE,
+            LEXICAL_CONSOLIDATION_GATE_PROFILE,
+        ),
         help="run an experiment-specific deterministic gate subset",
     )
     run.add_argument(
@@ -3839,7 +4550,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="NAME=on|off",
-        help="record the runtime feature state used by the API under test",
+        help=(
+            "deprecated alias for --expect-feature-flag; fail closed unless "
+            "the authenticated runtime matches NAME=on|off"
+        ),
+    )
+    run.add_argument(
+        "--expect-feature-flag",
+        action="append",
+        default=[],
+        metavar="NAME=on|off",
+        help=(
+            "fail closed unless /v1/status runtime_features matches NAME=on|off"
+        ),
+    )
+    run.add_argument(
+        "--expect-runtime-config",
+        action="append",
+        default=[],
+        metavar="NAME=JSON",
+        help=(
+            "fail closed unless /v1/status runtime_features matches "
+            "NAME=<JSON value>"
+        ),
+    )
+    run.add_argument(
+        "--expect-build-revision",
+        help=(
+            "fail closed unless the authenticated API build revision matches; "
+            "required for definitive runs"
+        ),
     )
     run.add_argument(
         "--run-tag",
@@ -3870,7 +4610,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "run a visibly non-definitive developer check; permits smaller "
-            "scales, fewer samples, and an unproven provider-failure fallback"
+            "scales and fewer samples while retaining fail-closed semantic "
+            "probe posture"
         ),
     )
     run.add_argument(
@@ -3909,6 +4650,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "fail-closed E09 arm selection; verifies clean source, API image "
             "revision, runtime flags, and semantic cache/deferral counters"
+        ),
+    )
+    run.add_argument(
+        "--semantic-failure-probe",
+        choices=(
+            SEMANTIC_FAILURE_PROBE_REQUIRED,
+            SEMANTIC_FAILURE_PROBE_NOT_APPLICABLE,
+        ),
+        default=SEMANTIC_FAILURE_PROBE_REQUIRED,
+        help=(
+            "required by default; not-applicable is accepted only for an "
+            "authenticated semantic-disabled exact/lexical runtime"
         ),
     )
     run.add_argument(
@@ -3952,6 +4705,30 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "reuse matching direct-file controls from a prior artifact while "
             "rerunning every Straylight measurement; provenance is recorded"
+        ),
+    )
+    run.add_argument(
+        "--resume-control-from",
+        type=Path,
+        help=(
+            "passing resume_deltas=off definitive artifact paired with the "
+            "d03-resume-deltas treatment"
+        ),
+    )
+    run.add_argument(
+        "--query-budget-profile",
+        default=DEFAULT_QUERY_BUDGET_PROFILE,
+        help=(
+            "named query-budget applicability profile; non-default and launch "
+            "profiles require an explicit contract"
+        ),
+    )
+    run.add_argument(
+        "--query-budget-contract",
+        type=Path,
+        help=(
+            "profile-specific query-budget JSON; mandatory for launch and "
+            "other non-default profiles"
         ),
     )
     run.add_argument(

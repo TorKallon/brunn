@@ -30,15 +30,27 @@ recent-work-v0.3: the recent suite (14 cases / 56 claims) with correction notes 
 
 ## Procedure
 
-1. Preflight: clean git tree (implementation fingerprint gate), record commit; confirm flag defaults off.
+1. Preflight: use separate project-scoped stacks from
+   [Experiment-run-infrastructure.md](Experiment-run-infrastructure.md), keep
+   one immutable build revision, record the clean tree, and confirm the flag
+   defaults off.
 2. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json validate` — must pass on v0.3.
 3. For draw N in 1..3 (minimum; extend to 5 if the aggregate is borderline):
-   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --condition service_api --experiment-arm e07-base --paired-draw-id e07-draw<N> --expect-feature-flag supersession_demotion=off --concurrency 3 --timeout 360 --run-id e07-base-run<N> --out results/2026-MM-DD-e07-supersession-base-draw<N>.json --report results/2026-MM-DD-e07-supersession-base-draw<N>.md`.
-   2. Same paired-draw ID with `--experiment-arm e07-flag --expect-feature-flag supersession_demotion=on`, a unique run ID, and the flag-on artifact.
+   1. `python3 agent_work_eval.py --manifest eval/recent_work_cases.json run --service-protocol simple --condition service_api --experiment-arm e07-base --paired-draw-id "e07-draw${N}" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag supersession_demotion=off --expect-runtime-config supersession_demotion_weight=1.5 --concurrency 3 --timeout 360 --run-id "e07-base-run${N}" --out "results/2026-MM-DD-e07-supersession-base-draw${N}.json" --report "results/2026-MM-DD-e07-supersession-base-draw${N}.md"`.
+   2. Same paired-draw ID against the isolated flag stack with
+      `--experiment-arm e07-flag`,
+      `--expect-feature-flag supersession_demotion=on`, the same explicit
+      weight `1.5`, a unique run ID, and the flag artifact.
    3. Filesystem uses `--condition filesystem --experiment-arm e07-filesystem --paired-draw-id e07-draw<N>` and a unique run ID.
-   4. Adoption raw run: `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json run --condition service_api --concurrency 3 --timeout 360 --run-id e07-adoption-run<N> --out results/2026-MM-DD-e07-adoption-raw-draw<N>.json`; then `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json measure-adoption --input results/2026-MM-DD-e07-adoption-raw-draw<N>.json --out results/2026-MM-DD-e07-adoption-draw<N>.json`.
-4. `python agent_work_eval.py regrade` on disputed graded answers before aggregation (rescores saved answers without regeneration).
-5. Aggregate: `python3 eval/aggregate_draws.py results/2026-MM-DD-e07-supersession-*-draw*.json --expected-arm e07-flag --expected-arm e07-base --expected-arm e07-filesystem --out results/2026-MM-DD-e07-aggregate.json`.
+   4. Adoption runs are pinned to the isolated flag-on stack:
+      `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json run --service-protocol simple --condition service_api --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag supersession_demotion=on --expect-runtime-config supersession_demotion_weight=1.5 --concurrency 3 --timeout 360 --run-id "e07-adoption-run${N}" --out "results/2026-MM-DD-e07-adoption-raw-draw${N}.json"`;
+      then
+      `python3 agent_work_eval.py --manifest eval/e07_e08_adoption_cases.json measure-adoption --input "results/2026-MM-DD-e07-adoption-raw-draw${N}.json" --out "results/2026-MM-DD-e07-adoption-draw${N}.json"`.
+4. Regrade disputed artifacts with the manifest before the subcommand, for
+   example
+   `python3 agent_work_eval.py --manifest eval/recent_work_cases.json regrade --input "$INPUT" --out "$OUTPUT"`.
+5. Aggregate only the declared claim-scored artifacts:
+   `E07_MAIN=(results/2026-MM-DD-e07-supersession-{flag,base,filesystem}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E07_MAIN[@]}" --expected-arm e07-flag --expected-arm e07-base --expected-arm e07-filesystem --out results/2026-MM-DD-e07-aggregate.json`.
 
 ## Metrics
 
