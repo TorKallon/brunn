@@ -162,6 +162,8 @@ def build_performance_command(args: argparse.Namespace) -> list[str]:
         "lexical",
         "--semantic-failure-probe",
         "not-applicable",
+        "--verbatim-feature-acceptance",
+        "not-applicable",
         "--query-budget-profile",
         "default-safe",
         "--label",

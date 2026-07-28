@@ -21,7 +21,12 @@ Performance headroom: resume p95 is 35.2ms at the 640K soak (results/2026-07-27-
 With resume_deltas on, open with resume_checkpoint_ref additionally computes:
 
 1. Intersect the checkpoint's source_refs paths with the paths in changes_since_checkpoint (already computed, ≤200 rows). Only refs in the intersection get deltas.
-2. For each such ref, up to ≤8 sources: fetch the checkpoint-pinned version N (immutable entry_versions) and the entry's current_version via head. Fetching is one batched query over (entry_id, version) pairs — the per-operation budget assertion is exactly +1 round trip on the resume-open path.
+2. For each such ref, up to ≤8 sources: fetch the checkpoint-pinned version N
+   (immutable entry_versions) and the entry's current_version via head.
+   Fetching uses one batched application `SELECT` over `(entry_id, version)`
+   pairs. The request-scoped SQL counter observes exactly +5 completed
+   statements on the resume-open path: context validation, context setup,
+   timeout setup, the batched `SELECT`, and `COMMIT`.
 3. Materialize a delta per source:
    - Small files — both versions ≤2,400 chars each — are returned whole, both versions (`mode: whole_pair`, fields before/after). Rationale: an out-of-context bare diff recreates the section-selection loss D02 targets; for small sources the full pair is cheaper and strictly more legible.
    - Larger files get a standard unified diff, 3 context lines (`mode: unified_diff`).
@@ -44,7 +49,11 @@ Latency gate: resume p95 ≤150ms at 640K — ~4x the measured 35.2ms v8 baselin
 
 - Dedup revert (2026-07-22): charging deltas against the evidence budget is a context reallocation, and every context reduction is guilty until proven. This is precisely why E06 is n≥3 paired with a filesystem control — the displaced evidence could matter more than the deltas.
 - v6 recent-first collapse: no ranking or recency heuristic anywhere; deltas key strictly off checkpoint source_refs, the author's declared authorities.
-- 2026-07-26 bookkeeping collapse: all added work is read-time, bounded (≤8 sources, +1 batched query), inside the resume-open path only, and pinned by the 150ms soak gate plus the query-count assertion. Nothing synchronous touches the write path.
+- 2026-07-26 bookkeeping collapse: all added work is read-time, bounded (≤8
+  sources, one batched application `SELECT` / exactly +5 request-scoped
+  completed statements), inside the resume-open path only, and pinned by the
+  150ms soak gate plus the query-count assertion. Nothing synchronous touches
+  the write path.
 - Overfetch (~70,814 RuptureOps chars/case): budget-neutral by construction; E06 records open payload chars per resume to verify neutrality empirically.
 - Paraphrase/section-selection loss: whole_pair mode for small sources exists specifically to avoid handing the model a context-free diff hunk.
 
@@ -52,9 +61,14 @@ Latency gate: resume p95 ≤150ms at 640K — ~4x the measured 35.2ms v8 baselin
 
 1. E06: first-ever transitions case win (>0/5) under the flag, paired improvement over both service_api_resume-current and filesystem_rebuild across n≥3 draws, exact McNemar.
 2. Resume p95 ≤150ms at the 640k soak (performance_eval --future-soak, 30 samples definitive) with the flag on; concurrent write/search probe unchanged vs 29.0ms/100.9ms baselines beyond noise.
-3. Query-count assertion: resume open is exactly +1 round trip; non-resume paths +0.
-4. Checkpoint footprint gate unchanged (harness gate ≤100 rows/4MiB; actual stays 11 rows/~55KB); protocol-to-evidence ratio ≤1.0 holds.
-5. Integrity test: hash-mismatch and missing-pinned-version paths fail loud.
+3. Query-count assertion: resume open is exactly +5 completed statements for
+   the one authenticated batched lookup transaction; non-resume paths +0.
+4. Every one of the 30 treatment responses returns exactly one `whole_pair`
+   whose path, pinned/current versions, recomputed before/after hashes, and
+   mutation bytes match the checked fixture; every control response proves the
+   `resume_deltas` field is absent.
+5. Checkpoint footprint gate unchanged (harness gate ≤100 rows/4MiB; actual stays 11 rows/~55KB); protocol-to-evidence ratio ≤1.0 holds.
+6. Integrity test: hash-mismatch and missing-pinned-version paths fail loud.
 
 ## Rollout and kill switch
 

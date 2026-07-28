@@ -396,6 +396,321 @@ def validate_service_provenance_pairing(
     }
 
 
+def validate_mutation_provenance_pairing(
+    artifacts: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    parameter_fields = (
+        "mutation_script_sha256",
+        "mutation_seed",
+        "mutation_plans_sha256",
+    )
+    bindings: list[dict[str, Any]] = []
+    for artifact in artifacts:
+        parameters = artifact.get("experiment_parameters")
+        if not isinstance(parameters, dict):
+            parameters = {}
+        values = {
+            field: parameters.get(field)
+            for field in parameter_fields
+        }
+        populated = {
+            field: value is not None
+            for field, value in values.items()
+        }
+        mutation = artifact.get("mutation")
+        if not any(populated.values()):
+            if mutation is not None:
+                raise ValueError(
+                    f"{artifact['path']}: mutation evidence is present without "
+                    "ledger-bound mutation parameters"
+                )
+            continue
+        if not all(populated.values()):
+            raise ValueError(
+                f"{artifact['path']}: mutation provenance parameters are "
+                "incomplete"
+            )
+        if (
+            not isinstance(values["mutation_script_sha256"], str)
+            or not SHA256_PATTERN.fullmatch(
+                values["mutation_script_sha256"]
+            )
+            or not isinstance(values["mutation_plans_sha256"], str)
+            or not SHA256_PATTERN.fullmatch(
+                values["mutation_plans_sha256"]
+            )
+            or not isinstance(values["mutation_seed"], str)
+            or not values["mutation_seed"]
+        ):
+            raise ValueError(
+                f"{artifact['path']}: mutation provenance parameters are "
+                "malformed"
+            )
+        if not isinstance(mutation, dict):
+            raise ValueError(
+                f"{artifact['path']}: mutation parameters lack matching "
+                "mutation evidence"
+            )
+        plans = mutation.get("plans")
+        case_ids = artifact.get("case_ids")
+        receipts = mutation.get("receipts")
+        if (
+            mutation.get("script_sha256")
+            != values["mutation_script_sha256"]
+            or mutation.get("seed") != values["mutation_seed"]
+            or not isinstance(plans, dict)
+            or canonical_json_sha256(plans)
+            != values["mutation_plans_sha256"]
+            or not isinstance(case_ids, list)
+            or set(plans) != set(case_ids)
+            or not isinstance(receipts, dict)
+            or set(receipts) != set(case_ids)
+        ):
+            raise ValueError(
+                f"{artifact['path']}: mutation evidence does not match its "
+                "ledger-bound parameters"
+            )
+        conditions = artifact.get("conditions")
+        if conditions in (["service_api"], ["service_api_resume"]):
+            expected_workspace_mutated = True
+        elif conditions == ["filesystem_rebuild"]:
+            expected_workspace_mutated = False
+        else:
+            raise ValueError(
+                f"{artifact['path']}: mutation-enabled artifact uses an "
+                "unsupported condition"
+            )
+        for case_id in case_ids:
+            plan = plans.get(case_id)
+            receipt = receipts.get(case_id)
+            source_refs = (
+                plan.get("source_refs")
+                if isinstance(plan, dict)
+                else None
+            )
+            targets = (
+                plan.get("targets")
+                if isinstance(plan, dict)
+                else None
+            )
+            if (
+                not isinstance(plan, dict)
+                or plan.get("schema")
+                != "straylight-e06-mutation-plan@v1"
+                or plan.get("case_id") != case_id
+                or plan.get("seed") != values["mutation_seed"]
+                or not isinstance(source_refs, list)
+                or len(source_refs) != 3
+                or len(set(source_refs)) != 3
+                or not all(
+                    isinstance(source_ref, str) and source_ref
+                    for source_ref in source_refs
+                )
+                or not isinstance(targets, list)
+                or len(targets) != 3
+                or [
+                    target.get("path")
+                    if isinstance(target, dict)
+                    else None
+                    for target in targets
+                ]
+                != source_refs
+            ):
+                raise ValueError(
+                    f"{artifact['path']}: mutation plan for {case_id} is "
+                    "malformed or seed-mismatched"
+                )
+            for target in targets:
+                before = target.get("before")
+                after = target.get("after")
+                before_hash = target.get("before_sha256")
+                after_hash = target.get("after_sha256")
+                if (
+                    not isinstance(before, str)
+                    or not isinstance(after, str)
+                    or before == after
+                    or target.get("before_chars") != len(before)
+                    or target.get("after_chars") != len(after)
+                    or before_hash
+                    != "sha256:"
+                    + hashlib.sha256(
+                        before.encode("utf-8")
+                    ).hexdigest()
+                    or after_hash
+                    != "sha256:"
+                    + hashlib.sha256(
+                        after.encode("utf-8")
+                    ).hexdigest()
+                ):
+                    raise ValueError(
+                        f"{artifact['path']}: mutation plan target "
+                        f"{target.get('path')!r} is not content-hash bound"
+                    )
+            receipt_rows = (
+                receipt.get("receipts")
+                if isinstance(receipt, dict)
+                else None
+            )
+            if (
+                not isinstance(receipt, dict)
+                or receipt.get("schema")
+                != "straylight-e06-mutation-receipt@v1"
+                or receipt.get("case_id") != case_id
+                or receipt.get("seed") != values["mutation_seed"]
+                or receipt.get("paths") != source_refs
+                or receipt.get("exactly_three_sources") is not True
+                or not isinstance(
+                    receipt.get("workspace_mutated"),
+                    bool,
+                )
+                or receipt.get("workspace_mutated")
+                is not expected_workspace_mutated
+                or receipt.get("workspace_vault_byte_identical")
+                is not receipt.get("workspace_mutated")
+                or (
+                    receipt.get("workspace_mutated") is True
+                    and (
+                        not isinstance(
+                            receipt.get("corpus_revision"),
+                            str,
+                        )
+                        or not receipt["corpus_revision"]
+                    )
+                )
+                or (
+                    receipt.get("workspace_mutated") is False
+                    and receipt.get("corpus_revision") is not None
+                )
+                or not isinstance(receipt_rows, list)
+                or len(receipt_rows) != 3
+            ):
+                raise ValueError(
+                    f"{artifact['path']}: mutation receipt for {case_id} is "
+                    "missing or malformed"
+                )
+            for target, receipt_row in zip(targets, receipt_rows):
+                pinned_version = (
+                    receipt_row.get("pinned_version")
+                    if isinstance(receipt_row, dict)
+                    else None
+                )
+                if (
+                    not isinstance(receipt_row, dict)
+                    or receipt_row.get("path") != target["path"]
+                    or receipt_row.get("before_sha256")
+                    != target["before_sha256"]
+                    or receipt_row.get("after_sha256")
+                    != target["after_sha256"]
+                    or (
+                        receipt.get("workspace_mutated") is True
+                        and (
+                            not isinstance(pinned_version, int)
+                            or isinstance(pinned_version, bool)
+                            or receipt_row.get("current_version")
+                            != pinned_version + 1
+                            or receipt_row.get("write_no_op") is not False
+                            or receipt_row.get("verified_read_version")
+                            != receipt_row.get("current_version")
+                            or receipt_row.get("verified_read_sha256")
+                            != target["after_sha256"]
+                        )
+                    )
+                    or (
+                        receipt.get("workspace_mutated") is False
+                        and (
+                            pinned_version is not None
+                            or receipt_row.get("current_version") is not None
+                            or receipt_row.get("write_no_op") is not None
+                            or receipt_row.get(
+                                "verified_read_version"
+                            )
+                            is not None
+                            or receipt_row.get(
+                                "verified_read_sha256"
+                            )
+                            is not None
+                        )
+                    )
+                ):
+                    raise ValueError(
+                        f"{artifact['path']}: mutation receipt target "
+                        f"{target['path']!r} is not plan-bound"
+                    )
+        if artifact.get("identity_mode") != "explicit_arm":
+            raise ValueError(
+                f"{artifact['path']}: mutation-enabled artifacts require "
+                "explicit arm and paired-draw identities"
+            )
+        bindings.append({
+            "path": artifact["path"],
+            "suite": artifact["suite"],
+            "paired_draw_id": artifact["paired_draw_id"],
+            "experiment_arm": artifact["experiment_arm"],
+            **values,
+        })
+    if not bindings:
+        return {
+            "schema": "straylight-aggregate-mutation-provenance@v1",
+            "status": "not_applicable",
+            "mutation_script_sha256": None,
+            "draw_bindings": [],
+        }
+    if len(bindings) != len(artifacts):
+        raise ValueError(
+            "mutation-enabled aggregate mixes mutation-bound and "
+            "non-mutation artifacts"
+        )
+    script_hashes = {
+        binding["mutation_script_sha256"]
+        for binding in bindings
+    }
+    if len(script_hashes) != 1:
+        raise ValueError(
+            "mutation-enabled aggregate spans multiple mutation scripts"
+        )
+    by_suite_draw: dict[
+        tuple[str, str],
+        list[dict[str, Any]],
+    ] = defaultdict(list)
+    for binding in bindings:
+        by_suite_draw[
+            (binding["suite"], binding["paired_draw_id"])
+        ].append(binding)
+    draw_bindings = []
+    for (suite, paired_draw_id), draw in sorted(by_suite_draw.items()):
+        seeds = {binding["mutation_seed"] for binding in draw}
+        plan_hashes = {
+            binding["mutation_plans_sha256"]
+            for binding in draw
+        }
+        if seeds != {paired_draw_id}:
+            raise ValueError(
+                f"mutation seed for {suite}:{paired_draw_id} must equal its "
+                "paired-draw ID in every arm"
+            )
+        if len(plan_hashes) != 1:
+            raise ValueError(
+                f"mutation plans differ across arms for "
+                f"{suite}:{paired_draw_id}"
+            )
+        draw_bindings.append({
+            "suite": suite,
+            "paired_draw_id": paired_draw_id,
+            "mutation_seed": paired_draw_id,
+            "mutation_plans_sha256": next(iter(plan_hashes)),
+            "experiment_arms": sorted(
+                binding["experiment_arm"]
+                for binding in draw
+            ),
+        })
+    return {
+        "schema": "straylight-aggregate-mutation-provenance@v1",
+        "status": "complete",
+        "mutation_script_sha256": next(iter(script_hashes)),
+        "draw_bindings": draw_bindings,
+    }
+
+
 def _validate_run_ledger(run: dict[str, Any]) -> str:
     ledger = run.get("run_ledger")
     if not isinstance(ledger, dict) or ledger.get("schema") != RUN_LEDGER_SCHEMA:
@@ -547,6 +862,16 @@ def _validate_run_ledger(run: dict[str, Any]) -> str:
         and runtime_snapshot is None
     ):
         raise ValueError("service run is missing its authenticated runtime snapshot")
+    mutation = run.get("mutation")
+    mutation_sha256 = artifacts.get("mutation_sha256")
+    if mutation is None:
+        if mutation_sha256 is not None:
+            raise ValueError("run ledger references missing mutation evidence")
+    elif (
+        not isinstance(mutation, dict)
+        or mutation_sha256 != canonical_json_sha256(mutation)
+    ):
+        raise ValueError("run ledger does not match the mutation evidence")
     return revision
 
 
@@ -994,6 +1319,7 @@ def load_draw(
         "conditions": list(conditions),
         "arms": list(dict.fromkeys(record["arm"] for record in normalized)),
         "cases": len(cases),
+        "case_ids": list(case_ids),
         "feature_families": feature_families,
         "source_feature_families": source_feature_families,
         "source_revision": revision,
@@ -1006,6 +1332,7 @@ def load_draw(
         "expected_runtime_features": run.get("expected_runtime_features", {}),
         "expected_build_revision": run.get("expected_build_revision"),
         "experiment_parameters": run.get("experiment_parameters", {}),
+        "mutation": run.get("mutation"),
         "service_runtime_snapshot": run.get("service_runtime_snapshot"),
         "service_retrieval_modes": run.get("service_retrieval_modes"),
         "service_image_provenance": run.get("service_image_provenance"),
@@ -1899,6 +2226,7 @@ def load_case_extension_plan(
         manifest_name = raw.get("parent_manifest")
         manifest_sha256 = raw.get("parent_manifest_sha256")
         parent_case_ids = raw.get("parent_case_ids")
+        base_case_ids = raw.get("base_case_ids")
         extension_case_ids = raw.get("extension_case_ids")
         base_draws = raw.get("base_draws")
         extension_draws = raw.get("extension_draws")
@@ -1917,6 +2245,14 @@ def load_case_extension_plan(
                 for case_id in parent_case_ids
             )
             or len(parent_case_ids) != len(set(parent_case_ids))
+            or not isinstance(base_case_ids, list)
+            or not base_case_ids
+            or not all(
+                isinstance(case_id, str) and case_id
+                for case_id in base_case_ids
+            )
+            or len(base_case_ids) != len(set(base_case_ids))
+            or not set(base_case_ids).issubset(parent_case_ids)
             or not isinstance(extension_case_ids, list)
             or not extension_case_ids
             or not all(
@@ -1924,7 +2260,7 @@ def load_case_extension_plan(
                 for case_id in extension_case_ids
             )
             or len(extension_case_ids) != len(set(extension_case_ids))
-            or not set(extension_case_ids) < set(parent_case_ids)
+            or not set(extension_case_ids) < set(base_case_ids)
             or type(base_draws) is not int
             or base_draws < 3
             or type(extension_draws) is not int
@@ -1957,6 +2293,18 @@ def load_case_extension_plan(
             if isinstance(manifest, dict)
             else []
         )
+        active_case_ids = (
+            [
+                case.get("id")
+                for case in manifest.get("cases", [])
+                if (
+                    isinstance(case, dict)
+                    and case.get("active", True) is not False
+                )
+            ]
+            if isinstance(manifest, dict)
+            else []
+        )
         actual_suite = (
             manifest.get("benchmark_version")
             if isinstance(manifest, dict)
@@ -1966,6 +2314,7 @@ def load_case_extension_plan(
             actual_manifest_sha256 != manifest_sha256
             or actual_suite != suite
             or actual_case_ids != parent_case_ids
+            or active_case_ids != base_case_ids
         ):
             raise ValueError(
                 f"case-extension plan does not exactly bind {manifest_name}"
@@ -1975,6 +2324,7 @@ def load_case_extension_plan(
             "parent_manifest": manifest_name,
             "parent_manifest_sha256": manifest_sha256,
             "parent_case_ids": list(parent_case_ids),
+            "base_case_ids": list(base_case_ids),
             "extension_case_ids": list(extension_case_ids),
             "base_draws": base_draws,
             "extension_draws": extension_draws,
@@ -2032,17 +2382,17 @@ def _validate_case_extension(
             raise ValueError(
                 f"case-extension suite {suite} is not parent-manifest bound"
             )
-        parent_set = tuple(sorted(specification["parent_case_ids"]))
+        base_set = tuple(sorted(specification["base_case_ids"]))
         extension_set = tuple(sorted(specification["extension_case_ids"]))
         observed_sets = case_set_fingerprints[suite]
-        if observed_sets != {parent_set, extension_set}:
+        if observed_sets != {base_set, extension_set}:
             raise ValueError(
                 f"case-extension suite {suite} has undeclared case sets"
             )
         base_draw_ids = sorted(
             draw
             for (draw_suite, draw), cases in cases_by_suite_draw.items()
-            if draw_suite == suite and tuple(sorted(cases)) == parent_set
+            if draw_suite == suite and tuple(sorted(cases)) == base_set
         )
         extension_draw_ids = sorted(
             draw
@@ -2127,6 +2477,7 @@ def aggregate(
         expected_arm_retrieval_modes,
         definitive=definitive,
     )
+    mutation_provenance = validate_mutation_provenance_pairing(artifacts)
     if bool(e09_step_policy) != bool(e09_step_policy_sha256):
         raise ValueError(
             "--e09-step-policy and --e09-step-policy-sha256 must be supplied "
@@ -2475,6 +2826,7 @@ def aggregate(
         },
         "input_artifacts": artifacts,
         "service_provenance": service_provenance,
+        "mutation_provenance": mutation_provenance,
         "feature_families_by_suite": {
             suite: json.loads(next(iter(values)))
             for suite, values in sorted(

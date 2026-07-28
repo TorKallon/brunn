@@ -54,7 +54,12 @@ Deterministic (CI, no model runs):
 
 1. Batched worst case: 16 queries each with a ≥24K top candidate → total response chars ≤ `min(96,000, token_budget*4)`, degradation order deterministic.
 2. Starvation fix: 16-query batch where query 16 has matches → query 16 receives at least its floor share.
-3. Round-trip budget: search executes existing lane queries plus at most 1 hydration batch (query-count assertion).
+3. Round-trip budget: search executes existing lane queries plus at most one
+   hydration batch. The request-scoped SQL counter observes that batch as the
+   exact set `{0,+5}`: zero when no candidate is hydrated, or context
+   validation + context setup + timeout setup + one batched hydration
+   `SELECT` + `COMMIT`. E04 requires at least one `+5`; no per-candidate query
+   is allowed.
 4. `python performance_eval.py run --label d01-flags-on-soak --future-soak --out results/2026-MM-DD-d01-flags-on-soak.json` (30 samples, definitive) with all flags on: every existing gate passes; no drift vs v8 baseline — search p95 53.1ms, open 59.7ms, concurrent write 29.0ms / search 100.9ms (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json); flat-file control unchanged.
 
 Experimental: E04 (E04-result-budget-experiment.md) acceptance criteria, in full.

@@ -1053,6 +1053,7 @@ def build_run_ledger(
     expected_build_revision: str | None = None,
     experiment_parameters: dict[str, Any] | None = None,
     service_image_provenance: dict[str, Any] | None = None,
+    mutation_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ledger = {
         "schema": RUN_LEDGER_SCHEMA,
@@ -1091,6 +1092,10 @@ def build_run_ledger(
         ledger["artifacts"][
             "service_image_provenance_sha256"
         ] = canonical_json_sha256(service_image_provenance)
+    if mutation_evidence is not None:
+        ledger["artifacts"]["mutation_sha256"] = canonical_json_sha256(
+            mutation_evidence
+        )
     return ledger
 
 

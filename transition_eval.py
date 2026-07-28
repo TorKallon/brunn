@@ -1887,6 +1887,7 @@ async def run_all(args: argparse.Namespace, validated: dict[str, Any]) -> dict[s
         expected_build_revision=args.expect_build_revision,
         experiment_parameters=experiment_parameters,
         service_image_provenance=service_image_provenance,
+        mutation_evidence=run["mutation"],
     )
     run["summary"] = summarize(records, manifest["conditions"])
     return run

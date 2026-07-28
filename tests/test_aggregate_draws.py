@@ -238,6 +238,101 @@ def set_service_image(payload, image_id):
     ).hexdigest()
 
 
+def set_mutation_binding(payload, *, seed, plans, script_sha256="e" * 64):
+    parameters = dict(payload["experiment_parameters"])
+    parameters.update({
+        "mutation_script_sha256": script_sha256,
+        "mutation_seed": seed,
+        "mutation_plans_sha256": hashlib.sha256(
+            json.dumps(
+                plans,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+    })
+    payload["experiment_parameters"] = parameters
+    payload["run_ledger"]["configuration"][
+        "experiment_parameters"
+    ] = parameters
+    receipts = {}
+    for case_id, plan in plans.items():
+        receipts[case_id] = {
+            "schema": "straylight-e06-mutation-receipt@v1",
+            "case_id": case_id,
+            "seed": seed,
+            "paths": list(plan["source_refs"]),
+            "exactly_three_sources": True,
+            "workspace_mutated": True,
+            "workspace_vault_byte_identical": True,
+            "corpus_revision": f"generation:{seed}",
+            "receipts": [
+                {
+                    "path": target["path"],
+                    "pinned_version": 1,
+                    "current_version": 2,
+                    "before_sha256": target["before_sha256"],
+                    "after_sha256": target["after_sha256"],
+                    "write_no_op": False,
+                    "verified_read_version": 2,
+                    "verified_read_sha256": target["after_sha256"],
+                }
+                for target in plan["targets"]
+            ],
+        }
+    payload["mutation"] = {
+        "script": "eval/e06_mutate.py",
+        "script_sha256": script_sha256,
+        "seed": seed,
+        "plans": plans,
+        "receipts": receipts,
+    }
+    payload["run_ledger"]["artifacts"][
+        "mutation_sha256"
+    ] = hashlib.sha256(
+        json.dumps(
+            payload["mutation"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def mutation_plans(seed, *, variant=""):
+    targets = []
+    for index in range(3):
+        before = f"before-{index}\n"
+        after = f"after-{index}-{seed}-{variant}\n"
+        targets.append({
+            "path": f"Sources/source-{index}.md",
+            "fixture": None,
+            "operation": "append_delta",
+            "before": before,
+            "after": after,
+            "before_chars": len(before),
+            "after_chars": len(after),
+            "before_sha256": "sha256:" + hashlib.sha256(
+                before.encode("utf-8")
+            ).hexdigest(),
+            "after_sha256": "sha256:" + hashlib.sha256(
+                after.encode("utf-8")
+            ).hexdigest(),
+        })
+    return {
+        "case-a": {
+            "schema": "straylight-e06-mutation-plan@v1",
+            "case_id": "case-a",
+            "seed": seed,
+            "delta_path": "Deltas/case-a.md",
+            "source_refs": [
+                target["path"]
+                for target in targets
+            ],
+            "targets": targets,
+        },
+    }
+
+
 def step_policy_payload(selected_case_ids):
     value = {
         "schema": "straylight-e09-step-policy@v1",
@@ -1154,6 +1249,164 @@ class AggregateDrawTests(unittest.TestCase):
                     expected_arms=["treatment", "control"],
                 )
 
+    def test_mutation_provenance_is_bound_within_each_paired_draw(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            expected_plans = {}
+            for draw in range(3):
+                paired_draw_id = f"e06-draw{draw}"
+                plans = mutation_plans(paired_draw_id)
+                expected_plans[paired_draw_id] = hashlib.sha256(
+                    json.dumps(
+                        plans,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest()
+                for arm in ("e06-B", "e06-A"):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        paired_draw_id,
+                        arm,
+                        [("case-a", "service_api", 4, True, 100)],
+                    )
+                    set_mutation_binding(
+                        payload,
+                        seed=paired_draw_id,
+                        plans=plans,
+                    )
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            result = aggregate(
+                paths,
+                expected_arms=["e06-B", "e06-A"],
+            )
+            provenance = result["mutation_provenance"]
+            self.assertEqual(provenance["status"], "complete")
+            self.assertEqual(
+                provenance["mutation_script_sha256"],
+                "e" * 64,
+            )
+            self.assertEqual(
+                {
+                    draw["paired_draw_id"]:
+                    draw["mutation_plans_sha256"]
+                    for draw in provenance["draw_bindings"]
+                },
+                expected_plans,
+            )
+            self.assertTrue(all(
+                draw["experiment_arms"] == ["e06-A", "e06-B"]
+                for draw in provenance["draw_bindings"]
+            ))
+
+    def test_mutation_provenance_rejects_cross_arm_plan_or_seed_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def write_inputs(*, drift):
+                paths = []
+                for draw in range(3):
+                    paired_draw_id = f"e06-draw{draw}"
+                    for arm in ("e06-B", "e06-A"):
+                        seed = paired_draw_id
+                        plans = mutation_plans(paired_draw_id)
+                        if draw == 1 and arm == "e06-A":
+                            if drift == "seed":
+                                seed = "wrong-seed"
+                                plans = mutation_plans(seed)
+                            elif drift == "plans":
+                                plans = mutation_plans(
+                                    paired_draw_id,
+                                    variant="wrong-plan",
+                                )
+                        payload = explicit_arm_payload(
+                            f"{drift}-{arm}-run-{draw}",
+                            paired_draw_id,
+                            arm,
+                            [("case-a", "service_api", 4, True, 100)],
+                        )
+                        set_mutation_binding(
+                            payload,
+                            seed=seed,
+                            plans=plans,
+                        )
+                        paths.append(self.write_payload(
+                            root,
+                            f"{drift}-{arm}-{draw}",
+                            payload,
+                        ))
+                return paths
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "must equal its paired-draw ID",
+            ):
+                aggregate(
+                    write_inputs(drift="seed"),
+                    expected_arms=["e06-B", "e06-A"],
+                )
+            with self.assertRaisesRegex(
+                ValueError,
+                "mutation plans differ across arms",
+            ):
+                aggregate(
+                    write_inputs(drift="plans"),
+                    expected_arms=["e06-B", "e06-A"],
+                )
+
+    def test_mutation_provenance_rejects_unbound_or_mixed_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = []
+            for draw in range(3):
+                paired_draw_id = f"e06-draw{draw}"
+                for arm in ("e06-B", "e06-A"):
+                    payload = explicit_arm_payload(
+                        f"{arm}-run-{draw}",
+                        paired_draw_id,
+                        arm,
+                        [("case-a", "service_api", 4, True, 100)],
+                    )
+                    if not (draw == 2 and arm == "e06-A"):
+                        set_mutation_binding(
+                            payload,
+                            seed=paired_draw_id,
+                            plans=mutation_plans(paired_draw_id),
+                        )
+                    paths.append(self.write_payload(
+                        root,
+                        f"{arm}-{draw}",
+                        payload,
+                    ))
+            with self.assertRaisesRegex(
+                ValueError,
+                "mixes mutation-bound and non-mutation",
+            ):
+                aggregate(
+                    paths,
+                    expected_arms=["e06-B", "e06-A"],
+                )
+
+            payload = json.loads(paths[0].read_text(encoding="utf-8"))
+            payload["mutation"]["plans"]["case-a"]["seed"] = "tampered"
+            paths[0].write_text(
+                json.dumps(payload) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "run ledger does not match the mutation evidence",
+            ):
+                aggregate(
+                    paths[:1],
+                    definitive=True,
+                )
+
     def test_predeclared_case_extension_is_explicit_and_arm_complete(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1163,6 +1416,11 @@ class AggregateDrawTests(unittest.TestCase):
             parent = json.loads(parent_body)
             parent_case_ids = [
                 case["id"] for case in parent["cases"]
+            ]
+            base_case_ids = [
+                case["id"]
+                for case in parent["cases"]
+                if case.get("active", True) is not False
             ]
             extension_case_ids = [
                 "warmind-parser-learning",
@@ -1177,6 +1435,7 @@ class AggregateDrawTests(unittest.TestCase):
                     "parent_manifest": "eval/work_cases.json",
                     "parent_manifest_sha256": parent_sha256,
                     "parent_case_ids": parent_case_ids,
+                    "base_case_ids": base_case_ids,
                     "extension_case_ids": extension_case_ids,
                     "base_draws": 3,
                     "extension_draws": 2,
@@ -1191,7 +1450,7 @@ class AggregateDrawTests(unittest.TestCase):
             paths = []
             for draw in range(5):
                 case_ids = (
-                    parent_case_ids
+                    base_case_ids
                     if draw < 3
                     else extension_case_ids
                 )
@@ -1265,8 +1524,8 @@ class AggregateDrawTests(unittest.TestCase):
         project_root = Path(__file__).resolve().parents[1]
         plan_path = project_root / "eval/e04_case_extension_plan.json"
         expected_sha256 = (
-            "3cf08c940c527d2eb309b2263a4ad2303"
-            "b3c8aeede1bc7ce15076b6670373976"
+            "5a50d84dafdd8dacd845e99e19b3146f"
+            "26feacafc2bafb82f5aa1b89dde0843a"
         )
         self.assertEqual(
             hashlib.sha256(plan_path.read_bytes()).hexdigest(),

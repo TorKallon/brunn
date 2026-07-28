@@ -614,6 +614,8 @@ def build_performance_command(args: argparse.Namespace) -> list[str]:
         "--wait-semantic",
         "--semantic-failure-probe",
         "required",
+        "--verbatim-feature-acceptance",
+        "not-applicable",
         "--semantic-failure-start-command",
         shlex.join(proxy_command(args, "configure")),
         "--semantic-failure-stop-command",

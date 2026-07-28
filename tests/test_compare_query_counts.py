@@ -126,6 +126,12 @@ def artifact(
         "retrieval_modes": ["exact", "lexical"],
         "gate_profile": "e05-lexical-consolidation",
         "semantic_failure_probe_posture": "not-applicable",
+        "verbatim_feature_acceptance_posture": {
+            "posture": "not-applicable",
+            "eligible": True,
+            "reason": "verbatim_spans is an explicitly disabled nuisance feature",
+            "observed": {"verbatim_spans": False},
+        },
         "production_reference_records": 64_000,
         "future_reference_records": 640_000,
         "query_budget_contract": None,
@@ -220,15 +226,17 @@ def artifact(
 
 
 class PairedQueryCountComparisonTests(unittest.TestCase):
-    def test_accepts_hydration_deltas_bounded_to_zero_or_one(self):
+    def test_accepts_hydration_transaction_deltas_of_zero_or_five(self):
         result = compare_query_count_artifacts(
             artifact(feature_state=False, search_counts=[20, 20]),
-            artifact(feature_state=True, search_counts=[21, 20]),
+            artifact(feature_state=True, search_counts=[25, 20]),
             feature=FEATURE,
             operation="search",
             min_delta=0,
-            max_delta=1,
+            max_delta=5,
             expected_retrieval_modes=EXPECTED_MODES,
+            require_strict_increase=True,
+            allowed_deltas=[0, 5],
         )
 
         self.assertTrue(result["pass"])
@@ -237,7 +245,11 @@ class PairedQueryCountComparisonTests(unittest.TestCase):
             for item in result["comparisons"]
             if item["sample_name"] == "search"
         )
-        self.assertEqual(search["paired_deltas"], [1, 0])
+        self.assertEqual(search["paired_deltas"], [5, 0])
+        self.assertEqual(
+            result["query_count_contract"]["allowed_deltas"],
+            [0, 5],
+        )
         self.assertEqual(
             result["sample_catalogs"][0]["expected_by_sample_name"],
             expected_catalog(),
@@ -262,6 +274,33 @@ class PairedQueryCountComparisonTests(unittest.TestCase):
             if item["sample_name"] == "search"
         )
         self.assertEqual(search["paired_deltas"], [-2, 0])
+
+    def test_rejects_unstructured_or_absent_strict_increase(self):
+        control = artifact(feature_state=False, search_counts=[20, 20])
+        with self.assertRaisesRegex(ValueError, "allowed set"):
+            compare_query_count_artifacts(
+                control,
+                artifact(feature_state=True, search_counts=[23, 20]),
+                feature=FEATURE,
+                operation="search",
+                min_delta=0,
+                max_delta=5,
+                expected_retrieval_modes=EXPECTED_MODES,
+                require_strict_increase=True,
+                allowed_deltas=[0, 5],
+            )
+        with self.assertRaisesRegex(ValueError, "strict increase"):
+            compare_query_count_artifacts(
+                control,
+                artifact(feature_state=True, search_counts=[20, 20]),
+                feature=FEATURE,
+                operation="search",
+                min_delta=0,
+                max_delta=5,
+                expected_retrieval_modes=EXPECTED_MODES,
+                require_strict_increase=True,
+                allowed_deltas=[0, 5],
+            )
 
     def test_rejects_dirty_unpaired_missing_or_out_of_range_inputs(self):
         control = artifact(feature_state=False, search_counts=[20, 20])
@@ -354,6 +393,22 @@ class PairedQueryCountComparisonTests(unittest.TestCase):
         control = artifact(feature_state=False, search_counts=[20, 20])
         treatment = artifact(feature_state=True, search_counts=[18, 20])
 
+        missing_posture = copy.deepcopy(control)
+        missing_posture.pop("verbatim_feature_acceptance_posture")
+        with self.assertRaisesRegex(
+            ValueError,
+            "lacks verbatim feature-acceptance posture",
+        ):
+            compare_query_count_artifacts(
+                missing_posture,
+                treatment,
+                feature=FEATURE,
+                operation="search",
+                min_delta=-2,
+                max_delta=0,
+                expected_retrieval_modes=EXPECTED_MODES,
+            )
+
         wrong_modes = copy.deepcopy(control)
         wrong_modes["retrieval_modes"] = ["lexical"]
         with self.assertRaisesRegex(ValueError, "explicit expected modes"):
@@ -373,6 +428,27 @@ class PairedQueryCountComparisonTests(unittest.TestCase):
             compare_query_count_artifacts(
                 control,
                 profile_mismatch,
+                feature=FEATURE,
+                operation="search",
+                min_delta=-2,
+                max_delta=0,
+                expected_retrieval_modes=EXPECTED_MODES,
+            )
+
+        posture_mismatch = copy.deepcopy(treatment)
+        posture_mismatch["verbatim_feature_acceptance_posture"] = {
+            "posture": "required",
+            "eligible": True,
+            "reason": "feature acceptance required",
+            "observed": {"verbatim_spans": False},
+        }
+        with self.assertRaisesRegex(
+            ValueError,
+            "verbatim_feature_acceptance_posture differs",
+        ):
+            compare_query_count_artifacts(
+                control,
+                posture_mismatch,
                 feature=FEATURE,
                 operation="search",
                 min_delta=-2,

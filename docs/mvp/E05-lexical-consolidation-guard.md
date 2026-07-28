@@ -60,19 +60,17 @@ Identical corpus, identical manifests, identical model (from manifest: gpt-5.6-s
    `python3 agent_work_eval.py --manifest eval/e05_targeted_cases.json validate`.
 2. Deterministic guards on Arm B first (cheap kill), against a disposable API
    already started with `STRAYLIGHT_LEXICAL_SINGLE_SCAN=true`:
-   `python3 performance_eval.py run --label e05-armB-guards --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile not-applicable --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag lexical_single_scan=on --expect-build-revision "$REV" --run-tag E05 --run-tag armB-guards --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --out results/2026-MM-DD-e05-armB-guards-soak.json`.
+   `python3 performance_eval.py run --label e05-armB-guards --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --verbatim-feature-acceptance not-applicable --query-budget-profile not-applicable --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag lexical_single_scan=on --expect-build-revision "$REV" --run-tag E05 --run-tag armB-guards --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --out results/2026-MM-DD-e05-armB-guards-soak.json`.
    Require `old_relevant_source_survives_many_newer_writes` 30/30 and
    `bounded_lexical_overflow_returns_late_relevant_source` pass. Any failure →
    drop the consolidation, stop the experiment, skip all reasoning runs.
 3. After Arm B passes, run a matched Arm A soak on the isolated flag-off
-   stack with the same corpus/sample shape and provenance options, omitting
-   `--gate-profile` and using
-   `--query-budget-profile default-safe`,
-   `--expect-feature-flag verbatim_spans=off`, and
-   `--expect-feature-flag lexical_single_scan=off`. This supplies the
+   stack with the same corpus/sample shape and provenance options:
+   `python3 performance_eval.py run --label e05-armA-control --gate-profile e05-lexical-consolidation --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --verbatim-feature-acceptance not-applicable --query-budget-profile not-applicable --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag lexical_single_scan=off --expect-build-revision "$REV" --run-tag E05 --run-tag armA-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --out results/2026-MM-DD-e05-armA-control-soak.json`.
+   This supplies the
    comparative latency and query-count control; it does not weaken the Arm B
    cheap-kill gate. Before any reasoning, compare the matched artifacts:
-   `python3 eval/compare_query_counts.py --control results/2026-MM-DD-e05-armA-control-soak.json --treatment results/2026-MM-DD-e05-armB-guards-soak.json --feature lexical_single_scan --operation search --min-delta -2 --max-delta 0 --require-strict-improvement --out results/2026-MM-DD-e05-query-count-comparison.json`.
+   `python3 eval/compare_query_counts.py --control results/2026-MM-DD-e05-armA-control-soak.json --treatment results/2026-MM-DD-e05-armB-guards-soak.json --feature lexical_single_scan --operation search --min-delta -2 --max-delta 0 --require-strict-improvement --expected-retrieval-modes exact lexical --out results/2026-MM-DD-e05-query-count-comparison.json`.
    Every paired search sample must stay within `[-2,0]`, at least one must
    strictly decrease, every non-search sample must be unchanged, and the
    comparator must pass before reasoning starts.

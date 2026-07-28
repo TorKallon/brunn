@@ -60,12 +60,15 @@ OLD_SOURCE_QUERY = (
 )
 LEXICAL_CONSOLIDATION_GATE_PROFILE = "e05-lexical-consolidation"
 D03_RESUME_DELTAS_GATE_PROFILE = "d03-resume-deltas"
+D03_RESUME_QUERY_COUNT_DELTA = 5
 E03_SEMANTIC_READY_GATE_PROFILE = "e03-semantic-ready"
 E03_ARMS = ("mode1", "mode2", "mode3")
 E03_SEMANTIC_IMPORT_TIMEOUT_SECONDS = 43_200.0
 E03_WRAPPER_TIMEOUT_SECONDS = 45_000.0
 SEMANTIC_FAILURE_PROBE_REQUIRED = "required"
 SEMANTIC_FAILURE_PROBE_NOT_APPLICABLE = "not-applicable"
+VERBATIM_FEATURE_ACCEPTANCE_REQUIRED = "required"
+VERBATIM_FEATURE_ACCEPTANCE_NOT_APPLICABLE = "not-applicable"
 DEFAULT_QUERY_BUDGET_PROFILE = "default-safe"
 E03_FAILURE_WINDOW_SEARCH_SLO_MS = 3_000.0
 E03_EMBEDDING_COST_CEILING_USD = 5.0
@@ -105,6 +108,7 @@ LEXICAL_CONSOLIDATION_REQUIRED_GATES = frozenset({
     "all_required_scales_completed",
     "retrieval_sample_count_is_definitive",
     "query_count_sample_cardinality_is_authoritative",
+    "verbatim_identifier_measurement_integrity",
     "bounded_lexical_overflow_returns_late_relevant_source",
     "old_relevant_source_survives_many_newer_writes",
     "no_exact_or_lexical_lane_failures",
@@ -868,6 +872,7 @@ def evaluate_query_budgets(
             "name": f"query_budget_{operation}",
             "pass": within and int(missing.get(operation, 0)) == 0,
             "observed": {
+                "sample_name": operation,
                 "counts": values,
                 "missing": int(missing.get(operation, 0)),
             },
@@ -877,6 +882,160 @@ def evaluate_query_budgets(
             },
         })
     return gates
+
+
+def valid_resume_delta_fixture(
+    fixture: Any,
+) -> bool:
+    if not isinstance(fixture, dict):
+        return False
+    checkpoint_version = fixture.get("checkpoint_source_version")
+    mutation_version = fixture.get("mutation_version")
+    checkpoint_hash = fixture.get("checkpoint_source_content_hash")
+    mutation_hash = fixture.get("mutation_content_hash")
+    return (
+        fixture.get("requested") is True
+        and fixture.get("applicable") is True
+        and fixture.get("status") == "complete"
+        and fixture.get("pass") is True
+        and isinstance(fixture.get("source_path"), str)
+        and bool(fixture["source_path"])
+        and fixture.get("checkpoint_source_entries") == 1
+        and isinstance(checkpoint_version, int)
+        and not isinstance(checkpoint_version, bool)
+        and isinstance(mutation_version, int)
+        and not isinstance(mutation_version, bool)
+        and mutation_version == checkpoint_version + 1
+        and isinstance(checkpoint_hash, str)
+        and re.fullmatch(r"sha256:[0-9a-f]{64}", checkpoint_hash) is not None
+        and isinstance(mutation_hash, str)
+        and re.fullmatch(r"sha256:[0-9a-f]{64}", mutation_hash) is not None
+        and mutation_hash != checkpoint_hash
+        and fixture.get("mutation_no_op") is False
+        and fixture.get("verified_read_version") == mutation_version
+        and fixture.get("verified_read_content_hash") == mutation_hash
+        and fixture.get("verified_read_exact_content") is True
+        and fixture.get("verified_read_response_truncated") is False
+        and isinstance(fixture.get("mutation_marker"), str)
+        and bool(fixture["mutation_marker"])
+        and fixture.get("expected_treatment_statement_delta")
+        == D03_RESUME_QUERY_COUNT_DELTA
+        and fixture.get("statement_delta_accounting") == [
+            "transaction_context_validation",
+            "transaction_context_setup",
+            "statement_timeout_setup",
+            "batched_version_pair_select",
+            "transaction_commit",
+        ]
+    )
+
+
+def resume_delta_lineage_receipt(
+    response: Any,
+    fixture: Mapping[str, Any],
+) -> dict[str, Any]:
+    deltas = recursive_find(response, "resume_deltas")
+    if deltas is None:
+        return {
+            "status": "not_present",
+            "pass": None,
+            "delta_count": None,
+        }
+    if not valid_resume_delta_fixture(fixture):
+        return {
+            "status": "invalid_fixture",
+            "pass": False,
+            "delta_count": len(deltas) if isinstance(deltas, list) else None,
+        }
+    row = (
+        deltas[0]
+        if (
+            isinstance(deltas, list)
+            and len(deltas) == 1
+            and isinstance(deltas[0], dict)
+        )
+        else {}
+    )
+    before = row.get("before")
+    after = row.get("after")
+    mutation_marker = fixture.get("mutation_marker")
+    before_sha256 = (
+        "sha256:" + hashlib.sha256(before.encode("utf-8")).hexdigest()
+        if isinstance(before, str)
+        else None
+    )
+    after_sha256 = (
+        "sha256:" + hashlib.sha256(after.encode("utf-8")).hexdigest()
+        if isinstance(after, str)
+        else None
+    )
+    valid = (
+        len(deltas) == 1
+        if isinstance(deltas, list)
+        else False
+    ) and (
+        row.get("path") == fixture.get("source_path")
+        and row.get("pinned_version")
+        == fixture.get("checkpoint_source_version")
+        and row.get("pinned_sha256")
+        == fixture.get("checkpoint_source_content_hash")
+        and row.get("current_version") == fixture.get("mutation_version")
+        and row.get("current_sha256")
+        == fixture.get("mutation_content_hash")
+        and row.get("mode") == "whole_pair"
+        and isinstance(before, str)
+        and isinstance(after, str)
+        and before_sha256
+        == fixture.get("checkpoint_source_content_hash")
+        and after_sha256 == fixture.get("mutation_content_hash")
+        and isinstance(mutation_marker, str)
+        and mutation_marker not in before
+        and mutation_marker in after
+    )
+    return {
+        "status": "complete" if valid else "invalid",
+        "pass": bool(valid),
+        "delta_count": len(deltas) if isinstance(deltas, list) else None,
+        "path": row.get("path"),
+        "pinned_version": row.get("pinned_version"),
+        "pinned_sha256": row.get("pinned_sha256"),
+        "current_version": row.get("current_version"),
+        "current_sha256": row.get("current_sha256"),
+        "mode": row.get("mode"),
+        "before_sha256": before_sha256,
+        "after_sha256": after_sha256,
+        "mutation_marker_found": (
+            isinstance(after, str)
+            and isinstance(mutation_marker, str)
+            and mutation_marker in after
+        ),
+    }
+
+
+def valid_resume_delta_lineage_sample(
+    sample: Any,
+    fixture: Mapping[str, Any],
+) -> bool:
+    return (
+        isinstance(sample, dict)
+        and sample.get("status") == "complete"
+        and sample.get("pass") is True
+        and sample.get("delta_count") == 1
+        and sample.get("path") == fixture.get("source_path")
+        and sample.get("pinned_version")
+        == fixture.get("checkpoint_source_version")
+        and sample.get("pinned_sha256")
+        == fixture.get("checkpoint_source_content_hash")
+        and sample.get("current_version") == fixture.get("mutation_version")
+        and sample.get("current_sha256")
+        == fixture.get("mutation_content_hash")
+        and sample.get("mode") == "whole_pair"
+        and sample.get("before_sha256")
+        == fixture.get("checkpoint_source_content_hash")
+        and sample.get("after_sha256")
+        == fixture.get("mutation_content_hash")
+        and sample.get("mutation_marker_found") is True
+    )
 
 
 def load_d03_resume_control(path: Path) -> dict[str, Any]:
@@ -891,8 +1050,12 @@ def load_d03_resume_control(path: Path) -> dict[str, Any]:
     if (
         not isinstance(run_profile, dict)
         or run_profile.get("definitive") is not True
+        or run_profile.get("exercise_resume_delta_fixture") is not True
     ):
-        raise ValueError("D03 resume control must be definitive")
+        raise ValueError(
+            "D03 resume control must be definitive and exercise the "
+            "resume-delta fixture"
+        )
     if payload.get("retrieval_modes") != ["exact", "lexical"]:
         raise ValueError(
             "D03 resume control must use retrieval modes exact lexical"
@@ -921,6 +1084,28 @@ def load_d03_resume_control(path: Path) -> dict[str, Any]:
     )
     if scale is None:
         raise ValueError(f"D03 resume control omitted the {FUTURE_RECORDS:,} scale")
+    fixture = scale.get("resume_delta_fixture")
+    if not valid_resume_delta_fixture(fixture):
+        raise ValueError(
+            "D03 resume control omitted a valid changed checkpoint-source "
+            "fixture receipt"
+        )
+    control_lineage = scale.get("resume_delta_lineage_samples")
+    if (
+        not isinstance(control_lineage, list)
+        or len(control_lineage) < DEFINITIVE_SAMPLES
+        or any(
+            not isinstance(sample, dict)
+            or sample.get("status") != "not_present"
+            or sample.get("pass") is not None
+            or sample.get("delta_count") is not None
+            for sample in control_lineage
+        )
+    ):
+        raise ValueError(
+            "D03 resume control must behaviorally prove resume deltas were "
+            "absent from every sample"
+        )
     counts = (
         scale.get("query_counts", {})
         .get("by_operation", {})
@@ -952,6 +1137,8 @@ def load_d03_resume_control(path: Path) -> dict[str, Any]:
         "scale": FUTURE_RECORDS,
         "resume_query_counts": list(counts),
         "resume_p95_ms": scale.get("resume_ms"),
+        "resume_delta_fixture": fixture,
+        "resume_delta_lineage_samples": control_lineage,
     }
 
 
@@ -1036,12 +1223,55 @@ def evaluate_d03_resume_delta_gates(
         and len(treatment_counts) >= DEFINITIVE_SAMPLES
     )
     resume_p95 = treatment.get("resume_ms") if isinstance(treatment, dict) else None
+    treatment_fixture = (
+        treatment.get("resume_delta_fixture")
+        if isinstance(treatment, dict)
+        else None
+    )
+    lineage_samples = (
+        treatment.get("resume_delta_lineage_samples")
+        if isinstance(treatment, dict)
+        else None
+    )
+    fixture_identity_fields = (
+        "source_path",
+        "checkpoint_source_version",
+        "checkpoint_source_content_hash",
+        "mutation_version",
+        "mutation_content_hash",
+        "mutation_marker",
+    )
+    control_fixture = control.get("resume_delta_fixture")
+    fixture_identity_matches = (
+        valid_resume_delta_fixture(control_fixture)
+        and valid_resume_delta_fixture(treatment_fixture)
+        and all(
+            control_fixture.get(field) == treatment_fixture.get(field)
+            for field in fixture_identity_fields
+        )
+    )
+    lineage_complete = (
+        isinstance(lineage_samples, list)
+        and len(lineage_samples) == len(treatment_counts or [])
+        and len(lineage_samples) >= DEFINITIVE_SAMPLES
+        and all(
+            valid_resume_delta_lineage_sample(
+                sample,
+                treatment_fixture,
+            )
+            for sample in lineage_samples
+        )
+    )
     record = {
         "control": control,
         "treatment": {
             "scale": FUTURE_RECORDS,
             "resume_query_counts": treatment_counts,
             "resume_p95_ms": resume_p95,
+            "resume_delta_fixture": (
+                treatment_fixture
+            ),
+            "resume_delta_lineage_samples": lineage_samples,
         },
         "paired_query_count_deltas": deltas,
         "paired_samples": len(paired),
@@ -1058,8 +1288,11 @@ def evaluate_d03_resume_delta_gates(
             "threshold": {"comparison": "at_most", "milliseconds": 150.0},
         },
         {
-            "name": "d03_resume_query_count_delta_is_exactly_one",
-            "pass": pairing_complete and all(delta == 1 for delta in deltas),
+            "name": "d03_resume_query_count_delta_is_exactly_five",
+            "pass": pairing_complete and all(
+                delta == D03_RESUME_QUERY_COUNT_DELTA
+                for delta in deltas
+            ),
             "observed": {
                 "control_counts": control_counts,
                 "treatment_counts": treatment_counts,
@@ -1068,8 +1301,33 @@ def evaluate_d03_resume_delta_gates(
             },
             "threshold": {
                 "comparison": "paired_exact_delta",
-                "delta": 1,
+                "delta": D03_RESUME_QUERY_COUNT_DELTA,
                 "minimum_samples": DEFINITIVE_SAMPLES,
+                "accounting": [
+                    "transaction_context_validation",
+                    "transaction_context_setup",
+                    "statement_timeout_setup",
+                    "batched_version_pair_select",
+                    "transaction_commit",
+                ],
+            },
+        },
+        {
+            "name": "d03_resume_delta_lineage_matches_control_fixture",
+            "pass": fixture_identity_matches and lineage_complete,
+            "observed": {
+                "fixture_identity_matches": fixture_identity_matches,
+                "lineage_samples": lineage_samples,
+                "lineage_sample_count": (
+                    len(lineage_samples)
+                    if isinstance(lineage_samples, list)
+                    else None
+                ),
+            },
+            "threshold": {
+                "fixture_identity_fields": list(fixture_identity_fields),
+                "minimum_lineage_samples": DEFINITIVE_SAMPLES,
+                "every_sample_exactly_one_whole_pair": True,
             },
         },
     ]
@@ -2195,6 +2453,51 @@ def validate_semantic_failure_probe_posture(
     }
 
 
+def validate_verbatim_feature_acceptance_posture(
+    *,
+    posture: str,
+    runtime_snapshot: Mapping[str, Any],
+    expected_features: Mapping[str, Any],
+    protocol: str,
+) -> dict[str, Any]:
+    runtime_features = runtime_snapshot.get("runtime_features")
+    if not isinstance(runtime_features, Mapping):
+        raise ValueError(
+            "verbatim feature-acceptance posture requires authenticated "
+            "runtime_features"
+        )
+    observed = runtime_features.get("verbatim_spans")
+    if posture == VERBATIM_FEATURE_ACCEPTANCE_REQUIRED:
+        reason = (
+            "verbatim identifier feature acceptance remains a blocking gate"
+        )
+    elif posture == VERBATIM_FEATURE_ACCEPTANCE_NOT_APPLICABLE:
+        if (
+            protocol != "simple"
+            or expected_features.get("verbatim_spans") is not False
+            or observed is not False
+        ):
+            raise ValueError(
+                "verbatim feature acceptance may be not-applicable only for "
+                "the simple protocol with an explicit authenticated "
+                "verbatim_spans=off expectation"
+            )
+        reason = (
+            "verbatim_spans is an explicitly disabled nuisance feature; "
+            "measurement integrity remains blocking"
+        )
+    else:
+        raise ValueError(
+            f"unknown verbatim feature-acceptance posture {posture!r}"
+        )
+    return {
+        "posture": posture,
+        "eligible": True,
+        "reason": reason,
+        "observed": {"verbatim_spans": observed},
+    }
+
+
 def validate_e09_request_modes(
     e09_arm: str | None,
     retrieval_modes: Sequence[str],
@@ -2205,6 +2508,70 @@ def validate_e09_request_modes(
     ):
         raise ValueError(
             "E09 no_semantic requires --retrieval-modes exact lexical"
+        )
+
+
+def validate_lexical_consolidation_request(
+    args: argparse.Namespace,
+    retrieval_modes: Sequence[str],
+    expected_features: Mapping[str, Any],
+) -> None:
+    if (
+        getattr(args, "gate_profile", None)
+        != LEXICAL_CONSOLIDATION_GATE_PROFILE
+    ):
+        return
+    if not args.future_soak or args.protocol != "simple":
+        raise ValueError(
+            "the E05 lexical-consolidation guard profile requires "
+            "--future-soak and --protocol simple"
+        )
+    if list(retrieval_modes) != ["exact", "lexical"]:
+        raise ValueError(
+            "the E05 lexical-consolidation guard profile requires "
+            "--retrieval-modes exact lexical"
+        )
+    if not isinstance(expected_features.get("lexical_single_scan"), bool):
+        raise ValueError(
+            "the E05 lexical-consolidation run must explicitly declare "
+            "--expect-feature-flag lexical_single_scan=on|off"
+        )
+    if (
+        getattr(
+            args,
+            "verbatim_feature_acceptance",
+            VERBATIM_FEATURE_ACCEPTANCE_REQUIRED,
+        )
+        != VERBATIM_FEATURE_ACCEPTANCE_NOT_APPLICABLE
+    ):
+        raise ValueError(
+            "the E05 lexical-consolidation profile requires explicit "
+            "--verbatim-feature-acceptance not-applicable"
+        )
+
+
+def validate_resume_delta_fixture_request(
+    args: argparse.Namespace,
+    retrieval_modes: Sequence[str],
+) -> None:
+    requested = bool(getattr(args, "exercise_resume_delta_fixture", False))
+    if requested and (
+        not args.future_soak
+        or args.protocol != "simple"
+        or list(retrieval_modes) != ["exact", "lexical"]
+    ):
+        raise ValueError(
+            "--exercise-resume-delta-fixture requires --future-soak, "
+            "--protocol simple, and --retrieval-modes exact lexical"
+        )
+    if (
+        getattr(args, "gate_profile", None)
+        == D03_RESUME_DELTAS_GATE_PROFILE
+        and not requested
+    ):
+        raise ValueError(
+            "the D03 resume-deltas profile requires "
+            "--exercise-resume-delta-fixture"
         )
 
 
@@ -2237,6 +2604,18 @@ def validate_e03_request(
     if args.query_budget_profile != DEFAULT_QUERY_BUDGET_PROFILE:
         raise ValueError(
             "the E03 profile requires --query-budget-profile default-safe"
+        )
+    if (
+        getattr(
+            args,
+            "verbatim_feature_acceptance",
+            VERBATIM_FEATURE_ACCEPTANCE_REQUIRED,
+        )
+        != VERBATIM_FEATURE_ACCEPTANCE_NOT_APPLICABLE
+    ):
+        raise ValueError(
+            "the E03 profile requires explicit "
+            "--verbatim-feature-acceptance not-applicable"
         )
     if getattr(args, "quick", False) or (
         getattr(args, "samples", None) is not None
@@ -4057,6 +4436,7 @@ def benchmark_scale(
     e03_arm: str | None = None,
     run_e03_mode3_paired: bool = False,
     run_e03_mode1_pending: bool = False,
+    exercise_resume_delta_fixture: bool = False,
     flat_result_callback: Callable[[dict[str, Any]], None] | None = None,
     flat_file_control_override: dict[str, Any] | None = None,
     flat_file_control_source: str | None = None,
@@ -4466,6 +4846,10 @@ def benchmark_scale(
         if db_container and protocol != "simple"
         else None
     )
+    exercise_resume_delta = (
+        exercise_resume_delta_fixture
+        and scale == FUTURE_RECORDS
+    )
     checkpoint, checkpoint_ms = request_with_result(
         client,
         f"{operation_prefix}/checkpoint",
@@ -4480,7 +4864,7 @@ def benchmark_scale(
                 "next_actions": ["Read changes since this checkpoint."],
                 "artifacts": [target_path],
             },
-            "source_refs": [],
+            "source_refs": [target_path] if exercise_resume_delta else [],
         },
     )
     response_samples.append(("checkpoint", checkpoint))
@@ -4497,6 +4881,149 @@ def benchmark_scale(
         if db_container and protocol != "simple"
         else None
     )
+    resume_delta_fixture = {
+        "requested": bool(exercise_resume_delta_fixture),
+        "applicable": exercise_resume_delta,
+        "status": "not_applicable",
+        "pass": None,
+        "source_path": target_path if exercise_resume_delta else None,
+    }
+    if exercise_resume_delta:
+        source_entries = recursive_find(checkpoint, "source_entries")
+        checkpoint_source = (
+            source_entries[0]
+            if (
+                isinstance(source_entries, list)
+                and len(source_entries) == 1
+                and isinstance(source_entries[0], dict)
+            )
+            else {}
+        )
+        checkpoint_source_version = checkpoint_source.get("version")
+        checkpoint_source_hash = checkpoint_source.get("content_hash")
+        if (
+            checkpoint_source.get("path") != target_path
+            or not isinstance(checkpoint_source_version, int)
+            or isinstance(checkpoint_source_version, bool)
+            or not isinstance(checkpoint_source_hash, str)
+            or re.fullmatch(
+                r"sha256:[0-9a-f]{64}",
+                checkpoint_source_hash,
+            )
+            is None
+        ):
+            raise ValueError(
+                "resume-delta performance fixture checkpoint did not bind "
+                "the exact target source version"
+            )
+        target_document = next(
+            document
+            for document in documents
+            if document["path"] == target_path
+        )
+        mutation_marker = f"PERF-RESUME-DELTA-{scale}"
+        mutation_content = (
+            str(target_document["content"])
+            + "\n\n"
+            + f"Post-checkpoint revision marker: `{mutation_marker}`.\n"
+        )
+        expected_checkpoint_hash = (
+            "sha256:"
+            + hashlib.sha256(
+                str(target_document["content"]).encode("utf-8")
+            ).hexdigest()
+        )
+        expected_mutation_hash = (
+            "sha256:"
+            + hashlib.sha256(mutation_content.encode("utf-8")).hexdigest()
+        )
+        mutation, mutation_ms = request_with_result(
+            client,
+            f"{operation_prefix}/write",
+            {
+                "path": target_path,
+                "content": mutation_content,
+                "media_type": "text/markdown",
+                "metadata": {
+                    "kind": "resume_delta_performance_fixture",
+                },
+                "expected_version": checkpoint_source_version,
+            },
+        )
+        mutation_read, mutation_read_ms = request_with_result(
+            client,
+            f"{operation_prefix}/read",
+            {
+                "session_id": latest_session_id,
+                "requests": [{
+                    "path": target_path,
+                    "view": "full",
+                    "max_chars": 8_000,
+                }],
+            },
+        )
+        mutation_path = recursive_find(mutation, "path")
+        mutation_version = recursive_find(mutation, "version")
+        mutation_hash = recursive_find(mutation, "content_hash")
+        mutation_no_op = recursive_find(mutation, "no_op")
+        read_path = recursive_find(mutation_read, "path")
+        read_version = recursive_find(mutation_read, "version")
+        read_hash = recursive_find(mutation_read, "content_hash")
+        read_text = recursive_find(mutation_read, "text")
+        read_response_truncated = recursive_find(
+            mutation_read,
+            "response_truncated",
+        )
+        resume_delta_fixture = {
+            "requested": True,
+            "applicable": True,
+            "status": "complete",
+            "pass": (
+                isinstance(source_entries, list)
+                and len(source_entries) == 1
+                and checkpoint_source.get("path") == target_path
+                and isinstance(checkpoint_source_version, int)
+                and not isinstance(checkpoint_source_version, bool)
+                and checkpoint_source_hash == expected_checkpoint_hash
+                and mutation_path == target_path
+                and mutation_version == checkpoint_source_version + 1
+                and mutation_hash == expected_mutation_hash
+                and mutation_no_op is False
+                and read_path == target_path
+                and read_version == mutation_version
+                and read_hash == mutation_hash
+                and read_text == mutation_content
+                and read_response_truncated is False
+            ),
+            "source_path": target_path,
+            "checkpoint_source_entries": (
+                len(source_entries)
+                if isinstance(source_entries, list)
+                else None
+            ),
+            "checkpoint_source_version": checkpoint_source_version,
+            "checkpoint_source_content_hash": checkpoint_source_hash,
+            "mutation_version": mutation_version,
+            "mutation_content_hash": mutation_hash,
+            "mutation_no_op": mutation_no_op,
+            "verified_read_version": read_version,
+            "verified_read_content_hash": read_hash,
+            "verified_read_exact_content": read_text == mutation_content,
+            "verified_read_response_truncated": read_response_truncated,
+            "mutation_marker": mutation_marker,
+            "mutation_write_ms": round(mutation_ms, 3),
+            "mutation_read_ms": round(mutation_read_ms, 3),
+            "expected_treatment_statement_delta": (
+                D03_RESUME_QUERY_COUNT_DELTA
+            ),
+            "statement_delta_accounting": [
+                "transaction_context_validation",
+                "transaction_context_setup",
+                "statement_timeout_setup",
+                "batched_version_pair_select",
+                "transaction_commit",
+            ],
+        }
     resume_payload = {
         "task": f"Resume and report the current marker for {target_path}.",
         "hints": {
@@ -4513,6 +5040,7 @@ def benchmark_scale(
     resume_times: list[float] = []
     resume_found_samples: list[bool] = []
     resume_timing_samples: list[dict[str, Any]] = []
+    resume_delta_lineage_samples: list[dict[str, Any]] = []
     resumed: dict[str, Any] = {}
     for _ in range(samples):
         resumed, resume_elapsed = request_with_result(
@@ -4523,6 +5051,12 @@ def benchmark_scale(
         resume_times.append(resume_elapsed)
         resume_found_samples.append(rendered_contains(resumed, marker))
         resume_timing_samples.append(response_timings(resumed))
+        resume_delta_lineage_samples.append(
+            resume_delta_lineage_receipt(
+                resumed,
+                resume_delta_fixture,
+            )
+        )
         response_samples.append(("resume", resumed))
     resume_ms = percentile(resume_times, 0.95)
     boundary_probe: dict[str, Any] = {"status": "not_applicable"}
@@ -4823,6 +5357,8 @@ def benchmark_scale(
         "critical_lane_failures": critical_lane_failures,
         "resume_found": all(resume_found_samples),
         "resume_found_samples": resume_found_samples,
+        "resume_delta_fixture": resume_delta_fixture,
+        "resume_delta_lineage_samples": resume_delta_lineage_samples,
         "timings_ms": {
             "open": summarize_timing_samples(open_timing_samples),
             "search": summarize_timing_samples(search_timing_samples),
@@ -5128,6 +5664,34 @@ def evaluate_gates(
                 "missing_query_count_samples": {},
             },
         ))
+    if any(
+        item.get("resume_delta_fixture", {}).get("requested") is True
+        for item in simple_scales
+    ):
+        future_fixture = next(
+            (
+                item.get("resume_delta_fixture", {})
+                for item in simple_scales
+                if item.get("scale") == FUTURE_RECORDS
+            ),
+            {},
+        )
+        gates.append((
+            "resume_delta_fixture_mutates_checkpoint_source_at_640000",
+            (
+                valid_resume_delta_fixture(future_fixture)
+            ),
+            future_fixture,
+            {
+                "scale": FUTURE_RECORDS,
+                "checkpoint_source_entries": 1,
+                "same_source_version_increment": 1,
+                "post_checkpoint_content_hash_changed_and_read_verified": True,
+                "expected_treatment_statement_delta": (
+                    D03_RESUME_QUERY_COUNT_DELTA
+                ),
+            },
+        ))
     query_count_scales = [
         item
         for item in simple_scales
@@ -5138,18 +5702,19 @@ def evaluate_gates(
             query_budgets = load_query_budgets()
         combined_counts: dict[str, list[int]] = {}
         combined_missing: dict[str, int] = {}
+        budget_operations = set(query_budgets["operations"])
         for item in query_count_scales:
             summary = item["query_counts"]
-            for operation, observed in summary.get("by_operation", {}).items():
+            named_samples = summary.get("by_sample_name", {})
+            missing_named = summary.get("missing_by_sample_name", {})
+            for operation in budget_operations:
+                observed = named_samples.get(operation, {})
                 combined_counts.setdefault(operation, []).extend(
                     int(value) for value in observed.get("counts", [])
                 )
-            for operation, count in summary.get(
-                "missing_by_operation",
-                {},
-            ).items():
                 combined_missing[operation] = (
-                    combined_missing.get(operation, 0) + int(count)
+                    combined_missing.get(operation, 0)
+                    + int(missing_named.get(operation, 0))
                 )
         combined_summary = {
             "by_operation": {
@@ -6254,22 +6819,12 @@ def command_run(args: argparse.Namespace) -> int:
                 "required semantic-failure hook attestation needs both hook "
                 "commands"
             )
-        if args.gate_profile == LEXICAL_CONSOLIDATION_GATE_PROFILE:
-            if not args.future_soak or args.protocol != "simple":
-                raise ValueError(
-                    "the E05 lexical-consolidation guard profile requires "
-                    "--future-soak and --protocol simple"
-                )
-            if set(retrieval_modes) != {"exact", "lexical"}:
-                raise ValueError(
-                    "the E05 lexical-consolidation guard profile requires "
-                    "--retrieval-modes exact lexical"
-                )
-            if expected_features.get("lexical_single_scan") is not True:
-                raise ValueError(
-                    "the E05 Arm B guard run must declare "
-                    "--expect-feature-flag lexical_single_scan=on"
-                )
+        validate_lexical_consolidation_request(
+            args,
+            retrieval_modes,
+            expected_features,
+        )
+        validate_resume_delta_fixture_request(args, retrieval_modes)
         if args.gate_profile == D03_RESUME_DELTAS_GATE_PROFILE:
             if (
                 not args.future_soak
@@ -6324,6 +6879,14 @@ def command_run(args: argparse.Namespace) -> int:
                 args.semantic_failure_start_command
                 and args.semantic_failure_stop_command
             ),
+        )
+        verbatim_feature_acceptance_posture = (
+            validate_verbatim_feature_acceptance_posture(
+                posture=args.verbatim_feature_acceptance,
+                runtime_snapshot=runtime_snapshot_before,
+                expected_features=expected_features,
+                protocol=args.protocol,
+            )
         )
         query_budget_contract = resolve_query_budget_contract(
             profile=args.query_budget_profile,
@@ -6489,6 +7052,9 @@ def command_run(args: argparse.Namespace) -> int:
                     args.gate_profile == E03_SEMANTIC_READY_GATE_PROFILE
                     and args.e03_arm == "mode1"
                 ),
+                exercise_resume_delta_fixture=bool(
+                    args.exercise_resume_delta_fixture
+                ),
                 flat_result_callback=lambda result, current=scale: (
                     partial_flat_controls.__setitem__(current, result)
                 ),
@@ -6546,7 +7112,8 @@ def command_run(args: argparse.Namespace) -> int:
                 else None
             ),
             verbatim_feature_acceptance_required=(
-                args.gate_profile != E03_SEMANTIC_READY_GATE_PROFILE
+                args.verbatim_feature_acceptance
+                == VERBATIM_FEATURE_ACCEPTANCE_REQUIRED
             ),
         )
     else:
@@ -6797,6 +7364,9 @@ def command_run(args: argparse.Namespace) -> int:
         "expected_runtime_features": expected_features,
         "expected_build_revision": args.expect_build_revision,
         "semantic_failure_probe_posture": semantic_failure_posture,
+        "verbatim_feature_acceptance_posture": (
+            verbatim_feature_acceptance_posture
+        ),
         "runtime_configuration": {
             "before": runtime_snapshot_before,
             "after": runtime_snapshot_after,
@@ -6854,6 +7424,9 @@ def command_run(args: argparse.Namespace) -> int:
             ),
             "wait_for_semantic": bool(args.wait_semantic),
             "unique_queries": bool(args.unique_queries),
+            "exercise_resume_delta_fixture": bool(
+                args.exercise_resume_delta_fixture
+            ),
             "import_timeout_seconds": profile.import_timeout_seconds,
         },
         "production_reference_records": PRODUCTION_RECORDS,
@@ -6906,6 +7479,11 @@ def write_configuration_error(
             args,
             "query_budget_profile",
             DEFAULT_QUERY_BUDGET_PROFILE,
+        ),
+        "verbatim_feature_acceptance": getattr(
+            args,
+            "verbatim_feature_acceptance",
+            VERBATIM_FEATURE_ACCEPTANCE_REQUIRED,
         ),
         "errors": [{
             "type": "ConfigurationError",
@@ -7109,6 +7687,19 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run.add_argument(
+        "--verbatim-feature-acceptance",
+        choices=(
+            VERBATIM_FEATURE_ACCEPTANCE_REQUIRED,
+            VERBATIM_FEATURE_ACCEPTANCE_NOT_APPLICABLE,
+        ),
+        default=VERBATIM_FEATURE_ACCEPTANCE_REQUIRED,
+        help=(
+            "required by default; not-applicable is accepted only for a "
+            "simple-protocol run that explicitly authenticates "
+            "verbatim_spans=off, while measurement integrity stays blocking"
+        ),
+    )
+    run.add_argument(
         "--semantic-failure-start-command",
         help=(
             "argv-style command that disables the semantic provider on a "
@@ -7165,6 +7756,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "passing resume_deltas=off definitive artifact paired with the "
             "d03-resume-deltas treatment"
+        ),
+    )
+    run.add_argument(
+        "--exercise-resume-delta-fixture",
+        action="store_true",
+        help=(
+            "at the 640K scale, checkpoint the target source and mutate that "
+            "same source before resume sampling; required by D03 treatment "
+            "and its matched control"
         ),
     )
     run.add_argument(

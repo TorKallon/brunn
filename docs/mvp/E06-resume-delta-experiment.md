@@ -49,11 +49,17 @@ variable. An E06 pass cannot rehabilitate D02.
    `whole_pair`, and at least one larger source for `unified_diff`.
 3. Run the cheap paired 640K performance control/treatment before reasoning.
    On the resume-off stack:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e06-resume-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=off --out results/2026-MM-DD-e06-resume-control.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --verbatim-feature-acceptance not-applicable --query-budget-profile default-safe --exercise-resume-delta-fixture --label e06-resume-control --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=off --out results/2026-MM-DD-e06-resume-control.json`.
    Then, against the same image revision on the isolated resume-on stack:
-   `python3 performance_eval.py run --gate-profile d03-resume-deltas --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile d03-resume-deltas --query-budget-contract eval/query_budgets.d03-resume-deltas.json --resume-control-from results/2026-MM-DD-e06-resume-control.json --label e06-resume-treatment --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=on --out results/2026-MM-DD-e06-resume-treatment.json`.
-   The treatment artifact must prove 640K resume p95 ≤150ms and exactly +1
-   query in every paired resume sample. Any red gate stops the reasoning grid.
+   `python3 performance_eval.py run --gate-profile d03-resume-deltas --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --verbatim-feature-acceptance not-applicable --query-budget-profile d03-resume-deltas --query-budget-contract eval/query_budgets.d03-resume-deltas.json --resume-control-from results/2026-MM-DD-e06-resume-control.json --exercise-resume-delta-fixture --label e06-resume-treatment --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag resume_deltas=on --out results/2026-MM-DD-e06-resume-treatment.json`.
+   The shared fixture checkpoints the 640K target source, mutates that exact
+   source, and verifies the new version before sampling. The treatment
+   artifact must prove 640K resume p95 ≤150ms and exactly +5 completed SQL
+   statements in every paired resume sample: context validation, context
+   setup, timeout setup, one batched version-pair `SELECT`, and `COMMIT`. It
+   must also prove all 30 treatment responses contain the exact byte-verified
+   pinned/current `whole_pair`, while all 30 flag-off control responses omit
+   `resume_deltas`. Any red gate stops the reasoning grid.
 4. For draw N in 1..3, run the three arms with identical mutation seeds per
    card. Every service arm binds the actual running container and injects only
    exact+lexical retrieval; the harness proves the container remains running
@@ -69,11 +75,20 @@ variable. An E06 pass cannot rehabilitate D02.
    `E06_MAIN=(results/2026-MM-DD-resume-deltas-{a,b,c}-draw{1,2,3}.json); python3 eval/aggregate_draws.py "${E06_MAIN[@]}" --expected-arm e06-B --expected-arm e06-A --expected-arm e06-C --expected-arm-retrieval-modes e06-B=exact,lexical --expected-arm-retrieval-modes e06-A=exact,lexical --claim-mcnemar-alternative a_greater --out results/2026-MM-DD-resume-deltas-aggregate.json`.
    This emits the required one-sided claim-level tests for B-vs-A and B-vs-C
    while retaining the default two-sided case-level McNemar and clustered
-   bootstrap.
+   bootstrap. The aggregate is valid only when every input is ledger-bound to
+   the same mutation script, each arm in a paired draw uses a byte-identical
+   mutation-plan set, and the mutation seed exactly equals that paired-draw ID.
+   The aggregate records those checks under `mutation_provenance`.
 6. If the headline is inside the noise floor but straylight-api-gate-transition moves, run a targeted 5-draw repeat on that card, all three arms, adding `--case straylight-api-gate-transition` to every invocation and using targeted-specific paired-draw IDs.
 7. Use `python3 transition_eval.py --manifest eval/transition_cases.json regrade ...` for rubric corrections; never regenerate answers to fix grading.
 
-The run JSON fingerprints the mutation script, embeds every per-card plan and receipt, records the feature-flag state, and uses the mutated authority path in grading/lineage checks. The control sees only its prior checkpoint plus the post-mutation file tree; it is not handed a synthetic change-log file.
+The run JSON fingerprints the mutation script, embeds every per-card plan and
+receipt, hash-binds the complete mutation evidence in the immutable run ledger,
+records the feature-flag state, and uses the mutated authority path in
+grading/lineage checks. Definitive aggregation revalidates exact case coverage,
+three-source plans, target bytes/hashes, and service/filesystem receipt
+semantics. The control sees only its prior checkpoint plus the post-mutation
+file tree; it is not handed a synthetic change-log file.
 
 ## Metrics
 
@@ -81,7 +96,9 @@ The run JSON fingerprints the mutation script, embeds every per-card plan and re
 - Cases won per arm per draw (historical baseline: 0/5 everywhere); straylight-api-gate-transition tracked individually.
 - Resume p95 at 640k with flag on, vs the 35.2ms v8 baseline (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json) and the 150ms gate.
 - Open payload chars per resume, arm B vs arm A (budget-neutrality check: deltas are charged against the evidence budget, so totals must not grow beyond noise).
-- Query count per resume open (must be exactly +1 batched round trip in arm B).
+- Query count per resume open (must be exactly +5 completed statements in arm
+  B, representing one batched application `SELECT` plus four authenticated
+  transaction statements).
 
 ## Acceptance criteria
 
@@ -106,7 +123,8 @@ Subscription rule: all reasoning runs via the ChatGPT-authenticated Codex subscr
 - Any checkpoint-lineage incident — parent_checkpoint_id fails to resolve, pinned-version sha256 mismatch, or a delta pairs the wrong versions: immediate abort of the experiment and flag-off, mirroring the Tier C lineage tripwire.
 - Workspace/vault mutation divergence detected in any draw: invalidate that draw, fix B2, restart the draw (all arms).
 - Any reasoning run bills an API key (fail-closed breach): abort, file defect.
-- Either D03 deterministic gate fails (150ms p95 or paired exact +1 query):
+- Any D03 deterministic gate fails (150ms p95, paired exact +5 completed
+  statements, matched fixture identity, or byte-verified response lineage):
   abort before reasoning; do not average the failure away.
 - Spend reaches $30.
 

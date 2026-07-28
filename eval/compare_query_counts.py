@@ -179,6 +179,32 @@ def _validate_artifact(
         raise ValueError(
             f"{label} expected runtime features do not match: {mismatches}"
         )
+    verbatim_posture = _require_mapping(
+        artifact.get("verbatim_feature_acceptance_posture"),
+        f"{label} lacks verbatim feature-acceptance posture",
+    )
+    verbatim_observed = _require_mapping(
+        verbatim_posture.get("observed"),
+        f"{label} verbatim feature-acceptance posture lacks observations",
+    )
+    if (
+        verbatim_posture.get("posture") not in {
+            "required",
+            "not-applicable",
+        }
+        or verbatim_posture.get("eligible") is not True
+        or not isinstance(verbatim_posture.get("reason"), str)
+        or not verbatim_posture["reason"]
+        or verbatim_observed.get("verbatim_spans")
+        is not before_features.get("verbatim_spans")
+        or (
+            verbatim_posture.get("posture") == "not-applicable"
+            and before_features.get("verbatim_spans") is not False
+        )
+    ):
+        raise ValueError(
+            f"{label} has invalid verbatim feature-acceptance posture"
+        )
 
     retrieval_modes = artifact.get("retrieval_modes")
     if retrieval_modes != list(expected_retrieval_modes):
@@ -376,6 +402,8 @@ def compare_query_count_artifacts(
     max_delta: int,
     expected_retrieval_modes: Sequence[str],
     require_strict_improvement: bool = False,
+    require_strict_increase: bool = False,
+    allowed_deltas: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     control = _require_mapping(control, "control artifact must be an object")
     treatment = _require_mapping(
@@ -386,6 +414,32 @@ def compare_query_count_artifacts(
         raise ValueError("feature and operation must be non-empty")
     if min_delta > max_delta:
         raise ValueError("minimum delta cannot exceed maximum delta")
+    if require_strict_improvement and require_strict_increase:
+        raise ValueError(
+            "strict improvement and strict increase are mutually exclusive"
+        )
+    normalized_allowed_deltas = (
+        sorted(set(allowed_deltas))
+        if allowed_deltas is not None
+        else None
+    )
+    if (
+        normalized_allowed_deltas is not None
+        and (
+            not normalized_allowed_deltas
+            or any(
+                not isinstance(delta, int) or isinstance(delta, bool)
+                for delta in normalized_allowed_deltas
+            )
+            or any(
+                delta < min_delta or delta > max_delta
+                for delta in normalized_allowed_deltas
+            )
+        )
+    ):
+        raise ValueError(
+            "allowed deltas must be non-empty integers inside the delta bounds"
+        )
     expected_modes = _normalize_expected_retrieval_modes(
         expected_retrieval_modes
     )
@@ -412,6 +466,7 @@ def compare_query_count_artifacts(
     for key in (
         "gate_profile",
         "semantic_failure_probe_posture",
+        "verbatim_feature_acceptance_posture",
         "production_reference_records",
         "future_reference_records",
         "query_budget_contract",
@@ -552,6 +607,17 @@ def compare_query_count_artifacts(
                         f"scale {scale_id} sample {sample_name} delta "
                         f"falls outside [{min_delta}, {max_delta}]"
                     )
+                if (
+                    normalized_allowed_deltas is not None
+                    and any(
+                        delta not in normalized_allowed_deltas
+                        for delta in deltas
+                    )
+                ):
+                    raise ValueError(
+                        f"scale {scale_id} sample {sample_name} delta is not "
+                        f"in the allowed set {normalized_allowed_deltas}"
+                    )
             elif any(delta != 0 for delta in deltas):
                 raise ValueError(
                     f"scale {scale_id} untouched sample {sample_name} changed"
@@ -571,6 +637,10 @@ def compare_query_count_artifacts(
         delta < 0 for delta in selected_deltas
     ):
         raise ValueError("strict improvement requires at least one negative delta")
+    if require_strict_increase and not any(
+        delta > 0 for delta in selected_deltas
+    ):
+        raise ValueError("strict increase requires at least one positive delta")
 
     return {
         "schema": SCHEMA,
@@ -586,7 +656,9 @@ def compare_query_count_artifacts(
             "operation": operation,
             "minimum_delta": min_delta,
             "maximum_delta": max_delta,
+            "allowed_deltas": normalized_allowed_deltas,
             "require_strict_improvement": require_strict_improvement,
+            "require_strict_increase": require_strict_increase,
             "unselected_operations_must_be_unchanged": True,
         },
         "provenance": {
@@ -642,6 +714,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-delta", type=int, required=True)
     parser.add_argument("--max-delta", type=int, required=True)
     parser.add_argument("--require-strict-improvement", action="store_true")
+    parser.add_argument("--require-strict-increase", action="store_true")
+    parser.add_argument(
+        "--allowed-delta",
+        action="append",
+        type=int,
+        dest="allowed_deltas",
+    )
     parser.add_argument("--out", type=Path, required=True)
     return parser
 
@@ -674,6 +753,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_delta=args.max_delta,
             expected_retrieval_modes=args.expected_retrieval_modes,
             require_strict_improvement=args.require_strict_improvement,
+            require_strict_increase=args.require_strict_increase,
+            allowed_deltas=args.allowed_deltas,
         )
         result["inputs"] = inputs
         exit_code = 0

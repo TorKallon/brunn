@@ -242,6 +242,7 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                             for index, path in enumerate(requested_paths, 1)
                         ],
                         "requested_count": len(requested_paths),
+                        "response_truncated": False,
                     },
                 })
                 return
@@ -305,6 +306,7 @@ class FakeNativeHandler(BaseHTTPRequestHandler):
                     "path": path,
                     "version": current["version"],
                     "content_hash": content_hash,
+                    "no_op": False,
                 },
             })
         elif self.path.startswith("/v1/memory/"):

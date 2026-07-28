@@ -67,13 +67,16 @@ on-disk counts in the cost ledger.
    scored draw.
 2. Before reasoning, run definitive 640K guards for both candidate service
    configurations, one performance stack at a time. The B command is:
-   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --query-budget-profile default-safe --label e04-B-soak --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_char_cap=on --expect-feature-flag search_top1_hydration=off --expect-runtime-config search_section_demotion_top_n=8 --out results/2026-MM-DD-e04-B-soak.json`.
+   `python3 performance_eval.py run --protocol simple --retrieval-modes exact lexical --semantic-failure-probe not-applicable --verbatim-feature-acceptance not-applicable --query-budget-profile default-safe --label e04-B-soak --future-soak --api-container "$API_CONTAINER" --db-container "$DB_CONTAINER" --expect-build-revision "$REV" --expect-feature-flag semantic_lane=off --expect-feature-flag verbatim_spans=off --expect-feature-flag search_fair_share=on --expect-feature-flag search_char_cap=on --expect-feature-flag search_top1_hydration=off --expect-runtime-config search_section_demotion_top_n=8 --out results/2026-MM-DD-e04-B-soak.json`.
    Run C against its isolated stack by changing hydration to `on`, the label,
    and output while retaining the `verbatim_spans=off` assertion. Any red
    deterministic gate stops all E04 reasoning. Then prove that hydration adds
-   zero or one query to every paired search sample and changes no non-search
-   sample:
-   `python3 eval/compare_query_counts.py --control results/2026-MM-DD-e04-B-soak.json --treatment results/2026-MM-DD-e04-C-soak.json --feature search_top1_hydration --operation search --min-delta 0 --max-delta 1 --out results/2026-MM-DD-e04-hydration-query-count-comparison.json`.
+   either zero completed SQL statements when no candidate is hydrated, or
+   exactly five when it executes the one batched application `SELECT`
+   (authenticated read-context validation, context setup, timeout setup,
+   hydration `SELECT`, and `COMMIT`). At least one paired search sample must
+   exercise the batch, and no non-search sample may change:
+   `python3 eval/compare_query_counts.py --control results/2026-MM-DD-e04-B-soak.json --treatment results/2026-MM-DD-e04-C-soak.json --feature search_top1_hydration --operation search --min-delta 0 --max-delta 5 --allowed-delta 0 --allowed-delta 5 --require-strict-increase --expected-retrieval-modes exact lexical --out results/2026-MM-DD-e04-hydration-query-count-comparison.json`.
    A nonzero exit or `"pass": false` stops all E04 reasoning.
 3. Confirm reasoning runs on the ChatGPT-authenticated Codex subscription;
    `require_codex_subscription` must reject API keys.
@@ -90,7 +93,7 @@ on-disk counts in the cost ledger.
 6. Build exact input arrays:
    `E04_FULL=(results/2026-MM-DD-e04-{A,B,C,F}-{rupture,work,personal}-draw{1,2,3}.json); E04_CHRONIC=(results/2026-MM-DD-e04-{A,B,C,F}-{rupture,work}-draw{4,5}.json); E04_ALL=("${E04_FULL[@]}" "${E04_CHRONIC[@]}")`.
    Aggregate with
-   `python3 eval/aggregate_draws.py "${E04_ALL[@]}" --expected-arm e04-A --expected-arm e04-B --expected-arm e04-C --expected-arm e04-F --expected-arm-retrieval-modes e04-A=exact,lexical --expected-arm-retrieval-modes e04-B=exact,lexical --expected-arm-retrieval-modes e04-C=exact,lexical --require-claim-tag exact_value --case-extension-plan eval/e04_case_extension_plan.json --case-extension-plan-sha256 3cf08c940c527d2eb309b2263a4ad2303b3c8aeede1bc7ce15076b6670373976 --out results/2026-MM-DD-e04-aggregate.json`.
+   `python3 eval/aggregate_draws.py "${E04_ALL[@]}" --expected-arm e04-A --expected-arm e04-B --expected-arm e04-C --expected-arm e04-F --expected-arm-retrieval-modes e04-A=exact,lexical --expected-arm-retrieval-modes e04-B=exact,lexical --expected-arm-retrieval-modes e04-C=exact,lexical --require-claim-tag exact_value --case-extension-plan eval/e04_case_extension_plan.json --case-extension-plan-sha256 5a50d84dafdd8dacd845e99e19b3146f26feacafc2bafb82f5aa1b89dde0843a --out results/2026-MM-DD-e04-aggregate.json`.
    The checked-in plan binds the exact parent-manifest hashes, chronic subsets,
    and 3+2 draw counts. Do not recompute the declared plan hash from a modified
    plan.
@@ -114,7 +117,7 @@ Accept D01 (config = best of B/C) only if ALL hold:
 1. **RuptureOps primary:** McNemar-significant improvement vs arm A (p<0.05), OR no significant change AND ≥25% reduction in service chars/case (from ~70,814 to ≤ ~53,100).
 2. **No guard regression:** no McNemar-significant regression vs arm A on work or personal; personal graded 60/60 in every counted draw.
 3. **Chronic set net-positive:** across the six chronic cases over 5 paired draws, wins > losses vs arm A, and no previously-nonzero case falls to 0/5.
-4. **640K soak unchanged:** all performance_eval.py gates pass with the winning flags; no drift vs v8 baseline search p95 53.1ms / open 59.7ms (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json); the paired query-count artifact passes with every B→C search delta in `[0,+1]` and all non-search deltas at 0.
+4. **640K soak unchanged:** all performance_eval.py gates pass with the winning flags; no drift vs v8 baseline search p95 53.1ms / open 59.7ms (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json); the paired query-count artifact passes with every B→C search delta in the exact set `{0,+5}`, at least one `+5`, and all non-search deltas at 0. The `+5` is one batched hydration `SELECT` plus its four authenticated transaction statements, not five candidate lookups.
 
 Single-draw deltas decide nothing: the noise floor is ±3-5 claims (agent-work native 40→47→44→43→47 across builds). If C fails but B passes, ship B and park `top1_hydration`. OWNER DECISION: whether a B-only pass justifies re-running arm C after D02 (D02-verbatim-span-contract.md) lands.
 

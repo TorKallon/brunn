@@ -8,10 +8,10 @@
     "resume_deltas": true,
     "supersession_demotion": false
   },
-  "definition": "D03 treatment contract. Non-resume operations retain the default-safe statement budgets. Resume is excluded here because its blocking contract is a paired, sample-by-sample exact +1 query delta against a same-build resume_deltas=false control artifact.",
+  "definition": "D03 treatment contract. Non-resume operations retain the default-safe statement budgets. Resume is excluded here because its blocking contract is a paired, sample-by-sample exact +5 completed-statement delta against a same-build resume_deltas=false control artifact that exercises one changed checkpoint source. The delta is authenticated context validation, context setup, timeout setup, one batched version-pair SELECT, and COMMIT.",
   "baseline": {
     "profile": "d03-resume-deltas",
-    "method": "Pair the treatment with a passing definitive 640K resume_deltas=false control through --resume-control-from. The D03 gate requires at least 30 paired samples, exactly +1 completed SQL statement per treatment resume, and treatment resume p95 no greater than 150ms."
+    "method": "Pair the treatment with a passing definitive 640K resume_deltas=false control through --resume-control-from. Both arms must pass --exercise-resume-delta-fixture, which checkpoints and then mutates the same source. The D03 gate requires at least 30 paired samples, exactly +5 completed SQL statements per treatment resume for one batched application SELECT plus authenticated transaction overhead, and treatment resume p95 no greater than 150ms."
   },
   "operations": {
     "open": {

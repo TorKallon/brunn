@@ -180,6 +180,16 @@ def read_workspace_sources(
             ]
         },
     )
+    data = response.body.get("data", response.body)
+    if (
+        not isinstance(data, dict)
+        or data.get("response_truncated") is not False
+        or data.get("requested_count") != len(paths)
+    ):
+        raise ValueError(
+            "workspace.read mutation verification was truncated or "
+            "cardinality-mismatched"
+        )
     items = response_items(response.body)
     by_path = {
         item["path"]: item
@@ -222,7 +232,10 @@ def apply_plan(
         expected_version = None
         if client:
             current = workspace_before[path]
-            if current.get("text") != target["before"]:
+            if (
+                current.get("text") != target["before"]
+                or current.get("content_hash") != target["before_sha256"]
+            ):
                 raise ValueError(f"{path}: workspace and filesystem diverged before mutation")
             expected_version = current.get("version")
             if not isinstance(expected_version, int):
@@ -245,29 +258,56 @@ def apply_plan(
             )
             write_data = response.data
             receipt_hash = write_data.get("content_hash")
-            if not isinstance(receipt_hash, str) or not SHA256_RE.fullmatch(receipt_hash):
-                raise ValueError(f"{path}: workspace.write omitted a valid content hash")
-            if receipt_hash.removeprefix("sha256:") != target["after_sha256"].removeprefix("sha256:"):
-                raise ValueError(f"{path}: workspace.write receipt hash mismatch")
+            if (
+                write_data.get("path") != path
+                or write_data.get("version") != expected_version + 1
+                or write_data.get("no_op") is not False
+                or not isinstance(receipt_hash, str)
+                or not SHA256_RE.fullmatch(receipt_hash)
+                or receipt_hash != target["after_sha256"]
+            ):
+                raise ValueError(
+                    f"{path}: workspace.write receipt did not prove the "
+                    "expected N+1 mutation"
+                )
         mirror.write_text(target["after"], encoding="utf-8")
         receipts.append(
             {
                 "path": path,
                 "pinned_version": expected_version,
-                "current_version": expected_version + 1 if expected_version is not None else None,
+                "current_version": (
+                    write_data["version"] if client else None
+                ),
                 "before_sha256": target["before_sha256"],
                 "after_sha256": target["after_sha256"],
+                "write_no_op": (
+                    write_data["no_op"] if client else None
+                ),
             }
         )
     if client:
         workspace_after, corpus_revision = read_workspace_sources(client, paths)
+        receipts_by_path = {
+            receipt["path"]: receipt
+            for receipt in receipts
+        }
         for target in plan["targets"]:
             path = target["path"]
             mirror_text = (mirror_root / safe_relative_path(path)).read_text(encoding="utf-8")
-            if workspace_after[path].get("text") != mirror_text:
-                raise ValueError(f"{path}: workspace and filesystem diverged after mutation")
-            if sha256_text(mirror_text) != target["after_sha256"]:
-                raise ValueError(f"{path}: post-mutation hash mismatch")
+            observed = workspace_after[path]
+            receipt = receipts_by_path[path]
+            if (
+                observed.get("text") != mirror_text
+                or observed.get("version") != receipt["current_version"]
+                or observed.get("content_hash") != target["after_sha256"]
+                or sha256_text(mirror_text) != target["after_sha256"]
+            ):
+                raise ValueError(
+                    f"{path}: workspace.read did not verify the exact "
+                    "post-mutation version and bytes"
+                )
+            receipt["verified_read_version"] = observed["version"]
+            receipt["verified_read_sha256"] = observed["content_hash"]
     else:
         corpus_revision = None
     return {

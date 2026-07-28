@@ -155,7 +155,9 @@ class ExecutableExperimentDocsTests(unittest.TestCase):
 
         e04 = document("E04-result-budget-experiment.md")
         self.assertIn("--feature search_top1_hydration", e04)
-        self.assertIn("--min-delta 0 --max-delta 1", e04)
+        self.assertIn("--min-delta 0 --max-delta 5", e04)
+        self.assertIn("--allowed-delta 0 --allowed-delta 5", e04)
+        self.assertIn("--require-strict-increase", e04)
         self.assertIn(
             "e04-hydration-query-count-comparison.json",
             e04,

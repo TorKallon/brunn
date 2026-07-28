@@ -455,6 +455,8 @@ def build_performance_command(args: argparse.Namespace) -> list[str]:
         "--wait-semantic",
         "--semantic-failure-probe",
         "required",
+        "--verbatim-feature-acceptance",
+        "not-applicable",
         "--expect-feature-flag",
         "semantic_lane=on",
         "--label",

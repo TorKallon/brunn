@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -17,9 +18,11 @@ from performance_eval import (  # noqa: E402
     CONCURRENT_SEARCHES_PER_ROUND,
     CURRENT_RUNTIME_FEATURES,
     D03_RESUME_DELTAS_GATE_PROFILE,
+    D03_RESUME_QUERY_COUNT_DELTA,
     DEFAULT_THRESHOLDS,
     DEFINITIVE_SAMPLES,
     FUTURE_RECORDS,
+    LEXICAL_CONSOLIDATION_GATE_PROFILE,
     LEXICAL_CONSOLIDATION_REQUIRED_GATES,
     PRODUCTION_RECORDS,
     QUERY_BUDGETS_PATH,
@@ -55,14 +58,18 @@ from performance_eval import (  # noqa: E402
     source_text_contains,
     require_stable_runtime_configuration,
     response_timings,
+    resume_delta_lineage_receipt,
     sql_fingerprint,
     summarize_query_counts,
     summarize_timing_samples,
     timing_phase_sum_sane,
     verify_service_feature_states,
     validate_e09_request_modes,
+    validate_lexical_consolidation_request,
+    validate_resume_delta_fixture_request,
     validate_d03_resume_control_compatibility,
     validate_semantic_failure_probe_posture,
+    validate_verbatim_feature_acceptance_posture,
     lexical_overflow_marker,
     simple_checkpoint_footprint,
     summarize_response_accounting,
@@ -235,6 +242,14 @@ class PerformanceEvalTests(unittest.TestCase):
             "query_count_sample_cardinality_is_authoritative",
             LEXICAL_CONSOLIDATION_REQUIRED_GATES,
         )
+        self.assertIn(
+            "verbatim_identifier_measurement_integrity",
+            LEXICAL_CONSOLIDATION_REQUIRED_GATES,
+        )
+        self.assertNotIn(
+            "verbatim_identifier",
+            LEXICAL_CONSOLIDATION_REQUIRED_GATES,
+        )
 
     def test_query_count_summary_and_budget_reject_one_extra_statement(self):
         budgets = {
@@ -300,6 +315,127 @@ class PerformanceEvalTests(unittest.TestCase):
             for gate in evaluate_query_budgets(summary, budgets)
         }
         self.assertFalse(failing["query_budget_search"]["pass"])
+
+    def test_gate_budgets_use_canonical_samples_not_same_operation_probes(self):
+        scale = {
+            "scale": FUTURE_RECORDS,
+            "protocol": "simple",
+            "open_found": [True],
+            "open_p95_ms": 10.0,
+            "search_p95_ms": 10.0,
+            "read_p95_ms": 10.0,
+            "checkpoint_ms": 10.0,
+            "resume_ms": 10.0,
+            "search_found": [True],
+            "read_found": [True],
+            "resume_found": True,
+            "checkpoint_database_growth": {
+                "rows": 1,
+                "bytes": None,
+                "tables": {},
+            },
+            "query_counts": {
+                "by_sample_name": {
+                    "read": {"operation": "read", "counts": [11]},
+                    "max_batch_read": {
+                        "operation": "read",
+                        "counts": [166],
+                    },
+                    "checkpoint": {
+                        "operation": "checkpoint",
+                        "counts": [28],
+                    },
+                    "max_checkpoint_sources": {
+                        "operation": "checkpoint",
+                        "counts": [343],
+                    },
+                },
+                "missing_by_sample_name": {},
+                "sample_cardinality": {
+                    "authoritative": True,
+                    "pass": True,
+                },
+            },
+            "resume_delta_fixture": {
+                "requested": True,
+                "applicable": True,
+                "status": "complete",
+                "pass": True,
+                "source_path": "Synthetic/records/640000/target.md",
+                "checkpoint_source_entries": 1,
+                "checkpoint_source_version": 1,
+                "checkpoint_source_content_hash": "sha256:" + "a" * 64,
+                "mutation_version": 2,
+                "mutation_content_hash": "sha256:" + "b" * 64,
+                "mutation_no_op": False,
+                "verified_read_version": 2,
+                "verified_read_content_hash": "sha256:" + "b" * 64,
+                "verified_read_exact_content": True,
+                "verified_read_response_truncated": False,
+                "mutation_marker": "PERF-RESUME-DELTA-640000",
+                "expected_treatment_statement_delta": (
+                    D03_RESUME_QUERY_COUNT_DELTA
+                ),
+                "statement_delta_accounting": [
+                    "transaction_context_validation",
+                    "transaction_context_setup",
+                    "statement_timeout_setup",
+                    "batched_version_pair_select",
+                    "transaction_commit",
+                ],
+            },
+        }
+        budgets = {
+            "schema": "straylight-query-budgets@v1",
+            "operations": {
+                "read": {"comparison": "exact", "count": 11},
+                "checkpoint": {"comparison": "at_most", "max": 28},
+            },
+        }
+        gates = {
+            gate["name"]: gate
+            for gate in evaluate_gates(
+                [scale],
+                DEFAULT_THRESHOLDS,
+                require_gin_index=False,
+                query_budgets=budgets,
+            )
+        }
+        self.assertTrue(gates["query_budget_read"]["pass"])
+        self.assertTrue(gates["query_budget_checkpoint"]["pass"])
+        self.assertTrue(
+            gates[
+                "resume_delta_fixture_mutates_checkpoint_source_at_640000"
+            ]["pass"]
+        )
+        self.assertEqual(
+            gates["query_budget_read"]["observed"]["sample_name"],
+            "read",
+        )
+
+        scale["query_counts"]["by_sample_name"]["read"]["counts"] = [12]
+        gates = {
+            gate["name"]: gate
+            for gate in evaluate_gates(
+                [scale],
+                DEFAULT_THRESHOLDS,
+                require_gin_index=False,
+                query_budgets=budgets,
+            )
+        }
+        self.assertFalse(gates["query_budget_read"]["pass"])
+
+        del scale["query_counts"]["by_sample_name"]["read"]
+        gates = {
+            gate["name"]: gate
+            for gate in evaluate_gates(
+                [scale],
+                DEFAULT_THRESHOLDS,
+                require_gin_index=False,
+                query_budgets=budgets,
+            )
+        }
+        self.assertFalse(gates["query_budget_read"]["pass"])
 
     def test_query_count_summary_enforces_authoritative_sample_cardinality(self):
         expected = expected_query_count_sample_cardinality(
@@ -463,17 +599,77 @@ class PerformanceEvalTests(unittest.TestCase):
             )
 
     def test_d03_gate_pairs_query_counts_and_enforces_150ms(self):
+        checkpoint_content = "Original source."
+        mutation_content = (
+            checkpoint_content + "\nPERF-RESUME-DELTA-640000"
+        )
+        checkpoint_hash = "sha256:" + hashlib.sha256(
+            checkpoint_content.encode("utf-8")
+        ).hexdigest()
+        mutation_hash = "sha256:" + hashlib.sha256(
+            mutation_content.encode("utf-8")
+        ).hexdigest()
+        fixture = {
+            "requested": True,
+            "applicable": True,
+            "status": "complete",
+            "pass": True,
+            "source_path": "Synthetic/records/0639999.md",
+            "checkpoint_source_entries": 1,
+            "checkpoint_source_version": 1,
+            "checkpoint_source_content_hash": checkpoint_hash,
+            "mutation_version": 2,
+            "mutation_content_hash": mutation_hash,
+            "mutation_no_op": False,
+            "verified_read_version": 2,
+            "verified_read_content_hash": mutation_hash,
+            "verified_read_exact_content": True,
+            "verified_read_response_truncated": False,
+            "mutation_marker": "PERF-RESUME-DELTA-640000",
+            "expected_treatment_statement_delta": (
+                D03_RESUME_QUERY_COUNT_DELTA
+            ),
+            "statement_delta_accounting": [
+                "transaction_context_validation",
+                "transaction_context_setup",
+                "statement_timeout_setup",
+                "batched_version_pair_select",
+                "transaction_commit",
+            ],
+        }
+        lineage = {
+            "status": "complete",
+            "pass": True,
+            "delta_count": 1,
+            "path": fixture["source_path"],
+            "pinned_version": 1,
+            "pinned_sha256": fixture[
+                "checkpoint_source_content_hash"
+            ],
+            "current_version": 2,
+            "current_sha256": fixture["mutation_content_hash"],
+            "mode": "whole_pair",
+            "before_sha256": checkpoint_hash,
+            "after_sha256": mutation_hash,
+            "mutation_marker_found": True,
+        }
         control = {
             "resume_query_counts": [44] * DEFINITIVE_SAMPLES,
             "label": "d03-control",
+            "resume_delta_fixture": fixture,
         }
         scale = {
             "scale": FUTURE_RECORDS,
             "resume_ms": 149.9,
+            "resume_delta_fixture": dict(fixture),
+            "resume_delta_lineage_samples": [
+                dict(lineage)
+                for _ in range(DEFINITIVE_SAMPLES)
+            ],
             "query_counts": {
                 "by_operation": {
                     "resume": {
-                        "counts": [45] * DEFINITIVE_SAMPLES,
+                        "counts": [49] * DEFINITIVE_SAMPLES,
                     },
                 },
             },
@@ -482,14 +678,91 @@ class PerformanceEvalTests(unittest.TestCase):
         self.assertTrue(all(gate["pass"] for gate in gates))
         self.assertEqual(
             record["paired_query_count_deltas"],
-            [1] * DEFINITIVE_SAMPLES,
+            [D03_RESUME_QUERY_COUNT_DELTA] * DEFINITIVE_SAMPLES,
         )
 
         scale["resume_ms"] = 150.1
-        scale["query_counts"]["by_operation"]["resume"]["counts"][-1] = 46
+        scale["query_counts"]["by_operation"]["resume"]["counts"][-1] = 50
         gates, _ = evaluate_d03_resume_delta_gates([scale], control)
         self.assertFalse(gates[0]["pass"])
         self.assertFalse(gates[1]["pass"])
+
+        scale["resume_ms"] = 149.9
+        scale["query_counts"]["by_operation"]["resume"]["counts"][-1] = 49
+        scale["resume_delta_lineage_samples"][-1]["pass"] = False
+        gates, _ = evaluate_d03_resume_delta_gates([scale], control)
+        self.assertFalse(gates[2]["pass"])
+
+    def test_resume_delta_lineage_receipt_binds_exact_versions_and_hashes(self):
+        checkpoint_content = "Original source."
+        mutation_content = (
+            checkpoint_content + "\nPERF-RESUME-DELTA-640000"
+        )
+        checkpoint_hash = "sha256:" + hashlib.sha256(
+            checkpoint_content.encode("utf-8")
+        ).hexdigest()
+        mutation_hash = "sha256:" + hashlib.sha256(
+            mutation_content.encode("utf-8")
+        ).hexdigest()
+        fixture = {
+            "requested": True,
+            "applicable": True,
+            "status": "complete",
+            "pass": True,
+            "source_path": "Synthetic/records/0639999.md",
+            "checkpoint_source_entries": 1,
+            "checkpoint_source_version": 1,
+            "checkpoint_source_content_hash": checkpoint_hash,
+            "mutation_version": 2,
+            "mutation_content_hash": mutation_hash,
+            "mutation_no_op": False,
+            "verified_read_version": 2,
+            "verified_read_content_hash": mutation_hash,
+            "verified_read_exact_content": True,
+            "verified_read_response_truncated": False,
+            "mutation_marker": "PERF-RESUME-DELTA-640000",
+            "expected_treatment_statement_delta": (
+                D03_RESUME_QUERY_COUNT_DELTA
+            ),
+            "statement_delta_accounting": [
+                "transaction_context_validation",
+                "transaction_context_setup",
+                "statement_timeout_setup",
+                "batched_version_pair_select",
+                "transaction_commit",
+            ],
+        }
+        response = {
+            "data": {
+                "resume_deltas": [{
+                    "path": fixture["source_path"],
+                    "pinned_version": 1,
+                    "pinned_sha256": fixture[
+                        "checkpoint_source_content_hash"
+                    ],
+                    "current_version": 2,
+                    "current_sha256": fixture[
+                        "mutation_content_hash"
+                    ],
+                    "mode": "whole_pair",
+                    "before": checkpoint_content,
+                    "after": mutation_content,
+                }],
+            },
+        }
+        self.assertTrue(
+            resume_delta_lineage_receipt(
+                response,
+                fixture,
+            )["pass"]
+        )
+        response["data"]["resume_deltas"][0]["current_version"] = 3
+        self.assertFalse(
+            resume_delta_lineage_receipt(
+                response,
+                fixture,
+            )["pass"]
+        )
 
     def test_d03_pair_requires_identical_runtime_except_resume_flag(self):
         treatment_features = runtime_features(resume_deltas=True)
@@ -882,6 +1155,127 @@ class PerformanceEvalTests(unittest.TestCase):
                 e09_arm=None,
                 protocol="simple",
                 hooks_configured=False,
+            )
+
+    def test_verbatim_feature_acceptance_defaults_required_and_opt_out_is_bound(self):
+        parser = build_parser()
+        required = parser.parse_args([
+            "run",
+            "--label",
+            "required",
+            "--out",
+            "result.json",
+        ])
+        not_applicable = parser.parse_args([
+            "run",
+            "--label",
+            "not-applicable",
+            "--verbatim-feature-acceptance",
+            "not-applicable",
+            "--out",
+            "result.json",
+        ])
+        self.assertEqual(required.verbatim_feature_acceptance, "required")
+        self.assertEqual(
+            not_applicable.verbatim_feature_acceptance,
+            "not-applicable",
+        )
+
+        snapshot = {
+            "runtime_features": runtime_features(verbatim_spans=False),
+        }
+        accepted = validate_verbatim_feature_acceptance_posture(
+            posture="not-applicable",
+            runtime_snapshot=snapshot,
+            expected_features={"verbatim_spans": False},
+            protocol="simple",
+        )
+        self.assertEqual(accepted["posture"], "not-applicable")
+        with self.assertRaisesRegex(ValueError, "not-applicable"):
+            validate_verbatim_feature_acceptance_posture(
+                posture="not-applicable",
+                runtime_snapshot=snapshot,
+                expected_features={},
+                protocol="simple",
+            )
+        with self.assertRaisesRegex(ValueError, "not-applicable"):
+            validate_verbatim_feature_acceptance_posture(
+                posture="not-applicable",
+                runtime_snapshot={
+                    "runtime_features": runtime_features(
+                        verbatim_spans=True,
+                    ),
+                },
+                expected_features={"verbatim_spans": False},
+                protocol="simple",
+            )
+
+    def test_e05_profile_accepts_explicit_off_and_on_but_not_omitted(self):
+        args = Namespace(
+            gate_profile=LEXICAL_CONSOLIDATION_GATE_PROFILE,
+            future_soak=True,
+            protocol="simple",
+            verbatim_feature_acceptance="not-applicable",
+        )
+        for state in (False, True):
+            validate_lexical_consolidation_request(
+                args,
+                ["exact", "lexical"],
+                {"lexical_single_scan": state},
+            )
+        with self.assertRaisesRegex(ValueError, "on\\|off"):
+            validate_lexical_consolidation_request(
+                args,
+                ["exact", "lexical"],
+                {},
+            )
+        with self.assertRaisesRegex(ValueError, "exact lexical"):
+            validate_lexical_consolidation_request(
+                args,
+                ["lexical", "exact"],
+                {"lexical_single_scan": False},
+            )
+        args.verbatim_feature_acceptance = "required"
+        with self.assertRaisesRegex(
+            ValueError,
+            "verbatim-feature-acceptance not-applicable",
+        ):
+            validate_lexical_consolidation_request(
+                args,
+                ["exact", "lexical"],
+                {"lexical_single_scan": False},
+            )
+
+    def test_resume_delta_fixture_is_explicit_and_profile_required(self):
+        control = Namespace(
+            gate_profile=None,
+            future_soak=True,
+            protocol="simple",
+            exercise_resume_delta_fixture=True,
+        )
+        validate_resume_delta_fixture_request(
+            control,
+            ["exact", "lexical"],
+        )
+        treatment = Namespace(
+            gate_profile=D03_RESUME_DELTAS_GATE_PROFILE,
+            future_soak=True,
+            protocol="simple",
+            exercise_resume_delta_fixture=False,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "requires --exercise-resume-delta-fixture",
+        ):
+            validate_resume_delta_fixture_request(
+                treatment,
+                ["exact", "lexical"],
+            )
+        control.exercise_resume_delta_fixture = True
+        with self.assertRaisesRegex(ValueError, "exact lexical"):
+            validate_resume_delta_fixture_request(
+                control,
+                ["lexical", "exact"],
             )
 
     def test_required_semantic_failure_probe_needs_active_lane_and_hooks(self):
@@ -1622,6 +2016,45 @@ class PerformanceEvalTests(unittest.TestCase):
         }
         self.assertIn("verbatim_identifier", gates)
         self.assertFalse(gates["verbatim_identifier"]["pass"])
+
+    def test_verbatim_not_applicable_omits_only_feature_acceptance(self):
+        scale = {
+            "scale": 1_000,
+            "protocol": "simple",
+            "open_found": [True],
+            "open_p95_ms": 100.0,
+            "search_p95_ms": 80.0,
+            "read_p95_ms": 20.0,
+            "checkpoint_ms": 50.0,
+            "resume_ms": 100.0,
+            "search_found": [True],
+            "read_found": [True],
+            "resume_found": True,
+            "checkpoint_database_growth": {
+                "rows": 1,
+                "bytes": None,
+                "tables": {},
+            },
+            "fixture_manifest": {"verbatim_identifiers": []},
+            "verbatim_identifier": {
+                "status": "complete",
+                "results": [],
+                "returned": 0,
+                "expected": 0,
+                "pass": True,
+            },
+        }
+        gates = {
+            gate["name"]: gate
+            for gate in evaluate_gates(
+                [scale],
+                DEFAULT_THRESHOLDS,
+                require_gin_index=False,
+                verbatim_feature_acceptance_required=False,
+            )
+        }
+        self.assertIn("verbatim_identifier_measurement_integrity", gates)
+        self.assertNotIn("verbatim_identifier", gates)
 
     def test_gates_reject_corpus_sized_checkpoint_growth(self):
         base = {

@@ -52,11 +52,22 @@ one semantic-failure posture:
   `semantic_lane=false`, whose requested modes exclude semantic, and which is
   not waiting for semantic readiness.
 
+Verbatim feature acceptance is independently fail-closed. It defaults to
+`--verbatim-feature-acceptance required`. An experiment where D02 is an
+explicitly disabled nuisance variable may use `not-applicable` only together
+with the simple protocol and an authenticated
+`--expect-feature-flag verbatim_spans=off`; the 30-row verbatim measurement
+integrity gate remains blocking even when feature acceptance is out of scope.
+
 The default query-count contract is runtime-bound to the default-safe query
 shape. Any non-default query shape uses a named
 `--query-budget-profile` and an explicit `--query-budget-contract`. A launch
 profile never inherits `eval/query_budgets.json`; absence of the calibrated
-launch contract is a preflight failure.
+launch contract is a preflight failure. Each operation budget evaluates its
+canonical same-named request sample (`open`, `search`, `read`, `write`,
+`checkpoint`, or `resume`); boundary probes such as `max_batch_read` and
+`max_checkpoint_sources` remain separately reported and never get pooled into
+the ordinary-operation budget.
 
 Use `--query-budget-profile calibration` only to capture counts for a new
 shape. A calibration run records all measurements but contains an intentionally
@@ -134,19 +145,28 @@ all service artifacts must also share one source revision, runtime build
 revision, Docker image ID, and image revision. Separate container instances
 are allowed.
 
+Mutation-enabled transition aggregates add a cross-arm provenance gate. Every
+artifact must carry ledger-bound mutation script, seed, and plan hashes; the
+top-level mutation evidence must reproduce those hashes; all arms in a paired
+draw must share one plan hash; and the seed must equal the paired-draw ID.
+Mixed mutation/non-mutation aggregates are rejected rather than silently
+pooling incomparable draws.
+
 One narrow exception exists for a predeclared longitudinal extension such as
 E04. Supply both
 `--case-extension-plan eval/e04_case_extension_plan.json` and its frozen
 `--case-extension-plan-sha256
-3cf08c940c527d2eb309b2263a4ad2303b3c8aeede1bc7ce15076b6670373976`.
+5a50d84dafdd8dacd845e99e19b3146f26feacafc2bafb82f5aa1b89dde0843a`.
 The aggregator verifies the plan file hash, each exact parent-manifest hash and
-case list, the strict extension subset, and the declared base/extension draw
-counts. Every included case must still have at least three complete draws, each
-case/draw must contain the full arm set, and all artifacts for a suite must
-retain the parent manifest fingerprint. Use the parent manifest with repeated
-`--case` selectors for extra draws; do not substitute a separately
-fingerprinted subset manifest into the aggregate. A modified plan requires a
-new explicit owner-reviewed hash; computing the expected hash from the same
+raw case list, the manifest's ordered active-case base list, the strict
+extension subset, and the declared base/extension draw counts. Retired cases
+remain fingerprinted in `parent_case_ids` but are excluded from
+`base_case_ids`. Every included case must still have at least three complete
+draws, each case/draw must contain the full arm set, and all artifacts for a
+suite must retain the parent manifest fingerprint. Use the parent manifest
+with repeated `--case` selectors for extra draws; do not substitute a
+separately fingerprinted subset manifest into the aggregate. A modified plan
+requires a new explicit owner-reviewed hash; computing the expected hash from the same
 modified file is not a predeclaration.
 
 Default McNemar output remains two-sided on majority-collapsed case outcomes.

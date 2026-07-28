@@ -131,6 +131,7 @@ def request_namespace(arm: str):
         semantic_failure_probe=(
             "not-applicable" if arm == "mode1" else "required"
         ),
+        verbatim_feature_acceptance="not-applicable",
         wait_semantic=arm != "mode1",
         require_semantic_failure_hook_attestation=arm == "mode3",
         unique_queries=False,
@@ -276,6 +277,17 @@ class E03ProfileTests(unittest.TestCase):
                     **E03_COMMON_RUNTIME_EXPECTATIONS,
                     "semantic_lane": arm != "mode1",
                 },
+            )
+        args = request_namespace("mode1")
+        args.verbatim_feature_acceptance = "required"
+        with self.assertRaisesRegex(
+            ValueError,
+            "verbatim-feature-acceptance not-applicable",
+        ):
+            validate_e03_request(
+                args,
+                ["exact", "lexical"],
+                {**E03_COMMON_RUNTIME_EXPECTATIONS, "semantic_lane": False},
             )
         args = request_namespace("mode3")
         args.unique_queries = True
@@ -899,6 +911,12 @@ class E03ProfileTests(unittest.TestCase):
             self.assertIn("e03-semantic-ready", command)
             self.assertIn(arm, command)
             self.assertIn("verbatim_spans=off", command)
+            self.assertEqual(
+                command[
+                    command.index("--verbatim-feature-acceptance") + 1
+                ],
+                "not-applicable",
+            )
         self.assertNotIn("--unique-queries", mode3)
         self.assertEqual(
             mode3[mode3.index("--scales") + 1],

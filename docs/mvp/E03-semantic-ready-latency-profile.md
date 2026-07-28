@@ -110,7 +110,9 @@ Immutable evidence:
 
 Implementation note (2026-07-27): all six build items now have deterministic
 harness support. All three arms run the same current product/harness build with
-`verbatim_spans=false`; exact source, API image, worker image (where present),
+`verbatim_spans=false` and explicitly declare
+`--verbatim-feature-acceptance not-applicable`; exact source, API image,
+worker image (where present),
 DB image, runtime build revision, container IDs/start times, and one isolated
 Compose project are bound before and after each run. The ambient API URL must
 equal the named API container's single loopback-published port, and that API's
@@ -334,7 +336,9 @@ MM-DD is the run date.
    agree. Because `verbatim_spans=false` is frozen across E03, the raw feature
    outcome (including the known 0/30 result) is a nonblocking finding named
    `verbatim_identifier_feature_acceptance`; measurement incompleteness or
-   corruption remains blocking. The default non-E03
+   corruption remains blocking. All three E03 wrappers explicitly pass
+   `--verbatim-feature-acceptance not-applicable`; the profile rejects an
+   omitted/default-required posture. The default non-E03
    `verbatim_identifier` feature-acceptance gate remains blocking.
 
 ## Cost preflight and ceiling
