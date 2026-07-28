@@ -1,7 +1,7 @@
 # Straylight MVP Plan
 
 Status: Authoritative plan of record — adopted by owner decision 2026-07-27
-Date: 2026-07-27
+Date: 2026-07-28
 Owner: Rourke (Tor Kallon)
 Vault decision record: `Projects/Straylight/MVP plan and authoritative next steps - 2026-07-27`
 Detailed designs and experiment specs: `docs/mvp/` (this document indexes them and holds state)
@@ -26,12 +26,18 @@ files-with-writable-sidecar on every suite, a statistically resolved win
 capabilities (cross-agent visibility, credentials, remote binaries, resume
 deltas) proven in real use.
 
-## Where things stand (evidence, 2026-07-27)
+## Where things stand (evidence, 2026-07-28)
 
-- Simplified core v8 (`c3a5420`) passes the 640K-record soak: open p95 59.7ms,
-  search 53.1ms, checkpoint 17.1ms at 11 rows, no latency drift with change-log
-  growth. All latency evidence is exact+lexical with embeddings pending; no
-  semantic-ready profile exists.
+- Simplified core v8 (`c3a5420`) passes the 640K-record exact+lexical soak:
+  open p95 59.7ms, search 53.1ms, checkpoint 17.1ms at 11 rows, with no
+  latency drift from change-log growth. E03 Mode 1 independently passed its
+  exact+lexical gates. Its fully indexed semantic-ready Mode 2 normally had
+  low percentiles but failed the blocking zero-deferred-lane gate on four
+  timeout-shaped observations, so paid Mode 3 was aborted.
+- E02 Stage 1 confirmed the verbatim loss at 0/30 across 1K, 10K, and 64K.
+  The D02 flag-on arm recovered only the four byte-2,600 probes at each scale
+  and lost every deeper identifier. D02 remains default-off pending repair;
+  the 640K soak and reasoning draws were aborted.
 - Reasoning is at parity-within-noise vs direct Markdown but unproven (n=1;
   single-draw suite scores swing ±3–5 claims). The native API on the simplified
   core scored 186/228 vs files 194/228; 21/22 disputed answers had the right
@@ -67,8 +73,8 @@ Phase 0 — measurement, pre-code (no product code changes; harness/corpus only)
 | ID | Title | Status | Gates / feeds |
 |---|---|---|---|
 | [E01](mvp/E01-paired-draw-machinery-and-baseline.md) | Paired-draw machinery, writable-sidecar control, baseline replication | Specified — not run | Feeds every Exx; re-establishes the overfetch diagnosis |
-| [E02](mvp/E02-verbatim-identifier-gate.md) (stage 1) | Verbatim identifier gate — expected-fail proof on current build | Specified — not run | Gates D02 |
-| [E03](mvp/E03-semantic-ready-latency-profile.md) | Semantic-ready latency profile (3 modes) | Harness ready — not run | Feeds E09, D11; mode 3 wants D09 timings |
+| [E02](mvp/E02-verbatim-identifier-gate.md) | Verbatim identifier gate | Stage 1 defect confirmed; Stage 2 flag-on failed 4/30 at every scale; soak and reasoning aborted | D02 rejected; repair and rerun deterministic arm |
+| [E03](mvp/E03-semantic-ready-latency-profile.md) | Semantic-ready latency profile (3 modes) | Mode 1 passed; semantic-ready Mode 2 failed zero-deferred-lane gate; paid Mode 3 aborted | Fix semantic timeout path before E09 |
 
 Infrastructure — no reasoning-quality risk (code, no experiment gate):
 
@@ -84,7 +90,7 @@ Features — flag + experiment gated:
 | ID | Title | Status | Gated by |
 |---|---|---|---|
 | [D01](mvp/D01-budget-contracted-retrieval.md) | Budget-contracted retrieval + result budgets (overfetch fix; top-1 complete hydration) | Proposed — not started | [E04](mvp/E04-result-budget-experiment.md) |
-| [D02](mvp/D02-verbatim-span-contract.md) | Verbatim-span contract | Proposed — not started | [E02](mvp/E02-verbatim-identifier-gate.md) |
+| [D02](mvp/D02-verbatim-span-contract.md) | Verbatim-span contract | Implemented default-off, rejected by E02 Stage 2 | Repair, then rerun [E02](mvp/E02-verbatim-identifier-gate.md) |
 | [D03](mvp/D03-resume-delta-packets.md) | Resume delta packets ("changes since your checkpoint") | Proposed — not started | [E06](mvp/E06-resume-delta-experiment.md) |
 | [D04](mvp/D04-supersession-current-truth.md) | Supersession / current-truth (Markdown frontmatter round-trip) | Proposed — not started | [E07](mvp/E07-supersession-experiment.md) |
 | [D05](mvp/D05-intention-ledger.md) | Intention ledger at open | Proposed — not started | [E08](mvp/E08-intention-ledger-experiment.md) |
@@ -125,9 +131,10 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Immediate next steps
 
-1. Run Phase 0: E01 (paired-draw machinery + sidecar + baseline), E02 stage 1
-   (expected-fail verbatim proof), E03 modes 1–2. Owner approval on the E01
-   spend estimate first.
+1. Complete E01's paired-draw machinery, sidecar, and baseline matrix. E02 and
+   E03 now have definitive failures: repair D02 and the semantic timeout path,
+   then rerun their free deterministic prerequisites before any paid or
+   reasoning arms.
 2. Ship the immediate D08 items: dream-retry permanent-failure fix, MCP legacy
    residue removal, legacy cargo-feature freeze.
 3. Run D09's isolated 64K/640K acceptance and calibrate the fail-closed
@@ -139,6 +146,11 @@ touch only the harness; Tier A touches only deployment and data. Feature work
 
 ## Change log
 
+- 2026-07-28: E02 Stage 1 confirmed the 0/30 defect. Stage 2 flag-on
+  returned only 4/30 at 1K, 10K, and 64K, so the 640K soak and reasoning
+  draws were aborted and D02 remains default-off pending repair. E03 Mode 1
+  passed, but fully indexed Mode 2 failed its zero-deferred-lane gate; paid
+  Mode 3 was aborted.
 - 2026-07-27: D09 implementation landed in the harness: request-scoped SQL
   counting, 64K/640K regression tiers, checked query budgets, and
   migration/database-fingerprinted EXPLAIN assertions. Isolated-stack

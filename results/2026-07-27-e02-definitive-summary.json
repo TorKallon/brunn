@@ -1,0 +1,152 @@
+{
+  "schema": "straylight-e02-definitive-summary@v1",
+  "recorded_at": "2026-07-28T02:07:00-07:00",
+  "experiment": "E02",
+  "verdict": "fail",
+  "decision": "reject_current_d02_implementation",
+  "stage1": {
+    "source_revision": "09581d471a58a036ef4c80576dec2433fa35c930",
+    "api_image_id": "sha256:412908e2710861d2bed4c1d37a20be0b24c164cffe4497eec73e5979cddc5741",
+    "artifact": {
+      "path": "results/2026-07-27-verbatim-identifier-stage1.json",
+      "sha256": "cec7a52f21e2df0a66e7c0aa0e05d71daaafe8cc868c3fd401076857a5cbb56a"
+    },
+    "verdict": "expected_fail_confirmed",
+    "gates": {
+      "passed": 43,
+      "failed": 1,
+      "failed_gate": "verbatim_identifier"
+    },
+    "scales": [
+      {
+        "documents": 1000,
+        "returned": 0,
+        "expected": 30,
+        "search_p95_ms": 10.963
+      },
+      {
+        "documents": 10000,
+        "returned": 0,
+        "expected": 30,
+        "search_p95_ms": 34.738
+      },
+      {
+        "documents": 64000,
+        "returned": 0,
+        "expected": 30,
+        "search_p95_ms": 20.081
+      }
+    ]
+  },
+  "stage2": {
+    "source_revision": "8baf0d305d90cdc48566df7679c07b0a66085707",
+    "api_image_id": "sha256:e5d5b39f374037a22882e706ce4505377ec3902fe86e1777938e5ba7f7f0e3af",
+    "calibration": {
+      "artifact": {
+        "path": "results/2026-07-27-verbatim-identifier-stage2-calibration.json",
+        "sha256": "e9ac26e2e0cf07aad19e0ac0371520e198165daf8a22c328f661230436e23877"
+      },
+      "acceptance_eligible": false,
+      "query_counts": {
+        "checkpoint": 28,
+        "open": 17,
+        "read": 11,
+        "resume": 32,
+        "search": 11,
+        "write": 14
+      },
+      "contract_reproduced": true
+    },
+    "flag_off": {
+      "artifact": {
+        "path": "results/2026-07-27-verbatim-identifier-stage2-off.json",
+        "sha256": "437289212bd175bd48ee2cc8ecc8c0e2be6f5c7737b179ed7c9c2b771c702351"
+      },
+      "verdict": "expected_fail_confirmed",
+      "gates": {
+        "passed": 59,
+        "failed": 1,
+        "failed_gate": "verbatim_identifier"
+      },
+      "scales": [
+        {
+          "documents": 1000,
+          "returned": 0,
+          "expected": 30,
+          "search_p95_ms": 10.828
+        },
+        {
+          "documents": 10000,
+          "returned": 0,
+          "expected": 30,
+          "search_p95_ms": 32.673
+        },
+        {
+          "documents": 64000,
+          "returned": 0,
+          "expected": 30,
+          "search_p95_ms": 14.056
+        }
+      ]
+    },
+    "flag_on": {
+      "artifact": {
+        "path": "results/2026-07-27-verbatim-identifier-stage2-on.json",
+        "sha256": "781dc82126da533328b838caefe3562c746d4ced1b0ef01e54dbed4346492384"
+      },
+      "verdict": "fail",
+      "gates": {
+        "passed": 59,
+        "failed": 1,
+        "failed_gate": "verbatim_identifier"
+      },
+      "scales": [
+        {
+          "documents": 1000,
+          "returned": 4,
+          "expected": 30,
+          "search_p95_ms": 9.463,
+          "maximum_probe_payload_chars": 5756
+        },
+        {
+          "documents": 10000,
+          "returned": 4,
+          "expected": 30,
+          "search_p95_ms": 20.558,
+          "maximum_probe_payload_chars": 5758
+        },
+        {
+          "documents": 64000,
+          "returned": 4,
+          "expected": 30,
+          "search_p95_ms": 53.821,
+          "maximum_probe_payload_chars": 5761
+        }
+      ],
+      "successful_byte_offsets": [
+        2600
+      ],
+      "deeper_offsets_returned": 0,
+      "search_query_count": 11,
+      "search_query_count_matches_flag_off": true
+    }
+  },
+  "aborted_work": {
+    "future_soak_640000": {
+      "status": "not_run",
+      "reason": "Flag-on deterministic acceptance was below 30/30 at every prerequisite scale."
+    },
+    "reasoning_draws": {
+      "status": "not_run",
+      "planned_case_runs": 134,
+      "reason": "The E02 abort rule forbids reasoning draws after a flag-on deterministic failure."
+    }
+  },
+  "cost": {
+    "reasoning_api_usd": 0.0,
+    "embedding_api_usd": 0.0,
+    "reasoning_case_runs_executed": 0,
+    "subscription_equivalent_preflight_not_incurred_usd": 32.16
+  },
+  "conclusion": "The default-off control reproduces the original loss. The current D02 implementation recovers only the four probes planted at byte offset 2600 and loses every deeper identifier, independent of corpus scale. Latency, response size, query-count, provenance, and all other gates pass, so the feature contract itself remains defective. Keep verbatim_spans off, repair D02, and rerun the free deterministic flag-on arm before any soak or reasoning draw."
+}

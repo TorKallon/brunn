@@ -1,7 +1,7 @@
 # E02 — Verbatim Identifier Gate
 
-Status: Specified — not run
-Date: 2026-07-27
+Status: Definitive failure — Stage 1 confirmed the defect; Stage 2 flag-on failed 4/30 at every scale; soak and reasoning aborted
+Date: 2026-07-28
 Gates: D02 (D02-verbatim-span-contract.md)
 Phase: 0 (stage 1, harness-only, pre-code) then 1 (stage 2, requires D02 built behind verbatim_spans)
 
@@ -10,6 +10,53 @@ Phase: 0 (stage 1, harness-only, pre-code) then 1 (stage 2, requires D02 built b
 Does the search payload return literal identifier lines verbatim when the matching line lies beyond the 2,400-char excerpt window — and does D02's verbatim_matches close the documented paraphrase/exact-value loss without payload bloat or reasoning regression?
 
 Stage 1 exists to document the defect on the current build before any code changes. Stage 2 gates the fix. Both stages become permanent harness gates.
+
+## Definitive result
+
+**E02 rejects the current D02 implementation.** Stage 1 confirmed the original
+defect at 0/30 for 1K, 10K, and 64K. The Stage 2 flag-off control reproduced
+0/30 at all three scales. Flag-on improved each scale to only 4/30, far below
+the blocking 30/30 gate. Every successful flag-on probe was planted at byte
+offset 2,600; no deeper planted identifier survived into the source payload.
+
+| Arm | 1K returned / p95 | 10K returned / p95 | 64K returned / p95 | Result |
+| --- | ---: | ---: | ---: | --- |
+| Stage 1, pre-D02 | 0/30 / 10.963ms | 0/30 / 34.738ms | 0/30 / 20.081ms | Expected defect confirmed |
+| Stage 2, flag off | 0/30 / 10.828ms | 0/30 / 32.673ms | 0/30 / 14.056ms | Expected control confirmed |
+| Stage 2, flag on | 4/30 / 9.463ms | 4/30 / 20.558ms | 4/30 / 53.821ms | **FAIL** |
+
+The formal calibration reproduced checkpoint/open/read/resume/search/write
+query counts of 28/17/11/32/11/14. Both Stage 2 arms retained those counts, so
+flag-on added no SQL round trip. All latency gates passed. The largest
+identifier-probe response was 5,761 characters, below the 9,600-character
+feature cap. Revision, image, runtime-flag, retrieval-plan, sample-count, and
+clean-source gates also passed. The only acceptance failure in each Stage 2
+arm was `verbatim_identifier`; flag-off failure is the expected control, while
+flag-on failure rejects the feature.
+
+Per the abort criteria, the 640K soak and all reasoning draws were not run.
+This avoided 134 unnecessary case-runs and the $32.16 subscription-equivalent
+preflight. Actual reasoning API and embedding API cost were both **$0**.
+
+Keep `verbatim_spans` default-off. Repair the feature contract, then rerun the
+free deterministic flag-on arm before authorizing either the soak or reasoning
+draws.
+
+Immutable evidence:
+
+- [Stage 1](../../results/2026-07-27-verbatim-identifier-stage1.json),
+  SHA-256
+  `cec7a52f21e2df0a66e7c0aa0e05d71daaafe8cc868c3fd401076857a5cbb56a`
+- [Stage 2 calibration](../../results/2026-07-27-verbatim-identifier-stage2-calibration.json),
+  SHA-256
+  `e9ac26e2e0cf07aad19e0ac0371520e198165daf8a22c328f661230436e23877`
+- [Stage 2 flag off](../../results/2026-07-27-verbatim-identifier-stage2-off.json),
+  SHA-256
+  `437289212bd175bd48ee2cc8ecc8c0e2be6f5c7737b179ed7c9c2b771c702351`
+- [Stage 2 flag on](../../results/2026-07-27-verbatim-identifier-stage2-on.json),
+  SHA-256
+  `781dc82126da533328b838caefe3562c746d4ced1b0ef01e54dbed4346492384`
+- [Compact definitive summary](../../results/2026-07-27-e02-definitive-summary.json)
 
 ## Preconditions and build items
 

@@ -1,7 +1,7 @@
 # D02 — Verbatim Span Contract
 
-Status: Implemented behind default-off flag — awaiting E02 stage 2
-Date: 2026-07-27
+Status: Rejected by E02 Stage 2 — implementation returns only 4/30 shallow probes; remains default-off pending repair
+Date: 2026-07-28
 Depends on: none
 Gated by: E02 (E02-verbatim-identifier-gate.md)
 Runtime flag: verbatim_spans
@@ -40,8 +40,11 @@ hash/version/byte-pinned matches under the 9,600-character response cap.
 Flag-off SQL still selects only the existing 2,400-character prefix. The MCP
 reasoning-view compactor preserves `verbatim_matches` structurally unchanged.
 API and MCP contract tests cover a planted identifier beyond byte 2,400,
-offset-preserving truncation, and passthrough. E02's deterministic and
-reasoning gates remain unrun, so the flag remains off.
+offset-preserving truncation, and passthrough. E02's definitive deterministic
+run found that flag-on returned only the four identifiers planted at byte
+offset 2,600 and lost all deeper probes at 1K, 10K, and 64K. The soak and
+reasoning gates were aborted by design. The flag remains off and the
+implementation returns to repair.
 
 ## What this does NOT change
 
