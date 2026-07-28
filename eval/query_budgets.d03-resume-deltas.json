@@ -31,12 +31,12 @@
     },
     "write": {
       "comparison": "exact",
-      "count": 15,
+      "count": 14,
       "fixture": "One new, single-chunk Markdown entry with semantic work queued."
     },
     "checkpoint": {
       "comparison": "at_most",
-      "max": 23,
+      "max": 28,
       "variability": "The baseline checkpoint has no explicit source_refs; the bounded 64-source probe is reported separately."
     }
   }

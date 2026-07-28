@@ -17,6 +17,7 @@ from performance_eval import (  # noqa: E402
     BOOLEAN_RUNTIME_FEATURES,
     CONCURRENT_SEARCHES_PER_ROUND,
     CURRENT_RUNTIME_FEATURES,
+    D03_QUERY_BUDGETS_PATH,
     D03_RESUME_DELTAS_GATE_PROFILE,
     D03_RESUME_QUERY_COUNT_DELTA,
     DEFAULT_THRESHOLDS,
@@ -561,6 +562,26 @@ class PerformanceEvalTests(unittest.TestCase):
             {"open", "search", "read", "write", "checkpoint", "resume"},
         )
         self.assertEqual(QUERY_BUDGETS_PATH.name, "query_budgets.json")
+
+    def test_d03_non_resume_query_budgets_track_default_safe(self):
+        default_safe = load_query_budgets()
+        d03 = load_query_budgets(
+            D03_QUERY_BUDGETS_PATH,
+            expected_profile=D03_RESUME_DELTAS_GATE_PROFILE,
+        )
+
+        self.assertTrue(d03["runtime_features"]["resume_deltas"])
+        self.assertNotIn("resume", d03["operations"])
+        self.assertEqual(
+            set(d03["operations"]),
+            set(default_safe["operations"]) - {"resume"},
+        )
+        for operation, budget in d03["operations"].items():
+            self.assertEqual(
+                budget,
+                default_safe["operations"][operation],
+                operation,
+            )
 
     def test_query_budget_selection_is_profile_and_runtime_bound(self):
         snapshot = {"runtime_features": runtime_features()}
