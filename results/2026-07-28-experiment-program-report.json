@@ -1,19 +1,19 @@
 {
   "schema": "straylight-experiment-program-report@v1",
-  "created_at": "2026-07-28T13:34:39-07:00",
-  "evidence_snapshot_revision": "e2df1915a6e01606c6246ab8448b1f78b4ce62bc",
-  "status": "interim_e06_e08_in_progress",
+  "created_at": "2026-07-28T16:58:24-07:00",
+  "evidence_snapshot_revision": "3122f15bb740b0c92e124cc80b42201370c84bae",
+  "status": "final",
   "scope": {
     "definitive_experiments": [
       "E01",
       "E02",
       "E03",
       "E04",
-      "E05"
-    ],
-    "in_progress_placeholders": [
+      "E05",
       "E06",
-      "E07",
+      "E07"
+    ],
+    "deterministic_preflight_stops": [
       "E08"
     ],
     "prerequisite_aborts": [
@@ -26,33 +26,40 @@
   "verdict_semantics": {
     "complete_baseline_parity_not_established": "The baseline and paired-draw machinery completed, but the primary non-inferiority gate was not established. This is not proof of inferiority.",
     "complete_negative_rejected": "The tested implementation completed enough of its procedure to support a definitive rejection under the predeclared gate.",
-    "in_progress_not_evaluated": "No definitive result artifact exists in this snapshot. Predeclarations and partial work are not verdict evidence.",
+    "complete_mechanism_pass_adoption_fail": "The tested mechanism passed its frozen efficacy, safety, deterministic, and overfetch rules, but its separate unprompted-adoption gate failed. The mechanism result is not deployment authorization.",
+    "deterministic_preflight_stop_not_evaluated": "The deterministic preflight produced valid blocking evidence, but no efficacy arm ran. The stop is not a feature pass, feature failure, ship, or kill verdict.",
     "prerequisite_abort_not_evaluated": "The experiment was not executed because a prerequisite failed or was absent. The abort supports no efficacy verdict."
   },
-  "cost_totals_for_definitive_and_prerequisite_abort_evidence": {
+  "cost_totals_for_all_recorded_evidence": {
     "included_experiments": [
       "E01",
       "E02",
       "E03",
       "E04",
       "E05",
+      "E06",
+      "E07",
+      "E08",
       "E09",
       "E10",
       "E11"
     ],
     "actual_usage_billed_reasoning_usd": 0.0,
     "actual_embedding_usd": 0.0,
-    "actual_subscription_equivalent_usd": 254.88,
+    "actual_subscription_case_runs": 1269,
+    "definitive_case_runs_excluding_e01_calibration": 1266,
+    "actual_subscription_equivalent_usd": 304.56,
     "actual_subscription_equivalent_is_api_invoice": false,
-    "in_progress_e06_e08_excluded": true,
     "embedding_warning_threshold_usd": 20.0,
     "embedding_warning_triggered": false
   },
-  "planned_in_progress_main_grids": {
-    "subscription_case_runs": 336,
-    "subscription_equivalent_usd": 80.64,
-    "expected_embedding_usd": 0.0,
-    "actual_cost": "not_consolidated_until_definitive_artifacts_exist"
+  "unincurred_future_costs": {
+    "e08_planned_case_runs": 129,
+    "e08_planned_subscription_equivalent_usd": 30.96,
+    "e08_rerun_under_frozen_protocol_authorized": false,
+    "e09_future_embedding_expected_usd": 0.84,
+    "e09_future_embedding_conservative_ceiling_usd": 2.0,
+    "e11_optional_owner_corpus_indexing_estimate_usd": 0.19
   },
   "experiments": [
     {
@@ -146,8 +153,9 @@
       "experiment_verdict": "rejected",
       "verdict_semantics": "The tested D02 implementation failed its deterministic feature contract; downstream soak and reasoning were correctly aborted.",
       "execution": {
-        "deterministic_artifacts": 3,
-        "scales_per_artifact": 3,
+        "three_scale_measurement_artifacts": 3,
+        "stage2_query_budget_calibration_artifacts": 1,
+        "scales_per_measurement_artifact": 3,
         "identifier_probes_per_scale": 30,
         "identifier_probe_observations": 270,
         "reasoning_case_runs": 0,
@@ -419,119 +427,355 @@
     {
       "id": "E06",
       "title": "Resume delta experiment",
-      "status": "in_progress",
-      "outcome_class": "in_progress_not_evaluated",
-      "experiment_executed": null,
-      "experiment_verdict": "not_evaluated",
-      "verdict_semantics": "No definitive E06 artifact exists in this snapshot. The frozen grid is process evidence only.",
+      "status": "complete_negative",
+      "outcome_class": "complete_negative_rejected",
+      "experiment_executed": true,
+      "experiment_verdict": "rejected",
+      "verdict_semantics": "The treatment passed deterministic performance and lineage checks but failed the complete-case, paired-claim, and payload-budget rules. The tested D03 implementation is rejected.",
       "execution": {
-        "definitive_case_runs": null,
-        "definitive_artifacts_available": false,
-        "planned_main_grid_case_runs": 45
+        "arms": 3,
+        "cases_per_arm_draw": 5,
+        "draws": 3,
+        "case_runs": 45,
+        "successful_case_runs": 45,
+        "timed_out_case_runs": 0,
+        "errored_case_runs": 0,
+        "nonzero_exit_case_runs": 0,
+        "reasoning_artifact_pairs": 9,
+        "deterministic_artifacts": 2,
+        "graded_claim_slots": 180,
+        "graded_claims_passed": 107,
+        "complete_cases_passed": 0
       },
-      "metrics": null,
+      "metrics": {
+        "deterministic": {
+          "control_pass": true,
+          "treatment_pass": true,
+          "treatment_resume_p95_ms": 77.606,
+          "resume_p95_gate_ms": 150.0,
+          "paired_resume_query_delta": 5,
+          "paired_resume_samples": 30,
+          "lineage_samples_passed": 30,
+          "lineage_samples_total": 30
+        },
+        "cumulative_claims_of_60": {
+          "e06-A": 33,
+          "e06-B": 34,
+          "e06-C": 40,
+          "claim_slots_per_arm": 60
+        },
+        "treatment_complete_cases_by_draw_of_5": [
+          0,
+          0,
+          0
+        ],
+        "treatment_vs_control_a": {
+          "claim_difference_point": 0.333333,
+          "bootstrap_95_ci_claims": [
+            -3.0,
+            3.666667
+          ],
+          "one_sided_exact_mcnemar_p": 0.8125,
+          "pass": false
+        },
+        "treatment_vs_control_c": {
+          "claim_difference_point": -2.0,
+          "bootstrap_95_ci_claims": [
+            -4.666667,
+            0.0
+          ],
+          "one_sided_exact_mcnemar_p": 0.96875,
+          "pass": false
+        },
+        "resume_payload_budget": {
+          "paired_comparisons": 15,
+          "passing_pairs": 0,
+          "violating_pairs": 15,
+          "control_result_chars_total": 355921,
+          "treatment_result_chars_total": 419308,
+          "treatment_minus_control_total": 63387,
+          "treatment_minus_control_mean": 4225.8,
+          "minimum_pair_delta": 3159,
+          "maximum_pair_delta": 5436,
+          "pass": false
+        }
+      },
       "feature_decision": {
         "feature": "resume_deltas",
-        "state": "off_pending_result",
-        "decision": "Make no verdict; keep the feature off until definitive E06 evidence exists."
+        "state": "off",
+        "decision": "Reject D03 in its tested form, keep resume_deltas default-off, and do not advance it to a Nyx rollout."
       },
       "cost": {
-        "actual_usage_billed_reasoning_usd": null,
-        "actual_embedding_usd": null,
-        "actual_subscription_equivalent_usd": null,
-        "planned_main_grid_subscription_equivalent_usd": 10.8,
-        "expected_embedding_usd": 0.0,
+        "reasoning_case_runs": 45,
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 10.8,
+        "unincurred_targeted_repeat_subscription_equivalent_usd": 3.6,
         "hard_ceiling_usd": 30.0
       },
       "provenance": {
-        "predeclaration_authoring_parent_revision": "d0fa7625420661826a0e71c9be9833b92fdf8b22"
+        "source_revision": "aca015acf52eef5adc3d338263c81fe0bca676dc",
+        "reasoning_route": "chatgpt_subscription",
+        "reasoning_api_fallback": "forbidden",
+        "embedding_provider": "hashing"
       },
       "evidence": [
         {
-          "path": "results/2026-07-28-e06-grid-predeclaration.json",
-          "sha256": "9e0983315dd1b7f1ab9c63e4db3ee4c86c4bbc4d4bdf6927bf68e3cd02365dc5",
-          "role": "plan_only_not_result_evidence"
+          "path": "results/2026-07-28-e06-definitive-summary.json",
+          "sha256": "a9972cfa44f97c6f11bb2cc4181bfeeff4ec8ae00394edf61846aefd04263eb4",
+          "role": "definitive_summary"
+        },
+        {
+          "path": "results/2026-07-28-e06-report.md",
+          "sha256": "053fd1035084abdfdbf4ce136c33f973acce7186f45a3b89171650bcbca87254",
+          "role": "definitive_human_report"
         }
       ],
-      "conclusion": "In progress; no result or conclusion is available from the checked-in evidence snapshot."
+      "conclusion": "D03 is not eligible for rollout. The treatment never completed a transitions case, did not significantly improve paired claims, and enlarged every paired resume payload."
     },
     {
       "id": "E07",
       "title": "Supersession experiment",
-      "status": "in_progress",
-      "outcome_class": "in_progress_not_evaluated",
-      "experiment_executed": null,
-      "experiment_verdict": "not_evaluated",
-      "verdict_semantics": "No definitive E07 artifact exists in this snapshot. The frozen draw count is process evidence only.",
+      "status": "complete_split",
+      "outcome_class": "complete_mechanism_pass_adoption_fail",
+      "experiment_executed": true,
+      "experiment_verdict": "mechanism_pass_adoption_fail",
+      "verdict_semantics": "The explicit-supersession retrieval mechanism passed the frozen mechanism rule, but unprompted authoring failed the separate deployment-adoption gate. This is not Tier C authorization.",
       "execution": {
-        "definitive_case_runs": null,
-        "definitive_artifacts_available": false,
-        "planned_main_grid_case_runs": 162
+        "claim_scored_case_runs": 126,
+        "adoption_case_runs": 36,
+        "total_case_runs": 162,
+        "successful_case_runs": 162,
+        "timed_out_case_runs": 0,
+        "errored_case_runs": 0,
+        "nonzero_exit_case_runs": 0,
+        "claim_scored_arms": 3,
+        "claim_scored_cases": 14,
+        "adoption_cases": 12,
+        "draws": 3,
+        "definitive_session_artifacts": 12
       },
-      "metrics": null,
+      "metrics": {
+        "deterministic": {
+          "base_write_p95_ms": 21.096,
+          "flag_write_p95_ms": 27.401,
+          "flag_write_limit_ms": 58.0,
+          "query_count_contract_pass": true
+        },
+        "supersession_family": {
+          "paired_case_instances": 12,
+          "flag_wins": 6,
+          "base_wins": 2,
+          "ties": 4,
+          "net_flag_minus_base": 4,
+          "minimum_net": 3,
+          "flag_claims_passed": 29,
+          "base_claims_passed": 25,
+          "claim_slots_per_arm": 48,
+          "clustered_claim_delta_point": 1.333333,
+          "bootstrap_95_ci_claims": [
+            -2.333333,
+            3.666667
+          ],
+          "collapsed_mcnemar_discordant_cases": 0,
+          "collapsed_mcnemar_two_sided_exact_p": 1.0,
+          "mechanism_pass": true
+        },
+        "safety": {
+          "new_forbidden_assertions_outside_family": 0,
+          "outside_family_mcnemar_two_sided_exact_p": 1.0,
+          "pass": true
+        },
+        "overfetch": {
+          "flag_mean_model_visible_chars": 5685.714,
+          "base_mean_model_visible_chars": 5639.881,
+          "flag_to_base_ratio": 1.00812659,
+          "maximum_ratio": 1.05,
+          "pass": true
+        },
+        "unprompted_adoption": {
+          "supersession_emitted": 7,
+          "supersession_eligible": 18,
+          "supersession_rate": 0.3888888888888889,
+          "minimum_rate": 0.5,
+          "supersession_pass": false,
+          "intention_emitted": 13,
+          "intention_eligible": 18,
+          "intention_rate": 0.7222222222222222,
+          "intention_pass": true
+        },
+        "semantic_adoption_companion": {
+          "resolvable_distinct_edges": 6,
+          "selected_projected_edges": 5,
+          "noncompeting_selected_emissions": 3,
+          "eligible_sessions": 18
+        }
+      },
       "feature_decision": {
         "feature": "supersession_demotion",
-        "state": "off_pending_result",
-        "decision": "Make no verdict; keep the feature off until definitive E07 evidence exists."
+        "state": "default_off_not_tier_c_ready",
+        "decision": "Accept the mechanism under E07's frozen rule, but keep D04 default-off. Add assisted authoring, reject self-edges in measurement, surface parallel-successor ambiguity, and requalify adoption before Tier C reliance."
       },
       "cost": {
-        "actual_usage_billed_reasoning_usd": null,
-        "actual_embedding_usd": null,
-        "actual_subscription_equivalent_usd": null,
-        "planned_main_grid_subscription_equivalent_usd": 38.88,
-        "expected_embedding_usd": 0.0,
+        "reasoning_case_runs": 162,
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 38.88,
         "hard_ceiling_usd": 60.0
       },
       "provenance": {
-        "predeclaration_authoring_parent_revision": "eb781411d916b496d149bf2f504667f46d8b51a3"
+        "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "reasoning_route": "chatgpt_subscription",
+        "reasoning_api_fallback": "forbidden",
+        "embedding_provider": "hashing",
+        "scheduler_maximum_simultaneous_codex_children": 3
       },
       "evidence": [
         {
-          "path": "results/2026-07-28-e07-draw-count-predeclaration.json",
-          "sha256": "95a05fbb66f3c600d406c1fed088a0b305f985b41d105c9007ac1463b4616050",
-          "role": "plan_only_not_result_evidence"
+          "path": "results/2026-07-28-e07-aggregate.json",
+          "sha256": "3d2d52159383c196930924b0e75e98c631dbdd7b61bb5d8bc5a830ffdd471f40",
+          "role": "definitive_machine_aggregate"
+        },
+        {
+          "path": "results/2026-07-28-e07-aggregate.md",
+          "sha256": "29f0d2fe1bc1a6ef00f8667a275fbf3c7a0caa5b68fab73b19f0f9981a6bfcef",
+          "role": "definitive_human_report"
+        },
+        {
+          "path": "results/2026-07-28-e07-adoption-aggregate.json",
+          "sha256": "d12c593f3a647861503d735fd5b875fb3a5adca4b6b89b84ffd858146ab1acba",
+          "role": "official_adoption_aggregate"
+        },
+        {
+          "path": "results/2026-07-28-e07-conclusion-audit.json",
+          "sha256": "f2eecc31b3ec4df4db622db04f570bf2710ddb75b82c3d96c87625a844be72ed",
+          "role": "conclusion_audit"
+        },
+        {
+          "path": "results/2026-07-28-e07-adoption-semantic-audit.json",
+          "sha256": "a2b0435f6e4bbea56a41058f84abc3f31bc1ea1e41dfc817c87ce04bbb8ad7c9",
+          "role": "semantic_adoption_diagnostic"
+        },
+        {
+          "path": "results/2026-07-28-e07-session-health-audit.json",
+          "sha256": "07b2a58dbfa7b7cc2ae9a3505dc00d4b5fd84414c89cec9d028be5070b546243",
+          "role": "session_health_audit"
         }
       ],
-      "conclusion": "In progress; no result or conclusion is available from the checked-in evidence snapshot."
+      "conclusion": "The D04 mechanism passed its frozen rule but the effect estimate is imprecise and unprompted supersession adoption failed. Keep supersession_demotion default-off until assisted authoring is implemented and adoption is requalified."
     },
     {
       "id": "E08",
       "title": "Intention ledger experiment",
-      "status": "in_progress",
-      "outcome_class": "in_progress_not_evaluated",
-      "experiment_executed": null,
+      "status": "stopped_at_deterministic_preflight",
+      "outcome_class": "deterministic_preflight_stop_not_evaluated",
+      "experiment_executed": false,
+      "deterministic_preflight_executed": true,
       "experiment_verdict": "not_evaluated",
-      "verdict_semantics": "No definitive E08 artifact exists in this snapshot. The experiment specification is process evidence only.",
+      "verdict_semantics": "A nonintentional regression gate failed during valid query-count calibration, before any acceptance contrast or reasoning arm. The stop supports no D05 efficacy verdict.",
       "execution": {
-        "definitive_case_runs": null,
-        "definitive_artifacts_available": false,
-        "planned_main_grid_case_runs": 129
+        "flag_on_64000_calibrations": 1,
+        "calibration_samples": 30,
+        "calibration_gates_passed": 52,
+        "calibration_gates_failed": 2,
+        "query_budget_contracts_authored": 0,
+        "latency_contrast_arms_run": 0,
+        "reasoning_invocations_run": 0,
+        "reasoning_case_runs_run": 0,
+        "planned_reasoning_case_runs_not_run": 129,
+        "draws_run": 0,
+        "audits_run": 0,
+        "aggregates_run": 0
       },
-      "metrics": null,
+      "metrics": {
+        "blocking_calibration_gate": {
+          "name": "regression_tier_64000_concurrent_search_p95_ms",
+          "observed_ms": 874.535,
+          "threshold_ms": 750.0,
+          "pass": false
+        },
+        "expected_calibration_gate": {
+          "name": "query_budget_calibration_is_not_acceptance",
+          "pass": false,
+          "classification": "intentional_calibration_only_failure"
+        },
+        "canonical_query_counts": {
+          "open": {
+            "samples": 30,
+            "distribution": {
+              "17": 29,
+              "22": 1
+            }
+          },
+          "search": {
+            "samples": 30,
+            "distribution": {
+              "11": 30
+            }
+          },
+          "read": {
+            "samples": 30,
+            "distribution": {
+              "11": 30
+            }
+          },
+          "write": {
+            "samples": 30,
+            "distribution": {
+              "14": 30
+            }
+          },
+          "checkpoint": {
+            "samples": 1,
+            "distribution": {
+              "28": 1
+            }
+          },
+          "resume": {
+            "samples": 30,
+            "distribution": {
+              "32": 29,
+              "37": 1
+            }
+          }
+        }
+      },
       "feature_decision": {
         "feature": "intention_ledger",
-        "state": "off_pending_result",
-        "decision": "Make no verdict; keep the feature off until definitive E08 evidence exists."
+        "state": "default_off_no_feature_verdict",
+        "decision": "Keep intention_ledger default-off. Do not author the query-budget contract or enable D05; a prospectively approved amended protocol is required before any rerun."
       },
       "cost": {
-        "actual_usage_billed_reasoning_usd": null,
-        "actual_embedding_usd": null,
-        "actual_subscription_equivalent_usd": null,
-        "planned_main_grid_subscription_equivalent_usd": 30.96,
-        "expected_embedding_usd": 0.0,
+        "actual_usage_billed_reasoning_usd": 0.0,
+        "actual_embedding_usd": 0.0,
+        "actual_subscription_equivalent_usd": 0.0,
+        "planned_subscription_equivalent_not_incurred_usd": 30.96,
         "hard_ceiling_usd": 40.0
       },
       "provenance": {
-        "specification_snapshot_revision": "e2df1915a6e01606c6246ab8448b1f78b4ce62bc"
+        "source_revision": "791fac70f7345e51d732e3965f4e770e9107d0e3",
+        "api_image_id": "sha256:d0559bfa61e9c0f00c4b6e454f2194f40d0e2fa0aedf144c2a1710b4ee7f7b3c",
+        "embedding_provider": "hashing",
+        "worker_present": false
       },
       "evidence": [
         {
-          "path": "docs/mvp/E08-intention-ledger-experiment.md",
-          "sha256": "b84a13908ecd911cb0569a25e68f71e5e3e063f5854720a2f42038682cb4839a",
-          "role": "specification_only_not_result_evidence"
+          "path": "results/2026-07-28-e08-query-budget-calibration.json",
+          "sha256": "d0780b4fb5d705ca09f4630cd9dad63b50dfa8b451b1e877964902ff33240084",
+          "role": "blocking_deterministic_calibration"
+        },
+        {
+          "path": "results/2026-07-28-e08-deterministic-preflight-stop.json",
+          "sha256": "951003bdf16498e8c406adf34d189cfac85c0e98531fd4790f14c9828f0642b2",
+          "role": "machine_readable_stop_record"
+        },
+        {
+          "path": "results/2026-07-28-e08-report.md",
+          "sha256": "700ef0cc96bf21e2d48ca63c624b0dbf2c04158df7d71f580c05ffc2789bf3b2",
+          "role": "human_stop_report"
         }
       ],
-      "conclusion": "In progress; no result or conclusion is available from the checked-in evidence snapshot."
+      "conclusion": "E08 stopped before feature comparison because its calibration had a real concurrent-search regression in addition to the expected calibration-only red gate. D05 remains unevaluated and default-off."
     },
     {
       "id": "E09",
@@ -600,12 +844,35 @@
       },
       "metrics": {
         "satisfied_prerequisite": "E01 paired-draw machinery",
-        "blockers_at_abort_snapshot": [
-          "accepted immutable launch manifest absent",
-          "feature qualifications unresolved",
-          "E09 semantic posture prerequisite-aborted"
+        "resolved_drop_states": [
+          "D01 result-budget flags off after E04",
+          "D02 verbatim_spans off after E02",
+          "D03 resume_deltas off after E06",
+          "D10 lexical_single_scan off after E05"
         ],
-        "snapshot_caveat": "The abort artifact listed E04 among unresolved qualifications at d989ae5. E04 was subsequently completed and rejected; E06-E08 and E09 still block the manifest.",
+        "current_blockers": [
+          {
+            "id": "accepted_immutable_launch_manifest",
+            "state": "absent",
+            "fact": "No owner-accepted immutable manifest exists for the exact configuration E10 would measure."
+          },
+          {
+            "id": "d04_tier_c_adoption",
+            "state": "failed",
+            "fact": "E07 passed the frozen supersession mechanism gate, but unprompted supersession adoption was 7/18 and D04 is not Tier-C ready. Assisted authoring and a new adoption qualification are required."
+          },
+          {
+            "id": "d05_feature_qualification",
+            "state": "not_evaluated",
+            "fact": "E08 stopped at deterministic preflight before a query-budget contract, latency contrast, or reasoning draw. D05 has no ship-or-drop verdict."
+          },
+          {
+            "id": "e09_semantic_posture",
+            "state": "prerequisite_abort",
+            "fact": "E09 remains unexecuted because E03 Mode 2 failed and the semantic quality backfill was not run."
+          }
+        ],
+        "historical_snapshot_caveat": "The original d989ae5 abort artifact truthfully listed E04 and E06 as unresolved. Both are now resolved drops; the current audit preserves the abort because E07 adoption, E08/D05, E09, and the accepted manifest still block execution.",
         "future_embedding_usd_under_specified_semantic_off_posture": 0.0
       },
       "feature_decision": {
@@ -619,13 +886,19 @@
         "actual_subscription_equivalent_usd": 0.0
       },
       "provenance": {
-        "source_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b"
+        "historical_snapshot_revision": "d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b",
+        "current_audit_revision": "a28ff28c30f8793a9f6a682cff45b34d55cd6323"
       },
       "evidence": [
         {
+          "path": "results/2026-07-28-e10-prerequisite-current-audit.json",
+          "sha256": "ca97445141eede8cfe09cc107dd0226c981d998ac078915abcd3693a5dfdb65c",
+          "role": "current_prerequisite_audit"
+        },
+        {
           "path": "results/2026-07-28-e10-prerequisite-abort.json",
           "sha256": "6581cd5faa3d3769426594fc727a9ed3e2f88688849ac07acaa954225520c921",
-          "role": "prerequisite_abort"
+          "role": "historical_prerequisite_abort_snapshot"
         }
       ],
       "conclusion": "Not evaluated. The Tier C gate remains closed and E10 supports no launch or cutover verdict."
@@ -681,9 +954,10 @@
     }
   ],
   "integrity_notes": [
-    "E10's abort artifact is snapshot-correct at d989ae5 but stale about E04, which was subsequently completed and rejected. The remaining E06-E09 blockers preserve the abort conclusion.",
+    "E10's original abort artifact remains snapshot-correct at d989ae5. A separate current audit records E04 and E06 as resolved drops and identifies E07 adoption, E08/D05, E09, and the absent accepted manifest as the remaining blockers.",
     "E01 aggregate draws=15 counts five suite artifacts across three repeated draws; the definitive case-run count is 531.",
     "E03's blocking Mode 2 failure controls the overall semantic-path verdict even though Mode 1 passed.",
-    "No predeclaration, partial run, or prerequisite abort was promoted to an efficacy verdict."
+    "E07's mechanism pass and adoption failure are reported separately; neither the wide confidence interval nor McNemar p=1.0 is presented as evidence of a precise nonzero effect.",
+    "E08's deterministic stop is not promoted to a D05 feature verdict, and no prerequisite abort is promoted to an efficacy verdict."
   ]
 }

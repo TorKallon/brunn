@@ -1,33 +1,39 @@
 Created: 2026-07-28
-Evidence snapshot: `e2df1915a6e01606c6246ab8448b1f78b4ce62bc`
-Status: Interim program report; E06-E08 are still in progress
+Evidence snapshot: `3122f15bb740b0c92e124cc80b42201370c84bae`
+Status: Final
 
 # E01-E11 experiment program report
 
 ## Executive conclusion
 
-The checked-in evidence supports five completed experiment outcomes, three
-in-progress experiments, and three prerequisite aborts.
+The checked-in evidence supports seven completed experiment records, one
+deterministic-preflight stop, and three prerequisite aborts.
 
 - E01 completed the paired-draw baseline, but did not establish service
   non-inferiority or suite-level superiority. Its paired RuptureOps result also
   does not reproduce a service-over-files overfetch problem.
-- E02, E03, E04, and E05 are definitive negative results for the tested
+- E02-E06 are five definitive negative results for their tested
   implementations. Keep `verbatim_spans`, `semantic_lane`, all tested D01
-  result-budget flags, and `lexical_single_scan` off.
-- E06-E08 have no definitive result artifact in this snapshot. They remain
-  in progress, with no verdict inferred from predeclarations or partial work.
+  result-budget flags, `lexical_single_scan`, and `resume_deltas` off.
+- E07 is a split completed result. Its explicit-supersession mechanism passed
+  the frozen mechanism rule, but the estimate is imprecise and unprompted
+  adoption failed. Keep D04 default-off and add assisted authoring before a
+  new adoption qualification.
+- E08 stopped at deterministic preflight because flag-on concurrent-search p95
+  was 874.535ms against a 750ms gate. No feature-comparison arm ran, so E08 is
+  not evaluated and D05 has no ship or kill verdict.
 - E09-E11 were not executed because their prerequisites were absent or failed.
   A prerequisite abort is not an experiment verdict and supports no positive
   or negative efficacy claim.
 
-Across the completed and prerequisite-aborted evidence in this snapshot,
-actual API-key reasoning spend is **$0**, actual embedding spend is **$0**, and
-recorded ChatGPT-subscription-equivalent usage is **$254.88**. That equivalent
-is an accounting measure, not an API invoice. E06-E08 are excluded from the
-actual total until their definitive cost ledgers exist. Their frozen/planned
-main grids total another $80.64 subscription-equivalent and expect $0
-embeddings, so the $20 embedding-warning threshold is not implicated.
+Across all recorded evidence, actual API-key reasoning spend is **$0**, actual
+embedding spend is **$0**, and recorded ChatGPT-subscription-equivalent usage
+is **$304.56** for 1,269 plan-backed sessions. The 1,269 includes E01's three
+excluded calibration sessions; 1,266 case-runs contribute to definitive
+experiment records. The equivalent is an accounting measure, not an API
+invoice. E08's unrun grid would have been $30.96, but that amount was not
+incurred and no rerun under the frozen protocol is authorized. The $20
+embedding-warning threshold was never approached.
 
 ## Scorecard
 
@@ -36,16 +42,16 @@ experiment produced no efficacy verdict.
 
 | Experiment | Status and verdict semantics | Execution count | Load-bearing result | Feature/default decision | Actual API-key reasoning / embeddings / subscription-equivalent |
 | --- | --- | --- | --- | --- | ---: |
-| E01 | Complete; baseline machinery passed, parity non-inferiority not established | 531 definitive case-runs (59 cases × 3 arms × 3 draws), plus 3 excluded calibration runs | Service−sidecar claims −4.667, 95% CI [−13.667, 4.333], below the predeclared −5 lower-bound margin; RuptureOps service−filesystem chars −79,549, 95% CI [−111,508, −49,126] | No feature flip; retain the measured baseline and make no service-parity or overfetch superiority claim | $0 / $0 / $128.16 |
-| E02 | Complete negative; tested D02 implementation rejected | 3 deterministic artifacts across 3 scales; 270 identifier probe-observations; 0 reasoning case-runs | Stage 1 and flag-off returned 0/30 at 1K, 10K, and 64K; flag-on returned only 4/30 at every scale and 0 deeper-offset probes | Keep `verbatim_spans=off`; repair D02 before rerunning E02 | $0 / $0 / $0 |
+| E01 | Complete; baseline machinery passed, parity non-inferiority not established | 531 definitive case-runs (59 cases × 3 arms × 3 draws), plus 3 excluded calibration runs | Service−sidecar claims −4.667, 95% CI [−13.667, 4.333]; the CI lower bound did not exceed the predeclared −5 margin. RuptureOps service−filesystem chars −79,549, 95% CI [−111,508, −49,126] | No feature flip; retain the measured baseline and make no service-parity, inferiority, or overfetch superiority claim | $0 / $0 / $128.16 |
+| E02 | Complete negative; tested D02 implementation rejected | 3 three-scale measurement artifacts plus 1 query-budget calibration; 270 identifier probe-observations; 0 reasoning case-runs | Stage 1 and flag-off returned 0/30 at 1K, 10K, and 64K; flag-on returned only 4/30 at every scale and 0 deeper-offset probes | Keep `verbatim_spans=off`; repair D02 before rerunning E02 | $0 / $0 / $0 |
 | E03 | Complete negative; current semantic-ready path rejected | 2 completed 64K modes × 30 samples; Mode 3 and quality backfill not run | Mode 1 passed 62/62 gates; Mode 2 passed 63/64 but had four ~2.5s timeout-shaped ordinary requests and failed the zero-deferred/unavailable-lane gate | Keep `semantic_lane=off`; repair the synchronous timeout path before paid Mode 3 or E09 | $0 / $0 / $0 |
 | E04 | Complete negative; both tested D01 candidates rejected | 528/528 case-runs, 52 JSON/Markdown artifact pairs, 2 successful 640K soaks | RuptureOps char reduction was 1.26% for B and 6.78% for C versus the required 25%; chronic B was 3W/4L/5T and C 3W/3L/6T, each with one previously nonzero case at 0/5 | Retain Arm A; keep `search_fair_share`, `search_char_cap`, and `search_top1_hydration` off; close D01 in the tested form | $0 / $0 / $126.72 |
 | E05 | Complete negative; lexical consolidation rejected | 2 successful 640K soaks; 795 paired selected search samples; 0 reasoning case-runs | All 795 selected SQL-statement deltas were exactly 0; the blocking comparator required at least one strict reduction | Keep `lexical_single_scan=off`; drop the deferred D10 item permanently | $0 / $0 / $0 |
-| E06 | In progress; not evaluated in this snapshot | Definitive counts unavailable; frozen plan is 45 case-runs | No definitive result artifact is checked in; the predeclaration is not outcome evidence | Keep `resume_deltas=off` until E06 produces a valid verdict | — / — / — (planned main grid $10.80) |
-| E07 | In progress; not evaluated in this snapshot | Definitive counts unavailable; frozen plan is 162 case-runs | No definitive result artifact is checked in; the draw-count predeclaration is not outcome evidence | Keep `supersession_demotion=off` until E07 produces a valid verdict | — / — / — (planned main grid $38.88) |
-| E08 | In progress; not evaluated in this snapshot | Definitive counts unavailable; specified plan is 129 case-runs | No definitive result artifact is checked in; the experiment specification is not outcome evidence | Keep `intention_ledger=off` until E08 produces a valid verdict | — / — / — (planned main grid $30.96) |
+| E06 | Complete negative; tested D03 implementation rejected | 45/45 case-runs (3 arms × 5 cases × 3 draws), 9 JSON/Markdown pairs, 2 successful deterministic artifacts | B scored 34/60 claims vs A 33/60 and C 40/60, completed 0/5 cases in every draw, and enlarged all 15 paired resume payloads by 63,387 chars total | Keep `resume_deltas=off`; close D03 in its tested form | $0 / $0 / $10.80 |
+| E07 | Complete split result; mechanism passed, deployment adoption failed | 162/162 sessions: 126 claim-scored plus 36 adoption | Family 6W/2L/4T, net +4 ≥ +3; clustered delta +1.333, CI [−2.333, 3.667]; supersession adoption 7/18 < 50% | Keep `supersession_demotion=off`; add assisted authoring and requalify adoption before Tier C | $0 / $0 / $38.88 |
+| E08 | Stopped at deterministic preflight; feature not evaluated | 1 flag-on 64K/30 calibration; 52/54 gates green; 0 query contracts, latency contrasts, reasoning case-runs, draws, or audits | Concurrent-search p95 874.535ms > 750ms; the other red gate was the expected calibration-only ineligibility gate | No D05 verdict; keep `intention_ledger=off`; require a prospectively amended protocol before rerun | $0 / $0 / $0 ($30.96 planned, not incurred) |
 | E09 | Prerequisite abort; experiment not executed and not evaluated | 0 stacks, 0 deterministic runs, 0 reasoning case-runs, 0 embedding requests | E03 Mode 2 failed its blocking gate and the semantic quality backfill was not run | Keep `semantic_lane=off`; repair and pass E03 before reconsidering E09 | $0 / $0 / $0 |
-| E10 | Prerequisite abort; experiment not executed and not evaluated | 0 stacks, 0 deterministic runs, 0 reasoning case-runs, 0 embedding requests | No accepted immutable launch manifest existed; surviving feature qualifications and the E09 posture were unresolved | Keep the Tier C gate closed; freeze the accepted manifest only after all ship/drop outcomes exist | $0 / $0 / $0 |
+| E10 | Prerequisite abort confirmed; experiment not executed and not evaluated | 0 stacks, 0 deterministic runs, 0 reasoning case-runs, 0 embedding requests | E04 and E06 are now resolved drops, but no accepted manifest exists; E07 adoption, E08/D05, and E09 still block it | Keep the Tier C gate closed; freeze the accepted manifest only after all ship/drop outcomes exist | $0 / $0 / $0 |
 | E11 | Prerequisite abort; experiment not executed and not evaluated | 0 stacks, 0 deterministic runs, 0 reasoning case-runs, 0 embedding requests | D02 was rejected, D06/`link_leads` was absent, and the required owner-authored manifest did not exist | Leave D06 unbuilt and `link_leads` unavailable; do not solicit the owner manifest until product prerequisites clear | $0 / $0 / $0 |
 
 ## Definitive results
@@ -135,35 +141,131 @@ Primary evidence:
 - `results/2026-07-28-e05-report.md` —
   `e95799a86e13ebad4cb24ca09567ae71ec4cdc2834d247327fff306e83a28664`
 
-## In-progress placeholders
+### E06 — resume delta experiment
 
-E06-E08 are deliberately placeholders. Their checked-in predeclarations and
-specification establish intended grids and cost ceilings, not observed
-execution counts, costs, results, or verdicts.
+All 45 frozen case-runs completed successfully across three arms, five cases,
+and three draws. Both deterministic artifacts passed. The treatment's resume
+p95 was 77.606ms against a 150ms gate, its paired resume-query delta was
+exactly +5 across 30 samples, and all 30 lineage samples passed.
 
-- E06 plan evidence:
-  `results/2026-07-28-e06-grid-predeclaration.json`,
-  `9e0983315dd1b7f1ab9c63e4db3ee4c86c4bbc4d4bdf6927bf68e3cd02365dc5`
-- E07 plan evidence:
-  `results/2026-07-28-e07-draw-count-predeclaration.json`,
-  `95a05fbb66f3c600d406c1fed088a0b305f985b41d105c9007ac1463b4616050`
-- E08 specification evidence:
-  `docs/mvp/E08-intention-ledger-experiment.md`,
-  `b84a13908ecd911cb0569a25e68f71e5e3e063f5854720a2f42038682cb4839a`
+Those mechanical results did not transfer to task quality or payload
+discipline. Treatment B passed 34/60 claims versus 33/60 for A and 40/60 for C,
+but it completed zero of five cases in every draw. Its one-sided exact McNemar
+p-values were 0.8125 versus A and 0.96875 versus C. The 15 operation-level
+resume comparisons all violated payload neutrality: control totaled 355,921
+result characters, treatment totaled 419,308, and treatment added 63,387
+characters overall, 4,225.8 per pair on average. Pair deltas ranged from 3,159
+to 5,436 characters.
+
+D03 is rejected in its tested form. Keep `resume_deltas` default-off and do not
+advance it to a Nyx rollout.
+
+Primary evidence:
+
+- `results/2026-07-28-e06-definitive-summary.json` —
+  `a9972cfa44f97c6f11bb2cc4181bfeeff4ec8ae00394edf61846aefd04263eb4`
+- `results/2026-07-28-e06-report.md` —
+  `053fd1035084abdfdbf4ce136c33f973acce7186f45a3b89171650bcbca87254`
+
+### E07 — supersession mechanism and adoption
+
+All 162 frozen sessions completed cleanly: 126 claim-scored runs across flag,
+baseline, and filesystem, plus 36 unprompted-adoption sessions. There were no
+timeouts, record errors, or nonzero final exits. The flag-on deterministic
+artifact passed its reviewed query contract and recorded foreground-write p95
+of 27.401ms against a 58ms cap.
+
+Within the four-case supersession family, flag produced six paired
+case-instance wins, baseline produced two, and four tied. Net +4 clears the
+frozen +3 rule. Flag passed 29/48 family claims versus 25/48 for baseline.
+Safety and context gates also passed: no new forbidden assertions appeared
+outside the family, and flag/base model-visible character ratio was
+1.00812659 against the 1.05 cap.
+
+The mechanism result is encouraging but imprecise. The case-clustered expected
+per-draw claim delta was +1.333 with 95% CI [−2.333, 3.667].
+Majority-collapsed full-case outcomes had zero discordant cases and exact
+McNemar p=1.0. E07 passes the predeclared net-win rule; it does not establish a
+precise nonzero effect.
+
+The separate deployment-adoption gate failed. Only 7/18 eligible sessions
+emitted syntactically valid `supersedes` frontmatter, 38.889% against a 50%
+minimum. A hash-bound semantic companion found 6/18 resolvable distinct edges,
+5/18 selected projected edges, and 3/18 selected emissions without a competing
+successor. The same adoption cohort produced intention frontmatter in 13/18
+sessions, but that separate positive measure neither repairs D04 nor creates an
+E08 verdict.
+
+The D04 retrieval mechanism is accepted under E07's frozen mechanism rule, but
+D04 remains default-off and is not Tier-C ready. Add assisted authoring, reject
+self-edges in adoption measurement, surface parallel-successor ambiguity, and
+run a new adoption qualification.
+
+Primary evidence:
+
+- `results/2026-07-28-e07-aggregate.json` —
+  `3d2d52159383c196930924b0e75e98c631dbdd7b61bb5d8bc5a830ffdd471f40`
+- `results/2026-07-28-e07-aggregate.md` —
+  `29f0d2fe1bc1a6ef00f8667a275fbf3c7a0caa5b68fab73b19f0f9981a6bfcef`
+- `results/2026-07-28-e07-adoption-aggregate.json` —
+  `d12c593f3a647861503d735fd5b875fb3a5adca4b6b89b84ffd858146ab1acba`
+- `results/2026-07-28-e07-conclusion-audit.json` —
+  `f2eecc31b3ec4df4db622db04f570bf2710ddb75b82c3d96c87625a844be72ed`
+- `results/2026-07-28-e07-adoption-semantic-audit.json` —
+  `a2b0435f6e4bbea56a41058f84abc3f31bc1ea1e41dfc817c87ce04bbb8ad7c9`
+- `results/2026-07-28-e07-session-health-audit.json` —
+  `07b2a58dbfa7b7cc2ae9a3505dc00d4b5fd84414c89cec9d028be5070b546243`
+
+### E08 — deterministic-preflight stop
+
+E08 did not reach a feature comparison. Its one flag-on 64K/30 query-budget
+calibration passed 52 of 54 gates and recorded every canonical query-count
+sample, but concurrent-search p95 was 874.535ms against the 750ms regression
+ceiling. The other red gate,
+`query_budget_calibration_is_not_acceptance`, is expected for every
+calibration artifact.
+
+Canonical counts were complete: open was 17 in 29 samples and 22 once; search
+was 11 in all 30; read was 11 in all 30; write was 14 in all 30; checkpoint
+was 28 once; and resume was 32 in 29 samples and 37 once. Complete counts are
+necessary but insufficient when another deterministic gate is red.
+
+No `e08-intention-ledger` query-budget contract was authored. Zero of two
+latency-contrast arms, 15 planned reasoning invocations, 129 planned case-runs,
+three draws, or the interim and final audits ran. E08 therefore says nothing
+definitive about prospective-memory quality, false surfacing,
+non-prospective regression, pointer limits, or open-latency delta.
+
+This is a deterministic-preflight stop, not a D05 feature pass or failure.
+Keep `intention_ledger` default-off. A rerun requires a prospectively approved
+amended protocol; the frozen protocol is not authorized for a simple retry.
+The unrun grid's $30.96 subscription-equivalent was not incurred.
+
+Primary evidence:
+
+- `results/2026-07-28-e08-query-budget-calibration.json` —
+  `d0780b4fb5d705ca09f4630cd9dad63b50dfa8b451b1e877964902ff33240084`
+- `results/2026-07-28-e08-deterministic-preflight-stop.json` —
+  `951003bdf16498e8c406adf34d189cfac85c0e98531fd4790f14c9828f0642b2`
+- `results/2026-07-28-e08-report.md` —
+  `700ef0cc96bf21e2d48ca63c624b0dbf2c04158df7d71f580c05ffc2789bf3b2`
 
 ## Prerequisite aborts
 
 E09, E10, and E11 each have `experiment_executed=false` and
 `experiment_verdict=not_evaluated`. Their evidence records zero stacks,
 deterministic runs, reasoning case-runs, embedding requests, and result
-artifacts.
+artifacts from an efficacy run.
 
 - E09 is blocked by E03 Mode 2's failed gate and the absent quality backfill.
   Its future preflight estimates $0.84 expected and $2.00 ceiling embedding
   spend, both below the $20 warning threshold.
-- E10 is blocked by the absent accepted immutable launch manifest and
-  unresolved surviving feature/posture decisions. Under the then-specified
-  semantic-off posture, its future embedding estimate is $0.
+- E10's current audit resolves E04/D01 and E06/D03 as drops, alongside the
+  already rejected D02 and `lexical_single_scan` candidates. It remains blocked
+  by the absent accepted immutable launch manifest, E07's failed adoption
+  qualification, E08's absent D05 verdict, and E09's prerequisite-aborted
+  semantic posture. Under the specified semantic-off posture, its future
+  embedding estimate is $0.
 - E11 is blocked independently by rejected D02, absent D06/`link_leads`, and
   the absent owner-authored manifest. Its optional owner-corpus indexing
   estimate is $0.19, not incurred.
@@ -172,6 +274,8 @@ Primary evidence:
 
 - `results/2026-07-28-e09-prerequisite-abort.json` —
   `a18980a2e1dbfc373b3aac4fa91b01a40abe582a5edac12d6f33e750674f0d4f`
+- `results/2026-07-28-e10-prerequisite-current-audit.json` —
+  `ca97445141eede8cfe09cc107dd0226c981d998ac078915abcd3693a5dfdb65c`
 - `results/2026-07-28-e10-prerequisite-abort.json` —
   `6581cd5faa3d3769426594fc727a9ed3e2f88688849ac07acaa954225520c921`
 - `results/2026-07-28-e11-prerequisite-abort.json` —
@@ -179,15 +283,18 @@ Primary evidence:
 
 ## Evidence-audit notes
 
-- The E10 prerequisite-abort artifact is a truthful snapshot at
-  `d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b`, but its
-  `feature_qualifications` blocker includes E04 as unresolved. E04 was
-  subsequently completed and rejected both candidates. E10 remains blocked
-  because E06-E08 and E09 still prevent an accepted immutable launch manifest.
+- The original E10 prerequisite-abort artifact is a truthful snapshot at
+  `d989ae5893e24a14d11d51ad9c4cfc8c8b812e1b`. The current audit preserves it
+  unchanged, records E04 and E06 as resolved drops, and identifies E07
+  adoption, E08/D05, E09, and the absent accepted manifest as the current
+  blockers.
 - E01's aggregate field `draws=15` counts five suite artifacts across three
   repeated draws; it does not mean 15 repeated draws per case. The definitive
   execution count is 59 cases × 3 arms × 3 repeated draws = 531 case-runs.
 - E03's overall verdict is negative even though Mode 1 passed. The blocking
   semantic-ready Mode 2 result controls the semantic-lane decision.
-- No predeclaration, partial deterministic run, or prerequisite abort has been
-  promoted to an experiment verdict in this report.
+- E07's mechanism pass and adoption failure are separate results. The wide
+  confidence interval and McNemar p=1.0 are reported as uncertainty, not as
+  proof of a precise nonzero effect.
+- E08's partial deterministic run is not promoted to a D05 feature verdict,
+  and no prerequisite abort is promoted to an efficacy verdict.
