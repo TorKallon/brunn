@@ -10,17 +10,17 @@ COPY apps/api/Cargo.toml apps/api/Cargo.lock* ./
 COPY apps/api/build.rs ./
 COPY apps/api/src ./src
 COPY apps/api/migrations ./migrations
-RUN --mount=type=cache,id=straylight-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=straylight-cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=straylight-api-target,target=/build/target,sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/target,sharing=locked \
     cargo build --release \
     && cp /build/target/release/straylight /build/straylight \
     && cp /build/target/release/carrystate /build/carrystate
 
 FROM builder AS test
-RUN --mount=type=cache,id=straylight-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,id=straylight-cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=straylight-api-test-target,target=/build/target,sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/target,sharing=locked \
     cargo test --lib
 
 FROM gcr.io/distroless/cc-debian12:nonroot@sha256:fccdbb0a547c14e23fcf4ce8ad62ca5d43b4faae8d22cd292f490fef9946c96e AS runtime
