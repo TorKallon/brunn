@@ -158,19 +158,10 @@ class RailwayContractTests(unittest.TestCase):
                 if len(parts) >= 4 and parts[2].upper() == "AS":
                     local_stages.add(parts[3])
 
-    def test_shared_api_dockerfile_uses_railway_scoped_locked_cache_mounts(self):
-        cache_mounts = re.findall(
-            r"--mount=type=cache,([^\\\s]+)",
-            API_DOCKERFILE,
-        )
-        self.assertGreaterEqual(len(cache_mounts), 3)
-        for cache_mount in cache_mounts:
-            self.assertIn("target=", cache_mount)
-            self.assertIn("sharing=locked", cache_mount)
-            self.assertRegex(
-                cache_mount,
-                r"id=s/[0-9a-f-]{36}-/",
-            )
+    def test_shared_api_dockerfile_is_portable_across_railway_services(self):
+        self.assertNotIn("--mount=type=cache", API_DOCKERFILE)
+        self.assertIn("RUN cargo build --release", API_DOCKERFILE)
+        self.assertIn("RUN cargo test --lib", API_DOCKERFILE)
 
 
 if __name__ == "__main__":
