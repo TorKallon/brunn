@@ -99,6 +99,7 @@ class RailwayContractTests(unittest.TestCase):
             "STRAYLIGHT_CAPTURE_MODEL": "gpt-5.6",
             "STRAYLIGHT_CAPTURE_MAX_OUTPUT_TOKENS": "8192",
             "STRAYLIGHT_DREAM_MODEL": "gpt-5.6",
+            "STRAYLIGHT_DREAM_SCHEDULER_ENABLED": "false",
             "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET": "24000",
         }
         for name, value in expected.items():
