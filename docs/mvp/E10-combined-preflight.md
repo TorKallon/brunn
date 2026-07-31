@@ -104,7 +104,7 @@ MM-DD is the run date.
 All five must hold; any miss means no Tier C cutover:
 
 1. **Non-inferiority everywhere:** for every one of the five suites, McNemar two-sided p ≥ 0.05 against arm A AND the bootstrap 95% CI lower bound on the claim difference is ABOVE the E01 noise-floor margin of −5 claims corpus-wide (matching E01 acceptance criterion 2), with no per-suite CI showing a significant deficit. (A lower bound at or below −5 is the failure condition, not the pass condition.)
-2. **Superiority somewhere:** McNemar p < 0.05 in arm A's favor on ≥1 suite.
+2. **Superiority somewhere (amended 2026-07-28):** on ≥1 suite, either McNemar p < 0.05 in arm A's favor, or — for suites with fewer than 10 cases, where case-level McNemar cannot mechanically reach p < 0.05 (E01's transitions suite demonstrated this: claim CI [+1.000, +4.667] entirely positive, McNemar p = 1.0) — the case-clustered bootstrap 95% CI on the claim difference entirely above zero across n≥3 draws. The claim-CI route is valid only for small suites; large suites must still clear McNemar.
 3. **Context discipline:** corpus-wide chars/case in arm A ≤ arm B + 10%.
 4. **All D09 gates green** at 64K with the full flag set: regression-tier latencies, query-count budgets, EXPLAIN plan assertions.
 5. **640K soak green:** hard SLOs, concurrent write/search probe, checkpoint footprint, protocol-to-evidence ratio, no latency drift with change-log growth.

@@ -95,6 +95,7 @@ Phase 0 — measurement, pre-code (no product code changes; harness/corpus only)
 | [E01](mvp/E01-paired-draw-machinery-and-baseline.md) | Paired-draw machinery, writable-sidecar control, baseline measurement | Complete — non-inferiority not established; paired overfetch absent | Feeds every Exx; does not support service-versus-files overfetch |
 | [E02](mvp/E02-verbatim-identifier-gate.md) | Verbatim identifier gate | Stage 1 defect confirmed; Stage 2 flag-on failed 4/30 at every scale; soak and reasoning aborted | D02 rejected; repair and rerun deterministic arm |
 | [E03](mvp/E03-semantic-ready-latency-profile.md) | Semantic-ready latency profile (3 modes) | Mode 1 passed; semantic-ready Mode 2 failed zero-deferred-lane gate; paid Mode 3 aborted | Fix semantic timeout path before E09 |
+| [E12](mvp/E12-e01-loss-autopsy.md) | E01 loss autopsy — dual-rater taxonomy over 531 saved case-runs, $0 API | Specified — not run | Tier B entry triage (D14 as amended); sole path to any new context-shaping design |
 
 Infrastructure — no reasoning-quality risk (code, no experiment gate):
 
@@ -125,7 +126,7 @@ Readiness — clients, migration, authority:
 | ID | Title | Status | Notes |
 |---|---|---|---|
 | [D13](mvp/D13-client-integration-and-canaries.md) | Client integration + canaries: Codex, OpenClaw, Claude Code; token runbook | Proposed — not started | Claude Code ~1 focused day |
-| [D14](mvp/D14-migration-and-authority-tiers.md) | Migration and authority tiers A/B/C; fidelity audit; shadow protocol with abort tripwires | Proposed — not started | Defines the MVP boundary |
+| [D14](mvp/D14-migration-and-authority-tiers.md) | Migration and authority tiers A/B/C; fidelity audit; shadow protocol with abort tripwires | Proposed — not started; Tier B entry and Tier C parity requirement amended 2026-07-28 | Defines the MVP boundary |
 
 Conditional — do not start until stated preconditions hold:
 
@@ -140,37 +141,82 @@ Conditional — do not start until stated preconditions hold:
 
 ```mermaid
 flowchart LR
-    P0[Phase 0: E01 E02.1 E03] --> INF[D09 gates + D08 freeze/fixes + D10 safe + D12]
-    INF --> TA[Tier A: corpus import + fidelity audit + read canaries D13/D14]
-    TA --> FE[Feature experiments: E04 E06 E07 E08 E09 gating D01-D05 D11]
-    TA --> TB[Tier B: restore drill + write canaries + char budget = MVP]
-    FE --> E10G[E10 combined preflight]
-    TB --> TC[Tier C: shadow period + cutover]
+    T1A[Track 1: Tier A pilot + D08/D09 infra] --> T1B[Tier B = MVP, D14 as amended]
+    T2[Track 2: E12 loss autopsy + harness checkpoint-syntax fix] --> T1B
+    T3[Track 3: D02 repair + E03/D11 timeout repair] --> T4[Track 4 owner-gated: E08 v2, D04 adoption, E09]
+    T4 --> E10G[E10 on frozen launch manifest]
+    T1B --> TC[Tier C: shadow period + cutover]
     E10G --> TC
 ```
 
-Phase 0 and Tier A can start immediately and in parallel: Phase 0 experiments
-touch only the harness; Tier A touches only deployment and data. Feature work
-(D01–D05, D11) begins only after E01 re-establishes the baseline it targets.
+Tracks 1–3 can start immediately and in parallel: Track 1 touches deployment
+and data, Track 2 reads immutable artifacts, Track 3 repairs rejected
+implementations behind their off-flags. Track 4 items each require an explicit
+owner go before spend. No new context-shaping design may be proposed unless
+E12's finding 2 justifies it — the E04/E06 rejections put the burden of proof
+on the autopsy, not on another feature bet.
 
-## Immediate next steps
+## Plan of record — four tracks (adopted 2026-07-28)
 
-1. Preserve E01's completed paired-draw baseline. E02 and E03 have definitive
-   failures: repair D02 and the semantic timeout path, then rerun their free
-   deterministic prerequisites before any paid or reasoning arms. Keep D05
-   default-off; do not rerun E08 until an amended protocol is prospectively
-   approved.
-2. Ship the immediate D08 items: dream-retry permanent-failure fix, MCP legacy
-   residue removal, legacy cargo-feature freeze.
-3. Run D09's isolated 64K/640K acceptance and calibrate the fail-closed
-   code-shape query budgets only if the recorded counts prove an adjustment is
-   necessary.
-4. Execute Tier A per D14: tag/retain v8, export→import owner corpus to Nyx,
+Adopted by owner decision 2026-07-28 after the E01–E11 program closed under
+its frozen stop rules. Priority order:
+
+**Track 1 — Ship the pilot (unblocked, highest value).**
+1. Execute Tier A per D14: tag/retain v8, export→import owner corpus to Nyx,
    fidelity audit, read-only tokens, three-client read canaries per D13.
-5. Then Tier B per D14 — that is the MVP.
+2. Ship the immediate D08 items: dream-retry permanent-failure fix, MCP legacy
+   residue removal, legacy cargo-feature freeze. Run D09's isolated 64K/640K
+   acceptance; calibrate the fail-closed query budgets only if the recorded
+   counts prove an adjustment necessary.
+3. Then Tier B per D14 **as amended** (char-budget entry condition withdrawn —
+   its overfetch premise was falsified by E01; replaced by D09 regression tier
+   green + E12 triage recorded). Tier B is the MVP.
+
+**Track 2 — Free analysis before any new feature work.**
+4. Run [E12](mvp/E12-e01-loss-autopsy.md), the E01 loss autopsy: $0 API,
+   dual-rater, fixed taxonomy over all 531 saved case-runs. Its triage
+   disposition is a Tier B entry condition; its finding 2 is the only path to
+   any new context-shaping design doc.
+5. Fix canonical checkpoint syntax in the integrated harness — the measured
+   20-failure/17-session service-arm drag E01 documented.
+
+**Track 3 — Cheap deterministic repairs ($0–1, all behind off-flags).**
+6. D02 repair: source verbatim lines from the exact-lane full-document match
+   rather than the excerpt window (the flag-on arm only recovered byte-2,600
+   probes); rerun E02's deterministic arm (free).
+7. D11/E03 repair: implement the bounded semantic deadline as the fix for the
+   ~2.5s Mode 2 stalls; rerun Mode 2 (free), then Mode 3 (~$1,
+   embeddings-exempt).
+
+**Track 4 — Owner approval required before each item.**
+8. E08 rerun under its Amended protocol v2 (paired flag-off attribution
+   preflight, interleaved 3× repetitions, contention controls; ~$31
+   equivalent).
+9. D04 assisted authoring — the write path proposes `supersedes` frontmatter
+   on overlap — then a fresh adoption qualification (the E07 cohort wrote
+   intention frontmatter unprompted in 13/18 sessions; supersession needs
+   prompting at the point of write, not more documentation).
+10. E09 after E03 Mode 2 clears (~$80 equivalent).
+11. Formal parity is **not purchased now**: establishing non-inferiority at
+    the −5 margin needs ~3–4× more draws (~$400 equivalent) against a CI whose
+    width is dominated by draw noise, and MD remains fallback through Tier B
+    regardless. The requirement moves to Tier C entry (D14 as amended),
+    satisfied by shadow-period real-work evidence or a future owner-approved
+    synthetic run. E10's small-suite superiority rule is fixed (claim-CI route
+    for <10-case suites).
 
 ## Change log
 
+- 2026-07-28 (plan revision, owner-adopted): Replaced "Immediate next steps"
+  with the four-track plan of record. Withdrew the Tier B char-budget entry
+  condition (overfetch premise falsified by E01's paired baseline: service
+  32,067 chars/case vs files 101,406) in favor of D09-regression-green + E12
+  triage. Added E12 (E01 loss autopsy, $0 API, dual-rater). Amended E10's
+  superiority rule with a claim-CI route for <10-case suites (McNemar is
+  mechanically unreachable on the 5-case transitions suite). Recorded E08
+  Amended protocol v2 (paired flag-off attribution preflight) pending owner
+  approval. Deferred the formal parity purchase (~$400 equivalent for 3–4×
+  draws) to Tier C entry, satisfiable by shadow-period real-work evidence.
 - 2026-07-28: Re-audited E10 after E06–E08. E04/D01 and E06/D03
   are now resolved drops, but E07's failed adoption gate, E08's absent feature
   verdict, E09's prerequisite abort, and the absent accepted immutable launch

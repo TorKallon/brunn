@@ -192,3 +192,28 @@ paired table; open p95 off/on with delta; char-assertion results; cost split
 (subscription-equivalent vs
 embeddings-exempt); adoption measurement reference (E07 artifact) and its
 result; explicit pass/fail per acceptance criterion.
+
+## Amended protocol v2 — required before any rerun (2026-07-28)
+
+The 2026-07-28 run stopped at deterministic preflight: flag-on 64K
+concurrent-search p95 was 874.535ms against the 750ms regression ceiling, with
+no same-host flag-off pair to attribute the breach. Given this host's recorded
+contention artifacts (the 1.047s three-sample result; the 10K-scale ~1,423ms
+soak spike), an environmental breach is indistinguishable from a feature-caused
+one under the frozen protocol. The frozen protocol is therefore not authorized
+for a simple retry. Amendments, all mandatory:
+
+1. **Paired attribution preflight:** run the 64K/30 calibration flag-OFF and
+   flag-ON back-to-back on the same host and stack, three repetitions each,
+   interleaved (off/on/off/on/off/on). The p95 gate binds on the flag-on
+   MEDIAN of the three repetitions; a breach counts against D05 only if the
+   paired flag-off median passes the same gate in the same session.
+2. **Contention controls:** record host load and concurrent process inventory
+   before each repetition; abort the repetition (not the experiment) if another
+   heavy workload is active, and rerun it.
+3. Everything else in the frozen protocol is unchanged: the query-budget
+   contract must be authored before the reasoning grid; abort criteria, cost
+   ceiling ($40, ~$30.96 planned grid), subscription rule, and reporting stand.
+
+OWNER DECISION: this amendment requires prospective owner approval before
+execution, per the program's frozen stop rules.

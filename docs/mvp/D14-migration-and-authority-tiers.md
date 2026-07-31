@@ -62,12 +62,12 @@ Entry requires Tier A complete. Contents:
 - WRITE canaries per D13 (stale-version conflict, idempotency no_op, checkpoint/resume round-trip, gapless changes cursor, advisory-lock 409).
 - Concurrent probe at owner scale, watching unrelated-write p95 specifically — it regressed twice in one day and only the 640K soak caught it.
 - Dream-retry fix shipped (dreaming itself stays paused, Open question 8).
-- Crude open/search char budget near the legacy ~41.4K chars/case at entry. The MD fallback protects against data loss, not against quietly worse daily work; RuptureOps overfetch (~70,814 vs 41,441 service chars/case) is the leading quality risk.
+- ~~Crude open/search char budget near the legacy ~41.4K chars/case at entry~~ **Amended 2026-07-28:** the char-budget entry condition is withdrawn — E01's paired baseline falsified its overfetch premise (service 32,067 chars/case vs files 101,406; RuptureOps 63,090 vs 142,640, CI entirely negative). Replacement entry condition: D09 regression-tier gates green on the deployed build AND the E12 loss-autopsy triage disposition recorded (proceed / proceed-with-mitigations / hold). The MD fallback still protects against data loss, not quietly worse daily work — E12 is now the guard for the latter.
 - Semantic indexing stays OFF the critical path (the query-embedding call at simple_core.rs:3005 is synchronous and uncached; no semantic-ready latency profile exists).
 
 ### Tier C — sole authority (+5-8 build days + 2-4 weeks calendar)
 
-Entry requires: E01 machinery built and n≥3 paired-draw parity shown; E04 passed; E10 combined preflight passed (E10-combined-preflight.md); writable-sidecar comparisons run two-sided; Railway simplified cutover done; PITR drill passed.
+Entry requires (amended 2026-07-28): E01 machinery built and its baseline complete (done — non-inferiority was not established at n=3 and the −5-claim margin was underpowered against the observed CI width); the parity requirement is satisfied either by a future owner-approved n≥3 synthetic result or by shadow-period real-work evidence, at the owner's explicit Tier C entry decision; E04/E05/E06 resolved as drops (done); E10 combined preflight passed on the frozen launch manifest (E10-combined-preflight.md); writable-sidecar comparisons run two-sided (done in E01); Railway simplified cutover done; PITR drill passed.
 
 Shadow protocol with pre-defined abort tripwires (defined before the window opens, not during):
 - Any checkpoint-lineage incident = immediate abort to MD authority. No triage-first.
@@ -92,13 +92,13 @@ Markdown-authority round-trip is preserved through Tier B: any new durable metad
 
 - Plausible-but-wrong canaries (07-10): known-answer checks mandatory in every canary (D13).
 - Unbudgeted bookkeeping (07-26): per-release soak gate during shadow; round-trip/query-count budget assertions accompany latency gates.
-- Quietly worse daily work (dedup revert; v6 recent-first collapse, Star Rupture 0/3): char budget at Tier B entry and two-sided comparisons at Tier C; every context reduction is guilty until proven.
+- Quietly worse daily work (dedup revert; v6 recent-first collapse, Star Rupture 0/3): E12 loss-autopsy triage at Tier B entry (replacing the withdrawn char budget) and two-sided comparisons at Tier C; every context reduction is guilty until proven.
 - Regenerated binary descriptions (paraphrase/extraction hallucination): byte-copy required by the fidelity audit.
 - Single-draw overconfidence: only E01-aggregated n≥3 draws are load-bearing for Tier C.
 
 ## Acceptance gates
 
-Tier A: gates 1-2 pass; gate 3 READ set passes for all three clients. Tier B: gate 4 restore drill zero-diff; gate 3 WRITE set; concurrent probe within hard gates; char budget met. Tier C: gates 5-6; zero tripwires; owner go recorded.
+Tier A: gates 1-2 pass; gate 3 READ set passes for all three clients. Tier B: gate 4 restore drill zero-diff; gate 3 WRITE set; concurrent probe within hard gates; D09 regression tier green; E12 triage disposition recorded (2026-07-28 amendment). Tier C: gates 5-6; zero tripwires; owner go recorded.
 
 ## Rollout and kill switch
 
