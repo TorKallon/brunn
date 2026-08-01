@@ -1,9 +1,13 @@
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use url::Url;
+use url::form_urlencoded;
 
 use crate::error::{ApiError, ApiResult};
 
@@ -17,6 +21,11 @@ pub const BODY_LIMIT_CHARS: usize = 4_000;
 pub const WHY_IT_MATTERS_LIMIT_CHARS: usize = 1_000;
 pub const DETAIL_LIMIT_CHARS: usize = 16_000;
 pub const WHAT_CHANGED_LIMIT_CHARS: usize = 1_000;
+pub const URL_LIMIT_CHARS: usize = 2_048;
+
+const TRACKING_QUERY_PARAMS: [&str; 8] = [
+    "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "ref_src", "cmpid", "smid",
+];
 
 pub const ITEM_KINDS: [&str; 7] = [
     "news", "metric", "health", "ops", "digest", "tracker", "schedule",
@@ -282,6 +291,54 @@ fn capitalize_edition(edition: &str) -> String {
     }
 }
 
+pub fn canonicalize_url(raw: &str) -> ApiResult<String> {
+    let trimmed = raw.trim();
+    if trimmed.chars().count() > URL_LIMIT_CHARS {
+        return Err(ApiError::invalid(format!(
+            "url exceeds the limit of {URL_LIMIT_CHARS} characters",
+        )));
+    }
+    let parsed =
+        Url::parse(trimmed).map_err(|_| ApiError::invalid("url must be an absolute URL"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(ApiError::invalid("url scheme must be http or https"));
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| ApiError::invalid("url must include a host"))?;
+    // Url::parse already lowercases the scheme and host and drops default ports.
+    let mut canonical = format!("{}://{host}", parsed.scheme());
+    if let Some(port) = parsed.port() {
+        write!(canonical, ":{port}").expect("write port into canonical url");
+    }
+    if parsed.path() != "/" {
+        canonical.push_str(parsed.path());
+    }
+    let mut pairs: Vec<(String, String)> = parsed
+        .query_pairs()
+        .filter(|(key, _)| !is_tracking_query_param(key))
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    if !pairs.is_empty() {
+        pairs.sort();
+        let query = form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(pairs)
+            .finish();
+        canonical.push('?');
+        canonical.push_str(&query);
+    }
+    Ok(canonical)
+}
+
+fn is_tracking_query_param(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    key.starts_with("utm_") || TRACKING_QUERY_PARAMS.contains(&key.as_str())
+}
+
+pub fn story_url_hash(canonical_url: &str) -> String {
+    hex::encode(Sha256::digest(canonical_url.as_bytes()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,6 +529,61 @@ mod tests {
         request.sections[0].items[0].story.as_mut().expect("story").urls =
             vec!["https://example.com/".to_owned(); STORY_URL_LIMIT + 1];
         assert!(validate_publish_request(&request).is_err());
+    }
+
+    #[test]
+    fn canonicalize_normalizes_scheme_host_ports_params_and_fragments() {
+        for (raw, canonical) in [
+            (
+                "HTTPS://Example.COM/Path/To?utm_source=x&b=2&a=1&fbclid=z#frag",
+                "https://example.com/Path/To?a=1&b=2",
+            ),
+            ("http://example.com:80/x", "http://example.com/x"),
+            ("https://example.com:443/", "https://example.com"),
+            ("https://example.com:8443/x", "https://example.com:8443/x"),
+            ("https://example.com/", "https://example.com"),
+            ("https://example.com", "https://example.com"),
+            ("https://example.com/a/", "https://example.com/a/"),
+            (
+                "https://example.com/a?ref=nl&ref_src=tw&gclid=1&mc_cid=2&mc_eid=3&cmpid=4&smid=5&keep=1",
+                "https://example.com/a?keep=1",
+            ),
+        ] {
+            assert_eq!(
+                canonicalize_url(raw).expect(raw).as_str(),
+                canonical,
+                "canonical form of {raw}",
+            );
+        }
+    }
+
+    #[test]
+    fn canonicalize_sorts_remaining_query_pairs_deterministically() {
+        assert_eq!(
+            canonicalize_url("https://example.com/a?b=2&a=2&a=1").expect("sortable url"),
+            "https://example.com/a?a=1&a=2&b=2",
+        );
+    }
+
+    #[test]
+    fn canonicalize_rejects_invalid_urls() {
+        assert!(canonicalize_url("example.com/no-scheme").is_err());
+        assert!(canonicalize_url("ftp://example.com/x").is_err());
+        assert!(canonicalize_url("mailto:owner@example.com").is_err());
+        let oversized = format!("https://example.com/{}", "a".repeat(2_048));
+        assert!(canonicalize_url(&oversized).is_err());
+    }
+
+    #[test]
+    fn story_url_hash_is_lowercase_hex_sha256_of_the_canonical_string() {
+        assert_eq!(
+            story_url_hash("https://example.com"),
+            "100680ad546ce6a577f42f52df33b4cfdca756859e664b8d7de329b150d09ce9",
+        );
+        assert_eq!(
+            story_url_hash("https://example.com/a?a=1&b=2"),
+            "051029b6a13fc6686e4523427e03b3a177e6970f9bfe03b026a9a023819b902a",
+        );
     }
 
     #[test]
