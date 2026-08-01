@@ -38,6 +38,9 @@ export function workspaceEntryKind(
   if (entry.path.startsWith(".straylight/binaries/")) {
     return "binary_description";
   }
+  if (entry.path.startsWith("Briefings/Topics/")) return "briefing_topic";
+  if (entry.path.startsWith("Briefings/Requests/")) return "briefing_request";
+  if (entry.path.startsWith("Briefings/")) return "briefing_edition";
   return "entry";
 }
 

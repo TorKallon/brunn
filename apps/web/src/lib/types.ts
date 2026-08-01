@@ -622,6 +622,162 @@ export interface WorkspaceDreamReceipt {
   reason?: string;
 }
 
+export interface BriefingListRow {
+  date: string;
+  edition: string;
+  path: string;
+  entry_ref: string;
+  version: number;
+  generated_at?: string | null;
+  summary_md: string[];
+  section_titles: string[];
+  item_count: number;
+}
+
+export interface BriefingListData {
+  editions: BriefingListRow[];
+  limit: number;
+  truncated: boolean;
+  next?: { after_path: string } | null;
+  workspace_generation: number;
+}
+
+export interface BriefingStoryRef {
+  key: string;
+  urls?: string[];
+  title?: string;
+  entities?: string[];
+  event_at?: string | null;
+}
+
+export interface BriefingTimes {
+  published_at?: string | null;
+  event_at?: string | null;
+  first_seen_at?: string | null;
+}
+
+export interface BriefingItemData {
+  id: string;
+  kind: "news" | "metric" | "health" | "ops" | "digest" | "tracker" | "schedule" | string;
+  headline_md: string;
+  body_md?: string;
+  why_it_matters?: string;
+  detail_md?: string;
+  what_changed?: string;
+  delta?: "new" | "update" | "corroboration" | string;
+  story?: BriefingStoryRef | null;
+  times?: BriefingTimes | null;
+}
+
+export interface BriefingSectionData {
+  topic: string;
+  title: string;
+  items: BriefingItemData[];
+}
+
+export interface BriefingOmission {
+  story_key?: string | null;
+  urls?: string[];
+  reason: string;
+}
+
+export interface BriefingDelta {
+  added: string[];
+  changed: string[];
+  removed: string[];
+}
+
+export interface BriefingPayload {
+  schema?: string;
+  date: string;
+  edition: string;
+  timezone?: string | null;
+  generated_at?: string | null;
+  summary_md?: string[];
+  sections?: BriefingSectionData[];
+  omitted?: BriefingOmission[];
+  delta?: BriefingDelta;
+}
+
+export interface BriefingEditionVersion {
+  version: number;
+  created_at: string;
+}
+
+export interface BriefingEditionData {
+  path: string;
+  entry_ref: string;
+  version: number;
+  current_version: number;
+  date: string;
+  edition: string;
+  briefing?: BriefingPayload | null;
+  markdown: string;
+  created_at: string;
+  versions: BriefingEditionVersion[];
+  workspace_generation: number;
+}
+
+export interface BriefingTopic {
+  slug: string;
+  name: string;
+  section_order: number;
+  mode: string;
+  editions: string[];
+  schedule?: string | null;
+  entities: string[];
+  symbols: string[];
+  suppress_unchanged: boolean;
+  freshness_hours: number;
+  body: string;
+  parse_error?: string;
+  path: string;
+  entry_ref: string;
+  version: number;
+}
+
+export interface BriefingPendingRequest {
+  path: string;
+  entry_ref: string;
+  date?: string | null;
+  item_id?: string | null;
+  edition_ref?: string | null;
+  topic?: string | null;
+  note?: string | null;
+}
+
+export interface BriefingTopicsSnapshot {
+  topics: BriefingTopic[];
+  pending_requests: BriefingPendingRequest[];
+  feedback_path: string;
+  feedback_tail: string[];
+  workspace_generation: number;
+}
+
+export interface BriefingItemActionInput {
+  action: "read" | "feedback" | "expand" | "mute_topic";
+  edition_ref?: string;
+  item_id?: string;
+  topic_slug?: string;
+  verdict?: string;
+  note?: string;
+}
+
+export interface BriefingItemActionData {
+  action?: string;
+  path: string;
+  entry_ref: string;
+  version_ref?: string | null;
+  version: number;
+  content_hash: string;
+  line?: string;
+  date?: string;
+  item_id?: string;
+  status?: string;
+  slug?: string;
+  mode?: string;
+}
+
 export interface CommitReceipt {
   id: string;
   operation_id?: string;

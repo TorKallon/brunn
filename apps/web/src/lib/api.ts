@@ -4,6 +4,11 @@ import type {
   AssetListData,
   AssetRecord,
   AuditEvent,
+  BriefingEditionData,
+  BriefingItemActionData,
+  BriefingItemActionInput,
+  BriefingListData,
+  BriefingTopicsSnapshot,
   CheckpointSummary,
   CommitReceipt,
   CaptureReceipt,
@@ -125,6 +130,19 @@ export interface StraylightApi {
   workspaceDream(
     payload: JsonObject,
   ): Promise<ApiEnvelope<WorkspaceDreamReceipt>>;
+  briefingsList(
+    limit?: number,
+    afterPath?: string,
+  ): Promise<ApiEnvelope<BriefingListData>>;
+  briefingGet(
+    date: string,
+    edition: string,
+    version?: number,
+  ): Promise<ApiEnvelope<BriefingEditionData>>;
+  briefingTopics(): Promise<ApiEnvelope<BriefingTopicsSnapshot>>;
+  briefingItemAction(
+    input: BriefingItemActionInput,
+  ): Promise<ApiEnvelope<BriefingItemActionData>>;
   sessions(cursor?: string): Promise<ApiEnvelope<ListData<SessionSummary> | SessionSummary[]>>;
   session(id: string): Promise<ApiEnvelope<SessionDetail>>;
   refreshSession(id: string): Promise<ApiEnvelope<SessionDetail>>;
@@ -393,6 +411,33 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
     },
     workspaceDream: (payload) =>
       post<WorkspaceDreamReceipt>("/workspace/dreams", payload),
+    briefingsList: (limit = 14, afterPath) => {
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (afterPath) query.set("after_path", afterPath);
+      return get<BriefingListData>(`/workspace/briefings?${query.toString()}`);
+    },
+    briefingGet: (date, edition, version) => {
+      const path =
+        `/workspace/briefings/${encodeURIComponent(date)}` +
+        `/${encodeURIComponent(edition)}`;
+      if (version === undefined) return get<BriefingEditionData>(path);
+      const query = new URLSearchParams({ version: String(version) });
+      return get<BriefingEditionData>(`${path}?${query.toString()}`);
+    },
+    briefingTopics: () =>
+      get<BriefingTopicsSnapshot>("/workspace/briefings/topics"),
+    briefingItemAction: (input) => {
+      const payload: JsonObject = { action: input.action };
+      if (input.edition_ref !== undefined) payload.edition_ref = input.edition_ref;
+      if (input.item_id !== undefined) payload.item_id = input.item_id;
+      if (input.topic_slug !== undefined) payload.topic_slug = input.topic_slug;
+      if (input.verdict !== undefined) payload.verdict = input.verdict;
+      if (input.note !== undefined) payload.note = input.note;
+      return post<BriefingItemActionData>(
+        "/workspace/briefings/items/action",
+        payload,
+      );
+    },
     sessions: (cursor) =>
       get<ListData<SessionSummary> | SessionSummary[]>(
         cursor ? `/sessions?cursor=${encodeURIComponent(cursor)}` : "/sessions",
