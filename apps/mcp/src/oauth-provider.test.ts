@@ -117,7 +117,9 @@ test("authorization GET is a protected no-script approval form and POST verifies
 
   assert.equal(get.state.statusCode, 200);
   assert.match(get.state.type ?? "", /html/u);
-  assert.match(get.state.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/u);
+  const getContentSecurityPolicy = get.state.headers.get("content-security-policy") ?? "";
+  assert.match(getContentSecurityPolicy, /frame-ancestors 'none'/u);
+  assert.match(getContentSecurityPolicy, /form-action 'self' https:\/\/chat\.example/u);
   assert.equal(get.state.headers.get("x-frame-options"), "DENY");
   assert.equal(get.state.headers.get("cache-control"), "no-store");
   assert.equal(get.state.headers.get("referrer-policy"), "no-referrer");
@@ -134,6 +136,10 @@ test("authorization GET is a protected no-script approval form and POST verifies
   const redirect = new URL(required(post.state.redirectUrl));
   assert.equal(post.state.redirectStatus, 302);
   assert.equal(redirect.origin, "https://chat.example");
+  assert.match(
+    post.state.headers.get("content-security-policy") ?? "",
+    /form-action 'self' https:\/\/chat\.example/u,
+  );
   assert.equal(redirect.searchParams.get("state"), "request-state");
   assert.ok(redirect.searchParams.get("code"));
   assert.doesNotMatch(post.state.redirectUrl ?? "", /dedicated-upstream-token/u);

@@ -141,6 +141,10 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
     }
     const approval = await fetch(authorize);
     assert.equal(approval.status, 200);
+    assert.match(
+      approval.headers.get("content-security-policy") ?? "",
+      /form-action 'self' https:\/\/client\.example/u,
+    );
     const approvalHtml = await approval.text();
     assert.match(approvalHtml, /Connect Straylight/);
     assert.equal(approvalHtml.includes("dedicated-upstream-token"), false);
@@ -155,6 +159,10 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       }),
     });
     assert.equal(approvalPost.status, 302);
+    assert.match(
+      approvalPost.headers.get("content-security-policy") ?? "",
+      /form-action 'self' https:\/\/client\.example/u,
+    );
     const callback = new URL(requiredString(approvalPost.headers.get("location")));
     assert.equal(callback.origin + callback.pathname, "https://client.example/callback");
     assert.equal(callback.searchParams.get("state"), "test-state");

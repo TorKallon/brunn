@@ -227,9 +227,9 @@ export class StraylightOAuthProvider implements OAuthServerProvider {
       method?: unknown;
       body?: unknown;
     };
+    setAuthorizationResponseHeaders(res, params.redirectUri);
 
     if (request.method !== "POST") {
-      setAuthorizationResponseHeaders(res);
       res.status(200).type("html").send(renderApprovalForm(client, params, scopes));
       return;
     }
@@ -807,10 +807,14 @@ ${inputs}
 </html>`;
 }
 
-function setAuthorizationResponseHeaders(res: OAuthResponse): void {
+function setAuthorizationResponseHeaders(res: OAuthResponse, redirectUri: string): void {
+  const redirectOrigin = new URL(redirectUri).origin;
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Pragma", "no-cache");
-  res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+  res.setHeader(
+    "Content-Security-Policy",
+    `default-src 'none'; style-src 'unsafe-inline'; form-action 'self' ${redirectOrigin}; base-uri 'none'; frame-ancestors 'none'`,
+  );
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("X-Content-Type-Options", "nosniff");
