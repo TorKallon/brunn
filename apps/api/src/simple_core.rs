@@ -65,7 +65,7 @@ pub struct WorkspaceEnvelope<T> {
 }
 
 impl<T> WorkspaceEnvelope<T> {
-    fn complete(data: T) -> Self {
+    pub(crate) fn complete(data: T) -> Self {
         Self {
             request_id: crate::request_context::current_request_id(),
             session_id: None,
@@ -123,7 +123,7 @@ fn round_ms(value: f64) -> f64 {
 
 const DEFAULT_TOKEN_BUDGET: usize = 12_000;
 const MAX_TOKEN_BUDGET: usize = 64_000;
-const MAX_WRITE_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_WRITE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_EXACT_READ_CHARS: usize = 4 * 1024 * 1024;
 const MAX_READ_RESPONSE_CHARS: usize = MAX_EXACT_READ_CHARS;
 const MAX_SEARCH_LIMIT: usize = 50;
@@ -450,14 +450,14 @@ struct ResumeDeltaBatch {
 }
 
 #[derive(Clone, Debug)]
-struct PreparedMarkdown {
+pub(crate) struct PreparedMarkdown {
     entry_id_hint: Option<Uuid>,
     path: String,
     title: String,
     content: String,
-    content_sha256: String,
+    pub(crate) content_sha256: String,
     media_type: String,
-    metadata: Value,
+    pub(crate) metadata: Value,
     chunks: Vec<DocumentChunk>,
     embeddings: Vec<Option<Vector>>,
     expected_version: Option<i64>,
@@ -485,12 +485,12 @@ enum TierAExactHistoryAction {
 }
 
 #[derive(Clone, Debug)]
-struct MarkdownUpsertResult {
-    entry_id: Uuid,
-    version: i64,
-    version_id: Option<Uuid>,
-    generation: Option<i64>,
-    no_op: bool,
+pub(crate) struct MarkdownUpsertResult {
+    pub(crate) entry_id: Uuid,
+    pub(crate) version: i64,
+    pub(crate) version_id: Option<Uuid>,
+    pub(crate) generation: Option<i64>,
+    pub(crate) no_op: bool,
     metadata_only: bool,
 }
 
@@ -5494,7 +5494,10 @@ fn tier_a_exact_history_action(
     ))
 }
 
-async fn prepare_markdown(state: &AppState, request: WriteRequest) -> ApiResult<PreparedMarkdown> {
+pub(crate) async fn prepare_markdown(
+    state: &AppState,
+    request: WriteRequest,
+) -> ApiResult<PreparedMarkdown> {
     validate_path(&request.path)?;
     if request.content.len() > MAX_WRITE_BYTES {
         return Err(ApiError::public(
@@ -5704,7 +5707,7 @@ pub(crate) async fn write_markdown_as_worker(
     })))
 }
 
-async fn fetch_locked_markdown_entry(
+pub(crate) async fn fetch_locked_markdown_entry(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     path: &str,
@@ -5729,7 +5732,7 @@ async fn fetch_locked_markdown_entry(
     .await?)
 }
 
-async fn upsert_markdown_in_tx(
+pub(crate) async fn upsert_markdown_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     created_by_credential_id: Option<Uuid>,
@@ -7553,7 +7556,7 @@ fn rebase_imported_checkpoint_metadata(mut metadata: Value, generation: i64) -> 
     metadata
 }
 
-fn portable_path_key(path: &str) -> String {
+pub(crate) fn portable_path_key(path: &str) -> String {
     path.nfc().collect::<String>().to_lowercase()
 }
 
@@ -7676,7 +7679,7 @@ fn evaluation_batch(request: &EvalImportRequest) -> ApiResult<Option<(usize, usi
     }
 }
 
-async fn require_local_publish_lock(
+pub(crate) async fn require_local_publish_lock(
     tx: &mut Transaction<'_, Postgres>,
     key: String,
     bounded_wait: bool,
@@ -8006,7 +8009,10 @@ async fn apply_bulk_deltas(
     Ok(())
 }
 
-async fn max_generation_in_tx(tx: &mut Transaction<'_, Postgres>, user_id: Uuid) -> ApiResult<i64> {
+pub(crate) async fn max_generation_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> ApiResult<i64> {
     Ok(sqlx::query_scalar::<_, Option<i64>>(
         "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
     )

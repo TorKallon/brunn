@@ -1,15 +1,25 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use axum::{Extension, Json, extract::State};
+use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use sqlx::{Postgres, Row, Transaction};
 use url::Url;
 use url::form_urlencoded;
+use uuid::Uuid;
 
-use crate::error::{ApiError, ApiResult};
+use crate::{
+    auth::AuthContext,
+    db::AppState,
+    error::{ApiError, ApiResult},
+    models::{Capability, ResponseStatus},
+    simple_core::{self, WorkspaceEnvelope, WriteRequest},
+};
 
 pub const SUMMARY_LINE_LIMIT: usize = 12;
 pub const SECTION_LIMIT: usize = 24;
@@ -339,6 +349,284 @@ pub fn story_url_hash(canonical_url: &str) -> String {
     hex::encode(Sha256::digest(canonical_url.as_bytes()))
 }
 
+pub fn edition_entry_path(date: &str, edition: &str) -> String {
+    let year = date.get(..4).unwrap_or(date);
+    format!(
+        "Briefings/{year}/{} briefing - {date}.md",
+        capitalize_edition(edition),
+    )
+}
+
+fn edition_metadata(request: &BriefingPublishRequest) -> ApiResult<Value> {
+    let mut briefing = match serde_json::to_value(request)? {
+        Value::Object(map) => map,
+        _ => return Err(ApiError::invalid("the briefing payload must be an object")),
+    };
+    briefing.remove("idempotency_key");
+    briefing.remove("expected_version");
+    briefing.insert("schema".to_owned(), Value::String("briefing.v1".to_owned()));
+    Ok(json!({"kind": "briefing_edition", "briefing": Value::Object(briefing)}))
+}
+
+pub fn compute_edition_delta(
+    previous_briefing: Option<&Value>,
+    request: &BriefingPublishRequest,
+) -> Value {
+    let mut previous_items = BTreeMap::new();
+    let previous_sections = previous_briefing
+        .and_then(|briefing| briefing.get("sections"))
+        .and_then(Value::as_array);
+    for section in previous_sections.into_iter().flatten() {
+        let items = section.get("items").and_then(Value::as_array);
+        for item in items.into_iter().flatten() {
+            if let Some(id) = item.get("id").and_then(Value::as_str) {
+                previous_items.insert(id.to_owned(), item.clone());
+            }
+        }
+    }
+    let mut added = Vec::new();
+    let mut changed = Vec::new();
+    let mut current_ids = HashSet::new();
+    for section in &request.sections {
+        for item in &section.items {
+            current_ids.insert(item.id.as_str());
+            match previous_items.get(&item.id) {
+                None => added.push(item.id.clone()),
+                Some(previous_item) if item_changed(previous_item, item) => {
+                    changed.push(item.id.clone());
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    let removed: Vec<String> = previous_items
+        .keys()
+        .filter(|id| !current_ids.contains(id.as_str()))
+        .cloned()
+        .collect();
+    added.sort();
+    changed.sort();
+    json!({"added": added, "changed": changed, "removed": removed})
+}
+
+fn item_changed(previous_item: &Value, item: &BriefingItem) -> bool {
+    let Ok(previous) = serde_json::from_value::<BriefingItem>(previous_item.clone()) else {
+        return true;
+    };
+    match (serde_json::to_string(&previous), serde_json::to_string(item)) {
+        (Ok(previous), Ok(current)) => previous != current,
+        _ => true,
+    }
+}
+
+pub async fn publish(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(request): Json<BriefingPublishRequest>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::Save)?;
+    validate_publish_request(&request)?;
+    let date = NaiveDate::parse_from_str(&request.date, "%Y-%m-%d")
+        .map_err(|_| ApiError::invalid("date must be a YYYY-MM-DD calendar date"))?;
+    let path = edition_entry_path(&request.date, &request.edition);
+    let mut prepared = simple_core::prepare_markdown(
+        &state,
+        WriteRequest {
+            path: path.clone(),
+            content: render_edition_markdown(&request),
+            media_type: "text/markdown".to_owned(),
+            expected_version: request.expected_version,
+            idempotency_key: request.idempotency_key.clone(),
+            metadata: edition_metadata(&request)?,
+        },
+    )
+    .await?;
+    let content_sha256 = prepared.content_sha256.clone();
+    let mut tx = state.begin_write(&auth).await?;
+    simple_core::require_local_publish_lock(
+        &mut tx,
+        format!(
+            "simple-entry:{}:{}",
+            auth.user_id.0,
+            simple_core::portable_path_key(&path)
+        ),
+        state.config.read_path_roundtrip_v1,
+    )
+    .await?;
+    let previous_briefing = simple_core::fetch_locked_markdown_entry(&mut tx, auth.user_id.0, &path)
+        .await?
+        .filter(|row| row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_none())
+        .and_then(|row| row.get::<Value, _>("metadata").get("briefing").cloned());
+    let delta = compute_edition_delta(previous_briefing.as_ref(), &request);
+    if let Some(briefing) = prepared
+        .metadata
+        .get_mut("briefing")
+        .and_then(Value::as_object_mut)
+    {
+        briefing.insert("delta".to_owned(), delta.clone());
+    }
+    let result = simple_core::upsert_markdown_in_tx(
+        &mut tx,
+        auth.user_id.0,
+        Some(auth.credential_id.0),
+        prepared,
+    )
+    .await?;
+    let skipped_invalid_urls = if result.no_op {
+        0
+    } else {
+        apply_edition_to_ledger(
+            &mut tx,
+            auth.user_id.0,
+            &format!("entry:{}", result.entry_id),
+            date,
+            &request.sections,
+            &request.omitted,
+        )
+        .await?
+    };
+    let generation = match result.generation {
+        Some(value) => value,
+        None => simple_core::max_generation_in_tx(&mut tx, auth.user_id.0).await?,
+    };
+    tx.commit().await?;
+    state.workspace_features.invalidate(auth.user_id.0).await;
+    let mut data = json!({
+        "path": path,
+        "entry_ref": format!("entry:{}", result.entry_id),
+        "version_ref": result.version_id.map(|id| format!("entry-version:{id}")),
+        "version": result.version,
+        "content_hash": format!("sha256:{content_sha256}"),
+        "delta": delta,
+    });
+    if skipped_invalid_urls > 0 {
+        data["skipped_invalid_urls"] = json!(skipped_invalid_urls);
+    }
+    let mut envelope = WorkspaceEnvelope::complete(data);
+    envelope.status = if result.no_op {
+        ResponseStatus::NoOp
+    } else {
+        ResponseStatus::Committed
+    };
+    envelope.corpus_revision = Some(format!("generation:{generation}"));
+    Ok(Json(envelope))
+}
+
+pub async fn apply_edition_to_ledger(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    edition_ref: &str,
+    date: NaiveDate,
+    sections: &[BriefingSection],
+    omitted: &[BriefingOmission],
+) -> ApiResult<usize> {
+    let mut skipped_invalid_urls = 0;
+    for section in sections {
+        for item in &section.items {
+            let Some(story) = &item.story else { continue };
+            let delivered = item.delta != "corroboration";
+            let event_at = story
+                .event_at
+                .as_deref()
+                .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok());
+            sqlx::query(
+                r#"
+                INSERT INTO straylight.briefing_stories (
+                  user_id,story_key,title,topic,entities,event_at,
+                  last_delivered_date,last_delivered_edition_ref,
+                  last_delivered_headline,delivery_count
+                ) VALUES (
+                  $1,$2,$3,$4,$5,$6,
+                  CASE WHEN $7 THEN $8 END,
+                  CASE WHEN $7 THEN $9 END,
+                  CASE WHEN $7 THEN $10 END,
+                  CASE WHEN $7 THEN 1 ELSE 0 END
+                )
+                ON CONFLICT (user_id,story_key) DO UPDATE SET
+                  title=CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title
+                        ELSE briefing_stories.title END,
+                  topic=CASE WHEN EXCLUDED.topic <> '' THEN EXCLUDED.topic
+                        ELSE briefing_stories.topic END,
+                  entities=CASE WHEN cardinality(EXCLUDED.entities) > 0 THEN EXCLUDED.entities
+                           ELSE briefing_stories.entities END,
+                  event_at=COALESCE(EXCLUDED.event_at,briefing_stories.event_at),
+                  last_seen_at=clock_timestamp(),
+                  last_delivered_date=CASE WHEN $7 THEN $8
+                                      ELSE briefing_stories.last_delivered_date END,
+                  last_delivered_edition_ref=CASE WHEN $7 THEN $9
+                                             ELSE briefing_stories.last_delivered_edition_ref END,
+                  last_delivered_headline=CASE WHEN $7 THEN $10
+                                          ELSE briefing_stories.last_delivered_headline END,
+                  delivery_count=briefing_stories.delivery_count
+                                 + CASE WHEN $7 THEN 1 ELSE 0 END
+                "#,
+            )
+            .bind(user_id)
+            .bind(&story.key)
+            .bind(&story.title)
+            .bind(&section.topic)
+            .bind(&story.entities)
+            .bind(event_at)
+            .bind(delivered)
+            .bind(date)
+            .bind(edition_ref)
+            .bind(&item.headline_md)
+            .execute(&mut **tx)
+            .await?;
+            skipped_invalid_urls += insert_story_urls(tx, user_id, &story.key, &story.urls).await?;
+        }
+    }
+    for omission in omitted {
+        let Some(story_key) = &omission.story_key else {
+            continue;
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.briefing_stories (user_id,story_key,suppression_count)
+            VALUES ($1,$2,1)
+            ON CONFLICT (user_id,story_key) DO UPDATE SET
+              suppression_count=briefing_stories.suppression_count + 1,
+              last_seen_at=clock_timestamp()
+            "#,
+        )
+        .bind(user_id)
+        .bind(story_key)
+        .execute(&mut **tx)
+        .await?;
+        skipped_invalid_urls += insert_story_urls(tx, user_id, story_key, &omission.urls).await?;
+    }
+    Ok(skipped_invalid_urls)
+}
+
+async fn insert_story_urls(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    story_key: &str,
+    urls: &[String],
+) -> ApiResult<usize> {
+    let mut skipped = 0;
+    for url in urls {
+        let Ok(canonical) = canonicalize_url(url) else {
+            skipped += 1;
+            continue;
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.briefing_story_urls (user_id,url_hash,story_key,url)
+            VALUES ($1,$2,$3,$4)
+            ON CONFLICT (user_id,url_hash) DO NOTHING
+            "#,
+        )
+        .bind(user_id)
+        .bind(story_url_hash(&canonical))
+        .bind(story_key)
+        .bind(&canonical)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(skipped)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -583,6 +871,127 @@ mod tests {
         assert_eq!(
             story_url_hash("https://example.com/a?a=1&b=2"),
             "051029b6a13fc6686e4523427e03b3a177e6970f9bfe03b026a9a023819b902a",
+        );
+    }
+
+    #[test]
+    fn edition_entry_path_follows_the_canonical_convention() {
+        assert_eq!(
+            edition_entry_path("2026-08-01", "morning"),
+            "Briefings/2026/Morning briefing - 2026-08-01.md",
+        );
+        assert_eq!(
+            edition_entry_path("2027-01-02", "health-update"),
+            "Briefings/2027/Health-update briefing - 2027-01-02.md",
+        );
+    }
+
+    #[test]
+    fn edition_metadata_echoes_the_request_without_transport_fields() {
+        let metadata = edition_metadata(&fixture_request()).expect("metadata renders");
+        assert_eq!(
+            metadata.get("kind").and_then(Value::as_str),
+            Some("briefing_edition"),
+        );
+        let briefing = metadata.get("briefing").expect("briefing payload");
+        assert_eq!(
+            briefing.get("schema").and_then(Value::as_str),
+            Some("briefing.v1"),
+        );
+        assert_eq!(
+            briefing.get("date").and_then(Value::as_str),
+            Some("2026-08-01"),
+        );
+        assert_eq!(
+            briefing
+                .get("sections")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(2),
+        );
+        assert_eq!(
+            briefing
+                .get("omitted")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1),
+        );
+        assert!(briefing.get("idempotency_key").is_none());
+        assert!(briefing.get("expected_version").is_none());
+        assert!(briefing.get("delta").is_none(), "publish injects the delta");
+    }
+
+    #[test]
+    fn delta_reports_everything_added_without_a_previous_version() {
+        let delta = compute_edition_delta(None, &fixture_request());
+        assert_eq!(
+            delta,
+            json!({
+                "added": ["amzn-open", "openai-hf-incident"],
+                "changed": [],
+                "removed": []
+            }),
+        );
+    }
+
+    #[test]
+    fn delta_diffs_item_ids_and_content_across_the_whole_edition() {
+        let previous_metadata = edition_metadata(&fixture_request()).expect("metadata renders");
+        let previous = previous_metadata.get("briefing").expect("briefing payload");
+        let mut request = fixture_request();
+        request.sections[0].items[0].body_md = "The postmortem gained a root cause.".to_owned();
+        request.sections[1].items[0].id = "amzn-close".to_owned();
+        let delta = compute_edition_delta(Some(previous), &request);
+        assert_eq!(
+            delta,
+            json!({
+                "added": ["amzn-close"],
+                "changed": ["openai-hf-incident"],
+                "removed": ["amzn-open"]
+            }),
+        );
+    }
+
+    #[test]
+    fn delta_ignores_section_regrouping_of_unchanged_items() {
+        let previous_metadata = edition_metadata(&fixture_request()).expect("metadata renders");
+        let previous = previous_metadata.get("briefing").expect("briefing payload");
+        let mut request = fixture_request();
+        let moved = request.sections[1].items.remove(0);
+        request.sections[0].items.push(moved);
+        request.sections.remove(1);
+        let delta = compute_edition_delta(Some(previous), &request);
+        assert_eq!(delta, json!({"added": [], "changed": [], "removed": []}));
+    }
+
+    #[test]
+    fn field_caps_do_not_subsume_the_rendered_size_cap() {
+        let mut request = fixture_request();
+        request.sections = (0..SECTION_LIMIT)
+            .map(|section_index| BriefingSection {
+                topic: format!("topic-{section_index}"),
+                title: format!("Section {section_index}"),
+                items: (0..SECTION_ITEM_LIMIT)
+                    .map(|item_index| BriefingItem {
+                        id: format!("item-{section_index}-{item_index}"),
+                        kind: "news".to_owned(),
+                        headline_md: "**Headline.**".to_owned(),
+                        body_md: String::new(),
+                        why_it_matters: String::new(),
+                        detail_md: "d".repeat(DETAIL_LIMIT_CHARS),
+                        what_changed: String::new(),
+                        delta: default_delta(),
+                        story: None,
+                        times: None,
+                    })
+                    .collect(),
+            })
+            .collect();
+        assert!(validate_publish_request(&request).is_ok());
+        assert!(
+            render_edition_markdown(&request).len() > crate::simple_core::MAX_WRITE_BYTES,
+            "a validation-passing edition can exceed the 4 MiB write cap, \
+             so the prepare-stage entry_too_large guard remains load-bearing",
         );
     }
 

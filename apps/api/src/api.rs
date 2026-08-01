@@ -12,7 +12,8 @@ use tower_http::{
 };
 
 use crate::{
-    auth, db::AppState, dreams, eval_service, request_context, service, simple_core, telemetry,
+    auth, briefing_service, db::AppState, dreams, eval_service, request_context, service,
+    simple_core, telemetry,
 };
 
 pub fn router(state: AppState) -> Router {
@@ -36,6 +37,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/workspace/capture",
             post(simple_core::capture).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
+        .route(
+            "/workspace/briefings/publish",
+            post(briefing_service::publish).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
         )
         .route("/workspace/changes", get(simple_core::changes))
         .route("/workspace/checkpoint", post(simple_core::checkpoint))
