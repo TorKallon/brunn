@@ -65,7 +65,8 @@ export const briefingEditionFixture = {
             {
               id: "openai-o5",
               kind: "news",
-              headline_md: "**OpenAI ships o5** with a new eval harness",
+              headline_md:
+                "**[OpenAI ships o5 with a new eval harness](https://openai.com/blog/o5)**",
               delta: "new",
               detail_md:
                 "o5 posts state-of-the-art results on long-horizon agentic tasks.",

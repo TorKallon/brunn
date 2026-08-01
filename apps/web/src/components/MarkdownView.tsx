@@ -43,16 +43,24 @@ const SANITIZE_CONFIG: Config = {
 
 const EXTERNAL_HREF = /^https?:\/\//i;
 
-function renderMarkdown(markdown: string): string {
+function renderMarkdown(markdown: string, stripAnchors: boolean): string {
   // Core marked emits no heading ids; gfm covers tables and strikethrough.
   const html = marked.parse(markdown, { async: false, gfm: true });
   const sanitized = DOMPurify.sanitize(html, SANITIZE_CONFIG);
   const template = document.createElement("template");
   template.innerHTML = sanitized;
-  for (const anchor of template.content.querySelectorAll("a[href]")) {
-    if (EXTERNAL_HREF.test(anchor.getAttribute("href") ?? "")) {
-      anchor.setAttribute("target", "_blank");
-      anchor.setAttribute("rel", "noreferrer noopener");
+  if (stripAnchors) {
+    // Unwrap anchors to their children so link-bearing markdown can render
+    // inside interactive elements without nesting interactive content.
+    for (const anchor of [...template.content.querySelectorAll("a")]) {
+      anchor.replaceWith(...anchor.childNodes);
+    }
+  } else {
+    for (const anchor of template.content.querySelectorAll("a[href]")) {
+      if (EXTERNAL_HREF.test(anchor.getAttribute("href") ?? "")) {
+        anchor.setAttribute("target", "_blank");
+        anchor.setAttribute("rel", "noreferrer noopener");
+      }
     }
   }
   return template.innerHTML;
@@ -61,11 +69,16 @@ function renderMarkdown(markdown: string): string {
 export function MarkdownView({
   markdown,
   className,
+  stripAnchors = false,
 }: {
   markdown: string;
   className?: string;
+  stripAnchors?: boolean;
 }) {
-  const html = useMemo(() => renderMarkdown(markdown), [markdown]);
+  const html = useMemo(
+    () => renderMarkdown(markdown, stripAnchors),
+    [markdown, stripAnchors],
+  );
   return (
     <div
       className={className ? `markdown-view ${className}` : "markdown-view"}

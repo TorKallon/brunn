@@ -119,6 +119,34 @@ describe("briefings daily thread", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("unwraps headline links in the collapsed row but keeps them in the detail", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/briefings": briefingListFixture,
+      "GET /api/v1/workspace/briefings/2026-08-01/morning":
+        briefingEditionFixture,
+    });
+    const user = userEvent.setup();
+    renderApp("/briefings/2026-08-01?edition=morning", "read-token");
+
+    const row = await screen.findByRole("button", {
+      name: /OpenAI ships o5/,
+    });
+    expect(row.querySelector("a")).toBeNull();
+    expect(
+      within(row).getByText("OpenAI ships o5 with a new eval harness"),
+    ).toBeInTheDocument();
+
+    await user.click(row);
+    const detail = screen.getByRole("region", {
+      name: "Frontier labs item detail",
+    });
+    expect(
+      within(detail).getByRole("link", {
+        name: "OpenAI ships o5 with a new eval harness",
+      }),
+    ).toHaveAttribute("href", "https://openai.com/blog/o5");
+  });
+
   it("sends item actions with the expected payloads", async () => {
     const actionPayloads: unknown[] = [];
     installApiMock({

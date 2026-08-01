@@ -56,6 +56,9 @@ export function BriefingItemRow({
   });
 
   const chip = item.delta ? DELTA_CHIPS[item.delta] : undefined;
+  // House-style headlines are bold links; the collapsed row unwraps them to
+  // plain text, so the linked headline must stay reachable in the detail.
+  const headlineHasLink = /\[[^\]]*\]\([^)]*\)/.test(item.headline_md);
   const detailMarkdown = item.detail_md ?? item.body_md;
   const urls = item.story?.urls ?? [];
   const times = (
@@ -120,6 +123,7 @@ export function BriefingItemRow({
         <MarkdownView
           className="briefing-headline"
           markdown={item.headline_md}
+          stripAnchors
         />
         {chip ? (
           <span className={`state-chip tone-${chip.tone}`}>{chip.label}</span>
@@ -137,6 +141,12 @@ export function BriefingItemRow({
           role="region"
           aria-label={`${sectionTitle} item detail`}
         >
+          {headlineHasLink ? (
+            <MarkdownView
+              className="briefing-detail-headline"
+              markdown={item.headline_md}
+            />
+          ) : null}
           {detailMarkdown ? <MarkdownView markdown={detailMarkdown} /> : null}
           {item.what_changed ? (
             <p className="what-changed">
