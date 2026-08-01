@@ -1007,8 +1007,9 @@ pub async fn dedupe_candidate_in_tx(
                    last_delivered_headline,delivery_count,suppression_count
             FROM straylight.briefing_stories
             WHERE user_id=$1
-              AND title <> ''
-              AND to_tsvector('english',title) @@ plainto_tsquery('english',$2)
+              AND (title <> '' OR cardinality(entities) > 0)
+              AND to_tsvector('english',title || ' ' || array_to_string(entities,' '))
+                  @@ plainto_tsquery('english',$2)
             ORDER BY last_seen_at DESC,story_key
             LIMIT $3
             "#,
@@ -1095,6 +1096,9 @@ pub const BRIEFING_LIST_DEFAULT_LIMIT: usize = 14;
 pub const BRIEFING_LIST_MAX_LIMIT: usize = 60;
 pub const FEEDBACK_TAIL_LINES: usize = 50;
 pub const NOTE_LIMIT_CHARS: usize = 1_000;
+pub const TOPIC_BODY_LIMIT_CHARS: usize = 16_000;
+pub const PENDING_REQUEST_LIMIT: usize = 50;
+pub const REQUEST_NOTE_LIMIT_CHARS: usize = 2_000;
 pub const DEFAULT_TOPIC_SECTION_ORDER: i64 = 1_000;
 pub const DEFAULT_TOPIC_FRESHNESS_HOURS: i64 = 48;
 pub const TOPIC_MODES: [&str; 5] = [
@@ -1154,6 +1158,8 @@ pub struct BriefingTopic {
     pub suppress_unchanged: bool,
     pub freshness_hours: i64,
     pub body: String,
+    /// True when the body exceeded `TOPIC_BODY_LIMIT_CHARS` and was cut.
+    pub truncated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parse_error: Option<String>,
 }
@@ -1161,6 +1167,14 @@ pub struct BriefingTopic {
 fn note_parse_error(slot: &mut Option<String>, message: String) {
     if slot.is_none() {
         *slot = Some(message);
+    }
+}
+
+fn cap_chars(value: &str, limit: usize) -> (String, bool) {
+    if value.chars().count() <= limit {
+        (value.to_owned(), false)
+    } else {
+        (value.chars().take(limit).collect(), true)
     }
 }
 
@@ -1176,19 +1190,22 @@ pub fn parse_topic_document(slug: &str, content: &str) -> BriefingTopic {
         symbols: Vec::new(),
         suppress_unchanged: true,
         freshness_hours: DEFAULT_TOPIC_FRESHNESS_HOURS,
-        body: content.to_owned(),
+        body: String::new(),
+        truncated: false,
         parse_error: None,
     };
     let Some((frontmatter, body)) = split_frontmatter(content) else {
+        (topic.body, topic.truncated) = cap_chars(content, TOPIC_BODY_LIMIT_CHARS);
         topic.parse_error =
             Some("frontmatter is missing or not closed; raw content preserved as body".to_owned());
         return topic;
     };
-    topic.body = body
-        .strip_prefix("\r\n")
-        .or_else(|| body.strip_prefix('\n'))
-        .unwrap_or(body)
-        .to_owned();
+    (topic.body, topic.truncated) = cap_chars(
+        body.strip_prefix("\r\n")
+            .or_else(|| body.strip_prefix('\n'))
+            .unwrap_or(body),
+        TOPIC_BODY_LIMIT_CHARS,
+    );
     let mut active_list: Option<&'static str> = None;
     for raw in frontmatter.lines() {
         let line = raw.trim_end_matches('\r');
@@ -1556,6 +1573,15 @@ pub struct BriefingEditionQuery {
     pub version: Option<i64>,
 }
 
+/// Edition slug derived from the canonical filename convention
+/// `<Edition> briefing - <date>.md`, for interim/legacy editions whose
+/// metadata carries no edition field.
+fn edition_from_path(path: &str) -> Option<String> {
+    let filename = path.rsplit('/').next()?;
+    let prefix = filename.split(" briefing - ").next()?;
+    (prefix != filename && !prefix.is_empty()).then(|| prefix.to_lowercase())
+}
+
 pub async fn list_editions_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
@@ -1567,7 +1593,11 @@ pub async fn list_editions_in_tx(
         Some(path) => {
             let date = sqlx::query_scalar::<_, Option<String>>(
                 r#"
-                SELECT version.metadata->'briefing'->>'date'
+                SELECT coalesce(
+                         version.metadata->'briefing'->>'date',
+                         version.metadata->>'date',
+                         substring(entry.path from ' - (\d{4}-\d{2}-\d{2})[.]md$')
+                       )
                 FROM straylight.entries AS entry
                 JOIN straylight.entry_versions AS version
                   ON version.user_id=entry.user_id
@@ -1594,24 +1624,34 @@ pub async fn list_editions_in_tx(
             }
         }
     };
+    // Interim-contract editions carry the kind marker but no briefing
+    // payload; their date falls back to top-level metadata, then the path.
     let rows = sqlx::query(
         r#"
-        SELECT entry.id,entry.path,entry.current_version,
-               version.metadata->'briefing' AS briefing,
-               version.created_at
-        FROM straylight.entries AS entry
-        JOIN straylight.entry_versions AS version
-          ON version.user_id=entry.user_id
-         AND version.entry_id=entry.id
-         AND version.version=entry.current_version
-        WHERE entry.user_id=$1
-          AND entry.deleted_at IS NULL
-          AND entry.path LIKE 'Briefings/%'
-          AND version.metadata->>'kind'='briefing_edition'
-          AND version.metadata->'briefing'->>'date' IS NOT NULL
-          AND ($2::text IS NULL
-               OR (version.metadata->'briefing'->>'date',entry.path) < ($2,$3))
-        ORDER BY version.metadata->'briefing'->>'date' DESC,entry.path DESC
+        SELECT listing.id,listing.path,listing.current_version,
+               listing.briefing,listing.metadata,listing.order_date
+        FROM (
+          SELECT entry.id,entry.path,entry.current_version,
+                 version.metadata->'briefing' AS briefing,
+                 version.metadata AS metadata,
+                 coalesce(
+                   version.metadata->'briefing'->>'date',
+                   version.metadata->>'date',
+                   substring(entry.path from ' - (\d{4}-\d{2}-\d{2})[.]md$')
+                 ) AS order_date
+          FROM straylight.entries AS entry
+          JOIN straylight.entry_versions AS version
+            ON version.user_id=entry.user_id
+           AND version.entry_id=entry.id
+           AND version.version=entry.current_version
+          WHERE entry.user_id=$1
+            AND entry.deleted_at IS NULL
+            AND entry.path LIKE 'Briefings/%'
+            AND version.metadata->>'kind'='briefing_edition'
+        ) AS listing
+        WHERE listing.order_date IS NOT NULL
+          AND ($2::text IS NULL OR (listing.order_date,listing.path) < ($2,$3))
+        ORDER BY listing.order_date DESC,listing.path DESC
         LIMIT $4
         "#,
     )
@@ -1627,9 +1667,24 @@ pub async fn list_editions_in_tx(
         .take(usize::try_from(limit).unwrap_or(usize::MAX))
         .map(|row| {
             let entry_id: Uuid = row.get("id");
+            let path: String = row.get("path");
+            let metadata: Value = row.get("metadata");
+            let order_date: String = row.get("order_date");
             let briefing = row
                 .get::<Option<Value>, _>("briefing")
                 .unwrap_or_else(|| json!({}));
+            let date = briefing
+                .get("date")
+                .or_else(|| metadata.get("date"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or(order_date);
+            let edition = briefing
+                .get("edition")
+                .or_else(|| metadata.get("edition"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .or_else(|| edition_from_path(&path));
             let sections = briefing.get("sections").and_then(Value::as_array);
             let section_titles: Vec<Value> = sections
                 .into_iter()
@@ -1647,9 +1702,9 @@ pub async fn list_editions_in_tx(
                 })
                 .sum();
             json!({
-                "date": briefing.get("date").cloned().unwrap_or(Value::Null),
-                "edition": briefing.get("edition").cloned().unwrap_or(Value::Null),
-                "path": row.get::<String, _>("path"),
+                "date": date,
+                "edition": edition,
+                "path": path,
                 "entry_ref": format!("entry:{entry_id}"),
                 "version": row.get::<i64, _>("current_version"),
                 "generated_at": briefing.get("generated_at").cloned().unwrap_or(Value::Null),
@@ -1866,21 +1921,27 @@ pub async fn topics_snapshot_in_tx(
         WHERE entry.user_id=$1
           AND entry.deleted_at IS NULL
           AND entry.path LIKE 'Briefings/Requests/%'
-        ORDER BY entry.path
+        ORDER BY entry.path DESC
         "#,
     )
     .bind(user_id)
     .fetch_all(&mut **tx)
     .await?;
     let mut pending_requests = Vec::new();
+    let mut pending_total = 0_usize;
     for row in rows {
         let path: String = row.get("path");
         let fields = parse_request_document(&row.get::<String, _>("content"));
         if fields.status.as_deref() != Some("pending") {
             continue;
         }
+        pending_total += 1;
+        if pending_requests.len() >= PENDING_REQUEST_LIMIT {
+            continue;
+        }
         let entry_id: Uuid = row.get("id");
         let date = fields.date.clone().or_else(|| request_date_from_path(&path));
+        let (note, _) = cap_chars(&fields.note, REQUEST_NOTE_LIMIT_CHARS);
         pending_requests.push(json!({
             "path": path,
             "entry_ref": format!("entry:{entry_id}"),
@@ -1888,9 +1949,10 @@ pub async fn topics_snapshot_in_tx(
             "item_id": fields.item_id,
             "edition_ref": fields.edition_ref,
             "topic": fields.topic,
-            "note": fields.note,
+            "note": note,
         }));
     }
+    let pending_requests_truncated = pending_total > PENDING_REQUEST_LIMIT;
     let feedback_path = feedback_log_path(now);
     let feedback = sqlx::query_scalar::<_, String>(
         r#"
@@ -1921,6 +1983,7 @@ pub async fn topics_snapshot_in_tx(
     Ok(json!({
         "topics": topics,
         "pending_requests": pending_requests,
+        "pending_requests_truncated": pending_requests_truncated,
         "feedback_path": feedback_path,
         "feedback_tail": feedback_tail,
     }))
@@ -2990,6 +3053,26 @@ mod tests {
                 .is_some_and(|error| error.contains("section_order")),
         );
         assert_eq!(topic.section_order, DEFAULT_TOPIC_SECTION_ORDER);
+    }
+
+    #[test]
+    fn topic_parse_caps_oversized_bodies_with_a_truncated_flag() {
+        let small = parse_topic_document("ai", "---\nkind: briefing_topic\n---\nShort body.\n");
+        assert!(!small.truncated);
+        assert_eq!(small.body, "Short body.\n");
+
+        let oversized_body = "b".repeat(TOPIC_BODY_LIMIT_CHARS + 100);
+        let oversized = parse_topic_document(
+            "ai",
+            &format!("---\nkind: briefing_topic\n---\n{oversized_body}"),
+        );
+        assert!(oversized.truncated);
+        assert_eq!(oversized.body.chars().count(), TOPIC_BODY_LIMIT_CHARS);
+
+        let malformed = parse_topic_document("ai", &oversized_body);
+        assert!(malformed.truncated, "the malformed raw-body path is capped too");
+        assert_eq!(malformed.body.chars().count(), TOPIC_BODY_LIMIT_CHARS);
+        assert!(malformed.parse_error.is_some());
     }
 
     #[test]

@@ -46,7 +46,7 @@ const briefingStoryRef = z.object({
     "Canonical source URLs for the story; the service canonicalizes and hashes them for dedupe.",
   ),
   title: z.string().max(500).optional(),
-  entities: z.array(z.string()).optional(),
+  entities: z.array(z.string().max(120)).max(16).optional(),
   event_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe(
     "Exact date the underlying event happened, YYYY-MM-DD. Omit this field when unknown; never guess.",
   ),
@@ -78,8 +78,8 @@ const briefingItem = z.object({
 });
 
 const briefingSection = z.object({
-  topic: z.string().describe("Exact topic slug from briefing.topics; never invent one."),
-  title: z.string(),
+  topic: z.string().max(80).describe("Exact topic slug from briefing.topics; never invent one."),
+  title: z.string().max(200),
   items: z.array(briefingItem).max(32),
 });
 
@@ -89,7 +89,7 @@ const briefingOmission = z.object({
     "identified the duplicate when one exists.",
   ),
   urls: z.array(storyUrl).max(8).optional(),
-  reason: z.string().min(1),
+  reason: z.string().min(1).max(1_000),
 });
 
 const dedupeCandidate = z.object({
@@ -382,13 +382,13 @@ registerJsonTool(
     edition: z.string().regex(/^[a-z0-9][a-z0-9-]{1,31}$/).describe(
       "Lowercase edition slug such as morning.",
     ),
-    timezone: z.string().optional().describe(
+    timezone: z.string().max(64).optional().describe(
       "IANA timezone name used to render generated-at times. Omit this field for the service default.",
     ),
-    generated_at: z.string().optional().describe(
+    generated_at: z.string().max(64).optional().describe(
       "Exact RFC3339 timestamp when the briefing content was generated. Omit this field to use the publish time.",
     ),
-    summary_md: z.array(z.string()).max(12).optional().describe(
+    summary_md: z.array(z.string().max(1_000)).max(12).optional().describe(
       "30-second version: one Markdown bullet per line, most important first.",
     ),
     sections: z.array(briefingSection).max(24).optional(),

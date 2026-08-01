@@ -171,7 +171,8 @@ async fn seed_ledger(pool: &PgPool, user_id: Uuid) {
                     "story": {
                         "key": "story-beta",
                         "urls": ["https://example.com/beta"],
-                        "title": "Kimi weights release"
+                        "title": "Kimi weights release",
+                        "entities": ["Moonshot"]
                     }
                 }
             ]
@@ -309,6 +310,28 @@ async fn dedupe_lookups_classify_url_story_key_and_unseen_candidates() {
         .collect();
     assert_eq!(ledger_titles, ["story-alpha"]);
 
+    // The near-lane FTS document includes entities, so a candidate title
+    // matching only an entity still surfaces the story.
+    let report = dedupe_candidate_in_tx(
+        &mut tx,
+        user_id,
+        &candidate(json!({
+            "urls": ["https://example.com/unrelated"],
+            "title": "Moonshot"
+        })),
+    )
+    .await
+    .expect("entity candidate report");
+    assert_eq!(report.verdict_hint, "unseen");
+    assert!(
+        report
+            .near
+            .iter()
+            .any(|entry| entry["lane"] == "ledger_titles"
+                && entry["story_key"] == "story-beta"),
+        "an entity-only match must surface in the near lane",
+    );
+
     // An exact hit is not repeated in the near lane for the same title.
     let report = dedupe_candidate_in_tx(
         &mut tx,
@@ -412,6 +435,29 @@ async fn list_and_get_editions_project_metadata_and_paginate() {
         json!({}),
     )
     .await;
+    // Interim-contract editions: kind marker with top-level date/edition but
+    // no briefing payload, and a bare kind marker whose date and edition can
+    // only come from the path.
+    insert_entry_version(
+        &pool,
+        user_id,
+        Uuid::now_v7(),
+        "Briefings/2026/Morning briefing - 2026-07-25.md",
+        1,
+        "# Morning briefing - 2026-07-25\n",
+        json!({"kind": "briefing_edition", "date": "2026-07-25", "edition": "morning"}),
+    )
+    .await;
+    insert_entry_version(
+        &pool,
+        user_id,
+        Uuid::now_v7(),
+        "Briefings/2026/Evening briefing - 2026-07-24.md",
+        1,
+        "# Evening briefing - 2026-07-24\n",
+        json!({"kind": "briefing_edition"}),
+    )
+    .await;
 
     let mut tx = pool.begin().await.expect("begin list");
     let (page_one, truncated) = list_editions_in_tx(&mut tx, user_id, 2, None)
@@ -448,12 +494,41 @@ async fn list_and_get_editions_project_metadata_and_paginate() {
     )
     .await
     .expect("second page lists");
-    assert!(!truncated);
-    assert_eq!(page_two.len(), 1);
+    assert!(truncated);
+    assert_eq!(page_two.len(), 2);
     assert_eq!(
         page_two[0]["path"],
         "Briefings/2026/Morning briefing - 2026-07-31.md",
     );
+    // Interim editions list with metadata-derived fields and empty structure.
+    assert_eq!(
+        page_two[1]["path"],
+        "Briefings/2026/Morning briefing - 2026-07-25.md",
+    );
+    assert_eq!(page_two[1]["date"], "2026-07-25");
+    assert_eq!(page_two[1]["edition"], "morning");
+    assert_eq!(page_two[1]["summary_md"], json!([]));
+    assert_eq!(page_two[1]["section_titles"], json!([]));
+    assert_eq!(page_two[1]["item_count"], 0);
+
+    let (page_three, truncated) = list_editions_in_tx(
+        &mut tx,
+        user_id,
+        2,
+        Some("Briefings/2026/Morning briefing - 2026-07-25.md"),
+    )
+    .await
+    .expect("third page lists");
+    assert!(!truncated);
+    assert_eq!(page_three.len(), 1);
+    // A bare kind marker derives its date and edition from the path.
+    assert_eq!(
+        page_three[0]["path"],
+        "Briefings/2026/Evening briefing - 2026-07-24.md",
+    );
+    assert_eq!(page_three[0]["date"], "2026-07-24");
+    assert_eq!(page_three[0]["edition"], "evening");
+    assert_eq!(page_three[0]["item_count"], 0);
 
     let error = list_editions_in_tx(&mut tx, user_id, 2, Some("Briefings/Topics/ai.md"))
         .await
@@ -578,6 +653,37 @@ async fn topics_snapshot_lists_topics_requests_and_feedback_tail() {
         json!({"kind": "briefing_request"}),
     )
     .await;
+    // Bulk pending requests to push past the snapshot cap of 50, plus one
+    // with an oversized note.
+    for index in 0..50 {
+        let item_id = format!("item-{index:02}");
+        insert_entry_version(
+            &pool,
+            user_id,
+            Uuid::now_v7(),
+            &format!("Briefings/Requests/2026-07-01 - {item_id}.md"),
+            1,
+            &render_request_document("2026-07-01", &edition_ref, &item_id, None, Some("Bulk.")),
+            json!({"kind": "briefing_request"}),
+        )
+        .await;
+    }
+    insert_entry_version(
+        &pool,
+        user_id,
+        Uuid::now_v7(),
+        "Briefings/Requests/2026-07-02 - note-big.md",
+        1,
+        &render_request_document(
+            "2026-07-02",
+            &edition_ref,
+            "note-big",
+            None,
+            Some(&"n".repeat(2_500)),
+        ),
+        json!({"kind": "briefing_request"}),
+    )
+    .await;
     let feedback_lines: Vec<String> = (1..=60).map(|index| format!("- line {index}")).collect();
     insert_entry_version(
         &pool,
@@ -626,16 +732,41 @@ async fn topics_snapshot_lists_topics_requests_and_feedback_tail() {
     let pending = snapshot["pending_requests"]
         .as_array()
         .expect("pending requests array");
-    assert_eq!(pending.len(), 1, "answered requests are excluded");
+    assert_eq!(pending.len(), 50, "the snapshot caps pending requests");
+    assert_eq!(snapshot["pending_requests_truncated"], true);
     assert_eq!(
         pending[0]["path"],
         "Briefings/Requests/2026-08-01 - item-one.md",
+        "newest path first",
     );
     assert_eq!(pending[0]["date"], "2026-08-01");
     assert_eq!(pending[0]["item_id"], "item-one");
     assert_eq!(pending[0]["edition_ref"], json!(edition_ref));
     assert_eq!(pending[0]["topic"], "ai");
     assert_eq!(pending[0]["note"], "Compare vendors.");
+    assert_eq!(
+        pending[1]["path"],
+        "Briefings/Requests/2026-07-02 - note-big.md",
+    );
+    assert_eq!(
+        pending[1]["note"].as_str().map(|note| note.chars().count()),
+        Some(2_000),
+        "request notes are capped in the snapshot",
+    );
+    for dropped in ["item-00", "item-01"] {
+        assert!(
+            pending
+                .iter()
+                .all(|request| request["item_id"].as_str() != Some(dropped)),
+            "the oldest requests beyond the cap are dropped ({dropped})",
+        );
+    }
+    // The answered request is excluded even under the cap.
+    assert!(
+        pending
+            .iter()
+            .all(|request| request["item_id"].as_str() != Some("item-two")),
+    );
 
     assert_eq!(snapshot["feedback_path"], json!(feedback_log_path(now)));
     let tail = snapshot["feedback_tail"].as_array().expect("tail array");
