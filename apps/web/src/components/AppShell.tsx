@@ -11,6 +11,7 @@ import {
   Menu,
   Search,
   Sparkles,
+  Sunrise,
   X,
 } from "lucide-react";
 import { type PropsWithChildren, useState } from "react";
@@ -20,6 +21,7 @@ import { formatRelative } from "../lib/format";
 import { ReadOnlyNotice, StatusBadge } from "./StateViews";
 
 const navItems = [
+  { to: "/briefings", label: "Briefings", icon: Sunrise },
   { to: "/work", label: "Workspace", icon: FolderOpen },
   { to: "/explore", label: "Search", icon: Search },
   { to: "/capture", label: "Write", icon: FilePenLine },

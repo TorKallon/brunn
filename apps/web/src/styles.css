@@ -1925,6 +1925,189 @@ pre,
   text-transform: uppercase;
 }
 
+/* Briefings daily thread */
+
+.briefing-card {
+  display: block;
+  color: inherit;
+}
+
+.briefing-card:hover {
+  border-color: var(--line-strong);
+  background: #fbfcfc;
+  color: inherit;
+}
+
+.briefing-card header > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.briefing-card-summary {
+  margin-top: 8px;
+  color: #414a48;
+  font-size: 0.8rem;
+}
+
+.briefing-card footer {
+  align-items: center;
+}
+
+.briefing-chip {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.briefing-thread {
+  display: grid;
+  min-width: 0;
+}
+
+.briefing-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.briefing-summary h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.briefing-summary-list {
+  display: grid;
+  gap: 5px;
+}
+
+.briefing-summary .button {
+  justify-self: start;
+}
+
+.briefing-section-items {
+  display: grid;
+}
+
+.briefing-item {
+  border-bottom: 1px solid var(--line);
+}
+
+.briefing-item:last-child {
+  border-bottom: 0;
+}
+
+.briefing-index-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(96px, 0.24fr) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.briefing-index-row:hover {
+  background: #f3f7f5;
+}
+
+.briefing-kicker {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.briefing-headline {
+  font-size: 0.84rem;
+}
+
+.briefing-headline p {
+  display: inline;
+  margin: 0;
+}
+
+.briefing-chevron {
+  color: var(--faint);
+  transition: transform 140ms ease;
+}
+
+.briefing-index-row[aria-expanded="true"] .briefing-chevron {
+  transform: rotate(180deg);
+}
+
+.state-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: #4f5856;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.state-chip.tone-info { border-color: #9fc0d0; background: var(--blue-soft); color: var(--blue); }
+.state-chip.tone-warning { border-color: #d8ba7a; background: var(--amber-soft); color: var(--amber); }
+
+.expanded-detail {
+  display: grid;
+  gap: 10px;
+  margin: 0 6px 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f7f9f8;
+}
+
+.what-changed {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.briefing-sources {
+  display: grid;
+  gap: 3px;
+  font-size: 0.78rem;
+}
+
+.briefing-sources a {
+  width: fit-content;
+  overflow-wrap: anywhere;
+}
+
+.briefing-sources span {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-width: 1100px) {
   .filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1973,6 +2156,8 @@ pre,
   .control-audit > div { grid-template-columns: minmax(110px, 0.5fr) minmax(0, 1fr) auto; }
   .audit-list > div > span,
   .control-audit > div > code { display: none; }
+  .briefing-index-row { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 3px; }
+  .briefing-kicker { grid-column: 1 / -1; }
 }
 
 @media (max-width: 600px) {
@@ -2000,6 +2185,9 @@ pre,
   .compact-field { justify-content: space-between; }
   .change-list > div { grid-template-columns: auto minmax(0, 1fr) auto; }
   .change-list > div > span:not(.status-badge) { display: none; }
+  .briefing-index-row { gap: 8px; padding-inline: 2px; }
+  .expanded-detail { margin-inline: 0; }
+  .item-actions .button { flex: 1 1 auto; }
   .result-card footer .button { width: 100%; margin-left: 0; }
   .readonly-notice { padding: 5px 7px; font-size: 0.68rem; }
   .secret-once { grid-template-columns: minmax(0, 1fr) auto; }

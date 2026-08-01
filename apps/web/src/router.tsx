@@ -10,6 +10,8 @@ import {
 import { AuthBoundary } from "./components/AuthBoundary";
 import { EmptyState } from "./components/StateViews";
 import { AssetsPage } from "./pages/AssetsPage";
+import { BriefingEditionPage } from "./pages/BriefingEditionPage";
+import { BriefingsPage } from "./pages/BriefingsPage";
 import { CapturePage } from "./pages/CapturePage";
 import { ControlPage } from "./pages/ControlPage";
 import { DreamsPage } from "./pages/DreamsPage";
@@ -41,6 +43,25 @@ const indexRoute = createRoute({
   },
 });
 const workRoute = createRoute({ getParentRoute: () => rootRoute, path: "/work", component: WorkPage });
+const briefingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/briefings",
+  component: BriefingsPage,
+});
+export interface BriefingEditionSearch {
+  edition: string;
+}
+const briefingEditionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/briefings/$date",
+  component: BriefingEditionPage,
+  validateSearch: (search: Record<string, unknown>): BriefingEditionSearch => ({
+    edition:
+      typeof search.edition === "string" && search.edition.trim()
+        ? search.edition
+        : "morning",
+  }),
+});
 const assetsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/assets", component: AssetsPage });
 const sessionRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -84,6 +105,8 @@ const controlRoute = createRoute({ getParentRoute: () => rootRoute, path: "/cont
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  briefingsRoute,
+  briefingEditionRoute,
   workRoute,
   sessionRoute,
   assetsRoute,
