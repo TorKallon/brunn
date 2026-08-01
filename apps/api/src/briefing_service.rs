@@ -36,6 +36,15 @@ pub const WHY_IT_MATTERS_LIMIT_CHARS: usize = 1_000;
 pub const DETAIL_LIMIT_CHARS: usize = 16_000;
 pub const WHAT_CHANGED_LIMIT_CHARS: usize = 1_000;
 pub const URL_LIMIT_CHARS: usize = 2_048;
+pub const SECTION_TOPIC_LIMIT_CHARS: usize = 80;
+pub const SECTION_TITLE_LIMIT_CHARS: usize = 200;
+pub const STORY_TITLE_LIMIT_CHARS: usize = 500;
+pub const ENTITY_LIMIT_CHARS: usize = 120;
+pub const ENTITY_LIMIT: usize = 16;
+pub const OMISSION_REASON_LIMIT_CHARS: usize = 1_000;
+pub const SUMMARY_LINE_LIMIT_CHARS: usize = 1_000;
+pub const TIMEZONE_LIMIT_CHARS: usize = 64;
+pub const GENERATED_AT_LIMIT_CHARS: usize = 64;
 
 const TRACKING_QUERY_PARAMS: [&str; 8] = [
     "fbclid", "gclid", "mc_cid", "mc_eid", "ref", "ref_src", "cmpid", "smid",
@@ -137,11 +146,22 @@ pub fn validate_publish_request(request: &BriefingPublishRequest) -> ApiResult<(
             "edition must be a lowercase slug of 2 to 32 characters",
         ));
     }
+    if let Some(timezone) = &request.timezone {
+        require_char_limit("timezone", timezone, TIMEZONE_LIMIT_CHARS)?;
+    }
+    if let Some(generated_at) = &request.generated_at {
+        require_char_limit("generated_at", generated_at, GENERATED_AT_LIMIT_CHARS)?;
+    }
     require_collection_limit("summary_md", request.summary_md.len(), SUMMARY_LINE_LIMIT)?;
+    for line in &request.summary_md {
+        require_char_limit("summary_md line", line, SUMMARY_LINE_LIMIT_CHARS)?;
+    }
     require_collection_limit("sections", request.sections.len(), SECTION_LIMIT)?;
     require_collection_limit("omitted", request.omitted.len(), OMISSION_LIMIT)?;
     let mut seen_ids = HashSet::new();
     for section in &request.sections {
+        require_char_limit("section topic", &section.topic, SECTION_TOPIC_LIMIT_CHARS)?;
+        require_char_limit("section title", &section.title, SECTION_TITLE_LIMIT_CHARS)?;
         require_collection_limit("section items", section.items.len(), SECTION_ITEM_LIMIT)?;
         for item in &section.items {
             if !ITEM_ID.is_match(&item.id) {
@@ -176,9 +196,23 @@ pub fn validate_publish_request(request: &BriefingPublishRequest) -> ApiResult<(
             )?;
             require_char_limit("detail_md", &item.detail_md, DETAIL_LIMIT_CHARS)?;
             require_char_limit("what_changed", &item.what_changed, WHAT_CHANGED_LIMIT_CHARS)?;
+            if item.kind == "news" && item.story.is_none() {
+                return Err(ApiError::invalid(format!(
+                    "news item {} requires a story with a key for dedupe bookkeeping",
+                    item.id,
+                )));
+            }
             if let Some(story) = &item.story {
                 require_story_key(&story.key)?;
+                require_char_limit("story title", &story.title, STORY_TITLE_LIMIT_CHARS)?;
+                require_collection_limit("story entities", story.entities.len(), ENTITY_LIMIT)?;
+                for entity in &story.entities {
+                    require_char_limit("story entity", entity, ENTITY_LIMIT_CHARS)?;
+                }
                 require_collection_limit("story urls", story.urls.len(), STORY_URL_LIMIT)?;
+                for url in &story.urls {
+                    canonicalize_url(url)?;
+                }
             }
         }
     }
@@ -186,7 +220,11 @@ pub fn validate_publish_request(request: &BriefingPublishRequest) -> ApiResult<(
         if let Some(story_key) = &omission.story_key {
             require_story_key(story_key)?;
         }
+        require_char_limit("omission reason", &omission.reason, OMISSION_REASON_LIMIT_CHARS)?;
         require_collection_limit("omission urls", omission.urls.len(), STORY_URL_LIMIT)?;
+        for url in &omission.urls {
+            canonicalize_url(url)?;
+        }
     }
     Ok(())
 }
@@ -413,6 +451,37 @@ pub fn compute_edition_delta(
     json!({"added": added, "changed": changed, "removed": removed})
 }
 
+fn briefing_without_delta(briefing: &Value) -> Value {
+    let mut briefing = briefing.clone();
+    if let Some(map) = briefing.as_object_mut() {
+        map.remove("delta");
+    }
+    briefing
+}
+
+/// True when an existing entry must gain a new version even though the
+/// rendered markdown is byte-identical: the briefing metadata (ignoring the
+/// computed delta block) changed, or the current version predates structured
+/// briefing metadata. Without this, ledger-facing fields that never render
+/// (story refs, urls, omissions, item kinds) would be silently dropped by the
+/// content-hash NoOp rule.
+pub(crate) fn briefing_requires_new_version(
+    previous_entry_exists: bool,
+    previous_briefing: Option<&Value>,
+    next_briefing: Option<&Value>,
+) -> bool {
+    if !previous_entry_exists {
+        return false;
+    }
+    match (previous_briefing, next_briefing) {
+        (Some(previous), Some(next)) => {
+            briefing_without_delta(previous) != briefing_without_delta(next)
+        }
+        (None, Some(_)) => true,
+        _ => false,
+    }
+}
+
 fn item_changed(previous_item: &Value, item: &BriefingItem) -> bool {
     let Ok(previous) = serde_json::from_value::<BriefingItem>(previous_item.clone()) else {
         return true;
@@ -453,9 +522,11 @@ pub async fn publish(
         state.config.read_path_roundtrip_v1,
     )
     .await?;
-    let previous_briefing = simple_core::fetch_locked_markdown_entry(&mut tx, auth.user_id.0, &path)
+    let previous_row = simple_core::fetch_locked_markdown_entry(&mut tx, auth.user_id.0, &path)
         .await?
-        .filter(|row| row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_none())
+        .filter(|row| row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_none());
+    let previous_briefing = previous_row
+        .as_ref()
         .and_then(|row| row.get::<Value, _>("metadata").get("briefing").cloned());
     let delta = compute_edition_delta(previous_briefing.as_ref(), &request);
     if let Some(briefing) = prepared
@@ -465,6 +536,11 @@ pub async fn publish(
     {
         briefing.insert("delta".to_owned(), delta.clone());
     }
+    prepared.force_new_version = briefing_requires_new_version(
+        previous_row.is_some(),
+        previous_briefing.as_ref(),
+        prepared.metadata.get("briefing"),
+    );
     let result = simple_core::upsert_markdown_in_tx(
         &mut tx,
         auth.user_id.0,
@@ -491,13 +567,18 @@ pub async fn publish(
     };
     tx.commit().await?;
     state.workspace_features.invalidate(auth.user_id.0).await;
+    let response_delta = if result.no_op {
+        json!({"added": [], "changed": [], "removed": []})
+    } else {
+        delta
+    };
     let mut data = json!({
         "path": path,
         "entry_ref": format!("entry:{}", result.entry_id),
         "version_ref": result.version_id.map(|id| format!("entry-version:{id}")),
         "version": result.version,
         "content_hash": format!("sha256:{content_sha256}"),
-        "delta": delta,
+        "delta": response_delta,
     });
     if skipped_invalid_urls > 0 {
         data["skipped_invalid_urls"] = json!(skipped_invalid_urls);
@@ -512,6 +593,87 @@ pub async fn publish(
     Ok(Json(envelope))
 }
 
+enum LedgerOp<'a> {
+    Deliver {
+        topic: &'a str,
+        item: &'a BriefingItem,
+        story: &'a BriefingStoryRef,
+    },
+    Suppress {
+        story_key: String,
+        urls: &'a [String],
+    },
+}
+
+impl LedgerOp<'_> {
+    fn story_key(&self) -> &str {
+        match self {
+            Self::Deliver { story, .. } => &story.key,
+            Self::Suppress { story_key, .. } => story_key,
+        }
+    }
+}
+
+/// One deterministic, story-key-sorted operation list per edition so that
+/// concurrent publishes acquire briefing_stories row locks in the same order
+/// (the sort is stable, so repeated keys keep their in-edition order).
+fn ordered_ledger_ops<'a>(
+    sections: &'a [BriefingSection],
+    omitted: &'a [BriefingOmission],
+) -> Vec<LedgerOp<'a>> {
+    let mut ops = Vec::new();
+    for section in sections {
+        for item in &section.items {
+            if let Some(story) = &item.story {
+                ops.push(LedgerOp::Deliver {
+                    topic: &section.topic,
+                    item,
+                    story,
+                });
+            }
+        }
+    }
+    for omission in omitted {
+        let story_key = omission
+            .story_key
+            .clone()
+            .or_else(|| synthetic_story_key(&omission.urls));
+        if let Some(story_key) = story_key {
+            ops.push(LedgerOp::Suppress {
+                story_key,
+                urls: &omission.urls,
+            });
+        }
+    }
+    ops.sort_by(|left, right| left.story_key().cmp(right.story_key()));
+    ops
+}
+
+/// Deterministic story key for an omission that carries URLs but no key, so
+/// its suppression history and URL hashes are still recorded and rebuilds
+/// reproduce it: "url-" plus the first 16 hex of the first canonical URL hash.
+pub(crate) fn synthetic_story_key(urls: &[String]) -> Option<String> {
+    urls.iter()
+        .find_map(|url| canonicalize_url(url).ok())
+        .map(|canonical| format!("url-{}", &story_url_hash(&canonical)[..16]))
+}
+
+/// Canonicalize and hash URLs, dropping invalid ones (defense for rebuilds of
+/// pre-validation data) and sorting by hash for deterministic insert order.
+fn canonical_url_rows(urls: &[String]) -> (Vec<(String, String)>, usize) {
+    let mut rows = Vec::new();
+    let mut skipped = 0;
+    for url in urls {
+        match canonicalize_url(url) {
+            Ok(canonical) => rows.push((story_url_hash(&canonical), canonical)),
+            Err(_) => skipped += 1,
+        }
+    }
+    rows.sort();
+    rows.dedup();
+    (rows, skipped)
+}
+
 pub async fn apply_edition_to_ledger(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
@@ -521,79 +683,84 @@ pub async fn apply_edition_to_ledger(
     omitted: &[BriefingOmission],
 ) -> ApiResult<usize> {
     let mut skipped_invalid_urls = 0;
-    for section in sections {
-        for item in &section.items {
-            let Some(story) = &item.story else { continue };
-            let delivered = item.delta != "corroboration";
-            let event_at = story
-                .event_at
-                .as_deref()
-                .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok());
-            sqlx::query(
-                r#"
-                INSERT INTO straylight.briefing_stories (
-                  user_id,story_key,title,topic,entities,event_at,
-                  last_delivered_date,last_delivered_edition_ref,
-                  last_delivered_headline,delivery_count
-                ) VALUES (
-                  $1,$2,$3,$4,$5,$6,
-                  CASE WHEN $7 THEN $8 END,
-                  CASE WHEN $7 THEN $9 END,
-                  CASE WHEN $7 THEN $10 END,
-                  CASE WHEN $7 THEN 1 ELSE 0 END
+    for op in ordered_ledger_ops(sections, omitted) {
+        match op {
+            LedgerOp::Deliver { topic, item, story } => {
+                let delivered = item.delta != "corroboration";
+                let event_at = story
+                    .event_at
+                    .as_deref()
+                    .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok());
+                sqlx::query(
+                    r#"
+                    INSERT INTO straylight.briefing_stories (
+                      user_id,story_key,title,topic,entities,event_at,
+                      last_delivered_date,last_delivered_edition_ref,
+                      last_delivered_headline,delivery_count
+                    ) VALUES (
+                      $1,$2,$3,$4,$5,$6,
+                      CASE WHEN $7 THEN $8 END,
+                      CASE WHEN $7 THEN $9 END,
+                      CASE WHEN $7 THEN $10 END,
+                      CASE WHEN $7 THEN 1 ELSE 0 END
+                    )
+                    ON CONFLICT (user_id,story_key) DO UPDATE SET
+                      title=CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title
+                            ELSE briefing_stories.title END,
+                      topic=CASE WHEN EXCLUDED.topic <> '' THEN EXCLUDED.topic
+                            ELSE briefing_stories.topic END,
+                      entities=CASE WHEN cardinality(EXCLUDED.entities) > 0 THEN EXCLUDED.entities
+                               ELSE briefing_stories.entities END,
+                      event_at=COALESCE(EXCLUDED.event_at,briefing_stories.event_at),
+                      last_seen_at=clock_timestamp(),
+                      last_delivered_date=CASE
+                        WHEN $7 AND (briefing_stories.last_delivered_date IS NULL
+                                     OR $8 >= briefing_stories.last_delivered_date)
+                        THEN $8 ELSE briefing_stories.last_delivered_date END,
+                      last_delivered_edition_ref=CASE
+                        WHEN $7 AND (briefing_stories.last_delivered_date IS NULL
+                                     OR $8 >= briefing_stories.last_delivered_date)
+                        THEN $9 ELSE briefing_stories.last_delivered_edition_ref END,
+                      last_delivered_headline=CASE
+                        WHEN $7 AND (briefing_stories.last_delivered_date IS NULL
+                                     OR $8 >= briefing_stories.last_delivered_date)
+                        THEN $10 ELSE briefing_stories.last_delivered_headline END,
+                      delivery_count=briefing_stories.delivery_count
+                                     + CASE WHEN $7 THEN 1 ELSE 0 END
+                    "#,
                 )
-                ON CONFLICT (user_id,story_key) DO UPDATE SET
-                  title=CASE WHEN EXCLUDED.title <> '' THEN EXCLUDED.title
-                        ELSE briefing_stories.title END,
-                  topic=CASE WHEN EXCLUDED.topic <> '' THEN EXCLUDED.topic
-                        ELSE briefing_stories.topic END,
-                  entities=CASE WHEN cardinality(EXCLUDED.entities) > 0 THEN EXCLUDED.entities
-                           ELSE briefing_stories.entities END,
-                  event_at=COALESCE(EXCLUDED.event_at,briefing_stories.event_at),
-                  last_seen_at=clock_timestamp(),
-                  last_delivered_date=CASE WHEN $7 THEN $8
-                                      ELSE briefing_stories.last_delivered_date END,
-                  last_delivered_edition_ref=CASE WHEN $7 THEN $9
-                                             ELSE briefing_stories.last_delivered_edition_ref END,
-                  last_delivered_headline=CASE WHEN $7 THEN $10
-                                          ELSE briefing_stories.last_delivered_headline END,
-                  delivery_count=briefing_stories.delivery_count
-                                 + CASE WHEN $7 THEN 1 ELSE 0 END
-                "#,
-            )
-            .bind(user_id)
-            .bind(&story.key)
-            .bind(&story.title)
-            .bind(&section.topic)
-            .bind(&story.entities)
-            .bind(event_at)
-            .bind(delivered)
-            .bind(date)
-            .bind(edition_ref)
-            .bind(&item.headline_md)
-            .execute(&mut **tx)
-            .await?;
-            skipped_invalid_urls += insert_story_urls(tx, user_id, &story.key, &story.urls).await?;
+                .bind(user_id)
+                .bind(&story.key)
+                .bind(&story.title)
+                .bind(topic)
+                .bind(&story.entities)
+                .bind(event_at)
+                .bind(delivered)
+                .bind(date)
+                .bind(edition_ref)
+                .bind(&item.headline_md)
+                .execute(&mut **tx)
+                .await?;
+                skipped_invalid_urls +=
+                    insert_story_urls(tx, user_id, &story.key, &story.urls).await?;
+            }
+            LedgerOp::Suppress { story_key, urls } => {
+                sqlx::query(
+                    r#"
+                    INSERT INTO straylight.briefing_stories (user_id,story_key,suppression_count)
+                    VALUES ($1,$2,1)
+                    ON CONFLICT (user_id,story_key) DO UPDATE SET
+                      suppression_count=briefing_stories.suppression_count + 1,
+                      last_seen_at=clock_timestamp()
+                    "#,
+                )
+                .bind(user_id)
+                .bind(&story_key)
+                .execute(&mut **tx)
+                .await?;
+                skipped_invalid_urls += insert_story_urls(tx, user_id, &story_key, urls).await?;
+            }
         }
-    }
-    for omission in omitted {
-        let Some(story_key) = &omission.story_key else {
-            continue;
-        };
-        sqlx::query(
-            r#"
-            INSERT INTO straylight.briefing_stories (user_id,story_key,suppression_count)
-            VALUES ($1,$2,1)
-            ON CONFLICT (user_id,story_key) DO UPDATE SET
-              suppression_count=briefing_stories.suppression_count + 1,
-              last_seen_at=clock_timestamp()
-            "#,
-        )
-        .bind(user_id)
-        .bind(story_key)
-        .execute(&mut **tx)
-        .await?;
-        skipped_invalid_urls += insert_story_urls(tx, user_id, story_key, &omission.urls).await?;
     }
     Ok(skipped_invalid_urls)
 }
@@ -637,7 +804,7 @@ pub async fn rebuild_briefing_ledger(
           AND entry.path LIKE 'Briefings/%'
           AND entry.deleted_at IS NULL
           AND version.metadata->>'kind'='briefing_edition'
-        ORDER BY version.metadata->'briefing'->>'date' ASC,entry.path ASC,version.version ASC
+        ORDER BY version.created_at ASC,version.version ASC,entry.path ASC
         "#,
     )
     .bind(user_id)
@@ -1999,12 +2166,8 @@ async fn insert_story_urls(
     story_key: &str,
     urls: &[String],
 ) -> ApiResult<usize> {
-    let mut skipped = 0;
-    for url in urls {
-        let Ok(canonical) = canonicalize_url(url) else {
-            skipped += 1;
-            continue;
-        };
+    let (rows, skipped) = canonical_url_rows(urls);
+    for (url_hash, canonical) in rows {
         sqlx::query(
             r#"
             INSERT INTO straylight.briefing_story_urls (user_id,url_hash,story_key,url)
@@ -2013,7 +2176,7 @@ async fn insert_story_urls(
             "#,
         )
         .bind(user_id)
-        .bind(story_url_hash(&canonical))
+        .bind(url_hash)
         .bind(story_key)
         .bind(&canonical)
         .execute(&mut **tx)
@@ -2369,7 +2532,7 @@ mod tests {
                 items: (0..SECTION_ITEM_LIMIT)
                     .map(|item_index| BriefingItem {
                         id: format!("item-{section_index}-{item_index}"),
-                        kind: "news".to_owned(),
+                        kind: "digest".to_owned(),
                         headline_md: "**Headline.**".to_owned(),
                         body_md: String::new(),
                         why_it_matters: String::new(),
@@ -2523,6 +2686,222 @@ mod tests {
         let mut request = fixture_request();
         request.omitted[0].story_key = Some("-bad".to_owned());
         assert!(validate_publish_request(&request).is_err());
+    }
+
+    #[test]
+    fn validation_requires_a_story_for_news_items() {
+        let mut request = fixture_request();
+        request.sections[0].items[0].story = None;
+        assert!(
+            validate_publish_request(&request).is_err(),
+            "news items without a story lose all bookkeeping and must be rejected",
+        );
+
+        let mut request = fixture_request();
+        request.sections[0].items[0].kind = "digest".to_owned();
+        request.sections[0].items[0].story = None;
+        assert!(
+            validate_publish_request(&request).is_ok(),
+            "non-news items remain storyless",
+        );
+    }
+
+    #[test]
+    fn validation_requires_canonicalizable_story_and_omission_urls() {
+        for url in [
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "ftp://example.com/x",
+            "example.com/no-scheme",
+        ] {
+            let mut request = fixture_request();
+            request.sections[0].items[0].story.as_mut().expect("story").urls =
+                vec![url.to_owned()];
+            assert!(
+                validate_publish_request(&request).is_err(),
+                "story url {url:?} must be rejected",
+            );
+
+            let mut request = fixture_request();
+            request.omitted[0].urls = vec![url.to_owned()];
+            assert!(
+                validate_publish_request(&request).is_err(),
+                "omission url {url:?} must be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn validation_enforces_publish_field_caps() {
+        let cases: Vec<(&str, Box<dyn Fn(&mut BriefingPublishRequest)>)> = vec![
+            ("section topic", Box::new(|request| {
+                request.sections[0].topic = "t".repeat(SECTION_TOPIC_LIMIT_CHARS + 1);
+            })),
+            ("section title", Box::new(|request| {
+                request.sections[0].title = "t".repeat(SECTION_TITLE_LIMIT_CHARS + 1);
+            })),
+            ("story title", Box::new(|request| {
+                request.sections[0].items[0].story.as_mut().expect("story").title =
+                    "t".repeat(STORY_TITLE_LIMIT_CHARS + 1);
+            })),
+            ("entity length", Box::new(|request| {
+                request.sections[0].items[0].story.as_mut().expect("story").entities =
+                    vec!["e".repeat(ENTITY_LIMIT_CHARS + 1)];
+            })),
+            ("entity count", Box::new(|request| {
+                request.sections[0].items[0].story.as_mut().expect("story").entities =
+                    vec!["Entity".to_owned(); ENTITY_LIMIT + 1];
+            })),
+            ("omission reason", Box::new(|request| {
+                request.omitted[0].reason = "r".repeat(OMISSION_REASON_LIMIT_CHARS + 1);
+            })),
+            ("summary line", Box::new(|request| {
+                request.summary_md = vec!["s".repeat(SUMMARY_LINE_LIMIT_CHARS + 1)];
+            })),
+            ("timezone", Box::new(|request| {
+                request.timezone = Some("z".repeat(TIMEZONE_LIMIT_CHARS + 1));
+            })),
+            ("generated_at", Box::new(|request| {
+                request.generated_at = Some("g".repeat(GENERATED_AT_LIMIT_CHARS + 1));
+            })),
+        ];
+        for (field, mutate) in cases {
+            let mut request = fixture_request();
+            mutate(&mut request);
+            assert!(
+                validate_publish_request(&request).is_err(),
+                "oversize {field} must be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn ledger_ops_apply_in_story_key_order_with_urls_by_hash() {
+        let sections = vec![BriefingSection {
+            topic: "ai".to_owned(),
+            title: "AI".to_owned(),
+            items: vec![
+                BriefingItem {
+                    id: "zeta-item".to_owned(),
+                    kind: "news".to_owned(),
+                    headline_md: "**Zeta.**".to_owned(),
+                    body_md: String::new(),
+                    why_it_matters: String::new(),
+                    detail_md: String::new(),
+                    what_changed: String::new(),
+                    delta: default_delta(),
+                    story: Some(BriefingStoryRef {
+                        key: "story-zeta".to_owned(),
+                        urls: vec![],
+                        title: String::new(),
+                        entities: vec![],
+                        event_at: None,
+                    }),
+                    times: None,
+                },
+                BriefingItem {
+                    id: "alpha-item".to_owned(),
+                    kind: "news".to_owned(),
+                    headline_md: "**Alpha.**".to_owned(),
+                    body_md: String::new(),
+                    why_it_matters: String::new(),
+                    detail_md: String::new(),
+                    what_changed: String::new(),
+                    delta: default_delta(),
+                    story: Some(BriefingStoryRef {
+                        key: "story-alpha".to_owned(),
+                        urls: vec![],
+                        title: String::new(),
+                        entities: vec![],
+                        event_at: None,
+                    }),
+                    times: None,
+                },
+            ],
+        }];
+        let omitted = vec![
+            BriefingOmission {
+                story_key: Some("story-mango".to_owned()),
+                urls: vec![],
+                reason: "seen".to_owned(),
+            },
+            BriefingOmission {
+                story_key: None,
+                urls: vec!["https://example.com/keyless".to_owned()],
+                reason: "keyless".to_owned(),
+            },
+        ];
+        let keys: Vec<String> = ordered_ledger_ops(&sections, &omitted)
+            .iter()
+            .map(|op| op.story_key().to_owned())
+            .collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted, "ops must apply in sorted story-key order");
+        assert_eq!(keys.len(), 4, "the keyless omission still produces an op");
+
+        let (rows, skipped) = canonical_url_rows(&[
+            "https://example.com/zzz".to_owned(),
+            "https://example.com/aaa".to_owned(),
+            "not a url".to_owned(),
+            "https://example.com/zzz?utm_source=x".to_owned(),
+        ]);
+        assert_eq!(skipped, 1);
+        assert_eq!(rows.len(), 2, "canonical duplicates collapse");
+        assert!(rows[0].0 < rows[1].0, "url inserts are ordered by hash");
+    }
+
+    #[test]
+    fn keyless_omissions_derive_a_synthetic_url_key() {
+        let key = synthetic_story_key(&[
+            "not a url".to_owned(),
+            "HTTPS://Example.COM/keyless?utm_source=x".to_owned(),
+        ])
+        .expect("synthetic key derives from the first canonical url");
+        let canonical = canonicalize_url("https://example.com/keyless").expect("canonical");
+        assert_eq!(key, format!("url-{}", &story_url_hash(&canonical)[..16]));
+        assert!(STORY_KEY.is_match(&key), "synthetic keys fit the story-key regex");
+        assert!(synthetic_story_key(&["not a url".to_owned()]).is_none());
+        assert!(synthetic_story_key(&[]).is_none());
+    }
+
+    #[test]
+    fn briefing_requires_new_version_ignores_only_the_delta_block() {
+        let previous_metadata = edition_metadata(&fixture_request()).expect("metadata renders");
+        let previous = previous_metadata.get("briefing").expect("briefing payload");
+        let mut previous_with_delta = previous.clone();
+        previous_with_delta["delta"] = json!({"added": ["openai-hf-incident"], "changed": [], "removed": []});
+
+        let next_metadata = edition_metadata(&fixture_request()).expect("metadata renders");
+        let mut next = next_metadata.get("briefing").expect("briefing payload").clone();
+        next["delta"] = json!({"added": [], "changed": [], "removed": []});
+        assert!(
+            !briefing_requires_new_version(true, Some(&previous_with_delta), Some(&next)),
+            "a differing delta block alone is not a metadata change",
+        );
+
+        let mut changed_request = fixture_request();
+        changed_request.sections[0].items[0]
+            .story
+            .as_mut()
+            .expect("story")
+            .urls
+            .push("https://example.com/openai-postmortem".to_owned());
+        let changed_metadata = edition_metadata(&changed_request).expect("metadata renders");
+        let changed = changed_metadata.get("briefing").expect("briefing payload");
+        assert!(
+            briefing_requires_new_version(true, Some(&previous_with_delta), Some(changed)),
+            "a story url change is a metadata change even when the markdown is identical",
+        );
+
+        assert!(
+            briefing_requires_new_version(true, None, Some(&next)),
+            "an existing entry without briefing metadata must be upgraded",
+        );
+        assert!(
+            !briefing_requires_new_version(false, None, Some(&next)),
+            "a fresh entry needs no forced version",
+        );
     }
 
     const TOPIC_DOCUMENT: &str = "---\n\

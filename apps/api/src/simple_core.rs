@@ -463,6 +463,11 @@ pub(crate) struct PreparedMarkdown {
     expected_version: Option<i64>,
     tier_a_history_stage: Option<TierAHistoryStage>,
     frontmatter: DerivedFrontmatter,
+    /// Write a new version even when the content hash is unchanged. Set by
+    /// callers whose authoritative payload lives in version metadata (for
+    /// example briefing editions), where the equal-content NoOp rule would
+    /// otherwise silently drop a metadata-only revision.
+    pub(crate) force_new_version: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5553,6 +5558,7 @@ pub(crate) async fn prepare_markdown(
         expected_version: request.expected_version,
         tier_a_history_stage,
         frontmatter,
+        force_new_version: false,
     })
 }
 
@@ -5829,6 +5835,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     if let Some(row) = &existing
         && row.get::<String, _>("content_sha256") == prepared.content_sha256
         && exact_history_action != TierAExactHistoryAction::Append
+        && !prepared.force_new_version
     {
         let was_deleted = row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_some();
         let current_metadata = row.get::<Value, _>("metadata");
@@ -9036,5 +9043,121 @@ mod tests {
         assert!(validate_idempotency_key("").is_err());
         assert!(validate_idempotency_key(&"x".repeat(257)).is_err());
         assert!(validate_idempotency_key("bad\nkey").is_err());
+    }
+
+    fn prepared_markdown_fixture(metadata: Value, force_new_version: bool) -> PreparedMarkdown {
+        let content = "# Morning briefing - 2026-08-01\n";
+        PreparedMarkdown {
+            entry_id_hint: None,
+            path: "Briefings/2026/Morning briefing - 2026-08-01.md".to_owned(),
+            title: "Morning briefing - 2026-08-01".to_owned(),
+            content: content.to_owned(),
+            content_sha256: hex::encode(Sha256::digest(content.as_bytes())),
+            media_type: "text/markdown".to_owned(),
+            metadata,
+            chunks: Vec::new(),
+            embeddings: Vec::new(),
+            expected_version: None,
+            tier_a_history_stage: None,
+            frontmatter: DerivedFrontmatter::default(),
+            force_new_version,
+        }
+    }
+
+    #[tokio::test]
+    async fn force_new_version_bumps_identical_content_with_new_metadata() {
+        let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+        else {
+            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping force-new-version test");
+            return;
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&database_url)
+            .await
+            .expect("connect to disposable Postgres");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("apply Straylight migrations");
+        let user_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
+        )
+        .bind(user_id)
+        .bind(format!("force-version-test:{user_id}"))
+        .bind("Force version test")
+        .execute(&pool)
+        .await
+        .expect("insert test user");
+
+        let original_metadata =
+            json!({"kind": "briefing_edition", "briefing": {"date": "2026-08-01"}});
+        let mut tx = pool.begin().await.expect("begin first write");
+        let first = upsert_markdown_in_tx(
+            &mut tx,
+            user_id,
+            None,
+            prepared_markdown_fixture(original_metadata, false),
+        )
+        .await
+        .expect("first write");
+        tx.commit().await.expect("commit first write");
+        assert!(!first.no_op);
+        assert_eq!(first.version, 1);
+
+        let revised_metadata = json!({
+            "kind": "briefing_edition",
+            "briefing": {"date": "2026-08-01", "summary_md": ["changed"]}
+        });
+        let mut tx = pool.begin().await.expect("begin unforced replay");
+        let replay = upsert_markdown_in_tx(
+            &mut tx,
+            user_id,
+            None,
+            prepared_markdown_fixture(revised_metadata.clone(), false),
+        )
+        .await
+        .expect("unforced replay");
+        tx.commit().await.expect("commit unforced replay");
+        assert!(replay.no_op, "identical content without the flag stays a NoOp");
+        assert_eq!(replay.version, 1);
+
+        let mut tx = pool.begin().await.expect("begin forced write");
+        let forced = upsert_markdown_in_tx(
+            &mut tx,
+            user_id,
+            None,
+            prepared_markdown_fixture(revised_metadata.clone(), true),
+        )
+        .await
+        .expect("forced write");
+        tx.commit().await.expect("commit forced write");
+        assert!(!forced.no_op);
+        assert_eq!(forced.version, 2, "the forced write is a real new version");
+        assert!(
+            forced.generation.is_some(),
+            "the forced write records a workspace_changes row",
+        );
+
+        let stored: (i64, Value) = sqlx::query_as(
+            r#"
+            SELECT entry.current_version,version.metadata
+            FROM straylight.entries AS entry
+            JOIN straylight.entry_versions AS version
+              ON version.user_id=entry.user_id
+             AND version.entry_id=entry.id
+             AND version.version=entry.current_version
+            WHERE entry.user_id=$1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("stored row loads");
+        assert_eq!(stored.0, 2);
+        assert_eq!(stored.1, revised_metadata, "the new metadata is stored");
     }
 }

@@ -524,3 +524,102 @@ async fn apply_edition_tracks_delivery_corroboration_and_suppression() {
     let urls = url_rows(&pool, user_id).await;
     assert_eq!(urls.len(), 3, "a re-seen URL hash is not duplicated");
 }
+
+#[tokio::test]
+async fn rebuild_matches_live_order_and_backfill_never_regresses_delivery() {
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let user_id = insert_test_user(&pool).await;
+    let evening_entry = Uuid::now_v7();
+    let story = |headline: &str, urls: serde_json::Value| {
+        json!([
+            {
+                "topic": "ai",
+                "title": "AI",
+                "items": [
+                    {
+                        "id": "x-item",
+                        "kind": "news",
+                        "headline_md": headline,
+                        "delta": "new",
+                        "story": {"key": "story-x", "urls": urls, "title": "Story X"}
+                    }
+                ]
+            }
+        ])
+    };
+    let editions = [
+        EditionFixture {
+            entry_id: Uuid::now_v7(),
+            path: "Briefings/2026/Morning briefing - 2026-08-01.md",
+            version: 1,
+            date: "2026-08-01",
+            sections: story("**Morning.**", json!(["https://example.com/x-morning"])),
+            omitted: json!([]),
+        },
+        // Same date, published second: with created_at replay order the
+        // evening delivery must win in both live and rebuilt ledgers, even
+        // though its path sorts before the morning edition's.
+        EditionFixture {
+            entry_id: evening_entry,
+            path: "Briefings/2026/Evening briefing - 2026-08-01.md",
+            version: 1,
+            date: "2026-08-01",
+            sections: story("**Evening.**", json!([])),
+            omitted: json!([]),
+        },
+        // Backfilled older edition published last: delivery_count grows but
+        // last_delivered_* must not regress to the older date.
+        EditionFixture {
+            entry_id: Uuid::now_v7(),
+            path: "Briefings/2026/Morning briefing - 2026-07-20.md",
+            version: 1,
+            date: "2026-07-20",
+            sections: story("**Old.**", json!(["https://example.com/x-old"])),
+            omitted: json!([]),
+        },
+    ];
+    for edition in &editions {
+        let mut tx = pool.begin().await.expect("begin live apply");
+        apply_edition_to_ledger(
+            &mut tx,
+            user_id,
+            &format!("entry:{}", edition.entry_id),
+            date(edition.date),
+            &sections_fixture(edition.sections.clone()),
+            &omissions_fixture(edition.omitted.clone()),
+        )
+        .await
+        .expect("apply edition live");
+        tx.commit().await.expect("commit live apply");
+        insert_edition_version(&pool, user_id, edition).await;
+    }
+
+    let live_story = story_row(&pool, user_id, "story-x").await;
+    assert_eq!(live_story.4.as_deref(), Some("2026-08-01"));
+    assert_eq!(
+        live_story.5.as_deref(),
+        Some(format!("entry:{evening_entry}").as_str()),
+        "the same-date evening publish wins the delivery pointer",
+    );
+    assert_eq!(live_story.6.as_deref(), Some("**Evening.**"));
+    assert_eq!(
+        live_story.7, 3,
+        "the backfilled delivery still counts even though it never wins the pointer",
+    );
+    let live = ledger_snapshot(&pool, user_id).await;
+
+    let mut tx = pool.begin().await.expect("begin rebuild");
+    let rebuild = rebuild_briefing_ledger(&mut tx, user_id)
+        .await
+        .expect("rebuild ledger");
+    tx.commit().await.expect("commit rebuild");
+    assert_eq!(rebuild.replayed_versions, 3);
+
+    let rebuilt = ledger_snapshot(&pool, user_id).await;
+    assert_eq!(
+        rebuilt, live,
+        "created_at replay order reproduces the live ledger exactly",
+    );
+}
