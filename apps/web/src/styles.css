@@ -1814,6 +1814,117 @@ pre,
   display: none;
 }
 
+/* Sanitized markdown rendering (MarkdownView) */
+
+.markdown-view {
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.markdown-view > :first-child {
+  margin-top: 0;
+}
+
+.markdown-view > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-view p,
+.markdown-view blockquote,
+.markdown-view pre,
+.markdown-view table {
+  margin: 0 0 10px;
+}
+
+.markdown-view h1,
+.markdown-view h2,
+.markdown-view h3,
+.markdown-view h4,
+.markdown-view h5,
+.markdown-view h6 {
+  margin: 14px 0 6px;
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.markdown-view h1 {
+  font-size: 1.02rem;
+}
+
+.markdown-view a {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-view a:hover {
+  color: var(--brand-hover);
+}
+
+.markdown-view code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-subtle);
+}
+
+.markdown-view pre {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  overflow-x: auto;
+}
+
+.markdown-view pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown-view ul,
+.markdown-view ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.markdown-view li {
+  margin: 2px 0;
+}
+
+.markdown-view li > p {
+  margin: 0;
+}
+
+.markdown-view blockquote {
+  padding: 2px 12px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.markdown-view hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.markdown-view table {
+  border-collapse: collapse;
+}
+
+.markdown-view th,
+.markdown-view td {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.markdown-view th {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
 @media (max-width: 1100px) {
   .filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
