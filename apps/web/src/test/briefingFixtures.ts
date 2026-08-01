@@ -68,6 +68,7 @@ export const briefingEditionFixture = {
               headline_md:
                 "**[OpenAI ships o5 with a new eval harness](https://openai.com/blog/o5)**",
               delta: "new",
+              body_md: "The launch post walks through the new harness.",
               detail_md:
                 "o5 posts state-of-the-art results on long-horizon agentic tasks.",
               what_changed: "First release since o4-mini.",
@@ -86,7 +87,9 @@ export const briefingEditionFixture = {
               kind: "news",
               headline_md: "Anthropic publishes agent-safety evals",
               delta: "update",
-              detail_md: "Expanded coverage of tool-use failure modes.",
+              body_md: "Expanded coverage of tool-use failure modes.",
+              detail_md: "",
+              times: { event_at: "2026-07-28" },
             },
           ],
         },
@@ -100,6 +103,10 @@ export const briefingEditionFixture = {
               headline_md: "NVDA up 3.1% after earnings",
               delta: "corroboration",
               detail_md: "Data-center revenue beat consensus.",
+              story: {
+                key: "nvda-earnings-beat",
+                urls: ["javascript:alert(1)", "https://example.com/nvda"],
+              },
             },
           ],
         },

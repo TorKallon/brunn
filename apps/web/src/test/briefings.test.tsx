@@ -119,6 +119,89 @@ describe("briefings daily thread", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("renders body and detail markdown in the expanded region", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/briefings": briefingListFixture,
+      "GET /api/v1/workspace/briefings/2026-08-01/morning":
+        briefingEditionFixture,
+    });
+    const user = userEvent.setup();
+    renderApp("/briefings/2026-08-01?edition=morning", "read-token");
+
+    const openaiRow = await screen.findByRole("button", {
+      name: /OpenAI ships o5/,
+    });
+    await user.click(openaiRow);
+    const openaiDetail = screen.getByRole("region", {
+      name: "Frontier labs item detail",
+    });
+    expect(
+      within(openaiDetail).getByText(
+        "The launch post walks through the new harness.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(openaiDetail).getByText(/state-of-the-art results/),
+    ).toBeInTheDocument();
+    await user.click(openaiRow);
+
+    await user.click(
+      screen.getByRole("button", { name: /Anthropic publishes/ }),
+    );
+    const anthropicDetail = screen.getByRole("region", {
+      name: "Frontier labs item detail",
+    });
+    expect(
+      within(anthropicDetail).getByText(
+        "Expanded coverage of tool-use failure modes.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("renders date-only times as plain calendar dates", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/briefings": briefingListFixture,
+      "GET /api/v1/workspace/briefings/2026-08-01/morning":
+        briefingEditionFixture,
+    });
+    const user = userEvent.setup();
+    renderApp("/briefings/2026-08-01?edition=morning", "read-token");
+
+    await user.click(
+      await screen.findByRole("button", { name: /Anthropic publishes/ }),
+    );
+    const detail = screen.getByRole("region", {
+      name: "Frontier labs item detail",
+    });
+    expect(within(detail).getByText("Event Jul 28, 2026")).toBeInTheDocument();
+    expect(within(detail).queryByText(/Jul 27, 2026/)).toBeNull();
+    expect(within(detail).queryByText(/\d{1,2}:\d{2}/)).toBeNull();
+  });
+
+  it("renders non-http story urls as plain text", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/briefings": briefingListFixture,
+      "GET /api/v1/workspace/briefings/2026-08-01/morning":
+        briefingEditionFixture,
+    });
+    const user = userEvent.setup();
+    renderApp("/briefings/2026-08-01?edition=morning", "read-token");
+
+    await user.click(
+      await screen.findByRole("button", { name: /NVDA up 3.1%/ }),
+    );
+    const detail = screen.getByRole("region", {
+      name: "Portfolio item detail",
+    });
+    expect(
+      within(detail).getByText("javascript:alert(1)"),
+    ).toBeInTheDocument();
+    const links = within(detail).getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName("example.com");
+    expect(links[0]).toHaveAttribute("href", "https://example.com/nvda");
+  });
+
   it("unwraps headline links in the collapsed row but keeps them in the detail", async () => {
     installApiMock({
       "GET /api/v1/workspace/briefings": briefingListFixture,
@@ -177,8 +260,27 @@ describe("briefings daily thread", () => {
     );
     await user.click(screen.getByRole("button", { name: "Mark read" }));
     await user.click(screen.getByRole("button", { name: "Go deeper" }));
+
+    const feedbackTrigger = screen.getByRole("button", { name: "Feedback" });
+    expect(feedbackTrigger).toHaveAttribute("aria-expanded", "false");
+    await user.click(feedbackTrigger);
+    expect(feedbackTrigger).toHaveAttribute("aria-expanded", "true");
+    for (const label of [
+      "Useful",
+      "Not important",
+      "Already knew",
+      "Repeated",
+      "Wrong",
+      "Follow closer",
+    ]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
     await user.click(screen.getByRole("button", { name: "Useful" }));
-    await user.click(screen.getByRole("button", { name: "Repeated" }));
+    expect(screen.queryByRole("button", { name: "Useful" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Feedback" }));
+    await user.click(screen.getByRole("button", { name: "Wrong" }));
+    await user.click(screen.getByRole("button", { name: "Feedback" }));
+    await user.click(screen.getByRole("button", { name: "Follow closer" }));
     await user.click(screen.getByRole("button", { name: "Mute topic" }));
 
     expect(actionPayloads).toEqual([
@@ -194,7 +296,13 @@ describe("briefings daily thread", () => {
         action: "feedback",
         edition_ref: "entry:aug1",
         item_id: "openai-o5",
-        verdict: "repeated",
+        verdict: "wrong",
+      },
+      {
+        action: "feedback",
+        edition_ref: "entry:aug1",
+        item_id: "openai-o5",
+        verdict: "follow_closer",
       },
       { action: "mute_topic", topic_slug: "frontier-labs" },
     ]);
@@ -219,8 +327,7 @@ describe("briefings daily thread", () => {
     for (const label of [
       "Mark read",
       "Go deeper",
-      "Useful",
-      "Repeated",
+      "Feedback",
       "Mute topic",
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeDisabled();

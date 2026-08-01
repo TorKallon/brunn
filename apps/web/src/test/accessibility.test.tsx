@@ -72,6 +72,10 @@ describe("accessibility contracts", () => {
     expect(
       screen.getByRole("region", { name: "Frontier labs item detail" }),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Feedback" }));
+    expect(
+      screen.getByRole("button", { name: "Follow closer" }),
+    ).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });
 
