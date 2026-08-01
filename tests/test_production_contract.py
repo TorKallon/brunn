@@ -426,6 +426,13 @@ class ProductionContractTests(unittest.TestCase):
             nginx,
             r"location /api/ \{[\s\S]*?proxy_send_timeout 3600s;",
         )
+        self.assertRegex(
+            nginx,
+            r"location = /api/v1/workspace/binaries/content \{[\s\S]*?"
+            r"client_max_body_size 4g;[\s\S]*?"
+            r"proxy_pass http://straylight_api/v1/workspace/binaries/content;[\s\S]*?"
+            r"proxy_request_buffering off;",
+        )
 
     def test_binary_transfers_have_separate_timeout_and_concurrency_bounds(self):
         config = (ROOT / "apps/api/src/config.rs").read_text()

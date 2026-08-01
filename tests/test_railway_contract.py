@@ -87,6 +87,15 @@ class RailwayContractTests(unittest.TestCase):
             r"location ~ \^/\(\?:mcp\|authorize\|token\|register\|oauth/consent",
         )
 
+    def test_large_workspace_binary_uploads_stream_without_proxy_buffering(self):
+        self.assertRegex(
+            WEB_PROXY,
+            r"location = /api/v1/workspace/binaries/content \{[\s\S]*?"
+            r"client_max_body_size 4g;[\s\S]*?"
+            r"proxy_pass http://straylight_api/v1/workspace/binaries/content;[\s\S]*?"
+            r"proxy_request_buffering off;",
+        )
+
     def test_api_has_no_database_administrator_credential(self):
         api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
             'const worker = service("worker"', 1
