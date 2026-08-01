@@ -1,8 +1,8 @@
-# Tier A owner-snapshot tooling
+# Owner snapshot tooling and fresh-source cutover overlay
 
-Status: Current-snapshot tooling ready; superseded for full D14 fidelity by the legacy runbook
-Date: 2026-07-27
-Supports: D14 fidelity preflight and E11 owner link-case selection
+Status: Exact fresh source overlay, replay verification, soft deletions, and re-audit passed
+Date: 2026-07-31
+Supports: D14 fresh-source fidelity, legacy-history overlay, and E11 owner link-case selection
 
 ## Scope and safety boundary
 
@@ -30,17 +30,19 @@ This is a deliberately scoped bridge, not a way to weaken D14:
 Consequently, a zero-diff supported-text audit can prepare a private E11
 evaluation corpus, but it does not satisfy E11's hard Tier A precondition and
 must not be reported as D14's full legacy export-with-history and binary
-fidelity gate. The audit emits both verdicts separately and keeps the full D14
-verdict blocked until the omitted capabilities are supplied.
+fidelity gate. The audit emits both verdicts separately; the omitted production
+capabilities were supplied and passed through the legacy runbook plus the
+binary-capable overlay.
 
-Those omitted capabilities are now implemented by
+Those omitted capabilities are implemented by
 [Tier-A-legacy-fidelity-runbook.md](Tier-A-legacy-fidelity-runbook.md):
 current+`history=true`+delta composition, exact binary companion publication,
 deterministic native-record materialization, bounded lineage replay, actual
-checkpoint import, and service/export audits. Its local aggregate preflight
-passes, but its isolated service and round-trip gates remain pending. This
-current-snapshot bridge remains useful only for E11 selection and scoped
-source-vault checks.
+checkpoint import, and service/export audits. Its isolated service and
+round-trip gates passed. The 2026-07-31 production strategy uses that verified
+history first and then an exact fresh-source overlay. The scoped
+`owner_snapshot_eval.py import` remains useful for E11 selection and read-only
+text checks; it is not the binary-capable production overlay command.
 
 ## Private artifact location
 
@@ -86,7 +88,7 @@ inventory rather than mixing snapshots.
 
 ## 2. Import into an already-running disposable stack
 
-The command does not start or alter the live Nyx stack. Point it only at an
+The command does not start or alter any live stack. Point it only at an
 isolated simplified-core stack with evaluation import enabled. Supply the
 administrative token through the environment without printing it:
 
@@ -183,7 +185,91 @@ Before using the corpus for E11, retain privately:
 5. Leak report `pass`.
 6. Clean implementation commit and isolated stack image fingerprint.
 
-Never convert the supported-text verdict into "Tier A passed." D14 remains
-blocked until a `history=true` legacy export, binary byte-copy path, binary
-description fidelity, and actual service checkpoint-parent resolution all
-pass.
+Never convert the supported-text verdict into a full production migration
+pass. The legacy-history audit and the exact fresh binary-capable overlay each
+have their own independent service/export gates.
+
+## Annex A — exact fresh-source overlay for the direct cutover
+
+The owner directed a fresh Markdown/binary migration when it preserves more
+reasoning-relevant data or metadata. A fresh import alone is still less complete
+than the verified historical composite, so the selected sequence is historical
+replay first, fresh overlay second.
+
+### Captured aggregate
+
+The exact 2026-07-31 capture contains:
+
+- 4,267 regular files and 298,682,825 bytes;
+- 3,557 text files and 710 binary files;
+- zero symlinks, special files, ignored files, or portable path collisions;
+- content-independent path/size/hash ledger
+  `5acc8d39a0e5bc7aad088a6488f9dd3f1c1b69c327dc53daf2c0bb8e290a4865`;
+- owner-inventory fingerprint
+  `b72e851714dc555d8004bf1a61b1b9a4172b71aec7c5321af638761537c441ad`;
+  and
+- direct import-manifest fingerprint
+  `5278bbc282201d47d870666c2243547c8d7600135427cb0f57cf4a2f451dafd3`.
+
+The snapshot was copied without following links and then inventoried from the
+immutable capture. An earlier transfer attempt that rounded modification times
+is invalid and must not be used as evidence.
+
+### Delta against the verified July source
+
+The disjoint comparison has 4,173 exact unchanged files, 12 metadata-only
+changes, 21 byte changes, 61 additions, and 10 absent/moved paths. All 710
+binaries are unchanged. The overlay therefore expected and observed 4,173
+skips plus 94 uploads. The verification replay skipped all 4,267 and uploaded
+zero.
+
+### Production overlay record
+
+1. **Passed:** historical replay and zero-diff audits preceded the overlay.
+2. **Passed:** the captured regular files re-hashed to the three fingerprints.
+3. **Passed:** unchanged binaries remained byte/receipt-identical; no binary was
+   uploaded or re-described.
+4. **Passed:** creates/content/metadata/skips matched the action ledger.
+5. **Passed:** all ten old paths were previewed and soft-deleted; their history
+   remains and replacements are active.
+6. **Passed:** current-manifest replay skipped all 4,267 source files and the
+   post-cutover re-audit reproduced 4,267 files, 298,682,825 bytes, and the
+   unchanged fingerprint.
+
+The expected aggregate after the source overlay and moved-path soft deletions
+was 10,060 active entries and 10,120 historical versions. After agent-memory and
+dormant-backup capture, the observed pre-worker service contains 13,702 active
+entries and 13,831 history versions. Counts remain cross-checks, not substitutes
+for the passed path/hash audits.
+
+After the guarded backfill and final canaries, the service contains 13,709
+active entries, ten deleted current paths retained in history, and 13,838
+history versions. The exact source re-audit remains unchanged at 4,267 files,
+298,682,825 bytes, and the recorded direct fingerprint.
+
+### Agent-memory and dormant-backup extension
+
+The primary exact agent-memory capture adds 398 files and 5,373,439 bytes: 329
+text and 69 binary, fingerprint
+`64d33e0c4263cf2344594e160933b99850c4b4c0965cb7525f6ac0a5955ec09c`.
+Import and replay verification pass. The 69 binaries use deterministic archival
+descriptions with zero inference API calls.
+
+A later dormant Aether backup audit found 2,793 additional files and
+93,627,020 bytes: 2,415 text and 378 binary. Source fingerprint
+`8271693f85254bdf349d5536f740c4107208be17c2cba070e055ba8a948f93b1`;
+wrapped fingerprint
+`34697fa8408dc96a3890532436aafc9eff44c112d892f8daf8c0a42ab5102990`.
+Of these, 2,386 were not byte-identical to prior captures. Import/replay passed
+and the old live source was archived.
+
+### Authority boundary
+
+This source capture is now recovery evidence, not a second writable authority.
+Codex and Aether/OpenClaw both pass D13 through their production-facing pinned
+wrappers, with an unchanged post-gateway source re-audit. Neither client may
+write durable memory to the old source tree or silently fall back to it when
+Straylight is unavailable.
+
+The aggregate production result is
+[`results/2026-07-31-railway-simplified-cutover.md`](../../results/2026-07-31-railway-simplified-cutover.md).

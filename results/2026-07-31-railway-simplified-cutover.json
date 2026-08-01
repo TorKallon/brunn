@@ -1,0 +1,439 @@
+{
+  "schema": "straylight-railway-simplified-cutover@v1",
+  "observed_on": "2026-07-31",
+  "status": "operational_complete_repository_publication_pending",
+  "privacy": {
+    "classification": "aggregate_only",
+    "contains_owner_paths": false,
+    "contains_owner_content": false,
+    "contains_credentials": false
+  },
+  "owner_decision": {
+    "production_target": "railway",
+    "nyx_role": "operator_and_test_host_only",
+    "nyx_pilot": false,
+    "staged_read_only_pilot": false,
+    "cutover_clients": [
+      "codex",
+      "aether_openclaw"
+    ],
+    "post_cutover_authority": "straylight_only",
+    "post_cutover_vault_writes": false
+  },
+  "migration_strategy": {
+    "name": "verified_history_plus_fresh_source_overlay",
+    "status": "complete",
+    "reason": "Preserve service-native history and metadata, then make the exact current Markdown and binary snapshot authoritative without discarding moved-path history.",
+    "layers": [
+      "verified_legacy_history_and_native_composite",
+      "exact_current_source_snapshot_overlay",
+      "soft_deletion_of_paths_absent_from_current_source",
+      "codex_and_aether_local_memory_capture",
+      "dormant_aether_backup_capture"
+    ]
+  },
+  "release": {
+    "production_api_build_revision": "39761166d21b0cfa44d11e3ba18a52112693d0cd",
+    "production_api_deployment_id": "6388d74a-000c-4faa-a924-16069e5b4c6c",
+    "production_api_deployment_status": "success",
+    "production_api_health": "pass",
+    "production_api_readiness": "pass",
+    "production_migrations": {
+      "applied": 56,
+      "expected": 56,
+      "status": "pass"
+    },
+    "request_limit_per_minute": 600,
+    "legacy_api_enabled": false,
+    "evaluation_api_enabled": false,
+    "disabled_route_statuses": [
+      404,
+      404,
+      404
+    ],
+    "dependencies": {
+      "database": "ready",
+      "object_store": "ready",
+      "embeddings": "ready"
+    },
+    "context_shaping_treatments": "all_off",
+    "operational_features": {
+      "embed_cache": true,
+      "embedding_backfill_guard": true,
+      "observability_timings_ms": true
+    },
+    "dreaming": "off",
+    "railway_plan": {
+      "tier": "pro",
+      "subscription_update": "confirmed",
+      "minimum_charge_usd": 20.0,
+      "charge_category": "railway_infrastructure_not_embeddings"
+    },
+    "final_web_deployment_id": "316d90eb-d807-4091-84d4-8ba10b49a2f2",
+    "final_web_deployment_status": "success",
+    "final_web_root_status": 200,
+    "final_web_proxied_api_build_revision": "39761166d21b0cfa44d11e3ba18a52112693d0cd",
+    "temporary_two_replica_finalizer_deployment_id": "0792432f",
+    "temporary_two_replica_finalizer_deployment_status": "success",
+    "final_worker_deployment_id": "7af78da7-3b01-4a66-9923-3aa8184d1978",
+    "final_worker_deployment_status": "success",
+    "final_worker_running_replicas": 1,
+    "final_worker_image_digest_expected_sha256": "a3c84d4ecfa228f4eb3ba5ac85cfce563d54bbfb03f773579d31b4d51879e85e",
+    "prior_worker_deployments_removed": true,
+    "worker_foreground_status_url_configured": true
+  },
+  "production_storage": {
+    "volume_live_resize": {
+      "from_megabytes": 5000,
+      "to_megabytes": 20000,
+      "iac_declared_megabytes": 20000,
+      "status": "pass"
+    },
+    "filesystem": {
+      "size_gib": 18.3,
+      "used_gib": 4.6,
+      "free_gib": 13.6,
+      "used_percent": 25
+    },
+    "pgdata_bytes": 4924295483,
+    "wal_bytes": 805318656,
+    "database_bytes": 4094842547,
+    "straylight_schema_bytes": 4081106944,
+    "largest_components": {
+      "search_chunks_bytes": 2424954880,
+      "search_chunks_includes_nested_storage": true,
+      "search_chunks_toast_bytes": 1175175168,
+      "search_chunks_simplified_hnsw_bytes": 920354816,
+      "search_chunks_gin_bytes": 75956224,
+      "legacy_embeddings_bytes": 721092608,
+      "legacy_embeddings_includes_hnsw_bytes": 326213632,
+      "corpus_members_bytes": 483811328,
+      "corpus_members_rows": 2493355,
+      "legacy_chunks_bytes": 170991616,
+      "nested_values_are_not_additive_to_relation_totals": true
+    },
+    "source_to_storage_expansion": {
+      "fresh_source_bytes": 298682825,
+      "active_entries": 13709,
+      "active_markdown_entries_approx": 12551,
+      "search_chunks": 126536,
+      "chunk_target_characters": 1600,
+      "chunk_overlap_characters": 220,
+      "embedding_dimensions": 1536,
+      "embedding_bytes_each": 6148,
+      "explanation": "retained_history_and_agent_memory_plus_overlapping_chunks_vectors_full_text_metadata_toast_and_indexes"
+    },
+    "hnsw_index_scan_count_since_2026_07_25": {
+      "simplified": 0,
+      "legacy": 0
+    },
+    "hnsw_nonuse_reason": "semantic_lane_and_legacy_api_disabled",
+    "accelerator_authority": "derived_rebuildable_not_authoritative_source_or_history",
+    "accelerators_dropped": false,
+    "corpus_members_retention": "retain_until_restore_backed_legacy_retirement",
+    "vacuum_analyze_search_chunks_and_jobs": "pass",
+    "safe_follow_up_order": [
+      "prevent_new_embedding_enqueue_while_semantic_is_off",
+      "after_successful_restore_proof_drop_legacy_hnsw",
+      "decide_whether_semantic_ships_before_retaining_or_dropping_simplified_hnsw"
+    ],
+    "embedding_value_rebuild_requires_embedding_api_work": true
+  },
+  "pre_cutover_backup": {
+    "postgres_dump_bytes": 273563054,
+    "postgres_dump_sha256": "e7e61af0656747ffc7edd3dafb4273b2a5781d7b1ee029f137185e7afd617137",
+    "dump_catalog_validation": "pass",
+    "object_store": "external_versioned_s3",
+    "restore_drill": {
+      "status": "not_performed_environment_blocked",
+      "blocker": "locked_nyx_prevented_docker_daemon_access",
+      "container_created": false,
+      "dump_checksum_reverified": "pass",
+      "dump_catalog_validation": "pass",
+      "blocking_for_direct_owner_cutover": false
+    }
+  },
+  "verified_history_composite": {
+    "fingerprint_sha256": "4e55b2582aa56944a3e1bf1f076faef426131afb91309716820f65c11b313ffd",
+    "legacy_logical_paths": 4926,
+    "legacy_versions": 4955,
+    "binary_description_pairs": 710,
+    "native_records": 5079,
+    "checkpoints": 1,
+    "remote_history_versions": 10038,
+    "service_zero_diff_audit": "pass",
+    "roundtrip": {
+      "exported_copies": 20047,
+      "bytes": 797775263,
+      "manifest_sha256": "de37b0df888e2c1ddc6644eea8665592cd2f2c1ca7113fa001b39a04cd143941",
+      "differences": 0,
+      "status": "pass"
+    }
+  },
+  "fresh_source_snapshot": {
+    "regular_files": 4267,
+    "bytes": 298682825,
+    "text_files": 3557,
+    "binary_files": 710,
+    "symlinks": 0,
+    "special_files": 0,
+    "portable_path_collisions": 0,
+    "path_size_hash_ledger_sha256": "5acc8d39a0e5bc7aad088a6488f9dd3f1c1b69c327dc53daf2c0bb8e290a4865",
+    "inventory_fingerprint_sha256": "b72e851714dc555d8004bf1a61b1b9a4172b71aec7c5321af638761537c441ad",
+    "direct_import_fingerprint_sha256": "5278bbc282201d47d870666c2243547c8d7600135427cb0f57cf4a2f451dafd3",
+    "comparison_to_verified_history_source": {
+      "exact_unchanged": 4173,
+      "metadata_only_changed": 12,
+      "content_changed": 21,
+      "added": 61,
+      "absent_or_moved": 10,
+      "binary_changed": 0
+    },
+    "initial_overlay": {
+      "skipped": 4173,
+      "uploaded": 94,
+      "status": "pass"
+    },
+    "replay_verification": {
+      "skipped": 4267,
+      "uploaded": 0,
+      "status": "pass"
+    },
+    "soft_deletions": {
+      "deleted_current_paths": 10,
+      "history_retained": true,
+      "replacements_active": true,
+      "status": "pass"
+    },
+    "post_cutover_reaudit": {
+      "regular_files": 4267,
+      "bytes": 298682825,
+      "fingerprint_unchanged": true,
+      "status": "pass"
+    }
+  },
+  "agent_memory_capture": {
+    "regular_files": 398,
+    "bytes": 5373439,
+    "text_files": 329,
+    "binary_files": 69,
+    "fingerprint_sha256": "64d33e0c4263cf2344594e160933b99850c4b4c0965cb7525f6ac0a5955ec09c",
+    "import": "pass",
+    "replay_verification": "pass",
+    "binary_descriptions": {
+      "count": 69,
+      "method": "deterministic_archival",
+      "inference_api_calls": 0
+    }
+  },
+  "dormant_aether_backup_capture": {
+    "regular_files": 2793,
+    "bytes": 93627020,
+    "text_files": 2415,
+    "binary_files": 378,
+    "source_fingerprint_sha256": "8271693f85254bdf349d5536f740c4107208be17c2cba070e055ba8a948f93b1",
+    "wrapped_fingerprint_sha256": "34697fa8408dc96a3890532436aafc9eff44c112d892f8daf8c0a42ab5102990",
+    "not_byte_identical_to_prior_captures": 2386,
+    "import": "pass",
+    "replay_verification": "pass",
+    "live_source_archived": true,
+    "embedding_absolute_no_dedup_increment_usd_upper_bound": 0.084
+  },
+  "pre_worker_service": {
+    "active_entries": 13702,
+    "history_versions": 13831,
+    "deleted_current_paths_retained_in_history": 10,
+    "source_paths": 4267,
+    "agent_memory_source_paths": 3191,
+    "jobs": {
+      "queued": 12727,
+      "embedding": 12658,
+      "safe_no_model_describe": 69,
+      "running": 0,
+      "complete": 0,
+      "failed": 0
+    }
+  },
+  "worker_guard_correction": {
+    "superseded_worker_stopped": true,
+    "initial_correction_snapshot": {
+      "safe_no_model_describe_jobs_completed": 69,
+      "embedding_jobs_completed": 241,
+      "queued_jobs_after_stop": 12417
+    },
+    "completed_across_superseded_worker_runs": {
+      "total": 1030,
+      "safe_no_model_describe": 69,
+      "embedding": 961
+    },
+    "errors": 0,
+    "replacement_foreground_status_url_configured": true,
+    "old_worker_postgres_53100_last_observed_at": "2026-07-31T23:53:28.867017Z",
+    "old_worker_volume_megabytes": 5000,
+    "failed_jobs": 0
+  },
+  "final_backfill_and_worker": {
+    "initial_jobs": 12727,
+    "queued_jobs": 0,
+    "running_jobs": 0,
+    "failed_jobs": 0,
+    "search_chunks": 126536,
+    "missing_embeddings": 0,
+    "temporary_finalizer_replicas": 2,
+    "permanent_worker_replicas": 1,
+    "permanent_worker_postgres_53100": 0,
+    "permanent_worker_errors": 0,
+    "permanent_worker_fatals": 0,
+    "permanent_worker_job_failures": 0,
+    "guard_pauses_after_queue_zero": {
+      "count": 118,
+      "started_at_utc": "2026-08-01T00:04:55Z",
+      "ended_at_utc": "2026-08-01T00:05:55Z",
+      "cause": "intentionally_slow_broad_open_qualification_sample",
+      "warn_or_error_after_utc": {
+        "after": "2026-08-01T00:05:56Z",
+        "count": 0
+      }
+    },
+    "fresh_one_replica_qualification": {
+      "open_samples": 30,
+      "exact_search_samples": 30,
+      "failures": 0,
+      "service_open_p95_ms": 31.809529,
+      "service_open_p95_limit_ms": 120,
+      "service_search_p95_ms": 29.295206,
+      "service_search_p95_limit_ms": 107,
+      "status": "pass"
+    },
+    "final_service_counts": {
+      "active_entries": 13709,
+      "deleted_current_paths_retained_in_history": 10,
+      "history_versions": 13838
+    },
+    "status": "pass"
+  },
+  "client_cutover": {
+    "pinned_mcp_bundle_revision": "39761166d21b0cfa44d11e3ba18a52112693d0cd",
+    "pinned_mcp_bundle_sha256": "2c7e200f2ee015cdb69ab0b0a8ad86b96391ea6573be8e4b3e2001719b8cb39c",
+    "pinned_mcp_bundle_tests": {
+      "passed": 28,
+      "status": "pass"
+    },
+    "separate_credentials": "pass",
+    "fixed_launchers_and_private_roots": "pass",
+    "straylight_only_configuration": "pass",
+    "retired_client_wiring_vault_symlink_local_memory_report_backup_paths_absent": true,
+    "source_vault_retained_as_read_only_recovery_evidence": true,
+    "source_vault_client_writes_disabled": true,
+    "codex": {
+      "open": "pass",
+      "read": "pass",
+      "write": "pass",
+      "idempotency_replay": "pass",
+      "checkpoint": "pass",
+      "stale_write_status": 409,
+      "stale_write_error": "entry_version_conflict",
+      "verdict": "pass"
+    },
+    "aether_openclaw": {
+      "cross_read": "pass",
+      "write": "pass",
+      "idempotency_replay": "pass",
+      "path_ref_replay_byte_identical": "pass",
+      "path_ref_replay_created_new_write": false,
+      "checkpoint": "pass",
+      "checkpoint_resume": "pass",
+      "checkpoint_ref": "7e1c41e2-6577-2bc6-2997-a5ac1c2083db",
+      "resume": "pass",
+      "no_delivery": "pass",
+      "no_api_key_reasoning": "pass",
+      "tool_calls": 7,
+      "failures": 0,
+      "fallbacks": 0,
+      "outbound_events": 0,
+      "normal_gateway_mcp_read": "pass",
+      "gateway": "healthy_running",
+      "channels": "running",
+      "memory_plugin": "disabled",
+      "retired_live_paths_absent": true,
+      "post_gateway_source_reaudit": {
+        "regular_files": 4267,
+        "bytes": 298682825,
+        "direct_import_fingerprint_sha256": "5278bbc282201d47d870666c2243547c8d7600135427cb0f57cf4a2f451dafd3",
+        "status": "pass"
+      },
+      "verdict": "pass"
+    },
+    "automations": {
+      "openclaw_total": 22,
+      "openclaw_safe_enabled": 3,
+      "openclaw_old_vault_or_local_memory_disabled": 19,
+      "codex_active": 5,
+      "codex_rewritten_to_straylight": 2,
+      "codex_legacy_gmail_paused": true,
+      "active_job_absolute_retired_path_scan": "pass"
+    }
+  },
+  "github_noise_cleanup": {
+    "dependabot_schedule_removed": true,
+    "dependabot_pull_requests_closed": 21,
+    "open_pull_requests": 0,
+    "ci_disabled": true,
+    "ci_disabled_reason": "github_rejected_all_jobs_before_step_execution_due_to_failed_payments_or_actions_spending_limit",
+    "ci_reenable_policy": "only_after_github_billing_is_repaired",
+    "failed_build_email_source_suppressed": true
+  },
+  "repository_publication": {
+    "final_commit": "pending",
+    "push_to_origin_main": "pending"
+  },
+  "verification": {
+    "rust_library_tests": {
+      "passed": 281,
+      "ignored": 1,
+      "status": "pass"
+    },
+    "mcp_tests": {
+      "passed": 28,
+      "status": "pass"
+    },
+    "web_tests": {
+      "passed": 18,
+      "status": "pass"
+    },
+    "railway_and_production_contract_tests": {
+      "passed": 40,
+      "status": "pass"
+    },
+    "final_targeted_tests": {
+      "passed": 79,
+      "status": "pass"
+    },
+    "final_railway_contract_tests": {
+      "passed": 10,
+      "status": "pass"
+    },
+    "full_python_discovery": "not_claimed_known_subprocess_hang"
+  },
+  "cost": {
+    "reasoning_billing": "chatgpt_authenticated_codex_plan_only",
+    "embedding_spend_estimate_usd_upper_bound": 3.61,
+    "embedding_spend_warning_threshold_usd": 20.0,
+    "warning_required": false,
+    "embedding_spend_so_far_usd": null,
+    "embedding_spend_accounting": "actual_provider_billing_unavailable",
+    "railway_pro_monthly_minimum_usd": 20.0,
+    "railway_charge_is_embedding_spend": false
+  },
+  "non_blocking_follow_ups": [
+    "complete_postgresql_plus_s3_restore_drill_when_nyx_docker_is_available",
+    "rotate_locally_configured_tavily_api_key_after_diagnostic_output_exposure",
+    "apply_storage_and_embedding_enqueue_policy",
+    "complete_synthetic_monitor_qualification",
+    "repair_github_actions_billing_before_reenabling_ci"
+  ],
+  "remaining_live_items": [
+    "repository_commit_and_push"
+  ],
+  "cutover_verdict": "operational_complete_repository_publication_pending"
+}

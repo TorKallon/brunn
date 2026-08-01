@@ -11,6 +11,30 @@ object storage, OpenAI text embeddings, a TypeScript SPA, and a typed
 TypeScript MCP server. Every component runs in Docker. Python and SQLite remain
 only in the frozen evaluation harness and do not define product behavior.
 
+## Production status
+
+The owner-directed Railway simplified-schema cutover has completed its layered
+data migration, both client canaries, embedding backfill, and final worker
+qualification. Repository publication remains; hosted CI is deliberately
+disabled because GitHub Actions rejected every job before execution on account
+billing/spending-limit grounds. The API is
+healthy and ready at build
+`39761166d21b0cfa44d11e3ba18a52112693d0cd`, with all 56 migrations applied,
+context-shaping treatments off, dreaming off, the ordinary 600/minute limit
+restored, and disabled legacy/evaluation routes returning 404. Nyx is the
+operator/test host, not a pilot or second production workspace.
+
+The verified history, exact fresh source overlay, current agent memory, and an
+additional dormant Aether backup corpus are imported and replay-verified.
+Codex and Aether/OpenClaw passed production canaries and are configured
+Straylight-only. The final web and permanent one-replica worker deployments
+pass. All 12,727 queued jobs completed with zero queued, running, or failed;
+126,536 search chunks have zero missing embeddings. The database volume is now
+20 GB with 13.6 GiB free. A restore drill was environment-blocked before
+creating a container and is recorded as not performed/non-blocking. Current
+aggregate status is recorded in
+[`results/2026-07-31-railway-simplified-cutover.md`](results/2026-07-31-railway-simplified-cutover.md).
+
 ## Start the local alpha
 
 ```bash
@@ -97,7 +121,7 @@ lookup overhead to reduce.
 
 See `results/2026-07-27-simplification-final-evaluation.md`.
 
-### 2026-07-23 alpha hardening candidate
+### 2026-07-23 alpha hardening candidate (historical)
 
 The complete post-hardening run recovered 179/180 deterministic claims through
 Straylight versus 175/180 through direct files. Across 45 paired cases,
@@ -107,10 +131,10 @@ fact and source but placed two facts in adjacent claim slots.
 
 Deterministic, destructive live API, read-only, account lifecycle, dependency
 failure, database, object-store behavior, backup/restore, current/N-1 rollback,
-browser, and real GPT-5.6 shadow-dream gates pass. Public alpha remains blocked
-on owner decisions and exact production-provider qualification; Community
-MinIO is not an acceptable production store because its image retains critical
-and high vulnerabilities.
+browser, and real GPT-5.6 shadow-dream gates passed for that candidate. At the
+time, public alpha remained blocked on owner decisions and provider
+qualification. The later Railway/external-S3 decision supersedes that old
+current-state conclusion; Community MinIO remains excluded from production.
 
 See `results/2026-07-23-alpha-candidate-comparison.md` and
 `docs/Alpha Readiness.md` for the evidence and remaining decision boundary.
@@ -229,7 +253,7 @@ python3 agent_work_eval.py run \
   --concurrency 3 \
   --timeout 420 \
   --out results/2026-07-12-native-main-final.json \
-  --report "/Users/aether/obsidian/notes/Projects/Straylight/Native agent work evaluation results - 2026-07-12.md"
+  --report results/2026-07-12-native-main-final.md
 ```
 
 ### Result
@@ -286,7 +310,7 @@ python3 agent_work_eval.py --manifest eval/rupture_ops_cases.json run \
   --concurrency 3 \
   --timeout 420 \
   --out results/2026-07-12-native-rupture-regraded-v1.json \
-  --report "/Users/aether/obsidian/notes/Projects/Straylight/Native Rupture Ops evaluation results - 2026-07-12.md"
+  --report results/2026-07-12-native-rupture-regraded-v1.md
 ```
 
 Result: filesystem passed 6/12 cases and 41/48 claims; native Straylight
@@ -296,7 +320,7 @@ Primary files:
 
 - `eval/rupture_ops_cases.json`
 - `eval/corpus-rupture-ops-v0.1`
-- `Projects/Straylight/Rupture Ops interaction patterns and architecture validation - 2026-07-11.md` in the vault
+- `results/2026-07-12-native-rupture-regraded-v1.json` (privacy-reviewed aggregate result)
 
 ## Personal coordination suite
 

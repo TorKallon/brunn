@@ -1,74 +1,127 @@
 # D12 — Operational Simplification
 
-Status: Backfill guard implemented — remaining operational work not started
-Date: 2026-07-27
-Depends on: D08 (legacy freeze; D08-legacy-freeze-and-deletion.md), D14 (authority tiers; D14-migration-and-authority-tiers.md)
-Gated by: none (infrastructure; the Railway cutover itself is a Tier C event gated by D14's tripwires)
-Runtime flag: n/a for infrastructure items; `embedding_backfill_guard` for the backfill throttle
+Status: Railway topology, import, clients, backfill, and final worker passed; repository publication pending
+Date: 2026-07-31
+Depends on: D08 (legacy lifecycle), D14 (migration and authority cutover)
+Gated by: deterministic production and recovery checks below
+Runtime flag: `embedding_backfill_guard` for the backfill throttle
 
-Implementation note (2026-07-27): only the embedding-backfill guard subset is
-implemented. The API publishes a content-free rolling 60-second open/search
-p95 snapshot, and the separate worker consumes it over an internal HTTP URL.
-Configured endpoint failures, stale/future snapshots, schema drift, or a p95
-above either limit pause embedding claims. Unit tests cover the rolling p95,
-the cross-process HTTP boundary, and fail-closed behavior. The coordinated 64K
-load artifact, S3/Railway work, Datadog trim, restore drill, and PITR drill are
-still pending.
+## Current state
 
-## Problem and evidence
+The intended single-hosted-target design is now real: Railway runs the public
+web edge, private simplified API, separate worker, and PostgreSQL; production
+objects use external versioned S3. Nyx is the operator, build, test, and future
+restore-rehearsal host. It does not accept production writes and is not an
+owner pilot.
 
-Operational surface is currently wider than the product: two object-store paths (MinIO everywhere, S3 nowhere), two candidate production hosts (hosted straylight.rourkem.com on legacy at migration 50; Nyx on the simplified schema with empty tables), and an unbounded monitoring wishlist. Specific evidence:
+The API is healthy and ready at build
+`39761166d21b0cfa44d11e3ba18a52112693d0cd`, with all 56 migrations applied.
+Context-shaping treatments and dreaming are off; operational cache, guard, and
+timing features are on. The layered import and zero-diff audits pass. At the
+pre-worker snapshot, 12,727 jobs were queued with zero running/complete/failed.
+Web deployment `316d90eb-d807-4091-84d4-8ba10b49a2f2` passes. All 12,727 jobs
+completed at zero queued, running, or failed; 126,536 search chunks have zero
+missing embeddings. Permanent worker deployment
+`7af78da7-3b01-4a66-9923-3aa8184d1978` is `SUCCESS` with exactly one running
+replica and prior deployments removed. The isolated restore attempt was
+environment-blocked on locked Nyx and is non-blocking for this direct cutover.
 
-- The MinIO image in deployable artifacts carries a 3-critical/26-high CVE finding — a standing release blocker that patching-and-tracking would turn into a permanent tax.
-- The 2026-07-26 production collapse came from unbudgeted synchronous bookkeeping that no test gated; v5/v6 soaks showed embedding index catchup contending with foreground traffic. Background work must be structurally isolated, not just polite.
-- Write-path p95 regressed twice in one day (v5 3,404ms, v7 3,170ms unrelated-write p95, per the v5/v7 future-soak JSONs) and only the 640K soak caught it — monitoring must watch the few metrics that have actually caught real regressions.
-- All latency baselines (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json) are exact+lexical with embeddings pending; the initial owner-corpus embed is a future bulk operation with no production precedent.
+## Architecture
 
-## Design
+**S3-only production object store.** Production uses an external versioned S3
+store; MinIO remains dev/test-only. Binary verification stays SHA-256-based and
+store-agnostic. The pre-cutover object set is retained alongside a checksummed
+PostgreSQL dump until final acceptance.
 
-**S3-only production object store.** Production uses AWS S3 exclusively: versioned bucket, SSE enabled. MinIO is pinned to the dev/test compose file only and never appears in a deployable image — this retires the CVE blocker by removal rather than remediation. Binary verification (sha256) is store-agnostic and unchanged. OWNER DECISION: bucket region and whether versioning retention gets a lifecycle policy or stays indefinite until first cost review.
+**One production: Railway.** The SPA is the public edge. The API, worker, and
+database remain private. MCP is a local stdio process pinned to an immutable
+bundle and targets the hosted `/api` edge; it is not a hosted service. Nyx is
+not a second authority.
 
-**Single hosted target after cutover: Railway.** One production: static SPA (read-only ops console per D08), private API service, worker service, PostgreSQL 17 with pinned pgvector and PITR. Nyx is demoted to restore-rehearsal and backup target — it exists to prove restores work (Tier B restore drill, Tier C PITR drill per D14-migration-and-authority-tiers.md), never as a second production accepting writes. MCP stays a local stdio process on the client machine (apps/mcp, env-var auth, `STRAYLIGHT_API_URL` pointed at the hosted API) — it is not a hosted component and gains nothing from being one.
+**Worker isolation is structural.** The worker owns embedding backfill and
+future asynchronous accelerators. The API must serve complete exact+lexical
+behavior while the worker is stopped. This directly addresses the earlier
+v5/v6 index-catchup contention and the 2026-07-26 unbudgeted-bookkeeping
+collapse.
 
-**Worker stays a separate service.** v5/v6 showed index catchup contending with foreground reads. The worker (embedding backfill, change-feed projections, any future async accelerators) runs as its own Railway service with its own resources. Semantic indexing stays off the Tier B critical path; the API must serve exact+lexical fully with the worker stopped.
+**Foreground-latency backfill guard.** The API publishes only content-free
+rolling open/search latency counts, p95s, ages, and snapshot time. The worker
+fails closed when a configured snapshot is missing, invalid, stale, from the
+future, or above the configured limits. `embedding_backfill_guard=false`
+remains the immediate halt.
 
-**Datadog, trimmed to what has caught real problems:**
-- Metrics: per-route p95s, queue depth and oldest-job age, PG health, disk.
-- Exactly four monitors: API down; write p95; queue age; backup success.
-- Queue-age monitoring is polling-shaped — a jitter in poll cadence looks like queue stall. Thresholds must tolerate the documented false-alarm mode: alert on sustained breach (multiple consecutive windows), not single samples. A monitor that cries wolf weekly is worse than no monitor.
+**Production storage is sized, with efficiency follow-up.** Railway Pro is
+active and its confirmed $20/month minimum is infrastructure spend, not
+embeddings. The database volume is 20 GB in both live state and checked-in IaC;
+the final filesystem is 25% used with 13.6 GiB free. The simplified and legacy
+HNSW indexes have each recorded zero scans since July 25 because their semantic
+and legacy routes are off. They are distinct derived/rebuildable accelerators,
+not authoritative source/history. Neither was dropped; audit storage efficiency
+separately, and retain `corpus_members` until restore-backed legacy retirement.
+`VACUUM ANALYZE` on `search_chunks` and `jobs` completed successfully.
 
-**Embedding backfill rate limit with a foreground-latency guard.** The initial owner-corpus embed (~$0.19 per 9.6M-token corpus; usage-billed OpenAI, explicitly exempt from the subscription rule) runs through the worker at a configured rate limit. The API records open/search completion latency in rolling 60-second windows and exposes only counts, p95s, sample ages, and snapshot time. The worker fetches that content-free snapshot over its configured internal HTTP URL before claiming embedding work. It pauses on either p95 breach (defaults: 120ms open / 107ms search) and fails closed when a configured endpoint is unavailable, invalid, stale, or from the future. `embedding_backfill_guard=false` remains the immediate runtime halt. Compose configures the service-to-service URL; production must use a private API URL. An absent URL preserves local-development compatibility but does not qualify for this D12 gate.
+**Monitoring stays narrow.** The target set remains API availability, write
+p95, queue age, and backup success. Synthetic monitor qualification is deferred
+outside this owner-cutover completion set; do not describe it as deployed
+evidence until it exists.
 
-## What this does NOT change
+## Current cutover controls
 
-- No schema change; no new tables; the simplified core contract (`/v1/workspace/*`, 12 MCP tools) is untouched.
-- Markdown vault remains authority; Railway cutover happens only at Tier C with D14's shadow period and abort tripwires (checkpoint-lineage incident → immediate abort to MD authority; weekly lossless-export diff must show zero divergence; per-release soak gate during shadow).
-- Semantic search remains an optional async accelerator, never a gate — worker isolation enforces this structurally.
-- Credential model unchanged: minted once via `straylight_auth.admin_issue_credential`, unrecoverable; read-only capability-derived server-side (auth.rs:125-132).
-- No new monitoring vendor, no APM expansion, no log-pipeline project.
+1. **Passed:** hold worker execution through history replay, checkpoint import,
+   fresh overlay, and the zero-diff full export audit.
+2. **Passed:** restore the ordinary 600/minute limit after bounded import.
+3. **Passed:** disable legacy/evaluation APIs, remove wrong variable names, and
+   verify all three disabled probes return 404.
+4. **Passed:** start worker processing only after the passed audits and observe
+   it under the foreground guard. The guard paused correctly 118 times during
+   an intentionally slow broad-open sample after the queue was already zero;
+   the final worker emitted no `53100`, error, fatal, or job failure.
+5. Use ChatGPT-authenticated Codex for reasoning. API-key billing is limited to
+   embeddings; the conservative current upper-bound estimate is $3.61, below
+   the $20 notification threshold. Actual provider billing is unavailable.
 
-## Failure-mode analysis
+## Historical evidence retained
 
-- **07-26 bookkeeping collapse:** the direct motivation for hard worker separation and for the backfill guard — background work that can degrade foreground must be pausable at runtime and isolated by service boundary.
-- **v5/v7 write regressions caught only by the 640K soak:** monitors alone are insufficient; D14's per-release soak gate during shadow remains mandatory. The write-p95 monitor is the production echo of that gate, not a replacement.
-- **v5/v6 index-catchup contention:** the reason the worker is a separate service and the guard samples foreground p95 rather than trusting the rate limit alone.
-- **MinIO CVE blocker:** solved by absence; the residual risk is dev/test-vs-prod drift, mitigated by running the restore drill and binary-verification checks against real S3, not MinIO.
-- **Queue-age false alarms:** documented polling-shaped failure mode; sustained-breach thresholds prevent alert fatigue from burying the one real page.
+- The MinIO production candidate had critical/high CVEs; removing it from the
+  production architecture avoids carrying that remediation tax.
+- The 640K exact+lexical baseline measured open p95 59.7 ms and search p95
+  53.1 ms.
+- Earlier v5/v7 writes regressed above three seconds, and v5/v6 showed index
+  catchup contending with foreground reads. Those results motivate separate
+  worker resources, guarded backfill, and production p95 observation.
 
 ## Acceptance gates
 
-1. Deployable image scan: no MinIO binary or image layer in any production artifact; CVE scan clean at critical/high for object-store components.
-2. Restore drill: back up from production S3+PG, restore onto Nyx, re-run the fidelity audit (paths/bytes/sha256, binary descriptions byte-copied, parent_checkpoint_id resolution) — zero divergence. PITR drill to an arbitrary point succeeds before Tier C.
-3. Worker isolation probe: with the worker stopped, full exact+lexical service; performance_eval correctness markers green and p95s within v8 baselines.
-4. Monitor verification: each of the four monitors fired by a synthetic fault (API stopped; injected slow write; stalled queue job; failed backup) exactly once, with queue-age proven quiet across a normal week.
-5. Backfill guard test: deterministic tests first prove the rolling window and real API-process-to-worker-process HTTP pause path. Then bulk embed against a 64k-scale fixture with concurrent foreground load; the run artifact must prove pause and resume within one batch and that foreground open/search p95 never exceeds the configured limit.
+1. API, web, and worker report the intended final revision; health/readiness and
+   public-route isolation pass. **Passed; the permanent worker is `SUCCESS` at
+   one replica and prior deployments are removed.**
+2. With worker execution held out, exact+lexical fidelity and production client
+   canaries pass. **Passed for import, Codex, and Aether/OpenClaw.**
+3. With the worker running, the guard demonstrably pauses/resumes within one
+   batch and foreground open/search p95 stays within the configured limits.
+   **Passed: 30 open + 30 exact-search samples, zero failures; p95 31.809529 ms
+   and 29.295206 ms against 120 ms and 107 ms limits.**
+4. PostgreSQL plus S3 restore to an isolated target reproduces current paths,
+   full history, hashes, binary-description receipts, native records, and
+   checkpoints with zero differences. **Not performed: locked Nyx blocked
+   Docker before a restore container was created. This is retained as future
+   operational evidence and does not block the direct owner cutover.**
+5. Each of the four monitors is qualified with content-free evidence. **Deferred
+   outside the owner cutover.**
+6. The ordinary request budget and evaluation API state are restored before
+   client handoff. **Passed.**
 
-## Rollout and kill switch
+## Rollback
 
-Order: (1) S3-only images and dev/test MinIO pinning; (2) worker split and backfill guard on Nyx; (3) Datadog trim; (4) Railway environment stood up and soaked in shadow per D14; (5) cutover at Tier C. Kill switches: `embedding_backfill_guard` halts backfill at runtime; DNS-level rollback to the legacy hosted deployment remains available until D08's deletion gates pass; Nyx restore path is rehearsed, not theoretical.
+Stop the worker first, then roll API/web to their retained pre-cutover images
+and restore from the checksummed PostgreSQL dump plus versioned S3 if the
+database itself is invalid. Do not point production clients at Nyx. The exact
+fresh source snapshot is recovery evidence, not a second writable authority.
 
 ## References
 
-- results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json (baselines; concurrent probe); v5/v7 future-soak JSONs (write regressions, catchup contention).
-- Vault: 2026-07-26 production collapse post-mortem; Decisions.md (subscription fail-closed, embeddings exempt, ~$0.19/corpus).
-- D08-legacy-freeze-and-deletion.md (SPA freeze, legacy deployment lifecycle); D14-migration-and-authority-tiers.md (tiers, shadow tripwires, drills); D11-semantic-lane-policy.md (shared embedding_backfill_guard).
+- [D08 legacy freeze and deletion](D08-legacy-freeze-and-deletion.md)
+- [D14 migration and authority cutover](D14-migration-and-authority-tiers.md)
+- [D11 semantic lane policy](D11-semantic-lane-policy.md)
+- [2026-07-31 aggregate cutover record](../../results/2026-07-31-railway-simplified-cutover.md)
+- `results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json`

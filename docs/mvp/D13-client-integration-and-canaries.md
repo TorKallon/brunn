@@ -1,93 +1,162 @@
 # D13 — Client Integration and Canaries
 
-Status: Proposed — not started
-Date: 2026-07-27
-Depends on: none — D14 (D14-migration-and-authority-tiers.md) sequences this runbook and defines the tiers referenced throughout; the dependency runs D14 → D13, not the reverse
-Gated by: none — canaries here are deterministic pass/fail checks, not paired-draw experiments
-Runtime flag: n/a (client-side runbook; no context-shaping server change)
+Status: Passed for the Codex and Aether/OpenClaw direct-cutover subset
+Date: 2026-07-31
+Depends on: none — D14 sequences this runbook
+Gated by: deterministic read/write canaries below
+Runtime flag: n/a (client-side runbook)
 
-## Problem and evidence
+## Current scope and evidence
 
-No client has ever exercised the MCP server against the simplified core. Every MCP result dated 07-24 — including OpenClaw's 180/180 — was produced against the legacy core, and none of it transfers. No deployment currently holds owner data on the new core: hosted straylight.rourkem.com runs legacy at migration 50; Nyx runs the simplified schema with empty tables. The record is unambiguous that untested paths fail on first contact: the 07-10 canary failure was plausible-but-wrong retrieval that a sufficiency check alone would have blessed, and the 07-26 production collapse came from unbudgeted synchronous bookkeeping no test gated. This runbook defines how the three clients (Codex, OpenClaw, Claude Code) are wired to a simplified deployment — Nyx first — and the canary checklists each must pass, with an explicit failure budget.
+The owner directed Codex and Aether/OpenClaw to use the Railway simplified
+service as their only durable memory store. The prior proposal to exercise
+read-only clients on Nyx first is superseded. Nyx remains the operator/test
+host and must not become a second production workspace.
 
-The MCP surface under test: apps/mcp exposes 12 stdio tools (memory.open/query/read/changes/capture/write/checkpoint/stage/status, asset.list/metadata/fetch) targeting /v1/workspace/* exclusively, env-var auth (STRAYLIGHT_API_TOKEN required; STRAYLIGHT_API_URL defaults to the Docker-internal http://api:18110), required sandbox roots STRAYLIGHT_MCP_IMPORT_ROOT and CARRYSTATE_MCP_ASSET_ROOT, and single text-content-block JSON responses.
+The deployed simplified API reports build
+`39761166d21b0cfa44d11e3ba18a52112693d0cd`. A matching, immutable MCP bundle
+with SHA-256
+`2c7e200f2ee015cdb69ab0b0a8ad86b96391ea6573be8e4b3e2001719b8cb39c`
+passes 28/28 tests. Separate credentials, fixed wrappers, private roots, and
+Straylight-only configuration are installed for both clients. Their prior live
+vault symlink and retired local-memory, report, and backup persistence paths are
+absent; the source vault remains intact as read-only recovery evidence. The
+additional dormant Aether backup was captured, imported, replay-verified, and
+archived.
 
-## Design
+Codex passes fresh open/read/write/replay/checkpoint checks; a stale write
+returns HTTP 409 `entry_version_conflict`. Aether/OpenClaw's strict post-archive
+rerun passes cross-read, byte-identical path/ref replay without a new write,
+checkpoint/resume, exact no-delivery behavior, and no-API-key reasoning. Its
+normal-gateway MCP read passes; seven calls produced zero failures, fallbacks,
+or outbound events, and the post-gateway source inventory remained unchanged.
 
-Order and time budget: Codex ~half day, OpenClaw ~half day, Claude Code ~1 day (nothing exists), plus a deliberate buffer of at least half a day for canary failures. The buffer is not padding; the record says untested paths fail on first contact.
+Automation retirement also passes. OpenClaw has 22 jobs: three safe jobs are
+enabled and 19 old vault/local-memory jobs are disabled. Codex has five active
+automations, including the two rewritten for Straylight; its legacy Gmail
+automation is paused. Absolute-retired-path scans pass for every active job.
 
-### Token-minting runbook (all clients)
+All 2026-07-24 MCP evaluation results exercised the legacy core. They remain
+historical interface evidence but do not satisfy these canaries.
 
-1. Mint via `straylight_auth.admin_issue_credential`. The credential is issued once and is unrecoverable — capture it into the env broker at the moment of issuance or plan to reissue.
-2. One credential per client (codex, openclaw, claude-code). This gives per-client revocation and per-client canary attribution.
-3. Issue read-only credentials for all Tier A work; read/write credentials only at Tier B entry (tiers per D14, D14-migration-and-authority-tiers.md). Read-only is capability-derived server-side (auth.rs:125-132) — a pilot client cannot corrupt the workspace even if misconfigured.
-4. Storage: tokens live in the env broker and are exported into client process environments. Never write tokens into config files (Operations.md rule). The one current violation is OpenClaw, handled below.
+## Fixed launcher contract
 
-### Codex (~half day)
+Each client launches the same MCP distribution pinned to the deployed Git
+revision, but through a separate wrapper and private roots:
 
-Register via `--config` flags: `mcp_servers.straylight.command`, `mcp_servers.straylight.args`, `mcp_servers.straylight.env_vars`. The env_vars entry forwards variable names (STRAYLIGHT_API_URL, STRAYLIGHT_API_TOKEN, STRAYLIGHT_MCP_IMPORT_ROOT, CARRYSTATE_MCP_ASSET_ROOT); values come from the parent environment via the trusted broker, so no secret touches the config. Then re-run all canaries below — the 07-24 Codex results were legacy-core and are void here.
+- a fixed Railway API URL ending in `/api`;
+- a fixed, immutable MCP bundle revision;
+- one secret-store account and one read/write credential per client;
+- one mode-0700 import root and asset root per client;
+- a cleaned child environment with API credentials and routing overrides not
+  required by the MCP server removed; and
+- startup rejection for mutable bundles, symlinks, unsafe ownership, or unsafe
+  permissions.
 
-### OpenClaw (~half day)
+Tokens are read at launch from the approved local secret store. They are never
+written into Codex configuration, OpenClaw configuration, wrappers, logs, or
+repository files. Separate credentials make revocation and audit attribution
+surgical.
 
-The generated openclaw.json (mode 0600) currently INLINES the token, violating the Operations.md storage rule. Two acceptable paths: (a) switch generation to env brokering — a Small change; or (b) OWNER DECISION: the owner accepts the inlined token in writing, recorded in this doc's revision history. Silent acceptance is how ungated failures happen; there is no third option. Then re-run all canaries (the 180/180 result was legacy-core).
+Direct cutover uses read/write credentials immediately because the owner
+rejected the read-only/read-write two-step. That makes the canaries and stale
+version/idempotency checks mandatory before the cutover can be called complete.
 
-### Claude Code (~1 day; nothing exists today)
+## Codex — passed
 
-1. Build: `cd apps/mcp && npm run build`.
-2. Register:
-   `claude mcp add straylight -e STRAYLIGHT_API_URL=http://<host>:18110 -e STRAYLIGHT_API_TOKEN=<read-only token via broker> -e CARRYSTATE_MCP_ASSET_ROOT=/abs/asset/root -e STRAYLIGHT_MCP_IMPORT_ROOT=/abs/import/root -- node <repo>/apps/mcp/dist/index.js`
-3. The default STRAYLIGHT_API_URL is Docker-internal and will not resolve from a host client — it must be overridden explicitly. Both sandbox roots must exist on disk, or memory.stage and asset.fetch hard-fail.
-4. Use a READ-ONLY token first. Enforcement is server-side (auth.rs:125-132), so the pilot cannot corrupt the workspace regardless of client behavior.
-5. Dotted tool-name check: the tool names (memory.open, asset.fetch, ...) are the one plausible Claude Code break point. Verify once against Claude Code's tool-name rules on first registration; if rejected, renaming is trivial and should be done once, not worked around per-call.
-6. Document the memory.read caveat in the client notes: the ref-or-path requirement is a runtime `.refine` invisible to the published schema, so schema-driven clients will not discover it until a call fails.
+1. Register a single `straylight` stdio MCP server that invokes only the Codex
+   wrapper; do not point configuration at a mutable repository build.
+2. Capture existing Codex durable local memory into Straylight before changing
+   its local-memory setting.
+3. Disable Codex local memories and remove every instruction that tells Codex
+   to persist durable decisions to the vault.
+4. Start a fresh Codex process and run the direct-cutover canary subset recorded
+   below.
+5. Prove a new durable write is visible through Straylight and is not created
+   in the old local-memory or vault locations.
 
-### Canary checklists (run per client; scripted where possible, manual otherwise)
+## Aether/OpenClaw — passed
 
-READ set — required for Tier A:
+1. Register the same pinned distribution through the OpenClaw wrapper using a
+   distinct credential and roots.
+2. Capture existing Aether daily/topic memory and its durable memory document
+   into Straylight before disabling them.
+3. Disable the built-in memory plugin, local memory search, compaction memory
+   flush, and vault-oriented skills/instructions. Remove the live vault symlink.
+4. Keep every automation that has not been rewritten for Straylight disabled.
+5. Restart/reload OpenClaw, run the direct-cutover canary subset recorded below
+   from a fresh process, and prove no durable write reaches local memory or the
+   vault.
 
-1. memory.open with task+hints returns evidence AND passes a known-answer check: a planted or independently known fact must appear in the returned context. Sufficiency != no_evidence alone is vacuous — the 07-10 failure was plausible-but-wrong retrieval that such a check would have caught.
-2. memory.query (exact+lexical) finds a known narrow fact with zero lane_failures reported.
-3. memory.read returns bytes whose sha256 matches the export manifest exactly.
-4. asset.fetch downloads a binary, hash-verified, with bytes never entering model context (path and metadata only in the response).
-5. The semantic_unavailable gap notice appears while embeddings are pending and is treated as expected, not as a failure.
+Claude Code was included in the original pilot design. It is not part of the
+owner's current two-client request and does not block this cutover. If added
+later, it receives its own wrapper, credential, roots, and complete canary run.
 
-WRITE set — required for Tier B:
+## Canary checklists
 
-1. memory.write with a stale expected_version returns a conflict.
-2. Idempotency replay of the same write returns no_op.
-3. memory.checkpoint followed by memory.open{resume_checkpoint_ref} returns the full checkpoint text plus changes_since_checkpoint.
-4. memory.changes cursor walks generations gapless from a recorded starting generation.
-5. An advisory-lock 409 is surfaced to the client and handled without data loss.
+The direct-cutover evidence executed the checks marked **passed** below. The
+remaining checks are the broader reusable client-qualification contract; they
+must be run before claiming that broader contract, but they are not represented
+as completed by this direct-cutover aggregate.
 
-Every canary failure is logged with tool name, request, and raw response before any fix is attempted.
+### READ set
 
-## What this does NOT change
+1. **Passed:** `memory.open` with task and hints returns evidence and passes an independently
+   known-answer check. A non-empty or non-`no_evidence` response alone is
+   vacuous.
+2. **Broader qualification:** `memory.query` exact+lexical finds a known narrow fact with zero unexplained
+   lane failures.
+3. **Passed:** `memory.read` returns bytes whose SHA-256 matches the import/export ledger.
+4. **Broader qualification:** `asset.fetch` writes a binary into the client's private asset root, verifies
+   its hash, and returns only path/metadata to model context.
+5. **Not applicable after completed backfill:** while embeddings are pending, the semantic gap notice is explicit and the
+   exact+lexical result remains usable.
+6. **Broader qualification:** a current record from the fresh overlay and one preserved historical record
+   are both retrievable with correct provenance.
 
-No schema changes, no change to the /v1/workspace/* contract, no change to the 12-tool surface or the single text-content-block response shape, no client-side authorization logic (capability derivation stays server-side), no change to Markdown authority.
+### WRITE set
 
-## Failure-mode analysis
+1. **Passed:** a write with a stale `expected_version` returns a conflict and changes no
+   bytes.
+2. **Passed:** replaying the same idempotency key returns `no_op`.
+3. **Passed:** `memory.checkpoint` followed by
+   `memory.open{resume_checkpoint_ref}` returns the full checkpoint text plus
+   changes since the checkpoint.
+4. **Broader qualification:** `memory.changes` walks generations gaplessly from a recorded cursor.
+5. **Broader qualification:** an advisory-lock 409 is surfaced and handled without data loss.
+6. **Passed:** a client-specific durable write is visible to the other client after the
+   change cursor advances.
+7. **Passed:** neither the vault nor the retired local-memory tree receives a corresponding
+   new file or mutation.
 
-- Vacuous canaries (07-10): countered by the mandatory known-answer check.
-- Silent credential sprawl: countered by forcing the OpenClaw OWNER DECISION in writing.
-- Docker-internal default URL: a predictable first-contact failure for host clients; called out so it is not misdiagnosed as an auth or server fault.
-- Dotted-name rejection in Claude Code: verified once up front; rename is trivial.
-- Legacy-core results treated as coverage: explicitly voided; all canaries rerun per client.
-- Overfetch and paraphrase-loss risks are unaffected — this doc changes wiring, not context shaping.
+## Failure boundaries
 
-## Acceptance gates
+- A known-answer miss, byte/hash mismatch, missing history, credential crossing
+  client boundaries, or unexpected old-store mutation blocks completion.
+- Semantic indexing delay alone does not block exact+lexical use.
+- A client can be rolled back independently by deregistering its MCP server and
+  revoking only its credential.
+- Do not fall back to an OpenAI API key for reasoning if the ChatGPT-authenticated
+  Codex plan is unavailable.
 
-- All three clients pass the full READ set against Nyx simplified with read-only tokens (feeds gate 3 of D14).
-- WRITE set passes per client before any Tier B daily-driver use.
-- Zero credentials in config files, or a written owner acceptance for OpenClaw on record.
-- Dotted tool names verified accepted (or renamed) in Claude Code.
+## Acceptance record
 
-## Rollout and kill switch
+The direct owner cutover passes only when both clients have:
 
-This is a runbook, not a flagged feature. Rollback per client is deregistration plus credential revocation; one credential per client makes revocation surgical. Read-only tokens make the entire Tier A pilot non-corrupting by construction.
+- immutable bundle identity recorded;
+- distinct read/write credentials held outside configuration;
+- the executed direct-cutover READ and WRITE subset above passing;
+- cross-client visibility passing; and
+- fresh-process proof that durable reads/writes use Straylight only.
+
+Credential, launcher, configuration, cross-client, source-retirement, Codex,
+and Aether/OpenClaw rows are populated. Both clients pass the direct-cutover
+subset after the dormant backup archival with the ordinary Aether gateway live.
+The broader reusable qualification items remain explicitly unclaimed.
 
 ## References
 
-- D14-migration-and-authority-tiers.md (tier gating; gates 3 and this doc's canaries).
-- apps/mcp (tool surface); auth.rs:125-132 (capability-derived read-only).
-- Operations.md (credential storage rule).
-- 07-24 MCP results (legacy-core; void for simplified), 07-10 canary retrieval failure, 07-26 bookkeeping collapse (vault notes).
+- [D14 migration and authority cutover](D14-migration-and-authority-tiers.md)
+- [Operations](../Operations.md)
+- [2026-07-31 aggregate cutover record](../../results/2026-07-31-railway-simplified-cutover.md)
+- `apps/mcp` (12-tool stdio surface)

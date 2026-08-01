@@ -1,113 +1,206 @@
-# D14 — Migration and Authority Tiers
+# D14 — Migration and Authority Cutover
 
-Status: In progress — local exact-composite preflight passed; service gate pending
-Date: 2026-07-27
+Status: Operational direct cutover passed; repository publication pending
+Date: 2026-07-31
 Depends on: D13 (D13-client-integration-and-canaries.md)
-Gated by: E01 (n≥3 paired-draw aggregator machinery; E01-paired-draw-machinery-and-baseline.md), E04 (result-budget experiment; E04-result-budget-experiment.md), and E10 (combined preflight, the final pre-launch gate; E10-combined-preflight.md) — Tier C only; Tiers A and B are gated by deterministic checks in this doc
-Runtime flag: n/a (process document; feature flags live in the Dxx docs this plan sequences)
+Gated by: deterministic fidelity, client, production-safety, and restore checks in this document
+Runtime flag: n/a (process document; context-shaping treatments remain off)
 
-## Problem and evidence
+## Owner-directed supersession
 
-The Markdown vault remains authority and fallback until launch gates pass. The simplified core is fast — v8 640K-record soak p95s of open 59.7ms, search 53.1ms, checkpoint 17.1ms, resume 35.2ms with no latency drift (results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json) — but speed is not authority. Reasoning parity is within noise, not proven better (57-case strict draw: legacy 170/228, simplified 160/228, direct Markdown 171/228; single-draw swings are ±3-5 claims). Write-path latency regressed twice in one day (v5 3,404ms and v7 3,170ms unrelated-write p95, per the v5/v7 future-soak JSONs in results/), and only the 640K soak caught it. The 07-26 production collapse came from unbudgeted synchronous bookkeeping no test gated. Authority therefore moves in tiers, each with deterministic gates, and this document is the master gating record.
+The original D14 proposed a Nyx read-only Tier A pilot, a Tier B read/write
+daily-driver phase, and a two-to-four-week Markdown-authority shadow period
+before Tier C. The owner explicitly rejected that two-step on 2026-07-31:
+Railway has no other active user traffic, Nyx must remain available for testing,
+and Codex plus Aether/OpenClaw are to cut over directly to Straylight and stop
+writing durable memory to the vault.
 
-## Design
+That decision changes rollout authority, not historical evidence. The E01–E11
+results remain exactly as recorded, all rejected or unresolved feature flags
+remain off, and the incomplete parity result is not relabeled a pass. This
+document now defines the lossless direct cutover the owner authorized.
 
-### Six launch gates (current status)
+## Why the migration is layered
 
-1. Release pinning — tag v8 at commit c3a5420 and retain the image digests. Status: PARTIAL; the release candidate exists, tag-plus-digest retention must be completed and recorded.
-2. Fidelity import — owner corpus exported from legacy and imported to Nyx simplified with a zero-diff fidelity audit (spec below). Status: PARTIAL; the exact current+history+delta composite passed its local zero-diff audit, including 710 byte-copied binary-description pairs and 5,079 native-record materializations. The isolated simplified import, service audit, and downloaded-byte round trip remain pending; see [Tier-A-legacy-fidelity-runbook.md](Tier-A-legacy-fidelity-runbook.md).
-3. Client canaries — all three clients pass the READ set (Tier A) and later the WRITE set (Tier B) per D13 (D13-client-integration-and-canaries.md). Status: not started.
-4. Restore proof — restore drill with fidelity re-audit (Tier B), then Railway cutover PITR drill (Tier C). Status: not started.
-5. Parity evidence — E01 machinery built and used for n≥3 paired draws; E04 (the result-budget experiment, E04-result-budget-experiment.md) passed; writable-sidecar comparisons run two-sided; E10 combined preflight passed (all shipped flags on under one global budget, E10-combined-preflight.md — the final pre-launch gate; no cutover proceeds without it). Status: not started (E01 aggregator and writable-sidecar control are known build items, Small/Medium).
-6. Shadow verdict — shadow period completed with zero tripwires fired and an explicit owner go decision. Status: not started.
+Neither source by itself is complete:
 
-### Tier A — read-only pilot (~2-3 focused days)
+- A fresh Markdown/binary import has the newest source bytes and portable file
+  metadata but not all service-native history, native records, checkpoint
+  material, or historical binary-description receipts.
+- The verified July history composite preserves those service-native records
+  but predates recent source additions, edits, metadata changes, and moves.
 
-Day 1: complete gate 1 (tag v8 c3a5420, retain digests). Export the legacy owner corpus from hosted straylight.rourkem.com (legacy at migration 50) with history=true so version lineage is in the manifest. Import to Nyx simplified.
-Day 2: run the fidelity audit (below). Mint read-only tokens, one credential per client, via straylight_auth.admin_issue_credential per the D13 runbook. Begin the three-client READ canaries, each including the known-answer check — sufficiency != no_evidence alone is vacuous.
-Day 3: finish canaries and spend the buffer on canary failures, which the record says to expect on first contact. Read-only enforcement verified (capability-derived server-side, auth.rs:125-132) — the pilot cannot corrupt the workspace.
+The least-loss order is therefore:
 
-Fidelity audit spec (zero diffs = pass; any diff = fail, no judgment calls):
-- Every entry path, byte length, and sha256 identical versus the legacy export.
-- Binary descriptions BYTE-COPIED, never regenerated — regeneration is the extraction-hallucination vector.
-- Every parent_checkpoint_id resolves.
-- Counts match the manifest, including version lineage (history=true).
+1. Replay the verified history/native composite into the empty simplified
+   tables.
+2. Overlay an exact fresh source snapshot so current bytes and portable
+   metadata win.
+3. Soft-delete old logical paths absent from the fresh source while retaining
+   their historical versions.
+4. Capture current Codex and Aether local durable memory before disabling those
+   persistence paths.
+5. Capture any additional non-identical dormant backup corpus before archiving
+   its old live source.
 
-The read-only current-snapshot bridge and its machine-readable scoped audit are
-documented in [Tier-A-owner-snapshot-tooling.md](Tier-A-owner-snapshot-tooling.md).
-That bridge can prove exact supported-text import for a disposable evaluation
-user and select E11 candidates, but it explicitly cannot satisfy this full gate:
-binary publication, `history=true` lineage, and checkpoint-table parent
-resolution remain required.
+No step regenerates binary descriptions or replaces exact source with inferred
+text. The source capture remains read-only throughout.
 
-The full legacy recovery/replay implementation and honest current gate record
-are documented in
-[Tier-A-legacy-fidelity-runbook.md](Tier-A-legacy-fidelity-runbook.md). Its
-aggregate preflight result is
-`results/2026-07-27-tier-a-legacy-fidelity-preflight.json`. The local composite
-has zero differences across 4,926 paths and 4,955 versions. D14 gate 2 now
-passes: all six stages imported into a fresh isolated simplified workspace,
-the service audit matched all legacy versions and 5,079 native
-materializations, the checkpoint resumed, and the full-history byte audit
-matched 10,009 current paths plus 10,038 historical versions with zero
-differences. The owner capture's single checkpoint has no non-null parent
-reference, so parent-resolution evidence for this capture remains honestly
-vacuous. Release pinning and the D13 READ canaries are still required for full
-Tier A.
+## Current production evidence (2026-07-31)
 
-### Tier B — read/write daily driver (+3-4 days)
+| Area | Observed state | Completion state |
+| --- | --- | --- |
+| API release | Deployment `6388d74a-000c-4faa-a924-16069e5b4c6c`, build `39761166d21b0cfa44d11e3ba18a52112693d0cd`; health/readiness/dependencies pass; web deployment `316d90eb-d807-4091-84d4-8ba10b49a2f2` passes; permanent worker deployment `7af78da7-3b01-4a66-9923-3aa8184d1978` is `SUCCESS` at one replica | Pass; prior worker deployments removed |
+| Schema | 56 of 56 migrations applied | Pass |
+| Runtime safety | 600/minute limit; legacy/evaluation APIs off; three disabled probes 404; context treatments and dreaming off; operational cache/guard/timings on | Pass |
+| Backup | Checksummed 273,563,054-byte PostgreSQL dump; versioned external S3 retained; dump catalog validates; locked Nyx blocked Docker before an isolated restore container could be created | Backup passes; restore is `not_performed_environment_blocked` and non-blocking for this direct cutover |
+| Historical source | Zero-diff 4,926 paths / 4,955 legacy versions / 5,079 native records / 10,038 remote versions; 20,047-copy, 797,775,263-byte round trip | Pass |
+| Fresh source | Exact 4,267-file overlay and all-skip replay; ten soft deletions retain history; final re-audit unchanged at 4,267 files / 298,682,825 bytes / recorded fingerprint | Pass |
+| Agent memory | 398-file primary capture plus 2,793-file dormant Aether backup; both imported and replay-verified | Pass |
+| Worker/backfill | 12,727 initial jobs to zero queued/running/failed; 126,536 search chunks; zero missing embeddings; final 30-open/30-search qualification has zero failures and p95 31.809529/29.295206 ms | Pass |
+| Current service | 13,709 active / 13,838 history; ten deleted current paths retained in history | Pass |
+| Storage | Railway Pro; live/IaC volume 20 GB; filesystem 18.3 GiB, 25% used, 13.6 GiB free; database 4,094,842,547 bytes; HNSW indexes retained as derived accelerators; `corpus_members` retained until restore-backed legacy retirement | Pass for capacity; storage-efficiency audit recommended |
+| Clients | Separate credentials/pinned wrappers; Codex and Aether/OpenClaw final passes | Pass |
+| Authority | Both configured Straylight-only; old live vault/local-memory/report/backup paths absent; post-gateway source inventory unchanged | Pass |
 
-Entry requires Tier A complete. Contents:
-- Restore drill: snapshot Railway PG + S3 (or Nyx volumes), restore to scratch, re-run the fidelity audit, require zero diffs.
-- WRITE canaries per D13 (stale-version conflict, idempotency no_op, checkpoint/resume round-trip, gapless changes cursor, advisory-lock 409).
-- Concurrent probe at owner scale, watching unrelated-write p95 specifically — it regressed twice in one day and only the 640K soak caught it.
-- Dream-retry fix shipped (dreaming itself stays paused, Open question 8).
-- ~~Crude open/search char budget near the legacy ~41.4K chars/case at entry~~ **Amended 2026-07-28:** the char-budget entry condition is withdrawn — E01's paired baseline falsified its overfetch premise (service 32,067 chars/case vs files 101,406; RuptureOps 63,090 vs 142,640, CI entirely negative). Replacement entry condition: D09 regression-tier gates green on the deployed build AND the E12 loss-autopsy triage disposition recorded (proceed / proceed-with-mitigations / hold). The MD fallback still protects against data loss, not quietly worse daily work — E12 is now the guard for the latter.
-- Semantic indexing stays OFF the critical path (the query-embedding call at simple_core.rs:3005 is synchronous and uncached; no semantic-ready latency profile exists).
+The earlier HTTP 429 pause was recovered by idempotent replay without resetting
+the database.
+The authoritative aggregate record is
+[`results/2026-07-31-railway-simplified-cutover.md`](../../results/2026-07-31-railway-simplified-cutover.md).
 
-### Tier C — sole authority (+5-8 build days + 2-4 weeks calendar)
+## Direct-cutover gates
 
-Entry requires (amended 2026-07-28): E01 machinery built and its baseline complete (done — non-inferiority was not established at n=3 and the −5-claim margin was underpowered against the observed CI width); the parity requirement is satisfied either by a future owner-approved n≥3 synthetic result or by shadow-period real-work evidence, at the owner's explicit Tier C entry decision; E04/E05/E06 resolved as drops (done); E10 combined preflight passed on the frozen launch manifest (E10-combined-preflight.md); writable-sidecar comparisons run two-sided (done in E01); Railway simplified cutover done; PITR drill passed.
+### 1. Release and topology
 
-Shadow protocol with pre-defined abort tripwires (defined before the window opens, not during):
-- Any checkpoint-lineage incident = immediate abort to MD authority. No triage-first.
-- Weekly lossless-export diff versus the MD vault must be zero-divergence.
-- Latency SLOs held on real traffic (current hard gates: open p95 ≤5,000ms, search ≤3,000ms, read ≤1,000ms, checkpoint ≤2,000ms — 50-100x looser than measured baselines).
-- One live restore executed mid-period.
-- Per-release soak gate for anything merged during the shadow window — no unbudgeted bookkeeping mid-shadow; that is the 07-26 lesson.
-- The period ends only with an explicit owner go decision. OWNER DECISION: shadow window length within the 2-4 week range, and the go/no-go call itself.
+- API, worker, and web report the intended final Git revision.
+- PostgreSQL has exactly the expected 56 migrations.
+- Health/readiness pass through the public web proxy and the API remains private.
+- Public admin/evaluation routes return 404 after migration access is disabled.
+- All experimental context-shaping flags and dreaming remain off.
 
-### Cost preflight (required for ALL tiers, not just Tier C)
+### 2. Historical fidelity — passed
 
-Per Decisions.md: all reasoning runs via the ChatGPT-authenticated Codex subscription, fail-closed (require_codex_subscription rejects API keys); usage-billed OpenAI only for embeddings (exempt; ~$0.19 per 9.6M-token corpus); observed all-in ≈$0.24/agent-run equivalent (470-run audit, $113.18).
-- Tier A: three READ canary sets plus failure retries ≈ 30-60 agent-run equivalents ≤ $15 all-in; embeddings-exempt spend $0 (semantic pending is expected).
-- Tier B: WRITE canaries, concurrent probe, one definitive 30-sample soak ≈ 60-100 equivalents ≤ $25 all-in; one optional corpus indexing ≈ $0.19 embeddings-exempt.
-- Tier C: reasoning spend is specified in the gating experiments' own preflights, not re-derived here — E01: 513 runs ≈ $123.12 worst case (498 ≈ $119.52 on the default transitions-deferral path), ceiling $150; E10: 342 runs ≈ $82.08 (+optional draw 4 ≈ $27.36, worst case ≈ $109.44), ceiling $120 — plus targeted 5-draw chronic repeats carried inside each Exx's own ceiling. Each Exx spec carries its own preflight arithmetic, hard ceiling, and abort criteria — Tier C does not start without them.
+Replay every bounded stage, then import and resume-test checkpoints. Require
+zero differences for:
 
-## What this does NOT change
+- every logical path, version ordinal, byte length, and SHA-256;
+- all 710 byte-copied binary-description pairs, never regenerated;
+- all 5,079 native-record materializations;
+- checkpoint identities and every non-null parent reference; and
+- the downloaded full-history export.
 
-Markdown-authority round-trip is preserved through Tier B: any new durable metadata must be authored/representable in Markdown so it survives rebuild-from-vault. No schema expansion, no validity intervals, no graph database, no restored synchronous global consistency. Semantic stays off the Tier B critical path. Every context-shaping change sequenced by this plan still ships behind its own runtime flag and its own n≥3 experiment.
+The owner capture contains one checkpoint and no non-null parent, so its
+parent-resolution count is honestly vacuous. Synthetic contract tests provide
+separate parent acceptance/rejection coverage.
 
-## Failure-mode analysis
+### 3. Fresh-source overlay — passed
 
-- Plausible-but-wrong canaries (07-10): known-answer checks mandatory in every canary (D13).
-- Unbudgeted bookkeeping (07-26): per-release soak gate during shadow; round-trip/query-count budget assertions accompany latency gates.
-- Quietly worse daily work (dedup revert; v6 recent-first collapse, Star Rupture 0/3): E12 loss-autopsy triage at Tier B entry (replacing the withdrawn char budget) and two-sided comparisons at Tier C; every context reduction is guilty until proven.
-- Regenerated binary descriptions (paraphrase/extraction hallucination): byte-copy required by the fidelity audit.
-- Single-draw overconfidence: only E01-aggregated n≥3 draws are load-bearing for Tier C.
+Re-hash the exact fresh snapshot immediately before import. The observed
+content-independent ledger is
+`5acc8d39a0e5bc7aad088a6488f9dd3f1c1b69c327dc53daf2c0bb8e290a4865`.
+Against the July capture it contained 4,173 exact unchanged files, 12
+metadata-only changes, 21 byte changes, 61 additions, and 10 absent/moved paths;
+all 710 binaries were unchanged. The first import skipped 4,173 and uploaded 94;
+the replay skipped all 4,267. All ten absent/moved paths were soft-deleted with
+history retained and replacements active.
 
-## Acceptance gates
+### 4. Agent-memory preservation and client cutover — passed
 
-Tier A: gates 1-2 pass; gate 3 READ set passes for all three clients. Tier B: gate 4 restore drill zero-diff; gate 3 WRITE set; concurrent probe within hard gates; D09 regression tier green; E12 triage disposition recorded (2026-07-28 amendment). Tier C: gates 5-6; zero tripwires; owner go recorded.
+- Capture current Codex and Aether local durable memory under distinct
+  Straylight namespaces before disabling either old store.
+- Issue a separate read/write credential per client through the approved local
+  secret store; never inline tokens in configuration.
+- Launch the fixed MCP distribution pinned to the deployed revision, with
+  private per-client import and asset roots.
+- Run the direct-cutover D13 READ and WRITE subset for Codex and
+  Aether/OpenClaw; retain the broader reusable qualification items as explicit
+  future work.
+- Disable Codex local memories and Aether local-memory search/flush plus all
+  vault-writing instructions, skills, symlinks, and automations.
+- From fresh processes, prove both clients read and write durable context only
+  through Straylight.
 
-## Rollout and kill switch
+The primary 398-file memory capture and additional 2,793-file dormant Aether
+backup both passed import and replay verification. Separate credentials,
+private roots, fixed launchers, and Straylight-only configuration pass. Codex
+passes the executed direct-cutover subset, including stale-write HTTP 409.
+Aether/OpenClaw's strict
+post-archive run passes through its healthy normal gateway: cross-read,
+byte-identical replay without a new write, checkpoint/resume, no delivery,
+no API-key reasoning, and an unchanged source re-audit all pass.
 
-The kill switch is the tier structure itself: at any tier, abort returns authority to the Markdown vault, which remains lossless-exportable throughout. A checkpoint-lineage incident aborts immediately without owner consultation; all other aborts are owner calls against the tripwire list.
+Claude Code was part of the original three-client pilot but is outside the
+owner's current cutover scope. Its future registration does not block these two
+clients.
+
+### 5. Production normalization and recovery — operationally passed; publication pending
+
+- **Passed:** restore the ordinary request budget and turn off the evaluation
+  and legacy APIs; remove wrong variable names; verify disabled routes return 404.
+- **Passed:** start the worker only after fidelity audits and observe the
+  guarded queue. Temporary two-replica finalization completed the backfill;
+  permanent one-replica qualification passed. The final worker emitted no
+  `53100`, error, fatal, or job-failure event.
+- The PostgreSQL plus S3 restore attempt could not start because locked Nyx
+  prevented Docker access; no container was created. Record
+  `not_performed_environment_blocked`, retain it as future recovery work, and
+  do not misreport it as a pass. The owner accepted it as non-blocking for this
+  direct cutover.
+- Keep GitHub CI disabled through publication: GitHub currently rejects every
+  job before execution for account billing/spending-limit reasons. Re-enable it
+  only after billing is repaired so it does not recreate failed-build emails.
+- Retain the pre-cutover backup until the owner accepts the final aggregate
+  report.
+
+## Cost boundary
+
+All reasoning, grading, and canary inference uses the owner's
+ChatGPT-authenticated Codex plan and fails closed rather than falling back to an
+API key. API-key billing is allowed only for embeddings. The deliberately
+conservative import upper bound is $3.61, below the owner's $20 notification
+threshold. Actual embedding billing is unavailable. The separate confirmed
+$20/month Railway Pro minimum is infrastructure spend, not embeddings. Stop and notify
+the owner before any revised embedding estimate exceeds $20.
+
+## Historical experiment context
+
+The direct-cutover decision does not erase the earlier caution:
+
+- The simplified v8 640K exact+lexical soak measured open p95 59.7 ms, search
+  53.1 ms, checkpoint 17.1 ms, and resume 35.2 ms.
+- The 57-case strict draw scored legacy 170/228, simplified 160/228, and direct
+  Markdown 171/228; later matched repeats narrowed the observed gap, but exact
+  parity was not proven.
+- E01's n=3 baseline did not establish the specified non-inferiority margin.
+- E04, E05, and E06 were negative; E07's mechanism passed but adoption failed;
+  E08 stopped at preflight; E09–E11 were prerequisite aborts.
+
+Those findings are why the deployed build keeps context-shaping treatments off.
+They are not evidence that a second writable authority is safer than an exact,
+audited Straylight cutover.
+
+## Acceptance and rollback
+
+The operational cutover passes: the intended worker revision, zero-job queue,
+zero missing embeddings, fidelity audits, client canaries, Straylight-only
+persistence proof, and fresh one-replica qualification all pass. The
+environment-blocked restore exception is accepted as non-blocking and remains
+future recovery work. The final commit, push, and owner-facing publication
+remain; hosted CI is separately unavailable until GitHub Actions billing is
+repaired. Until publication the verdict is
+`operational_complete_repository_publication_pending`.
+
+Rollback uses the retained checksummed PostgreSQL backup, versioned S3 objects,
+and pinned pre-cutover images. The source snapshot is retained as recovery
+evidence, not reopened as an ongoing writable authority. Any observed data
+loss, unresolved lineage, regenerated binary description, or cross-client
+credential leak stops the cutover immediately.
 
 ## References
 
-- results/2026-07-27-simplified-release-candidate-v8-future-soak-performance.json; results/2026-07-27-3340-clean-30-sample.json; v5/v7 future-soak JSONs in results/.
-- D13-client-integration-and-canaries.md; E01-paired-draw-machinery-and-baseline.md (aggregator machinery); E04-result-budget-experiment.md (result-budget experiment); E10-combined-preflight.md (final combined pre-launch gate).
-- Tier-A-owner-snapshot-tooling.md (read-only current-snapshot preflight, scoped audit, and honest gate boundary).
-- Tier-A-legacy-fidelity-runbook.md and results/2026-07-27-tier-a-legacy-fidelity-preflight.json (full-history recovery, exact binary companion contract, native-record materialization, replay, and current partial gate record).
-- Decisions.md (cost rules); Operations.md (credential storage); vault notes on the 07-10, 07-22 dedup, 07-26, and v6 recent-first incidents.
+- [D13 client integration and canaries](D13-client-integration-and-canaries.md)
+- [Tier-A legacy fidelity runbook](Tier-A-legacy-fidelity-runbook.md)
+- [Tier-A owner snapshot tooling](Tier-A-owner-snapshot-tooling.md)
+- [2026-07-31 aggregate cutover record](../../results/2026-07-31-railway-simplified-cutover.md)
+- [2026-07-27 historical fidelity preflight](../../results/2026-07-27-tier-a-legacy-fidelity-preflight.json)
+- [2026-07-28 experiment program report](../../results/2026-07-28-experiment-program-report.md)

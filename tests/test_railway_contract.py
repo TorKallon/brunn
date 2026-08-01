@@ -42,7 +42,7 @@ class RailwayContractTests(unittest.TestCase):
         )
         self.assertIn('"/var/lib/postgresql/data": postgresData', RAILWAY)
         self.assertIn('PGDATA: "/var/lib/postgresql/data/pgdata"', RAILWAY)
-        self.assertIn("sizeMB: 5000", RAILWAY)
+        self.assertIn("sizeMB: 20000", RAILWAY)
         self.assertNotIn("minio", RAILWAY.lower())
         self.assertIn(
             "COPY infra/postgres/init/ /docker-entrypoint-initdb.d/",
@@ -89,9 +89,16 @@ class RailwayContractTests(unittest.TestCase):
             'preDeploy: "/usr/local/bin/straylight migrate"',
             worker_block,
         )
+        self.assertIn(
+            'STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL:\n'
+            '      "http://api.railway.internal:8080/health/foreground-latency"',
+            worker_block,
+        )
 
     def test_reasoning_and_token_contract_is_frozen(self):
         expected = {
+            "STRAYLIGHT_LEGACY_API_ENABLED": "false",
+            "STRAYLIGHT_EVALUATION_API_ENABLED": "false",
             "STRAYLIGHT_EMBEDDING_PROVIDER": "openai",
             "STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS": "false",
             "STRAYLIGHT_EMBEDDING_MODEL": "text-embedding-3-small",

@@ -1,8 +1,8 @@
-# Tier A legacy fidelity import
+# Legacy fidelity import and direct-cutover annex
 
-Status: D14 gate 2 passed; release pin and D13 READ canaries pending
-Date: 2026-07-27
-Supports: D14 gate 2
+Status: Railway service and full-history round-trip audits passed with zero differences
+Date: 2026-07-31
+Supports: D14 historical fidelity gate and direct production cutover
 
 ## What is proven now
 
@@ -34,8 +34,9 @@ differences.
 
 The aggregate, content-free result remains
 [`results/2026-07-27-tier-a-legacy-fidelity-preflight.json`](../../results/2026-07-27-tier-a-legacy-fidelity-preflight.json).
-Full Tier A is not yet a pass: the exact release pin and D13 client READ
-canaries remain required.
+The original Tier A rollout is superseded by the owner's 2026-07-31 direct
+Railway decision. The isolated result remains valid rehearsal evidence; Railway
+now separately passes the service and round-trip audits.
 
 The first real isolated replay found eight legacy Markdown paths where two
 consecutive historical versions intentionally contain identical bytes. The
@@ -69,7 +70,7 @@ directories mode `0700` and files mode `0600`. Never commit owner paths,
 payloads, manifests, or credentials. The committed result contains aggregate
 counts and content-independent fingerprints only.
 
-Use a fresh isolated Nyx stack with its own port, database/schema, object-store
+The reference replay procedure below uses a fresh isolated Nyx stack with its own port, database/schema, object-store
 prefix, and empty user. Build it from the exact candidate commit. Set
 `STRAYLIGHT_EVALUATION_API_ENABLED=true`, because exact portable binary
 companions and intentional same-byte Markdown history are deliberately
@@ -257,12 +258,12 @@ artifacts all pass with zero differences. Any unexpected path, missing
 version (including an intentional same-byte ordinal), changed byte length/hash,
 regenerated description, or unresolved parent is a hard failure.
 
-## 6. Transition to the read-only pilot
+## 6. Historical read-only pilot transition (superseded)
 
-After gate 2 passes, issue one `read_only` credential per D13 client, verify
-server-side write denial, and revoke the migration owner credential. Then run
-all three D13 READ canary sets, including their known-answer checks. Do not
-claim Tier A until release pinning and those canaries also pass.
+The original plan issued a `read_only` credential per client after gate 2.
+The owner replaced that two-step with a direct read/write Railway cutover on
+2026-07-31. Keep this section only as historical protocol context; follow D13
+for the current two-client credential and canary requirements.
 
 ## Billing
 
@@ -270,6 +271,69 @@ The completed local preflight made zero Codex/ChatGPT inference calls, zero
 embedding calls, and incurred zero API spend. The importable text upper bound
 is 88,534,925 bytes. At the plan's current reference price of $0.19 per
 9.6 million embedding tokens, treating every byte as a token is about $1.76;
-even doubling that estimate for chunk overlap is about $3.52, below the
-$20 notification threshold. Keep embeddings disabled for this fidelity run;
+even doubling that estimate for chunk overlap is about $3.52. Including the
+later fresh/agent-memory/backup captures raises the full-cutover bound to $3.61,
+still below the $20 notification threshold. Keep embeddings disabled for this fidelity run;
 semantic indexing is not part of D14 gate 2.
+
+## Annex A — 2026-07-31 direct Railway replay
+
+This annex records only aggregate, privacy-safe facts. Owner paths, payloads,
+manifests, and credentials remain in ignored private operator storage.
+
+### Source choice
+
+The direct cutover reuses this verified history composite first, then overlays
+the exact current source snapshot. This preserves 4,955 legacy version ordinals,
+5,079 native records, checkpoint material, and 710 exact binary-description
+pairs while still making recent source bytes and portable metadata current.
+Rebuilding only from Markdown would lose service-native history; copying only
+the July service state would lose recent source changes.
+
+### Production preconditions observed
+
+- Railway simplified API health/readiness pass at build
+  `39761166d21b0cfa44d11e3ba18a52112693d0cd`.
+- All 56 migrations are applied; the simplified tables were empty before
+  replay.
+- Context-shaping treatments and dreaming are off; operational cache, guard,
+  and timing features are on.
+- A checksummed PostgreSQL dump exists and validates; S3 is external and
+  versioned. The isolated restore attempt could not start because locked Nyx
+  blocked Docker, so it is recorded as environment-blocked and non-blocking
+  for this direct owner cutover rather than as a pass.
+- Worker execution was held out of replay and no embedding/inference API call
+  participated in the fidelity result.
+
+### Recovered resumable pause
+
+Stage zero initially wrote 598 exact entries and versions before the migration credential
+hit the ordinary 600-request/minute limit. At that pause the service contained 598 queued jobs,
+but held worker execution meant no embedding call occurred. The importer then
+verified/skipped those exact targets and completed the remaining stages without
+resetting or deleting the partial import.
+
+The bounded repair temporarily raised the request budget, reused the same API
+build, finished replay/audits, and restored 600/minute. HTTP 429 was an
+operational pause, not a fidelity difference.
+
+### Railway completion checklist
+
+1. **Passed:** stages 0–5 completed without worker execution.
+2. **Passed:** checkpoint imported and resume-tested.
+3. **Passed:** `audit-service` matched 4,926 paths, 4,955 legacy versions,
+   5,079 native records, and 10,038 remote history versions.
+4. **Passed:** `--history` exported 20,047 copies and 797,775,263 bytes with
+   manifest SHA-256
+   `de37b0df888e2c1ddc6644eea8665592cd2f2c1ca7113fa001b39a04cd143941`
+   and zero differences.
+5. **Passed:** exact fresh overlay and ten history-preserving soft deletions.
+6. **Passed:** all-skip overlay replay and unchanged source re-audit.
+7. **Passed:** 600/minute limit restored; legacy/evaluation APIs off; three
+   disabled routes return 404.
+
+The fidelity checklist is complete. Both client canaries, the final web
+deployment, all 12,727 backfill jobs, and the permanent one-replica worker also
+pass. The operational cutover is complete; repository publication remains and
+hosted CI stays disabled until GitHub Actions billing is repaired. See
+[`results/2026-07-31-railway-simplified-cutover.md`](../../results/2026-07-31-railway-simplified-cutover.md).

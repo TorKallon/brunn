@@ -1,75 +1,105 @@
 # Straylight Production Platform Evaluation
 
-Status: recommendation ready; owner selection pending
+Status: **Railway selected; operational cutover passed; repository publication pending**
+Date: 2026-07-31
 
-## Decision Context
+## Current decision
 
-The first production deployment serves the owner and a small invite-only
-cohort. The data matters more than minimizing the hosting bill, but the
-platform should not add operational machinery that does not improve safety,
-reasoning quality, or token efficiency.
+The earlier recommendation to use Render was superseded by the owner's Railway
+selection. Railway now hosts the public web edge, private simplified API,
+separate worker, and PostgreSQL. Production objects remain in an external,
+versioned S3 store because Railway's native bucket contract does not provide
+the versioning boundary Straylight requires. Nyx is operator/test/restore
+infrastructure, not a second production deployment.
 
-The platform must support:
+The current API is healthy and ready at build
+`39761166d21b0cfa44d11e3ba18a52112693d0cd`, and all 56 migrations are applied.
+The layered owner-data migration and zero-diff service/export audits pass.
+Codex and Aether/OpenClaw pass their final client canaries, and the final web
+deployment passes. Guarded backfill completed all 12,727 initial jobs with zero
+queued, running, or failed and zero missing embeddings. The permanent
+one-replica worker passes; repository publication is the only live item.
 
-- the existing Dockerized Rust API and worker plus TypeScript web application;
-- managed PostgreSQL with pgvector;
-- a managed, versioned cloud S3 object store;
-- private service networking;
-- Datadog DogStatsD metrics and structured-log delivery;
-- one-time migrations, health checks, rollbacks, and immutable releases; and
-- a portable path to a larger cloud deployment without changing the storage or
-  agent-facing contracts.
+## Required platform contract
 
-MinIO remains the local development and destructive-test object store. It is
-not a production candidate.
+The owner deployment requires:
 
-## Comparison
+- Dockerized Rust API and independently stoppable worker;
+- PostgreSQL with pgvector and a verified migration ledger;
+- external versioned S3 object storage;
+- private service networking with only the web proxy public;
+- immutable release identity on API, worker, and web;
+- health/readiness, rollback, checksummed backup, and isolated restore; and
+- content-free operational metrics without exposing owner data.
 
-| Platform | Strengths for Straylight | Material drawbacks | Assessment |
+## Historical comparison
+
+This table records the 2026-07-27 evaluation; its recommendation is historical,
+not current state.
+
+| Platform | Historical strengths | Historical drawbacks | 2026-07-31 disposition |
 | --- | --- | --- | --- |
-| Render | Docker web, private, and worker services; fully managed Postgres with pgvector, backup, and HA options; private networking; native HTTPS log streaming to Datadog; declarative Blueprints | Requires an external S3 provider; does not run Compose directly; the strongest database protections require paid plans | Best alpha fit |
-| Railway | Very fast service setup, good developer experience, Docker builds, private networking, and convenient environment references | Compose must be translated service by service; Railway Postgres templates are explicitly unmanaged; Railway Buckets lack object versioning and server-side encryption; external log delivery needs a separate forwarder; private DogStatsD uses additional IPv6 configuration | Fast, but a poor fit for Straylight's data and observability requirements |
-| Fly.io | Strong Docker portability and regional placement; managed Postgres offers pgvector, HA, backups, and private networking | More infrastructure decisions and operational work; Datadog logs require a Vector-based log shipper; the production topology is less turnkey for a small cohort | Good technical runner-up when regional placement matters |
-| AWS ECS/Fargate | Deepest integration across ECS, RDS PostgreSQL, S3, IAM, KMS, networking, backup, and Datadog; clearest long-term control path | Highest initial configuration, infrastructure-as-code, security-policy, and operating burden; slower iteration for the first few users | Strong eventual platform, unnecessary complexity for the first alpha |
+| Render | Managed Postgres, private services, HTTPS log streams, declarative Blueprints | External S3 still required; strongest database protections are plan-dependent | Not selected |
+| Railway | Fast Docker service setup, private networking, convenient environment references | Service-by-service Compose translation; database template operational ownership; native buckets lack the required versioning/SSE contract; observability needs extra work | **Selected**, with external versioned S3 and explicit backup/restore controls |
+| Fly.io | Docker portability, regional placement, managed Postgres options | More infrastructure and log-shipping work | Not selected |
+| AWS ECS/Fargate | Deepest RDS/S3/IAM/KMS/Datadog integration | Highest initial and ongoing operational burden | Deferred |
 
-## Recommendation
+## Why Railway is acceptable for this owner cutover
 
-Use **Render for application compute and managed PostgreSQL**, **AWS S3 for
-versioned object storage**, and **Datadog for metrics and logs**.
+The earlier assessment called Railway a poor fit if its native database bucket
+and observability defaults were treated as the entire safety system. The live
+design closes the most important gaps outside those defaults:
 
-The initial service topology should be:
+- objects live in external versioned S3;
+- the database is captured as a checksummed PostgreSQL dump before migration;
+- API and worker are separate, and the worker was held out of fidelity import;
+- the API remains private behind the web proxy;
+- exact source/history audits are application-level rather than provider claims;
+  and
+- Nyx remains available for an isolated restore drill without accepting live
+  production writes.
 
-1. a public Render web service for the SPA and API edge;
-2. a private Render API service if the edge remains separate;
-3. a Render background worker;
-4. a one-shot migration command on each release;
-5. Render managed PostgreSQL with pgvector;
-6. a private Datadog Agent service for DogStatsD;
-7. Render's HTTPS Datadog log stream; and
-8. a private AWS S3 bucket with versioning enabled and a least-privilege
-   application identity.
+An isolated restore was attempted, but locked Nyx prevented Docker daemon
+access and no restore container was created. The backup checksum and catalog
+still pass. This is recorded as an environment-blocked, non-blocking exception
+for the direct owner cutover, not as recovery proof; the drill remains valuable
+future operational evidence.
 
-This is the smallest platform that matches the current safety contract without
-operating a database, object-store server, log forwarder, or general-purpose
-host. The application remains portable because PostgreSQL, S3, Docker, and
-DogStatsD are provider-neutral boundaries. Revisit AWS ECS/Fargate when the
-cohort, compliance needs, traffic, or organization justify the added control.
+The owner approved Railway Pro; the subscription update is confirmed and its
+$20/month minimum is infrastructure spend, not embedding spend. The database
+volume was live-resized from 5 GB to 20 GB, matching the checked-in 20,000 MB
+declaration. The final filesystem is 25% used with 13.6 GiB free.
 
-No provider-specific deployment manifest should be treated as production-ready
-until the owner accepts this recommendation and the exact Postgres and S3
-products pass the existing live qualification gates.
+## Current qualification record
 
-## Primary Sources
+| Check | State |
+| --- | --- |
+| Simplified API health/readiness | Pass |
+| 56/56 migrations | Pass |
+| External versioned S3 | Pass for import/export fidelity |
+| Pre-cutover PostgreSQL dump/catalog validation | Pass |
+| Public admin-route isolation | Pass |
+| Historical owner-data zero-diff audit on Railway | Pass: 4,926 paths / 4,955 legacy versions / 5,079 native records |
+| Full-history export | Pass: 20,047 copies / 797,775,263 bytes / zero differences |
+| Fresh-source overlay audit | Pass: 4,267 files; all-skip replay; ten history-preserving soft deletions |
+| Matching final API/worker/web identity | Pass; permanent worker deployment `7af78da7-3b01-4a66-9923-3aa8184d1978` is `SUCCESS` at exactly one replica and prior worker deployments are removed |
+| Guarded embedding queue | Pass: 12,727 initial to zero queued/running/failed; 126,536 search chunks and zero missing embeddings |
+| One-replica performance | Pass: 30 opens + 30 exact searches, zero failures; p95 31.809529 ms open and 29.295206 ms search against 120/107 ms limits |
+| Production volume | Pass: live and IaC 20 GB; 18.3 GiB filesystem, 4.6 GiB used, 13.6 GiB free, 25% |
+| Storage efficiency | Follow-up recommended: two unused HNSW indexes are distinct derived/rebuildable accelerators, not authoritative data; neither was dropped |
+| Final focused verification | Pass: 79 targeted, 28 MCP, 18 web, and 10 Railway contract tests |
+| Monitor synthetic-fault qualification | Deferred outside the owner cutover completion set |
+| PostgreSQL plus S3 restore drill | Not performed: locked Nyx blocked Docker before a container was created; non-blocking exception for this direct cutover |
+| Repository publication | Final commit and push remain; hosted CI stays disabled until GitHub billing is repaired |
 
-- [Render service types](https://render.com/docs/service-types)
-- [Render private services](https://render.com/docs/private-services)
-- [Render Postgres](https://render.com/docs/postgresql)
-- [Render log streams](https://render.com/docs/log-streams)
-- [Render Blueprints](https://render.com/docs/infrastructure-as-code)
-- [Railway Docker Compose mapping](https://docs.railway.com/guides/docker-compose)
+The aggregate execution record is
+[`results/2026-07-31-railway-simplified-cutover.md`](../results/2026-07-31-railway-simplified-cutover.md).
+
+## Primary sources
+
+- [Railway Dockerfiles](https://docs.railway.com/builds/dockerfiles)
 - [Railway databases](https://docs.railway.com/databases)
 - [Railway storage buckets](https://docs.railway.com/storage-buckets)
+- [Railway private networking](https://docs.railway.com/guides/private-networking)
 - [Railway third-party observability](https://docs.railway.com/guides/third-party-observability)
-- [Fly.io managed Postgres](https://fly.io/docs/mpg/)
-- [Fly.io log export](https://fly.io/docs/monitoring/exporting-logs/)
-- [AWS Fargate or Lambda decision guide](https://docs.aws.amazon.com/decision-guides/latest/fargate-or-lambda/fargate-or-lambda.html)
+- [AWS S3 versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html)

@@ -10,6 +10,8 @@ import {
 const releaseRuntime = {
   STRAYLIGHT_ENV: "production",
   STRAYLIGHT_BIND: "[::]:8080",
+  STRAYLIGHT_LEGACY_API_ENABLED: "false",
+  STRAYLIGHT_EVALUATION_API_ENABLED: "false",
   STRAYLIGHT_EMBEDDING_PROVIDER: "openai",
   STRAYLIGHT_ALLOW_DEGRADED_EMBEDDINGS: "false",
   STRAYLIGHT_EMBEDDING_MODEL: "text-embedding-3-small",
@@ -55,7 +57,7 @@ const releaseRuntime = {
 
 const postgresData = volume("postgres-data", {
   region: "us-west2",
-  sizeMB: 5000,
+  sizeMB: 20000,
 });
 
 const db = service("db", {
@@ -156,6 +158,8 @@ const worker = service("worker", {
     STRAYLIGHT_S3_ACCESS_KEY: api.env.STRAYLIGHT_S3_ACCESS_KEY,
     STRAYLIGHT_S3_SECRET_KEY: api.env.STRAYLIGHT_S3_SECRET_KEY,
     STRAYLIGHT_SYSLOG_ADDR: "datadog-agent.railway.internal:515",
+    STRAYLIGHT_EMBEDDING_BACKFILL_FOREGROUND_STATUS_URL:
+      "http://api.railway.internal:8080/health/foreground-latency",
     OPENAI_API_KEY: api.env.OPENAI_API_KEY,
   },
 });

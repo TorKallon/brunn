@@ -1,9 +1,9 @@
 # Straylight MVP Plan
 
-Status: Authoritative plan of record — adopted by owner decision 2026-07-27
-Date: 2026-07-28
+Status: Authoritative plan of record — direct Railway owner cutover operationally complete; repository publication pending
+Date: 2026-07-31
 Owner: Rourke (Tor Kallon)
-Vault decision record: `Projects/Straylight/MVP plan and authoritative next steps - 2026-07-27`
+Prior decision record: `Projects/Straylight/MVP plan and authoritative next steps - 2026-07-27` (captured in the migration source; no longer a write target)
 Detailed designs and experiment specs: `docs/mvp/` (this document indexes them and holds state)
 
 This document is the single place that holds plan state. Each design (Dxx) and
@@ -13,11 +13,12 @@ planning state into other documents.
 
 ## What the MVP is
 
-**MVP = Tier B of [D14](mvp/D14-migration-and-authority-tiers.md): Straylight
-is the daily read/write workspace for Claude Code, Codex, and OpenClaw, holding
-the real owner corpus on the simplified core, with the Markdown vault retained
-as fallback authority.** Tier C (sole authority) is the post-MVP milestone and
-is calendar-gated by a shadow period, not build effort.
+**MVP = the Railway simplified service is the sole durable memory workspace for
+Codex and Aether/OpenClaw, holding the complete owner corpus and current local
+agent memory.** Nyx remains the operator and test host, not a pilot. The owner
+explicitly superseded the earlier Tier A/Tier B rollout and Markdown-authority
+shadow period on 2026-07-31. After cutover, clients must neither read from nor
+write durable memory to the vault.
 
 "Stronger than MD files" has an explicit endgame definition, tested by
 [E10](mvp/E10-combined-preflight.md): corpus-wide non-inferiority to
@@ -26,7 +27,63 @@ files-with-writable-sidecar on every suite, a statistically resolved win
 capabilities (cross-agent visibility, credentials, remote binaries, resume
 deltas) proven in real use.
 
-## Where things stand (evidence, 2026-07-28)
+## Where things stand (evidence, 2026-07-31)
+
+- Railway is serving the simplified API at build
+  `39761166d21b0cfa44d11e3ba18a52112693d0cd`. Health and readiness pass, all
+  56 migrations are applied, the 600/minute request limit is restored,
+  legacy/evaluation APIs are disabled, all three disabled probes return 404,
+  context-shaping treatments and dreaming are off, and operational cache,
+  backfill guard, and timing instrumentation are on. Web deployment
+  `316d90eb-d807-4091-84d4-8ba10b49a2f2` passes at that build. Temporary
+  two-replica finalizer `0792432f` succeeded; permanent worker deployment
+  `7af78da7-3b01-4a66-9923-3aa8184d1978` is `SUCCESS` with exactly one replica
+  and prior deployments removed.
+- The least-loss layered migration is complete. The production audit matched
+  4,926 legacy paths, 4,955 legacy versions, 5,079 native records, and 10,038
+  remote history versions. The 20,047-copy, 797,775,263-byte round trip had
+  zero differences.
+- The exact 4,267-file source overlay passed import and all-skip replay. Its
+  disjoint delta was 4,173 exact unchanged, 12 metadata-only changes, 21
+  content changes, 61 additions, and 10 absent/moved paths. All ten were
+  soft-deleted with history retained and replacements active; the source
+  fingerprint remains unchanged on re-audit.
+- Current agent memory (398 files) and an additional dormant Aether backup
+  corpus (2,793 files, including 2,386 not byte-identical to prior captures)
+  are imported and replay-verified. The old live sources are absent or archived.
+- Before worker processing, the service held 13,702 active entries, 13,831
+  history versions, and 12,727 queued jobs. Backfill is complete at zero queued,
+  running, or failed; 126,536 search chunks have zero missing embeddings.
+  Current counts are 13,709 active entries, ten deleted current paths retained
+  in history, and 13,838 history versions.
+- Railway Pro is active and its confirmed $20/month minimum is infrastructure
+  spend, not embedding spend. The database volume was live-resized from 5 GB to
+  20 GB and the checked-in topology declares 20,000 MB. The final filesystem is
+  25% used with 13.6 GiB free.
+- Reasoning and canary inference used the ChatGPT-authenticated Codex plan;
+  archival descriptions used zero inference API calls. Actual embedding billing
+  is unavailable, but the absolute upper bound remains $3.61, below the $20
+  warning threshold.
+- A checksummed PostgreSQL backup and the versioned external S3 source are
+  retained. Catalog validation passed. An isolated restore attempt could not
+  start because locked Nyx prevented Docker access; no container was created.
+  This is recorded as an environment-blocked, non-blocking exception for the
+  direct owner cutover. The aggregate record is
+  [`results/2026-07-31-railway-simplified-cutover.md`](../results/2026-07-31-railway-simplified-cutover.md).
+- Both clients use separate credentials and pinned wrappers and are configured
+  Straylight-only. Codex passed open/read/write/replay/checkpoint and stale-409
+  canaries. Aether/OpenClaw's strict post-archive rerun passed cross-read,
+  byte-identical path/ref replay, checkpoint/resume, no-delivery, and
+  no-API-key reasoning through its healthy normal gateway.
+- The noisy scheduled Dependabot configuration was removed and its 21 open
+  pull requests were closed. Hosted CI remains disabled because GitHub rejects
+  every job before execution for account billing/spending-limit reasons; it is
+  not a publication gate and must not be re-enabled until billing is repaired.
+- Fresh one-replica qualification passed 30 opens and 30 exact searches with
+  zero failures: service p95 was 31.809529 ms open and 29.295206 ms search,
+  below the 120 ms and 107 ms limits. Final source re-audit is unchanged.
+
+Historical experiment conclusions remain unchanged:
 
 - Simplified core v8 (`c3a5420`) passes the 640K-record exact+lexical soak:
   open p95 59.7ms, search 53.1ms, checkpoint 17.1ms at 11 rows, with no
@@ -65,12 +122,8 @@ deltas) proven in real use.
   service-over-files overfetch diagnosis is not supported by the paired
   baseline. E04 then showed that neither tested D01 candidate produced the
   required 25% reduction or acceptable chronic-case tradeoff.
-- Zero of the six launch gates are complete. No client has exercised the MCP
-  surface against the simplified core (all 2026-07-24 MCP results were
-  legacy-core). No deployment holds owner data on the new core: hosted runs
-  legacy; Nyx has the simplified schema with intentionally empty tables.
-- The critical path to first use is the owner-corpus import to Nyx (gate 3),
-  not the hosted cutover.
+- The 2026-07-24 MCP results remain legacy-core evidence and do not satisfy the
+  current simplified-service client canaries.
 
 ## Operating rules (unchanged, restated)
 
@@ -81,8 +134,9 @@ deltas) proven in real use.
    abort criteria — for all tiers, not just launch experiments.
 3. Every context-shaping change ships behind a runtime kill switch and is gated
    by an n≥3 paired-draw experiment. Single-draw acceptance is a defect.
-4. Markdown-authority round-trip: any new durable metadata is authored or
-   representable in Markdown and survives rebuild-from-vault.
+4. Straylight is the post-cutover durable authority. Preserve the exact fresh
+   source capture and export evidence for recovery, but do not continue a
+   second writable Markdown authority.
 5. Dreaming stays paused (Open question 8). No schema expansion, no validity
    intervals, no graph database, no restored synchronous global consistency.
 
@@ -95,16 +149,16 @@ Phase 0 — measurement, pre-code (no product code changes; harness/corpus only)
 | [E01](mvp/E01-paired-draw-machinery-and-baseline.md) | Paired-draw machinery, writable-sidecar control, baseline measurement | Complete — non-inferiority not established; paired overfetch absent | Feeds every Exx; does not support service-versus-files overfetch |
 | [E02](mvp/E02-verbatim-identifier-gate.md) | Verbatim identifier gate | Stage 1 defect confirmed; Stage 2 flag-on failed 4/30 at every scale; soak and reasoning aborted | D02 rejected; repair and rerun deterministic arm |
 | [E03](mvp/E03-semantic-ready-latency-profile.md) | Semantic-ready latency profile (3 modes) | Mode 1 passed; semantic-ready Mode 2 failed zero-deferred-lane gate; paid Mode 3 aborted | Fix semantic timeout path before E09 |
-| [E12](mvp/E12-e01-loss-autopsy.md) | E01 loss autopsy — dual-rater taxonomy over 531 saved case-runs, $0 API | Specified — not run | Tier B entry triage (D14 as amended); sole path to any new context-shaping design |
+| [E12](mvp/E12-e01-loss-autopsy.md) | E01 loss autopsy — dual-rater taxonomy over 531 saved case-runs, $0 API | Specified — not run | Prerequisite to any new context-shaping design; not a cutover blocker under the 2026-07-31 owner decision |
 
 Infrastructure — no reasoning-quality risk (code, no experiment gate):
 
 | ID | Title | Status | Notes |
 |---|---|---|---|
 | [D09](mvp/D09-latency-contract-and-gates.md) | Latency contract: timings_ms, regression-tier gates, per-op query budgets, EXPLAIN assertions | Implemented in harness — isolated acceptance runs remain | Enabler for E03 mode 3; query budgets become measured only after the coordinated run |
-| [D08](mvp/D08-legacy-freeze-and-deletion.md) | Legacy freeze now; deletion later (needs gates 3–4 AND n≥3 parity); dream-retry fix now; MCP residue removal now | Proposed — not started | Dream-retry fix and MCP residue are immediate |
+| [D08](mvp/D08-legacy-freeze-and-deletion.md) | Legacy freeze and eventual deletion | Simplified production route and import proof pass; destructive legacy-code deletion remains a future restore-backed change | The environment-blocked drill does not block this direct cutover, but recovery tooling remains |
 | [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — safe subset not started | Deferred lexical consolidation rejected by [E05](mvp/E05-lexical-consolidation-guard.md) and closed |
-| [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Backfill guard implemented — remaining operational work not started | Kills the MinIO CVE release blocker |
+| [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Railway/import/web/client/backfill/worker gates passed; publication remains; restore exception recorded | Railway is the only production target |
 
 Features — flag + experiment gated:
 
@@ -125,8 +179,8 @@ Readiness — clients, migration, authority:
 
 | ID | Title | Status | Notes |
 |---|---|---|---|
-| [D13](mvp/D13-client-integration-and-canaries.md) | Client integration + canaries: Codex, OpenClaw, Claude Code; token runbook | Proposed — not started | Claude Code ~1 focused day |
-| [D14](mvp/D14-migration-and-authority-tiers.md) | Migration and authority tiers A/B/C; fidelity audit; shadow protocol with abort tripwires | Proposed — not started; Tier B entry and Tier C parity requirement amended 2026-07-28 | Defines the MVP boundary |
+| [D13](mvp/D13-client-integration-and-canaries.md) | Client integration + canaries | Direct-cutover subset passed for Codex and Aether/OpenClaw | Both are configured Straylight-only; broader reusable qualification and Claude Code are deferred |
+| [D14](mvp/D14-migration-and-authority-tiers.md) | Lossless migration and authority cutover | Operational cutover passed; locally verified repository publication remains | Records the environment-blocked restore exception and hosted-CI billing constraint |
 
 Conditional — do not start until stated preconditions hold:
 
@@ -141,72 +195,102 @@ Conditional — do not start until stated preconditions hold:
 
 ```mermaid
 flowchart LR
-    T1A[Track 1: Tier A pilot + D08/D09 infra] --> T1B[Tier B = MVP, D14 as amended]
-    T2[Track 2: E12 loss autopsy + harness checkpoint-syntax fix] --> T1B
+    B[Checksummed PG + versioned S3 backup] --> H[History replay passed]
+    H --> F[Fresh source overlay passed]
+    F --> M[Agent memory and dormant backup captured]
+    M --> C[Codex and Aether passed]
+    C --> W[Guarded backfill and one-replica worker passed]
+    W --> V[Locally verified repository publication]
+    T2[Track 2: E12 loss autopsy + harness checkpoint-syntax fix] --> Q[Future quality work]
     T3[Track 3: D02 repair + E03/D11 timeout repair] --> T4[Track 4 owner-gated: E08 v2, D04 adoption, E09]
     T4 --> E10G[E10 on frozen launch manifest]
-    T1B --> TC[Tier C: shadow period + cutover]
-    E10G --> TC
+    E10G --> Q
 ```
 
-Tracks 1–3 can start immediately and in parallel: Track 1 touches deployment
-and data, Track 2 reads immutable artifacts, Track 3 repairs rejected
-implementations behind their off-flags. Track 4 items each require an explicit
-owner go before spend. No new context-shaping design may be proposed unless
-E12's finding 2 justifies it — the E04/E06 rejections put the burden of proof
-on the autopsy, not on another feature bet.
+The cutover chain is the current critical path. Experiment follow-ups remain
+default-off and must not change the deployed retrieval behavior while the
+migration is being audited. No new context-shaping design may be proposed
+unless E12's finding 2 justifies it.
 
-## Plan of record — four tracks (adopted 2026-07-28)
+## Plan of record — direct cutover plus deferred experiment tracks
 
-Adopted by owner decision 2026-07-28 after the E01–E11 program closed under
-its frozen stop rules. Priority order:
+The E01–E11 program closed under its frozen stop rules on 2026-07-28. The owner
+then superseded the staged rollout with the direct-cutover Track 1 on
+2026-07-31. Priority order:
 
-**Track 1 — Ship the pilot (unblocked, highest value).**
-1. Execute Tier A per D14: tag/retain v8, export→import owner corpus to Nyx,
-   fidelity audit, read-only tokens, three-client read canaries per D13.
-2. Ship the immediate D08 items: dream-retry permanent-failure fix, MCP legacy
-   residue removal, legacy cargo-feature freeze. Run D09's isolated 64K/640K
-   acceptance; calibrate the fail-closed query budgets only if the recorded
-   counts prove an adjustment necessary.
-3. Then Tier B per D14 **as amended** (char-budget entry condition withdrawn —
-   its overfetch premise was falsified by E01; replaced by D09 regression tier
-   green + E12 triage recorded). Tier B is the MVP.
+**Track 1 — Complete the direct Railway cutover (highest priority).**
+1. **Complete:** zero-diff history replay, checkpoint/service audit, and full
+   20,047-copy byte round trip.
+2. **Complete:** exact fresh-source overlay, all-skip replay, ten
+   history-preserving soft deletions, and unchanged-source re-audit.
+3. **Complete:** primary agent-memory and dormant Aether backup capture/import/
+   replay; separate credentials and pinned client launchers; Codex canary.
+4. **Complete:** final Aether/OpenClaw post-backup gateway rerun, final web
+   verification, guarded 12,727-job backfill, 20 GB volume resize, and permanent
+   one-replica worker qualification. The isolated restore attempt is recorded
+   as environment-blocked and non-blocking for this direct owner cutover.
+5. **Live:** commit, push, and publish the final verdict using the completed
+   local verification matrix. Hosted CI remains disabled because GitHub rejects
+   every job before execution for account billing/spending-limit reasons;
+   re-enable it only after that is repaired.
 
 **Track 2 — Free analysis before any new feature work.**
-4. Run [E12](mvp/E12-e01-loss-autopsy.md), the E01 loss autopsy: $0 API,
+6. Run [E12](mvp/E12-e01-loss-autopsy.md), the E01 loss autopsy: $0 API,
    dual-rater, fixed taxonomy over all 531 saved case-runs. Its triage
-   disposition is a Tier B entry condition; its finding 2 is the only path to
-   any new context-shaping design doc.
-5. Fix canonical checkpoint syntax in the integrated harness — the measured
+   disposition is a prerequisite to new context-shaping work; its finding 2 is
+   the only path to any new context-shaping design doc.
+7. Fix canonical checkpoint syntax in the integrated harness — the measured
    20-failure/17-session service-arm drag E01 documented.
 
 **Track 3 — Cheap deterministic repairs ($0–1, all behind off-flags).**
-6. D02 repair: source verbatim lines from the exact-lane full-document match
+8. D02 repair: source verbatim lines from the exact-lane full-document match
    rather than the excerpt window (the flag-on arm only recovered byte-2,600
    probes); rerun E02's deterministic arm (free).
-7. D11/E03 repair: implement the bounded semantic deadline as the fix for the
+9. D11/E03 repair: implement the bounded semantic deadline as the fix for the
    ~2.5s Mode 2 stalls; rerun Mode 2 (free), then Mode 3 (~$1,
    embeddings-exempt).
 
 **Track 4 — Owner approval required before each item.**
-8. E08 rerun under its Amended protocol v2 (paired flag-off attribution
+10. E08 rerun under its Amended protocol v2 (paired flag-off attribution
    preflight, interleaved 3× repetitions, contention controls; ~$31
    equivalent).
-9. D04 assisted authoring — the write path proposes `supersedes` frontmatter
+11. D04 assisted authoring — the write path proposes `supersedes` frontmatter
    on overlap — then a fresh adoption qualification (the E07 cohort wrote
    intention frontmatter unprompted in 13/18 sessions; supersession needs
    prompting at the point of write, not more documentation).
-10. E09 after E03 Mode 2 clears (~$80 equivalent).
-11. Formal parity is **not purchased now**: establishing non-inferiority at
+12. E09 after E03 Mode 2 clears (~$80 equivalent).
+13. Formal parity is **not purchased now**: establishing non-inferiority at
     the −5 margin needs ~3–4× more draws (~$400 equivalent) against a CI whose
-    width is dominated by draw noise, and MD remains fallback through Tier B
-    regardless. The requirement moves to Tier C entry (D14 as amended),
-    satisfied by shadow-period real-work evidence or a future owner-approved
-    synthetic run. E10's small-suite superiority rule is fixed (claim-CI route
-    for <10-case suites).
+    width is dominated by draw noise. The owner accepted the completed program
+    as sufficient for this direct owner cutover; this does not turn the
+    underpowered result into a statistical pass. All rejected or unresolved
+    context-shaping flags remain off. A future synthetic run still requires an
+    explicit owner decision.
 
 ## Change log
 
+- 2026-07-31 (cutover execution): Completed the zero-diff layered migration,
+  exact fresh-source overlay, ten history-preserving soft deletions, primary
+  agent-memory and dormant-backup import/replay, Straylight-only Codex and
+  Aether/OpenClaw canaries, and final web verification. Recorded the isolated
+  restore as `not_performed_environment_blocked` after locked Nyx prevented
+  Docker access; this is non-blocking for the direct owner cutover and is not a
+  claimed restore pass. Upgraded Railway to Pro, live-resized the volume to
+  20 GB, completed all 12,727 queued jobs with zero failures and zero missing
+  embeddings, and qualified the permanent one-replica worker at 30 open plus
+  30 exact-search samples with zero failures. Operational cutover is complete;
+  repository publication remains live, while hosted CI stays disabled pending
+  repair of GitHub Actions billing.
+- 2026-07-31 (owner-directed supersession): Replaced the Nyx read-only pilot,
+  two-step Tier B progression, and Markdown-authority shadow period with one
+  direct Railway production cutover for Codex and Aether/OpenClaw. Selected the
+  least-loss layered migration: verified history/native replay, exact fresh
+  source overlay, history-preserving soft deletions, then local agent-memory
+  capture. Completion requires zero-diff production audits, client read/write
+  canaries, Straylight-only persistence proof, an explicit recovery-evidence
+  disposition, and locally verified repository publication. Hosted CI can be
+  re-enabled only after GitHub Actions billing is repaired. Historical E01–E11 results and
+  default-off decisions are unchanged.
 - 2026-07-28 (plan revision, owner-adopted): Replaced "Immediate next steps"
   with the four-track plan of record. Withdrew the Tier B char-budget entry
   condition (overfetch premise falsified by E01's paired baseline: service

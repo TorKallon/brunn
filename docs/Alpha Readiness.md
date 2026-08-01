@@ -1,83 +1,89 @@
 # Straylight Alpha Readiness
 
-Status: **ready to prepare a controlled owner-alpha migration as of
-2026-07-27, but not ready for an unrehearsed production cutover**. The
-simplified core has passed its deterministic, reasoning, continuation, and
-large-corpus performance gates. The hosted owner deployment still runs the old
-slow core, and its source-bearing data must be explicitly imported and verified
-in the new workspace tables before traffic moves.
+Status: **direct Railway owner cutover operationally complete as of
+2026-07-31; repository publication pending**. The simplified API is live and
+healthy; migration, source retirement, both client canaries, web, guarded
+backfill, and final one-replica worker qualification pass.
 
 This is the evidence register for release-candidate qualification. A launch
-record must bind all evidence to one exact clean commit. The retained candidate
-does so through its generated release manifest, checksums, image archives,
-standalone binaries, bundles, SBOMs, and scan reports. The register separates
+record must bind all evidence to one exact clean commit. The historical retained
+candidate did so through its generated release manifest, checksums, image
+archives, standalone binaries, bundles, SBOMs, and scan reports; the current
+cutover still needs its final matching release record. The register separates
 work Codex can complete and verify autonomously from choices that require the
 owner's approval. No owner decision may weaken the frozen read, write, capture,
 dreaming, reasoning-quality, token-efficiency, isolation, or provenance
 contracts.
 
-## Current Launch Call
+## Current launch call
 
-The simplified architecture should replace the old one:
+The owner selected one direct production cutover on Railway. Nyx is reserved
+for operation, testing, and restore rehearsal; there is no Nyx pilot and no
+read-only/read-write two-step. Completion means Codex and Aether/OpenClaw use
+Straylight only for durable memory and no longer write to the vault.
 
-1. The old service reproduced the production failure at 3,340 entries, returning
-   HTTP 408 after 26.088 seconds before useful retrieval. The simplified service
-   completed the same open/search/broad-search flow in 1.047, 0.674, and 1.867
-   seconds.
-2. The first strict reasoning draw put simplified Straylight 10 claims behind
-   legacy and 11 behind direct Markdown across 228 claims. The targeted matched
-   repeat narrowed the legacy gap to one claim across 64, and source audit found
-   accepted evidence in 21 of 22 disputed simplified responses. The supported
-   conclusion is no demonstrated material retrieval-driven degradation, not
-   perfect parity.
-3. The new database migrations are additive. They create the simplified
-   workspace tables but do not copy the legacy corpus into them. Cutover
-   therefore requires a lossless source-and-binary export/import with exact
-   path, byte, hash, description, and checkpoint verification.
-4. Automatic and manual dreaming are disabled pending owner review. Local
-   request and worker gates refuse dream work while disabled. On the hosted
-   legacy service, the scheduler is off, all controls are paused, no job is
-   active, and the `dream` capability was removed from all three active
-   credentials with their exact IDs retained in an immutable operator audit
-   event for deliberate restoration.
-5. Reasoning evaluations must use ChatGPT-authenticated Codex and fail closed
-   when the subscription is unavailable. Usage-billed APIs are limited to
-   capabilities Codex cannot provide, such as embeddings.
+1. Railway serves the simplified API at build
+   `39761166d21b0cfa44d11e3ba18a52112693d0cd`. Health/readiness pass, 56/56
+   migrations are applied, the request limit is 600/minute, legacy/evaluation
+   APIs are off, all three disabled probes return 404, context treatments and
+   dreaming are off, and operational cache/guard/timings are on.
+2. The pre-cutover PostgreSQL dump is checksummed and its catalog validates;
+   the object store is external versioned S3. A restore drill was attempted,
+   but locked Nyx prevented Docker access and no restore container was created.
+   This is an environment-blocked, non-blocking exception for the direct owner
+   cutover, not a claimed pass.
+3. The least-loss migration and zero-diff audits pass: 4,926 legacy paths,
+   4,955 legacy versions, 5,079 native records, 10,038 remote versions, and a
+   20,047-copy/797,775,263-byte round trip with zero differences.
+4. The exact 4,267-file source overlay and all-skip replay pass. All ten moved/
+   absent paths are soft-deleted with history retained and replacements active.
+   Primary agent memory plus the newly found dormant Aether backup corpus are
+   imported and replay-verified; old live paths are absent or archived.
+5. Codex passes fresh open/read/write/replay/checkpoint and stale-409 canaries.
+   Aether/OpenClaw passes its strict post-archive cross-read, byte-identical
+   replay, checkpoint/resume, no-delivery, and no-API-key-reasoning canary from
+   its healthy normal gateway. Both are configured Straylight-only.
+6. Reasoning uses the ChatGPT-authenticated Codex plan and fails closed.
+   API-key billing is limited to embeddings; the conservative upper-bound
+   estimate is $3.61, below the $20 notification threshold. Actual embedding
+   billing is unavailable; the separate confirmed $20 Railway Pro minimum is
+   infrastructure spend.
+7. The final web deployment passes. The temporary two-replica finalizer and
+   permanent one-replica worker pass after the database volume was live-resized
+   from 5 GB to 20 GB. All 12,727 initial jobs finished at zero queued, running,
+   or failed; 126,536 search chunks have zero missing embeddings.
+8. Fresh one-replica qualification passed 30 opens and 30 exact searches with
+   zero failures. Service p95 was 31.809529 ms open and 29.295206 ms search,
+   below the 120 ms and 107 ms limits. The exact source re-audit remains
+   unchanged at 4,267 files, 298,682,825 bytes, and the recorded fingerprint.
 
-The remaining owner cutover sequence is: preserve an exact release commit and
-images; snapshot hosted PostgreSQL and S3; rehearse the migration against a
-restored copy; deploy matching API and worker images; import and verify the
-owner corpus; run authenticated retrieval, write, checkpoint, export, binary,
-Codex, and OpenClaw canaries; then switch traffic with the old image and backup
-retained for rollback.
+The aggregate execution record is
+[`results/2026-07-31-railway-simplified-cutover.md`](../results/2026-07-31-railway-simplified-cutover.md).
 
-The 2026-07-27 Nyx migration rehearsal applied migrations 51 through 55 and
-started a healthy simplified API and worker. It exposed one local checksum
-drift in migration 44: the previously applied file had one additional trailing
-blank line and was otherwise byte-identical. Railway and the repository shared
-the same checksum; Nyx's single checksum row was repaired only after comparing
-all 48 applied migrations and proving this was the sole mismatch. The legacy
-indexes in migrations 49 and 50 took 135 seconds to build locally. Railway has
-already applied those migrations, so its pending simplified schema change is
-the additive 51-through-55 set. The new Nyx workspace tables are empty by
-design; no owner corpus was silently copied.
+Historical qualification still matters. The old service reproduced HTTP 408
+at 3,340 entries after 26.088 seconds; the simplified service completed the
+same open/search/broad-search flow in 1.047, 0.674, and 1.867 seconds. The first
+strict reasoning draw scored simplified 10 claims behind legacy and 11 behind
+direct Markdown across 228 claims; a matched repeat narrowed the legacy gap,
+but exact parity was not proven. The direct owner decision does not relabel
+that result or any E01–E11 outcome.
 
 ## Autonomous Release Gates
 
 | Gate | Required evidence | Status |
 | --- | --- | --- |
 | Reasoning contract | Frozen source/evaluation fingerprint and no unreviewed semantic changes | Current comparison complete; no material retrieval-driven degradation demonstrated, with RuptureOps overfetch retained as a release risk |
-| Deterministic tests | Rust, Python, SPA, MCP, Compose, Caddy, and workflow contracts | Pass: 234 Rust unit and 2 integration tests; 237 Python tests with 5 explicit skips; 26 MCP tests; and 18 SPA tests |
-| Live API safety | Full API smoke, read-only denial, credential boundaries, export, and deletion | Pass |
-| Dependency failure safety | Database/object-store outage and recovery, proxy recovery, request limits | Pass |
-| Database safety | Built-in `C.UTF-8`, page checksums, pgvector 0.8.5, fresh and no-op migrations | Pass |
-| Object-store safety | Versioning, conditional create, metadata, versions, delete markers, exact purge | Local MinIO behavior pass; managed S3 qualification pending |
-| Backup and restore | Checksummed coordinated backup, exact inventories, isolated restore, measured RTO | Pass for Nyx: exact full restore in 45m42s; managed S3 pending |
-| Rollback | Current and saved N-1 API images ready against the current schema | Pass |
-| Supply chain | Pinned bases, SBOMs, repository scan, application image scan, residual inventory | Application pass; Community MinIO restricted to temporary private Nyx use |
-| Browser experience | Desktop and mobile workflow, accessibility, layout, and console checks | Pass |
-| Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Conditional pass: matched repeat is within one claim of legacy, source audit found accepted evidence in 21 of 22 disputed responses, and mean uncached input is 3.6% below direct Markdown; exact parity is not proven |
-| Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment dry run | Blocked for the simplified candidate: the verified local image is explicitly labeled as a worktree build and the simplified and safety changes remain uncommitted |
+| Deterministic tests | Rust, Python, SPA, MCP, Railway, and workflow contracts | Final passes: 79 targeted tests, 28 MCP, 18 web, and 10 Railway contract tests after the 20 GB IaC change; earlier 281 Rust library tests passed with 1 ignored |
+| Live API safety | Full API smoke, credential boundaries, export, and deletion | API/export/delete and both client canaries pass |
+| Dependency failure safety | Database/object-store outage and recovery, proxy recovery, request limits | Historical candidate pass; current isolated restore could not start on locked Nyx and is a recorded non-blocking exception |
+| Database safety | Built-in `C.UTF-8`, page checksums, pgvector 0.8.5, fresh and no-op migrations | Current 56/56 migration ledger and 20 GB live/IaC volume pass; final filesystem is 25% used with 13.6 GiB free |
+| Object-store safety | Versioning, conditional create, metadata, versions, delete markers, exact purge | External versioned S3 and production import/export audit pass |
+| Backup and restore | Checksummed coordinated backup, exact inventories, isolated restore, measured RTO | Pre-cutover PostgreSQL dump and S3 retention pass; isolated restore not performed because locked Nyx blocked Docker, non-blocking for this direct cutover |
+| Rollback | Current and saved N-1 API images ready against the current schema | Historical candidate pass; current backup checksum/catalog pass, with the restore exception recorded |
+| Supply chain | Pinned bases, SBOMs, repository scan, application image scan, residual inventory | API/web pass; permanent worker deployment `7af78da7-3b01-4a66-9923-3aa8184d1978` is `SUCCESS` at one replica and prior worker deployments are removed; MinIO excluded from production |
+| Browser experience | Desktop and mobile workflow, accessibility, layout, and console checks | Historical candidate pass; final web deployment root and proxied API revision pass |
+| Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Historical conditional result: matched repeat was within one claim of legacy and accepted evidence appeared in 21 of 22 disputed responses; exact parity was not proven |
+| Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment proof | API, web, and permanent worker deployments pass; expected worker image digest recorded; final cutover repository publication remains. Hosted CI is unavailable until GitHub Actions billing is repaired. |
 
 ## Owner Decisions
 
@@ -87,15 +93,15 @@ on an unsettled provider or public identity.
 | Decision | Status | Recorded direction |
 | --- | --- | --- |
 | Public identity | Alpha identity settled | Keep Straylight for this alpha at `straylight.rourkem.com`; a permanent public identity and dedicated domain are deferred. |
-| Deployment | Initial path settled | Railway is running the current owner deployment, but it remains on the old slow core until the controlled simplified migration is complete. |
-| Object storage | Architecture approved; simplified migration qualification pending | Use MinIO only for local development. The hosted alpha uses temporary managed S3-compatible storage; the simplified import/export and restore path still requires rehearsal against a copy. |
-| Recovery | Nyx qualified; hosted pending | The exact local database and object set restored successfully. Off-host destination, key custody, RPO/RTO policy, and managed-S3 restoration remain required before hosted or invited use. |
+| Deployment | Selected and operationally complete | Railway Pro is the only production target. Its confirmed $20/month minimum is infrastructure spend, not embeddings. Nyx is operator/test/restore infrastructure, not a pilot. |
+| Object storage | Selected and audited | Use MinIO only for local development. Production external versioned S3 passed overlay/export fidelity. |
+| Recovery | Backup passed; drill environment-blocked | Checksummed PostgreSQL dump plus retained versioned S3 are available. Locked Nyx prevented Docker access, so no restore container was created; retain the drill as future recovery evidence without blocking this direct owner cutover. |
 | Monitoring | Approved in part | Datadog metrics and structured logs are approved. Alert recipients, escalation path, and retention still need exact values. Browser RUM remains outside the alpha. |
-| Source control | Created; plan-limited protections pending | Private `TorKallon/straylight` repository on GitHub with `main`, CI, Dependabot alerts, and automated security fixes. The current GitHub plan does not provide branch protection or secret scanning for a private repository; do not make it public without separate identity and launch approval. |
+| Source control | Created; noisy automation removed | Private `TorKallon/straylight` repository on GitHub with `main`. The noisy scheduled Dependabot configuration was removed and 21 bot PRs closed. GitHub rejects every CI job before execution for account billing/spending-limit reasons, so CI remains disabled until billing is repaired rather than recreating failed-build emails. |
 | Alpha cohort | Approved | Owner first, then only people the owner explicitly invites. No public signup. Every person receives a separate user account and credential. |
 | Operating visibility | Approved | Begin with the owner's real usage. Keep source-use rankings visible in the Control UI and aggregate model, embedding, storage, and request consumption prominent in Datadog. Set hard spend limits only after observing the initial workload. |
-| Policy and support | Pending | Final retention, privacy wording, and support expectations are not yet selected. |
-| Launch | Pending | Commit and retain the simplified candidate, rehearse and verify the owner-data migration on a restored copy, deploy matching API and worker images, run Codex and OpenClaw canaries, then make an explicit go/no-go decision. |
+| Policy and support | Deferred outside owner cutover | Final invited-user retention, privacy wording, and support expectations do not gate this owner-only cutover. |
+| Launch | Operational complete; publication pending | Commit, push, and publish the locally verified final verdict. Re-enable hosted CI only after GitHub Actions billing is repaired. |
 
 Secrets, private keys, and bearer tokens must be supplied through approved
 files or secret stores, never pasted into chat or committed to the repository.
@@ -177,5 +183,6 @@ images scan at zero critical and zero high findings. Community MinIO still has
 store. The exact release commit, immutable image digests, SBOMs, source and
 dependency fingerprints, and production dry-run configuration are generated
 by `scripts/fingerprint-release.sh` after the clean candidate commit. The
-release is expected to remain blocked until the owner selects a qualified
-deployment and the exact managed S3 target passes live qualification.
+At the time, that candidate remained blocked on provider selection and managed
+S3 qualification. The 2026-07-31 Railway/S3 decision supersedes that old
+current-state conclusion without changing the candidate's historical evidence.
