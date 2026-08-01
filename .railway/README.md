@@ -1,9 +1,8 @@
 # Straylight on Railway
 
 Status: Simplified owner deployment live; layered migration, both client
-canaries, backfill, and final one-replica qualification passed. Repository
-publication remains as of 2026-07-31; hosted CI stays disabled until GitHub
-Actions billing is repaired.
+canaries, backfill, final one-replica qualification, and repository publication
+passed. Hosted CI stays disabled until GitHub Actions billing is repaired.
 
 `.railway/railway.ts` is the source of truth for the owner-alpha topology:
 
@@ -68,12 +67,13 @@ Completed:
    embeddings. Live state and this topology both specify 20,000 MB; 13.6 GiB
    is free after backfill.
 
-Remaining order:
+Publication record:
 
-1. Commit and push `main`, then publish the final verdict. Hosted CI remains
-   disabled because GitHub currently rejects all jobs before execution for
-   account billing/spending-limit reasons; re-enable it only after that is
-   repaired so it cannot recreate failed-build email noise.
+1. Evidence commit `dff91a210293483d95c9ea61c7bab865b5a60f49` is published
+   on `origin/main`. Hosted CI remains disabled because GitHub currently rejects
+   all jobs before execution for account billing/spending-limit reasons;
+   re-enable it only after that is repaired so it cannot recreate failed-build
+   email noise.
 
 The earlier request-budget HTTP 429 was recovered idempotently without resetting
 the database. No owner path, content, manifest row, or credential belongs in

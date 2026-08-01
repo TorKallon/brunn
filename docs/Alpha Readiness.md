@@ -1,15 +1,17 @@
 # Straylight Alpha Readiness
 
-Status: **direct Railway owner cutover operationally complete as of
-2026-07-31; repository publication pending**. The simplified API is live and
+Status: **direct Railway owner cutover and repository publication complete as
+of 2026-07-31**. The simplified API is live and
 healthy; migration, source retirement, both client canaries, web, guarded
 backfill, and final one-replica worker qualification pass.
 
 This is the evidence register for release-candidate qualification. A launch
 record must bind all evidence to one exact clean commit. The historical retained
 candidate did so through its generated release manifest, checksums, image
-archives, standalone binaries, bundles, SBOMs, and scan reports; the current
-cutover still needs its final matching release record. The register separates
+archives, standalone binaries, bundles, SBOMs, and scan reports. The current
+production runtime remains pinned to verified build `39761166`; evidence and
+live-topology publication is commit `dff91a210293483d95c9ea61c7bab865b5a60f49`.
+The register separates
 work Codex can complete and verify autonomously from choices that require the
 owner's approval. No owner decision may weaken the frozen read, write, capture,
 dreaming, reasoning-quality, token-efficiency, isolation, or provenance
@@ -83,7 +85,7 @@ that result or any E01–E11 outcome.
 | Supply chain | Pinned bases, SBOMs, repository scan, application image scan, residual inventory | API/web pass; permanent worker deployment `7af78da7-3b01-4a66-9923-3aa8184d1978` is `SUCCESS` at one replica and prior worker deployments are removed; MinIO excluded from production |
 | Browser experience | Desktop and mobile workflow, accessibility, layout, and console checks | Historical candidate pass; final web deployment root and proxied API revision pass |
 | Quality and tokens | Every active main, personal, Rupture Ops, and transition card at or above flat files | Historical conditional result: matched repeat was within one claim of legacy and accepted evidence appeared in 21 of 22 disputed responses; exact parity was not proven |
-| Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment proof | API, web, and permanent worker deployments pass; expected worker image digest recorded; final cutover repository publication remains. Hosted CI is unavailable until GitHub Actions billing is repaired. |
+| Release identity | Clean `main` commit, immutable images/binaries, checksums, and deployment proof | API, web, and permanent worker deployments pass; expected worker image digest recorded; evidence commit `dff91a210293483d95c9ea61c7bab865b5a60f49` is published. Hosted CI is unavailable until GitHub Actions billing is repaired. |
 
 ## Owner Decisions
 
@@ -101,7 +103,7 @@ on an unsettled provider or public identity.
 | Alpha cohort | Approved | Owner first, then only people the owner explicitly invites. No public signup. Every person receives a separate user account and credential. |
 | Operating visibility | Approved | Begin with the owner's real usage. Keep source-use rankings visible in the Control UI and aggregate model, embedding, storage, and request consumption prominent in Datadog. Set hard spend limits only after observing the initial workload. |
 | Policy and support | Deferred outside owner cutover | Final invited-user retention, privacy wording, and support expectations do not gate this owner-only cutover. |
-| Launch | Operational complete; publication pending | Commit, push, and publish the locally verified final verdict. Re-enable hosted CI only after GitHub Actions billing is repaired. |
+| Launch | Complete | Production and locally verified repository publication pass. Re-enable hosted CI only after GitHub Actions billing is repaired. |
 
 Secrets, private keys, and bearer tokens must be supplied through approved
 files or secret stores, never pasted into chat or committed to the repository.

@@ -15,7 +15,7 @@ only in the frozen evaluation harness and do not define product behavior.
 
 The owner-directed Railway simplified-schema cutover has completed its layered
 data migration, both client canaries, embedding backfill, and final worker
-qualification. Repository publication remains; hosted CI is deliberately
+qualification, and evidence publication to `origin/main`. Hosted CI is deliberately
 disabled because GitHub Actions rejected every job before execution on account
 billing/spending-limit grounds. The API is
 healthy and ready at build

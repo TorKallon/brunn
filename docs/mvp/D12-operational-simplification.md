@@ -1,6 +1,6 @@
 # D12 — Operational Simplification
 
-Status: Railway topology, import, clients, backfill, and final worker passed; repository publication pending
+Status: Railway topology, import, clients, backfill, final worker, and repository publication passed
 Date: 2026-07-31
 Depends on: D08 (legacy lifecycle), D14 (migration and authority cutover)
 Gated by: deterministic production and recovery checks below

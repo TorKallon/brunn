@@ -1,6 +1,6 @@
 # Railway simplified-schema owner cutover — 2026-07-31
 
-Status: **operational cutover complete; repository publication pending**. This
+Status: **production cutover and repository publication complete**. This
 is a privacy-safe aggregate record. It contains no owner paths, note text,
 credentials, or per-entry manifest rows. Machine-readable evidence is in the
 companion [`JSON`](2026-07-31-railway-simplified-cutover.json).
@@ -15,8 +15,9 @@ archiving its old live source.
 
 Codex and Aether/OpenClaw passed fresh production canaries. The guarded
 embedding backfill, final one-replica worker qualification, and web deployment
-also pass. The operational cutover is complete; repository publication remains
-as bookkeeping. The restore drill was environment-blocked on locked Nyx and is
+also pass. Evidence commit
+`dff91a210293483d95c9ea61c7bab865b5a60f49` is published on `origin/main`.
+The restore drill was environment-blocked on locked Nyx and is
 recorded honestly as not performed, non-blocking for this direct owner cutover.
 The non-blocking follow-ups are listed explicitly below rather than being
 collapsed into the publication status.
@@ -206,7 +207,7 @@ remains deliberately disabled so it cannot recreate the failed-build emails.
 Local verification is authoritative for this publication; re-enable hosted CI
 only after GitHub billing is repaired.
 
-Repository publication is the sole uncompleted cutover bookkeeping item. The
+The operational cutover and repository publication are complete. The
 non-blocking follow-ups are:
 
 1. Complete a PostgreSQL-plus-S3 restore drill when Nyx Docker is available.
@@ -215,4 +216,4 @@ non-blocking follow-ups are:
 3. Apply the storage policy above and finish synthetic-monitor qualification.
 4. Repair GitHub Actions billing before re-enabling hosted CI.
 
-The honest verdict is **operational complete, repository publication pending**.
+The honest verdict is **production cutover complete**.

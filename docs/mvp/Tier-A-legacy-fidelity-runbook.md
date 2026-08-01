@@ -334,6 +334,6 @@ operational pause, not a fidelity difference.
 
 The fidelity checklist is complete. Both client canaries, the final web
 deployment, all 12,727 backfill jobs, and the permanent one-replica worker also
-pass. The operational cutover is complete; repository publication remains and
-hosted CI stays disabled until GitHub Actions billing is repaired. See
+pass. The operational cutover and repository publication are complete; hosted
+CI stays disabled until GitHub Actions billing is repaired. See
 [`results/2026-07-31-railway-simplified-cutover.md`](../../results/2026-07-31-railway-simplified-cutover.md).

@@ -1,6 +1,6 @@
 # Straylight MVP Plan
 
-Status: Authoritative plan of record — direct Railway owner cutover operationally complete; repository publication pending
+Status: Authoritative plan of record — direct Railway owner cutover and repository publication complete
 Date: 2026-07-31
 Owner: Rourke (Tor Kallon)
 Prior decision record: `Projects/Straylight/MVP plan and authoritative next steps - 2026-07-27` (captured in the migration source; no longer a write target)
@@ -158,7 +158,7 @@ Infrastructure — no reasoning-quality risk (code, no experiment gate):
 | [D09](mvp/D09-latency-contract-and-gates.md) | Latency contract: timings_ms, regression-tier gates, per-op query budgets, EXPLAIN assertions | Implemented in harness — isolated acceptance runs remain | Enabler for E03 mode 3; query budgets become measured only after the coordinated run |
 | [D08](mvp/D08-legacy-freeze-and-deletion.md) | Legacy freeze and eventual deletion | Simplified production route and import proof pass; destructive legacy-code deletion remains a future restore-backed change | The environment-blocked drill does not block this direct cutover, but recovery tooling remains |
 | [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — safe subset not started | Deferred lexical consolidation rejected by [E05](mvp/E05-lexical-consolidation-guard.md) and closed |
-| [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Railway/import/web/client/backfill/worker gates passed; publication remains; restore exception recorded | Railway is the only production target |
+| [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Railway/import/web/client/backfill/worker/publication gates passed; restore exception recorded | Railway is the only production target |
 
 Features — flag + experiment gated:
 
@@ -180,7 +180,7 @@ Readiness — clients, migration, authority:
 | ID | Title | Status | Notes |
 |---|---|---|---|
 | [D13](mvp/D13-client-integration-and-canaries.md) | Client integration + canaries | Direct-cutover subset passed for Codex and Aether/OpenClaw | Both are configured Straylight-only; broader reusable qualification and Claude Code are deferred |
-| [D14](mvp/D14-migration-and-authority-tiers.md) | Lossless migration and authority cutover | Operational cutover passed; locally verified repository publication remains | Records the environment-blocked restore exception and hosted-CI billing constraint |
+| [D14](mvp/D14-migration-and-authority-tiers.md) | Lossless migration and authority cutover | Operational cutover and locally verified repository publication passed | Records the environment-blocked restore exception and hosted-CI billing constraint |
 
 Conditional — do not start until stated preconditions hold:
 
@@ -229,8 +229,9 @@ then superseded the staged rollout with the direct-cutover Track 1 on
    verification, guarded 12,727-job backfill, 20 GB volume resize, and permanent
    one-replica worker qualification. The isolated restore attempt is recorded
    as environment-blocked and non-blocking for this direct owner cutover.
-5. **Live:** commit, push, and publish the final verdict using the completed
-   local verification matrix. Hosted CI remains disabled because GitHub rejects
+5. **Complete:** evidence commit `dff91a210293483d95c9ea61c7bab865b5a60f49`
+   is published on `origin/main` using the completed local verification matrix.
+   Hosted CI remains disabled because GitHub rejects
    every job before execution for account billing/spending-limit reasons;
    re-enable it only after that is repaired.
 
@@ -278,9 +279,9 @@ then superseded the staged rollout with the direct-cutover Track 1 on
   claimed restore pass. Upgraded Railway to Pro, live-resized the volume to
   20 GB, completed all 12,727 queued jobs with zero failures and zero missing
   embeddings, and qualified the permanent one-replica worker at 30 open plus
-  30 exact-search samples with zero failures. Operational cutover is complete;
-  repository publication remains live, while hosted CI stays disabled pending
-  repair of GitHub Actions billing.
+  30 exact-search samples with zero failures. Operational cutover and repository
+  publication are complete, while hosted CI stays disabled pending repair of
+  GitHub Actions billing.
 - 2026-07-31 (owner-directed supersession): Replaced the Nyx read-only pilot,
   two-step Tier B progression, and Markdown-authority shadow period with one
   direct Railway production cutover for Codex and Aether/OpenClaw. Selected the

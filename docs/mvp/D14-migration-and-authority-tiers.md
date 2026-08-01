@@ -1,6 +1,6 @@
 # D14 — Migration and Authority Cutover
 
-Status: Operational direct cutover passed; repository publication pending
+Status: Operational direct cutover and repository publication passed
 Date: 2026-07-31
 Depends on: D13 (D13-client-integration-and-canaries.md)
 Gated by: deterministic fidelity, client, production-safety, and restore checks in this document
@@ -133,7 +133,7 @@ Claude Code was part of the original three-client pilot but is outside the
 owner's current cutover scope. Its future registration does not block these two
 clients.
 
-### 5. Production normalization and recovery — operationally passed; publication pending
+### 5. Production normalization and recovery — passed
 
 - **Passed:** restore the ordinary request budget and turn off the evaluation
   and legacy APIs; remove wrong variable names; verify disabled routes return 404.
@@ -185,10 +185,10 @@ The operational cutover passes: the intended worker revision, zero-job queue,
 zero missing embeddings, fidelity audits, client canaries, Straylight-only
 persistence proof, and fresh one-replica qualification all pass. The
 environment-blocked restore exception is accepted as non-blocking and remains
-future recovery work. The final commit, push, and owner-facing publication
-remain; hosted CI is separately unavailable until GitHub Actions billing is
-repaired. Until publication the verdict is
-`operational_complete_repository_publication_pending`.
+future recovery work. Evidence commit
+`dff91a210293483d95c9ea61c7bab865b5a60f49` is published on `origin/main`;
+hosted CI is separately unavailable until GitHub Actions billing is repaired.
+The verdict is `production_cutover_complete`.
 
 Rollback uses the retained checksummed PostgreSQL backup, versioned S3 objects,
 and pinned pre-cutover images. The source snapshot is retained as recovery

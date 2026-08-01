@@ -1,6 +1,6 @@
 # Straylight Production Platform Evaluation
 
-Status: **Railway selected; operational cutover passed; repository publication pending**
+Status: **Railway selected; operational cutover and repository publication passed**
 Date: 2026-07-31
 
 ## Current decision
@@ -90,7 +90,7 @@ declaration. The final filesystem is 25% used with 13.6 GiB free.
 | Final focused verification | Pass: 79 targeted, 28 MCP, 18 web, and 10 Railway contract tests |
 | Monitor synthetic-fault qualification | Deferred outside the owner cutover completion set |
 | PostgreSQL plus S3 restore drill | Not performed: locked Nyx blocked Docker before a container was created; non-blocking exception for this direct cutover |
-| Repository publication | Final commit and push remain; hosted CI stays disabled until GitHub billing is repaired |
+| Repository publication | Pass: evidence commit `dff91a210293483d95c9ea61c7bab865b5a60f49` is on `origin/main`; hosted CI stays disabled until GitHub billing is repaired |
 
 The aggregate execution record is
 [`results/2026-07-31-railway-simplified-cutover.md`](../results/2026-07-31-railway-simplified-cutover.md).

@@ -1,7 +1,7 @@
 {
   "schema": "straylight-railway-simplified-cutover@v1",
   "observed_on": "2026-07-31",
-  "status": "operational_complete_repository_publication_pending",
+  "status": "production_cutover_complete",
   "privacy": {
     "classification": "aggregate_only",
     "contains_owner_paths": false,
@@ -384,8 +384,10 @@
     "failed_build_email_source_suppressed": true
   },
   "repository_publication": {
-    "final_commit": "pending",
-    "push_to_origin_main": "pending"
+    "evidence_commit": "dff91a210293483d95c9ea61c7bab865b5a60f49",
+    "evidence_commit_pushed_to_origin_main": true,
+    "publication_status": "pass",
+    "hosted_ci_required_for_publication": false
   },
   "verification": {
     "rust_library_tests": {
@@ -432,8 +434,6 @@
     "complete_synthetic_monitor_qualification",
     "repair_github_actions_billing_before_reenabling_ci"
   ],
-  "remaining_live_items": [
-    "repository_commit_and_push"
-  ],
-  "cutover_verdict": "operational_complete_repository_publication_pending"
+  "remaining_live_items": [],
+  "cutover_verdict": "production_cutover_complete"
 }
