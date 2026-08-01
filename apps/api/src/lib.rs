@@ -9,6 +9,7 @@ pub mod asset_description;
 pub mod asset_profiles;
 pub mod asset_service;
 pub mod auth;
+pub mod briefing_service;
 pub mod capture_service;
 pub mod carrystate_cli;
 pub mod carrystate_export;

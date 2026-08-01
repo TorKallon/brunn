@@ -1,0 +1,487 @@
+use std::collections::HashSet;
+
+use chrono::{DateTime, FixedOffset, NaiveDate};
+use once_cell::sync::Lazy;
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+
+use crate::error::{ApiError, ApiResult};
+
+pub const SUMMARY_LINE_LIMIT: usize = 12;
+pub const SECTION_LIMIT: usize = 24;
+pub const SECTION_ITEM_LIMIT: usize = 32;
+pub const OMISSION_LIMIT: usize = 64;
+pub const STORY_URL_LIMIT: usize = 8;
+pub const HEADLINE_LIMIT_CHARS: usize = 500;
+pub const BODY_LIMIT_CHARS: usize = 4_000;
+pub const WHY_IT_MATTERS_LIMIT_CHARS: usize = 1_000;
+pub const DETAIL_LIMIT_CHARS: usize = 16_000;
+pub const WHAT_CHANGED_LIMIT_CHARS: usize = 1_000;
+
+pub const ITEM_KINDS: [&str; 7] = [
+    "news", "metric", "health", "ops", "digest", "tracker", "schedule",
+];
+pub const ITEM_DELTAS: [&str; 3] = ["new", "update", "corroboration"];
+
+static EDITION_SLUG: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]{1,31}$").expect("edition slug regex"));
+static ITEM_ID: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]{1,63}$").expect("item id regex"));
+static STORY_KEY: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[a-z0-9][a-z0-9-]{2,79}$").expect("story key regex"));
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BriefingPublishRequest {
+    pub date: String,
+    pub edition: String,
+    pub timezone: Option<String>,
+    pub generated_at: Option<String>,
+    #[serde(default)]
+    pub summary_md: Vec<String>,
+    #[serde(default)]
+    pub sections: Vec<BriefingSection>,
+    #[serde(default)]
+    pub omitted: Vec<BriefingOmission>,
+    pub idempotency_key: Option<String>,
+    pub expected_version: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BriefingSection {
+    pub topic: String,
+    pub title: String,
+    pub items: Vec<BriefingItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BriefingItem {
+    pub id: String,
+    pub kind: String,
+    pub headline_md: String,
+    #[serde(default)]
+    pub body_md: String,
+    #[serde(default)]
+    pub why_it_matters: String,
+    #[serde(default)]
+    pub detail_md: String,
+    #[serde(default)]
+    pub what_changed: String,
+    #[serde(default = "default_delta")]
+    pub delta: String,
+    pub story: Option<BriefingStoryRef>,
+    pub times: Option<BriefingTimes>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BriefingStoryRef {
+    pub key: String,
+    #[serde(default)]
+    pub urls: Vec<String>,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub entities: Vec<String>,
+    pub event_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BriefingTimes {
+    pub published_at: Option<String>,
+    pub event_at: Option<String>,
+    pub first_seen_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BriefingOmission {
+    pub story_key: Option<String>,
+    #[serde(default)]
+    pub urls: Vec<String>,
+    pub reason: String,
+}
+
+fn default_delta() -> String {
+    "new".to_owned()
+}
+
+pub fn validate_publish_request(request: &BriefingPublishRequest) -> ApiResult<()> {
+    let round_trips = NaiveDate::parse_from_str(&request.date, "%Y-%m-%d")
+        .is_ok_and(|date| date.format("%Y-%m-%d").to_string() == request.date);
+    if !round_trips {
+        return Err(ApiError::invalid("date must be a YYYY-MM-DD calendar date"));
+    }
+    if !EDITION_SLUG.is_match(&request.edition) {
+        return Err(ApiError::invalid(
+            "edition must be a lowercase slug of 2 to 32 characters",
+        ));
+    }
+    require_collection_limit("summary_md", request.summary_md.len(), SUMMARY_LINE_LIMIT)?;
+    require_collection_limit("sections", request.sections.len(), SECTION_LIMIT)?;
+    require_collection_limit("omitted", request.omitted.len(), OMISSION_LIMIT)?;
+    let mut seen_ids = HashSet::new();
+    for section in &request.sections {
+        require_collection_limit("section items", section.items.len(), SECTION_ITEM_LIMIT)?;
+        for item in &section.items {
+            if !ITEM_ID.is_match(&item.id) {
+                return Err(ApiError::invalid(
+                    "item id must be a lowercase slug of 2 to 64 characters",
+                ));
+            }
+            if !seen_ids.insert(item.id.as_str()) {
+                return Err(ApiError::invalid(format!(
+                    "item id {} appears more than once in the edition",
+                    item.id,
+                )));
+            }
+            if !ITEM_KINDS.contains(&item.kind.as_str()) {
+                return Err(ApiError::invalid(format!(
+                    "item kind must be one of: {}",
+                    ITEM_KINDS.join(", "),
+                )));
+            }
+            if !ITEM_DELTAS.contains(&item.delta.as_str()) {
+                return Err(ApiError::invalid(format!(
+                    "item delta must be one of: {}",
+                    ITEM_DELTAS.join(", "),
+                )));
+            }
+            require_char_limit("headline_md", &item.headline_md, HEADLINE_LIMIT_CHARS)?;
+            require_char_limit("body_md", &item.body_md, BODY_LIMIT_CHARS)?;
+            require_char_limit(
+                "why_it_matters",
+                &item.why_it_matters,
+                WHY_IT_MATTERS_LIMIT_CHARS,
+            )?;
+            require_char_limit("detail_md", &item.detail_md, DETAIL_LIMIT_CHARS)?;
+            require_char_limit("what_changed", &item.what_changed, WHAT_CHANGED_LIMIT_CHARS)?;
+            if let Some(story) = &item.story {
+                require_story_key(&story.key)?;
+                require_collection_limit("story urls", story.urls.len(), STORY_URL_LIMIT)?;
+            }
+        }
+    }
+    for omission in &request.omitted {
+        if let Some(story_key) = &omission.story_key {
+            require_story_key(story_key)?;
+        }
+        require_collection_limit("omission urls", omission.urls.len(), STORY_URL_LIMIT)?;
+    }
+    Ok(())
+}
+
+fn require_collection_limit(field: &'static str, length: usize, limit: usize) -> ApiResult<()> {
+    if length > limit {
+        return Err(ApiError::invalid(format!(
+            "{field} exceeds the limit of {limit} entries",
+        )));
+    }
+    Ok(())
+}
+
+fn require_char_limit(field: &'static str, value: &str, limit: usize) -> ApiResult<()> {
+    if value.chars().count() > limit {
+        return Err(ApiError::invalid(format!(
+            "{field} exceeds the limit of {limit} characters",
+        )));
+    }
+    Ok(())
+}
+
+fn require_story_key(story_key: &str) -> ApiResult<()> {
+    if !STORY_KEY.is_match(story_key) {
+        return Err(ApiError::invalid(
+            "story key must be a lowercase slug of 3 to 80 characters",
+        ));
+    }
+    Ok(())
+}
+
+pub fn render_edition_markdown(request: &BriefingPublishRequest) -> String {
+    let generated = request
+        .generated_at
+        .as_deref()
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|instant| localize(instant, request.timezone.as_deref()));
+    let mut blocks = Vec::new();
+    let updated = generated
+        .as_ref()
+        .map_or_else(|| request.date.clone(), |stamp| stamp.local.clone());
+    blocks.push(format!("Created: {}\nUpdated: {updated}", request.date));
+    blocks.push(format!(
+        "# {} briefing - {}",
+        capitalize_edition(&request.edition),
+        request.date,
+    ));
+    if let Some(stamp) = &generated {
+        blocks.push(format!("Generated at {} {}.", stamp.local, stamp.zone));
+    }
+    if !request.summary_md.is_empty() {
+        let bullets = request
+            .summary_md
+            .iter()
+            .map(|line| format!("- {}", line.trim()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        blocks.push(format!("## 30-second version\n\n{bullets}"));
+    }
+    for section in &request.sections {
+        blocks.push(format!("## {}", section.title.trim()));
+        for item in &section.items {
+            let mut paragraph: Vec<String> = [item.headline_md.trim(), item.body_md.trim()]
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .map(str::to_owned)
+                .collect();
+            let why_it_matters = item.why_it_matters.trim();
+            if !why_it_matters.is_empty() {
+                paragraph.push(format!("**Why this matters:** {why_it_matters}"));
+            }
+            if !paragraph.is_empty() {
+                blocks.push(paragraph.join(" "));
+            }
+            let what_changed = item.what_changed.trim();
+            if !what_changed.is_empty() {
+                blocks.push(format!("*What changed:* {what_changed}"));
+            }
+            let detail = item.detail_md.trim();
+            if !detail.is_empty() {
+                blocks.push(format!("**Details.** {detail}"));
+            }
+        }
+    }
+    let mut rendered = blocks.join("\n\n");
+    rendered.push('\n');
+    rendered
+}
+
+struct LocalizedStamp {
+    local: String,
+    zone: String,
+}
+
+fn localize(instant: DateTime<FixedOffset>, timezone: Option<&str>) -> LocalizedStamp {
+    match timezone.and_then(|name| name.parse::<chrono_tz::Tz>().ok()) {
+        Some(zone) => {
+            let local = instant.with_timezone(&zone);
+            LocalizedStamp {
+                local: local.format("%Y-%m-%d %H:%M").to_string(),
+                zone: local.format("%Z").to_string(),
+            }
+        }
+        None => LocalizedStamp {
+            local: instant.format("%Y-%m-%d %H:%M").to_string(),
+            zone: instant.format("%:z").to_string(),
+        },
+    }
+}
+
+fn capitalize_edition(edition: &str) -> String {
+    let mut chars = edition.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture_request() -> BriefingPublishRequest {
+        BriefingPublishRequest {
+            date: "2026-08-01".to_owned(),
+            edition: "morning".to_owned(),
+            timezone: Some("America/Los_Angeles".to_owned()),
+            generated_at: Some("2026-08-01T06:30:00-07:00".to_owned()),
+            summary_md: vec![
+                "OpenAI disclosed an evaluation-agent incident.".to_owned(),
+                "AMZN opened up $32.85.".to_owned(),
+            ],
+            sections: vec![
+                BriefingSection {
+                    topic: "ai".to_owned(),
+                    title: "AI".to_owned(),
+                    items: vec![BriefingItem {
+                        id: "openai-hf-incident".to_owned(),
+                        kind: "news".to_owned(),
+                        headline_md:
+                            "**[OpenAI incident disclosed](https://example.com/openai)**".to_owned(),
+                        body_md: "OpenAI described the failure in a postmortem.".to_owned(),
+                        why_it_matters: "Agent sandboxing is now a procurement question."
+                            .to_owned(),
+                        detail_md: "Fuller context with measurements and links.".to_owned(),
+                        what_changed: "The postmortem added a timeline.".to_owned(),
+                        delta: "update".to_owned(),
+                        story: Some(BriefingStoryRef {
+                            key: "openai-hf-eval-agent-incident".to_owned(),
+                            urls: vec!["https://example.com/openai".to_owned()],
+                            title: "OpenAI Hugging Face evaluation incident".to_owned(),
+                            entities: vec!["OpenAI".to_owned(), "Hugging Face".to_owned()],
+                            event_at: Some("2026-07-28".to_owned()),
+                        }),
+                        times: Some(BriefingTimes {
+                            published_at: Some("2026-07-28T14:00:00Z".to_owned()),
+                            event_at: Some("2026-07-28".to_owned()),
+                            first_seen_at: Some("2026-08-01T06:12:00-07:00".to_owned()),
+                        }),
+                    }],
+                },
+                BriefingSection {
+                    topic: "markets".to_owned(),
+                    title: "Markets".to_owned(),
+                    items: vec![BriefingItem {
+                        id: "amzn-open".to_owned(),
+                        kind: "metric".to_owned(),
+                        headline_md: "**AMZN opened up $32.85.**".to_owned(),
+                        body_md: String::new(),
+                        why_it_matters: String::new(),
+                        detail_md: String::new(),
+                        what_changed: String::new(),
+                        delta: default_delta(),
+                        story: None,
+                        times: None,
+                    }],
+                },
+            ],
+            omitted: vec![BriefingOmission {
+                story_key: Some("kimi-k3-weights".to_owned()),
+                urls: vec!["https://example.com/kimi".to_owned()],
+                reason: "already delivered 2026-07-28; no material delta".to_owned(),
+            }],
+            idempotency_key: Some("briefing-2026-08-01-morning-1".to_owned()),
+            expected_version: None,
+        }
+    }
+
+    #[test]
+    fn render_matches_the_expected_edition_markdown() {
+        let expected = "Created: 2026-08-01\n\
+            Updated: 2026-08-01 06:30\n\
+            \n\
+            # Morning briefing - 2026-08-01\n\
+            \n\
+            Generated at 2026-08-01 06:30 PDT.\n\
+            \n\
+            ## 30-second version\n\
+            \n\
+            - OpenAI disclosed an evaluation-agent incident.\n\
+            - AMZN opened up $32.85.\n\
+            \n\
+            ## AI\n\
+            \n\
+            **[OpenAI incident disclosed](https://example.com/openai)** \
+            OpenAI described the failure in a postmortem. \
+            **Why this matters:** Agent sandboxing is now a procurement question.\n\
+            \n\
+            *What changed:* The postmortem added a timeline.\n\
+            \n\
+            **Details.** Fuller context with measurements and links.\n\
+            \n\
+            ## Markets\n\
+            \n\
+            **AMZN opened up $32.85.**\n";
+        assert_eq!(render_edition_markdown(&fixture_request()), expected);
+    }
+
+    #[test]
+    fn render_is_byte_identical_across_calls() {
+        let request = fixture_request();
+        assert_eq!(
+            render_edition_markdown(&request),
+            render_edition_markdown(&request),
+        );
+    }
+
+    #[test]
+    fn render_falls_back_to_verbatim_offset_for_unknown_timezones() {
+        let mut request = fixture_request();
+        request.timezone = Some("Mars/Olympus_Mons".to_owned());
+        let rendered = render_edition_markdown(&request);
+        assert!(rendered.contains("Generated at 2026-08-01 06:30 -07:00.\n"));
+    }
+
+    #[test]
+    fn item_defaults_apply_on_deserialization() {
+        let item: BriefingItem = serde_json::from_str(
+            r#"{"id":"amzn-open","kind":"metric","headline_md":"**AMZN opened up $32.85.**"}"#,
+        )
+        .expect("minimal item deserializes");
+        assert_eq!(item.delta, "new");
+        assert!(item.body_md.is_empty());
+        assert!(item.story.is_none());
+        assert!(item.times.is_none());
+    }
+
+    #[test]
+    fn validation_accepts_the_fixture_request() {
+        assert!(validate_publish_request(&fixture_request()).is_ok());
+    }
+
+    #[test]
+    fn validation_rejects_malformed_dates() {
+        for date in ["2026-8-1", "2026-02-30", "yesterday", ""] {
+            let mut request = fixture_request();
+            request.date = date.to_owned();
+            assert!(
+                validate_publish_request(&request).is_err(),
+                "date {date:?} must be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn validation_rejects_malformed_edition_slugs() {
+        for edition in ["Morning", "-morning", "m", "morning briefing"] {
+            let mut request = fixture_request();
+            request.edition = edition.to_owned();
+            assert!(
+                validate_publish_request(&request).is_err(),
+                "edition {edition:?} must be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_item_ids_across_sections() {
+        let mut request = fixture_request();
+        request.sections[1].items[0].id = "openai-hf-incident".to_owned();
+        assert!(validate_publish_request(&request).is_err());
+    }
+
+    #[test]
+    fn validation_rejects_unknown_kind_and_delta_vocabulary() {
+        let mut request = fixture_request();
+        request.sections[0].items[0].kind = "opinion".to_owned();
+        assert!(validate_publish_request(&request).is_err());
+
+        let mut request = fixture_request();
+        request.sections[0].items[0].delta = "changed".to_owned();
+        assert!(validate_publish_request(&request).is_err());
+    }
+
+    #[test]
+    fn validation_rejects_oversize_fields_and_collections() {
+        let mut request = fixture_request();
+        request.sections[0].items[0].headline_md = "h".repeat(HEADLINE_LIMIT_CHARS + 1);
+        assert!(validate_publish_request(&request).is_err());
+
+        let mut request = fixture_request();
+        request.summary_md = vec!["line".to_owned(); SUMMARY_LINE_LIMIT + 1];
+        assert!(validate_publish_request(&request).is_err());
+
+        let mut request = fixture_request();
+        request.sections[0].items[0].story.as_mut().expect("story").urls =
+            vec!["https://example.com/".to_owned(); STORY_URL_LIMIT + 1];
+        assert!(validate_publish_request(&request).is_err());
+    }
+
+    #[test]
+    fn validation_rejects_malformed_story_keys() {
+        let mut request = fixture_request();
+        request.sections[0].items[0].story.as_mut().expect("story").key = "AI".to_owned();
+        assert!(validate_publish_request(&request).is_err());
+
+        let mut request = fixture_request();
+        request.omitted[0].story_key = Some("-bad".to_owned());
+        assert!(validate_publish_request(&request).is_err());
+    }
+}
