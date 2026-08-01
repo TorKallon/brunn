@@ -3,8 +3,10 @@ use serde_json::json;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use uuid::Uuid;
 
+use sha2::{Digest, Sha256};
 use straylight::briefing_service::{
-    BriefingOmission, BriefingSection, apply_edition_to_ledger, canonicalize_url, story_url_hash,
+    BriefingOmission, BriefingSection, apply_edition_to_ledger, canonicalize_url,
+    rebuild_briefing_ledger, story_url_hash,
 };
 
 async fn connect_test_pool() -> Option<PgPool> {
@@ -94,6 +96,270 @@ async fn url_rows(pool: &PgPool, user_id: Uuid) -> Vec<(String, String, String)>
     .fetch_all(pool)
     .await
     .expect("url rows load")
+}
+
+type LedgerSnapshot = (
+    Vec<(
+        String,
+        String,
+        String,
+        Vec<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        i32,
+        i32,
+        String,
+    )>,
+    Vec<(String, String, String)>,
+);
+
+async fn ledger_snapshot(pool: &PgPool, user_id: Uuid) -> LedgerSnapshot {
+    let stories = sqlx::query_as(
+        r#"
+        SELECT story_key,title,topic,entities,event_at::text,last_delivered_date::text,
+               last_delivered_edition_ref,last_delivered_headline,
+               delivery_count,suppression_count,status
+        FROM straylight.briefing_stories
+        WHERE user_id=$1
+        ORDER BY story_key
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    .expect("story snapshot loads");
+    (stories, url_rows(pool, user_id).await)
+}
+
+struct EditionFixture {
+    entry_id: Uuid,
+    path: &'static str,
+    version: i64,
+    date: &'static str,
+    sections: serde_json::Value,
+    omitted: serde_json::Value,
+}
+
+async fn insert_edition_version(pool: &PgPool, user_id: Uuid, edition: &EditionFixture) {
+    let mut tx = pool.begin().await.expect("begin edition insert");
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.entries (
+          id,user_id,path,title,kind,media_type,current_version
+        ) VALUES ($1,$2,$3,$4,'markdown','text/markdown',$5)
+        ON CONFLICT (user_id,(lower(normalize(path, NFC)))) DO UPDATE
+        SET current_version=EXCLUDED.current_version
+        "#,
+    )
+    .bind(edition.entry_id)
+    .bind(user_id)
+    .bind(edition.path)
+    .bind(format!("Morning briefing - {}", edition.date))
+    .bind(edition.version)
+    .execute(&mut *tx)
+    .await
+    .expect("insert edition entry");
+    let content = format!("# Morning briefing - {} v{}\n", edition.date, edition.version);
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.entry_versions (
+          id,user_id,entry_id,version,content_sha256,content,size_bytes,metadata
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        "#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(user_id)
+    .bind(edition.entry_id)
+    .bind(edition.version)
+    .bind(hex::encode(Sha256::digest(content.as_bytes())))
+    .bind(&content)
+    .bind(i64::try_from(content.len()).expect("content fits"))
+    .bind(json!({
+        "kind": "briefing_edition",
+        "briefing": {
+            "schema": "briefing.v1",
+            "date": edition.date,
+            "edition": "morning",
+            "sections": edition.sections,
+            "omitted": edition.omitted,
+            "delta": {"added": [], "changed": [], "removed": []}
+        }
+    }))
+    .execute(&mut *tx)
+    .await
+    .expect("insert edition version");
+    tx.commit().await.expect("commit edition insert");
+}
+
+#[tokio::test]
+async fn rebuild_replay_matches_publish_order_application() {
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let user_id = insert_test_user(&pool).await;
+    let first_entry = Uuid::now_v7();
+    let second_entry = Uuid::now_v7();
+    let editions = [
+        EditionFixture {
+            entry_id: first_entry,
+            path: "Briefings/2026/Morning briefing - 2026-08-01.md",
+            version: 1,
+            date: "2026-08-01",
+            sections: json!([
+                {
+                    "topic": "ai",
+                    "title": "AI",
+                    "items": [
+                        {
+                            "id": "alpha-item",
+                            "kind": "news",
+                            "headline_md": "**Alpha lands.**",
+                            "delta": "new",
+                            "story": {
+                                "key": "story-alpha",
+                                "urls": ["https://example.com/alpha"],
+                                "title": "Alpha story",
+                                "entities": ["Alpha"],
+                                "event_at": "2026-07-30"
+                            }
+                        },
+                        {
+                            "id": "beta-item",
+                            "kind": "news",
+                            "headline_md": "**Beta echoes.**",
+                            "delta": "corroboration",
+                            "story": {
+                                "key": "story-beta",
+                                "urls": ["https://example.com/beta"],
+                                "title": "Beta story"
+                            }
+                        }
+                    ]
+                }
+            ]),
+            omitted: json!([
+                {"story_key": "story-gamma", "urls": ["https://example.com/gamma"], "reason": "seen"}
+            ]),
+        },
+        EditionFixture {
+            entry_id: first_entry,
+            path: "Briefings/2026/Morning briefing - 2026-08-01.md",
+            version: 2,
+            date: "2026-08-01",
+            sections: json!([
+                {
+                    "topic": "ai",
+                    "title": "AI",
+                    "items": [
+                        {
+                            "id": "alpha-item",
+                            "kind": "news",
+                            "headline_md": "**Alpha gains a timeline.**",
+                            "delta": "update",
+                            "story": {
+                                "key": "story-alpha",
+                                "urls": ["https://example.com/alpha", "https://example.com/alpha-postmortem"]
+                            }
+                        },
+                        {
+                            "id": "delta-item",
+                            "kind": "news",
+                            "headline_md": "**Delta emerges.**",
+                            "delta": "new",
+                            "story": {
+                                "key": "story-delta",
+                                "urls": ["https://example.com/delta"],
+                                "title": "Delta story"
+                            }
+                        }
+                    ]
+                }
+            ]),
+            omitted: json!([
+                {"story_key": "story-gamma", "reason": "still seen"}
+            ]),
+        },
+        EditionFixture {
+            entry_id: second_entry,
+            path: "Briefings/2026/Morning briefing - 2026-08-02.md",
+            version: 1,
+            date: "2026-08-02",
+            sections: json!([
+                {
+                    "topic": "markets",
+                    "title": "Markets",
+                    "items": [
+                        {
+                            "id": "beta-item",
+                            "kind": "news",
+                            "headline_md": "**Beta confirmed.**",
+                            "delta": "new",
+                            "story": {
+                                "key": "story-beta",
+                                "urls": ["https://example.com/beta-deep-dive"]
+                            }
+                        },
+                        {
+                            "id": "alpha-item",
+                            "kind": "news",
+                            "headline_md": "**Alpha echo.**",
+                            "delta": "corroboration",
+                            "story": {"key": "story-alpha"}
+                        }
+                    ]
+                }
+            ]),
+            omitted: json!([
+                {"story_key": "story-epsilon", "urls": ["https://example.com/epsilon"], "reason": "minor"}
+            ]),
+        },
+    ];
+
+    for edition in &editions {
+        let mut tx = pool.begin().await.expect("begin publish-order apply");
+        apply_edition_to_ledger(
+            &mut tx,
+            user_id,
+            &format!("entry:{}", edition.entry_id),
+            date(edition.date),
+            &sections_fixture(edition.sections.clone()),
+            &omissions_fixture(edition.omitted.clone()),
+        )
+        .await
+        .expect("apply edition in publish order");
+        tx.commit().await.expect("commit publish-order apply");
+        insert_edition_version(&pool, user_id, edition).await;
+    }
+    let publish_order = ledger_snapshot(&pool, user_id).await;
+    assert_eq!(publish_order.0.len(), 5, "five stories accumulate");
+
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.briefing_stories (user_id,story_key,title,delivery_count)
+        VALUES ($1,'zzz-stale-row','A row rebuild must remove',7)
+        "#,
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .expect("seed stale ledger row");
+
+    let mut tx = pool.begin().await.expect("begin rebuild");
+    let rebuild = rebuild_briefing_ledger(&mut tx, user_id)
+        .await
+        .expect("rebuild ledger");
+    tx.commit().await.expect("commit rebuild");
+    assert_eq!(rebuild.replayed_versions, 3);
+    assert_eq!(rebuild.skipped_versions, 0);
+    assert_eq!(rebuild.skipped_invalid_urls, 0);
+
+    let rebuilt = ledger_snapshot(&pool, user_id).await;
+    assert_eq!(
+        rebuilt, publish_order,
+        "replaying every stored version reproduces the publish-order ledger",
+    );
 }
 
 #[tokio::test]

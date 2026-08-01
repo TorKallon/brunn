@@ -598,6 +598,78 @@ pub async fn apply_edition_to_ledger(
     Ok(skipped_invalid_urls)
 }
 
+#[derive(Clone, Debug, Deserialize)]
+struct BriefingEditionReplay {
+    date: String,
+    #[serde(default)]
+    sections: Vec<BriefingSection>,
+    #[serde(default)]
+    omitted: Vec<BriefingOmission>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct BriefingLedgerRebuild {
+    pub replayed_versions: usize,
+    pub skipped_versions: usize,
+    pub skipped_invalid_urls: usize,
+}
+
+pub async fn rebuild_briefing_ledger(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> ApiResult<BriefingLedgerRebuild> {
+    sqlx::query("DELETE FROM straylight.briefing_story_urls WHERE user_id=$1")
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("DELETE FROM straylight.briefing_stories WHERE user_id=$1")
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await?;
+    let versions = sqlx::query(
+        r#"
+        SELECT entry.id AS entry_id,version.metadata->'briefing' AS briefing
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+        WHERE entry.user_id=$1
+          AND entry.path LIKE 'Briefings/%'
+          AND entry.deleted_at IS NULL
+          AND version.metadata->>'kind'='briefing_edition'
+        ORDER BY version.metadata->'briefing'->>'date' ASC,entry.path ASC,version.version ASC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut rebuild = BriefingLedgerRebuild::default();
+    for row in versions {
+        let entry_id: Uuid = row.get("entry_id");
+        let replay = row
+            .get::<Option<Value>, _>("briefing")
+            .and_then(|briefing| serde_json::from_value::<BriefingEditionReplay>(briefing).ok());
+        let date = replay
+            .as_ref()
+            .and_then(|replay| NaiveDate::parse_from_str(&replay.date, "%Y-%m-%d").ok());
+        let (Some(replay), Some(date)) = (replay, date) else {
+            rebuild.skipped_versions += 1;
+            continue;
+        };
+        rebuild.skipped_invalid_urls += apply_edition_to_ledger(
+            tx,
+            user_id,
+            &format!("entry:{entry_id}"),
+            date,
+            &replay.sections,
+            &replay.omitted,
+        )
+        .await?;
+        rebuild.replayed_versions += 1;
+    }
+    Ok(rebuild)
+}
+
 async fn insert_story_urls(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
