@@ -7,7 +7,8 @@ passed. Hosted CI stays disabled until GitHub Actions billing is repaired.
 `.railway/railway.ts` is the source of truth for the owner-alpha topology:
 
 - one public `web` service;
-- private `api`, `worker`, PostgreSQL, and Datadog Agent services;
+- private `api`, `worker`, OAuth remote-MCP, PostgreSQL, and Datadog Agent
+  services;
 - a persistent PostgreSQL volume in `us-west2`;
 - external, private, versioned AWS S3 storage in `us-west-2`.
 
@@ -82,4 +83,5 @@ committed results. See
 
 `straylight.rourkem.com` is the selected owner-alpha hostname. The API remains
 reachable only through the web proxy, and `/api/v1/admin/*` is not exposed by
-that proxy.
+that proxy. The remote MCP service also remains private; the web edge exposes
+only `/mcp`, the OAuth endpoints, and the two OAuth discovery documents.

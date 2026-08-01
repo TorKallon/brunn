@@ -57,6 +57,10 @@ JSON without a second `structuredContent` copy by default; set
 `STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT=1` only for a client that explicitly
 requires it.
 
+The production remote connector endpoint and OAuth runbook are documented in
+[`Remote MCP.md`](Remote%20MCP.md). It is separate from the local stdio
+registration and must never be given an owner or credential-management token.
+
 Semantic retrieval remains an experimental, default-off accelerator:
 
 ```bash

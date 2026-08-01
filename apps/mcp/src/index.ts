@@ -3,13 +3,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { appendFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { z } from "zod/v4";
 
 import { type ApiResponse, StraylightApiClient, StraylightApiError } from "./api-client.js";
 import { compactReasoningResponse } from "./reasoning-view.js";
-
-const includeStructuredContent =
-  process.env.STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT === "1";
 
 const reference = z.string().min(1);
 const assetReference = z.string()
@@ -32,38 +30,69 @@ const queryItem = z.object({
   limit: z.number().int().min(1).max(50).default(8),
 });
 
-const readItem = z.object({
-  ref: reference.optional().describe(
-    "Exact record reference copied verbatim from a CarryState response. Never infer or invent a reference.",
-  ),
-  path: z.string().min(1).optional().describe(
-    "Exact source path copied verbatim from a CarryState response. Never synthesize a filename from a title or topic.",
-  ),
-  view: z.enum([
-    "current_state",
-    "current_truth",
-    "outline",
-    "full",
-    "range",
-  ]).optional(),
-  start: z.number().int().min(1).optional(),
-  end: z.number().int().min(1).optional(),
-  max_chars: z.number().int().min(1).max(500_000).optional(),
-}).refine((value) => value.ref !== undefined || value.path !== undefined, {
-  message: "read request requires ref or path",
-});
+function createReadItem(maxChars: number) {
+  return z.object({
+    ref: reference.optional().describe(
+      "Exact record reference copied verbatim from a CarryState response. Never infer or invent a reference.",
+    ),
+    path: z.string().min(1).optional().describe(
+      "Exact source path copied verbatim from a CarryState response. Never synthesize a filename from a title or topic.",
+    ),
+    view: z.enum([
+      "current_state",
+      "current_truth",
+      "outline",
+      "full",
+      "range",
+    ]).optional(),
+    start: z.number().int().min(1).optional(),
+    end: z.number().int().min(1).optional(),
+    max_chars: z.number().int().min(1).max(maxChars).optional(),
+  }).refine((value) => value.ref !== undefined || value.path !== undefined, {
+    message: "read request requires ref or path",
+  });
+}
 
-const client = new StraylightApiClient(
-  process.env.STRAYLIGHT_API_URL ?? "http://api:18110",
-  requiredEnvironment("STRAYLIGHT_API_TOKEN"),
-  fetch,
-  evaluationHeaders(),
-);
+export interface StraylightMcpServerOptions {
+  surface?: "local" | "remote";
+  includeStructuredContent?: boolean;
+  maxReadChars?: number;
+}
 
-const server = new McpServer({
-  name: "straylight",
-  version: "0.1.0",
-});
+export function createStraylightMcpServer(
+  client: StraylightApiClient,
+  options: StraylightMcpServerOptions = {},
+): McpServer {
+  const surface = options.surface ?? "local";
+  const includeStructuredContent = options.includeStructuredContent
+    ?? process.env.STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT === "1";
+  const maxReadChars = options.maxReadChars ?? (surface === "remote" ? 120_000 : 500_000);
+  const server = new McpServer({
+    name: "straylight",
+    version: "0.1.0",
+  }, surface === "remote" ? {
+    instructions:
+      "Straylight is the durable context store. Start substantive work with memory.open for the actual task, " +
+      "then use memory.query and memory.read only for relevant evidence. Persist source material with " +
+      "memory.capture, durable current state or corrections with memory.write, and resumable work with " +
+      "memory.checkpoint. If Straylight is unavailable, fail closed instead of inventing or substituting context.",
+  } : {});
+
+  function registerJsonTool<Shape extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    inputSchema: Shape,
+    invoke: (input: z.infer<z.ZodObject<Shape>>) => Promise<ApiResponse>,
+  ): void {
+    registerJsonToolOnServer(
+      server,
+      includeStructuredContent,
+      name,
+      description,
+      inputSchema,
+      invoke,
+    );
+  }
 
 registerJsonTool(
   "memory.open",
@@ -107,7 +136,7 @@ registerJsonTool(
   "Batch exact reads of current Markdown files or checkpoints by returned entry reference or path.",
   {
     session_id: reference,
-    requests: z.array(readItem).min(1).max(32),
+    requests: z.array(createReadItem(maxReadChars)).min(1).max(32),
   },
   (input) => client.request("/v1/workspace/read", input),
 );
@@ -183,32 +212,34 @@ registerJsonTool(
   (input) => client.request("/v1/workspace/checkpoint", input),
 );
 
-registerJsonTool(
-  "memory.stage",
-  "Upload binary files from the adapter's sandboxed import root without placing bytes in model context.",
-  {
-    scope: z.string().min(1),
-    stable_import_id: z.string().min(1).max(240).optional(),
-    describe_binaries: z.boolean().default(true).describe(
-      "Generate searchable, explicitly non-authoritative descriptions for native files.",
+if (surface === "local") {
+  registerJsonTool(
+    "memory.stage",
+    "Upload binary files from the adapter's sandboxed import root without placing bytes in model context.",
+    {
+      scope: z.string().min(1),
+      stable_import_id: z.string().min(1).max(240).optional(),
+      describe_binaries: z.boolean().default(true).describe(
+        "Generate searchable, explicitly non-authoritative descriptions for native files.",
+      ),
+      files: z.array(z.object({
+        path: z.string().min(1).describe(
+          "Path below STRAYLIGHT_MCP_IMPORT_ROOT; it is retained as the logical vault path unless name is supplied.",
+        ),
+        name: z.string().min(1).optional().describe(
+          "Optional logical vault path override. This is not merely a basename.",
+        ),
+        media_type: z.string().optional(),
+      })).min(1).max(32),
+    },
+    (input) => client.stage(
+      input.scope,
+      input.stable_import_id,
+      input.files,
+      input.describe_binaries,
     ),
-    files: z.array(z.object({
-      path: z.string().min(1).describe(
-        "Path below STRAYLIGHT_MCP_IMPORT_ROOT; it is retained as the logical vault path unless name is supplied.",
-      ),
-      name: z.string().min(1).optional().describe(
-        "Optional logical vault path override. This is not merely a basename.",
-      ),
-      media_type: z.string().optional(),
-    })).min(1).max(32),
-  },
-  (input) => client.stage(
-    input.scope,
-    input.stable_import_id,
-    input.files,
-    input.describe_binaries,
-  ),
-);
+  );
+}
 
 registerJsonTool(
   "memory.status",
@@ -245,26 +276,31 @@ registerJsonTool(
   (input) => client.assetMetadata(input.asset_ref, input.session_id, input.version),
 );
 
-registerJsonTool(
-  "asset.fetch",
-  "Download one exact binary workspace entry into the MCP adapter's private asset root. " +
-  "The tool verifies the streamed size and SHA-256 and returns only a local path plus integrity metadata; " +
-  "asset bytes and base64 are never returned to model context.",
-  {
-    session_id: reference.describe(
-      "Exact session:... reference returned by memory.open and retained for workspace continuity.",
-    ),
-    asset_ref: assetReference,
-    version: z.number().int().positive().optional().describe(
-      "Optional exact historical version. Metadata and bytes are both fetched at this version.",
-    ),
-  },
-  (input) => client.fetchAsset(input.asset_ref, input.session_id, input.version),
-);
+if (surface === "local") {
+  registerJsonTool(
+    "asset.fetch",
+    "Download one exact binary workspace entry into the MCP adapter's private asset root. " +
+    "The tool verifies the streamed size and SHA-256 and returns only a local path plus integrity metadata; " +
+    "asset bytes and base64 are never returned to model context.",
+    {
+      session_id: reference.describe(
+        "Exact session:... reference returned by memory.open and retained for workspace continuity.",
+      ),
+      asset_ref: assetReference,
+      version: z.number().int().positive().optional().describe(
+        "Optional exact historical version. Metadata and bytes are both fetched at this version.",
+      ),
+    },
+    (input) => client.fetchAsset(input.asset_ref, input.session_id, input.version),
+  );
+}
 
-await server.connect(new StdioServerTransport());
+  return server;
+}
 
-function registerJsonTool<Shape extends z.ZodRawShape>(
+function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
+  server: McpServer,
+  includeStructuredContent: boolean,
   name: string,
   description: string,
   inputSchema: Shape,
@@ -299,7 +335,39 @@ function registerJsonTool<Shape extends z.ZodRawShape>(
   };
   // McpServer validates the raw shape before calling this function. Its generic
   // callback type does not preserve a reusable helper's Zod shape inference.
-  server.registerTool(name, { description, inputSchema }, callback as never);
+  const readOnly = !new Set([
+    "memory.capture",
+    "memory.write",
+    "memory.checkpoint",
+    "memory.stage",
+  ]).has(name);
+  server.registerTool(name, {
+    description,
+    inputSchema,
+    annotations: {
+      readOnlyHint: readOnly,
+      destructiveHint: false,
+      idempotentHint: readOnly,
+      openWorldHint: false,
+    },
+  }, callback as never);
+}
+
+async function runStdioServer(): Promise<void> {
+  const client = new StraylightApiClient(
+    process.env.STRAYLIGHT_API_URL ?? "http://api:18110",
+    requiredEnvironment("STRAYLIGHT_API_TOKEN"),
+    fetch,
+    evaluationHeaders(),
+  );
+  await createStraylightMcpServer(client).connect(new StdioServerTransport());
+}
+
+if (
+  process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  await runStdioServer();
 }
 
 function requiredEnvironment(name: string): string {

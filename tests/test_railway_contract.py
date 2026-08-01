@@ -11,6 +11,7 @@ RAILWAY = (ROOT / ".railway/railway.ts").read_text()
 WEB_PROXY = (ROOT / "apps/web/nginx.railway.conf.template").read_text()
 WEB_DOCKERFILE = (ROOT / "apps/web/Dockerfile.railway").read_text()
 API_DOCKERFILE = (ROOT / "apps/api/Dockerfile").read_text()
+MCP_DOCKERFILE = (ROOT / "apps/mcp/Dockerfile.remote").read_text()
 DATABASE_DOCKERFILE = (ROOT / "infra/postgres/Dockerfile").read_text()
 
 
@@ -31,6 +32,7 @@ class RailwayContractTests(unittest.TestCase):
                 ("db", "db"),
                 ("api", "api"),
                 ("worker", "worker"),
+                ("mcp", "mcp"),
                 ("web", "web"),
                 ("datadog", "datadog-agent"),
             },
@@ -60,12 +62,17 @@ class RailwayContractTests(unittest.TestCase):
             'STRAYLIGHT_API_HOST: api.env.RAILWAY_PRIVATE_DOMAIN',
             RAILWAY,
         )
+        self.assertIn(
+            'STRAYLIGHT_MCP_HOST: mcp.env.RAILWAY_PRIVATE_DOMAIN',
+            RAILWAY,
+        )
         self.assertIn('STRAYLIGHT_DNS_RESOLVER: "[fd12::10]"', RAILWAY)
         self.assertIn(
             "resolver ${STRAYLIGHT_DNS_RESOLVER} valid=10s ipv6=on;",
             WEB_PROXY,
         )
         self.assertIn("server ${STRAYLIGHT_API_HOST}:8080 resolve;", WEB_PROXY)
+        self.assertIn("server ${STRAYLIGHT_MCP_HOST}:8080 resolve;", WEB_PROXY)
         self.assertRegex(
             WEB_PROXY,
             r"location \^~ /api/v1/admin/ \{\s*return 404;",
@@ -75,13 +82,17 @@ class RailwayContractTests(unittest.TestCase):
             "install -d -o 101 -g 101 -m 0755 /etc/nginx/templates",
             WEB_DOCKERFILE,
         )
+        self.assertRegex(
+            WEB_PROXY,
+            r"location ~ \^/\(\?:mcp\|authorize\|token\|register\|oauth/consent",
+        )
 
     def test_api_has_no_database_administrator_credential(self):
         api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
             'const worker = service("worker"', 1
         )[0]
         worker_block = RAILWAY.split('const worker = service("worker"', 1)[1].split(
-            'const web = service("web"', 1
+            'const mcp = service("mcp"', 1
         )[0]
         self.assertNotIn("DATABASE_URL_ADMIN", api_block)
         self.assertIn("DATABASE_URL_ADMIN: db.env.DATABASE_URL_ADMIN", worker_block)
@@ -120,6 +131,24 @@ class RailwayContractTests(unittest.TestCase):
         self.assertIn("STRAYLIGHT_BUILD_REVISION: api.env.STRAYLIGHT_BUILD_REVISION", RAILWAY)
         self.assertGreaterEqual(RAILWAY.count("DD_VERSION: preserve()"), 2)
 
+    def test_remote_mcp_is_private_oauth_gateway(self):
+        mcp_block = RAILWAY.split('const mcp = service("mcp"', 1)[1].split(
+            'const web = service("web"', 1
+        )[0]
+        self.assertIn('dockerfilePath: "apps/mcp/Dockerfile.remote"', mcp_block)
+        self.assertIn('healthcheck: "/healthz"', mcp_block)
+        self.assertIn(
+            'STRAYLIGHT_API_URL: "http://api.railway.internal:8080"',
+            mcp_block,
+        )
+        self.assertIn(
+            'STRAYLIGHT_MCP_PUBLIC_URL: "https://straylight.rourkem.com"',
+            mcp_block,
+        )
+        self.assertIn("STRAYLIGHT_MCP_SEALING_KEY: preserve()", mcp_block)
+        self.assertNotIn("STRAYLIGHT_API_TOKEN", mcp_block)
+        self.assertIn('ENTRYPOINT ["/nodejs/bin/node", "dist/remote.js"]', MCP_DOCKERFILE)
+
     def test_hosted_object_store_is_external_versioned_s3(self):
         self.assertIn('STRAYLIGHT_S3_ENDPOINT: ""', RAILWAY)
         self.assertIn('STRAYLIGHT_S3_REGION: "us-west-2"', RAILWAY)
@@ -152,6 +181,7 @@ class RailwayContractTests(unittest.TestCase):
         for path in [
             ROOT / "apps/api/Dockerfile",
             ROOT / "apps/web/Dockerfile.railway",
+            ROOT / "apps/mcp/Dockerfile.remote",
             ROOT / "deploy/railway/datadog-agent/Dockerfile",
         ]:
             local_stages: set[str] = set()

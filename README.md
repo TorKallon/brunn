@@ -63,7 +63,8 @@ tailnet-accessible human surface.
   usage telemetry, checkpoints, background indexing and dreaming, plus retained
   owner-alpha compatibility code
 - `apps/web`: TypeScript/React audit and control SPA
-- `apps/mcp`: typed stdio MCP adapter
+- `apps/mcp`: typed local stdio adapter plus the OAuth-protected hosted MCP
+  gateway used by account-level ChatGPT and Claude connectors
 - `infra`: Postgres role initialization and pinned MinIO build/policy
 - `docs/Architecture.md`: system design and trust boundaries
 - `docs/Specification.md`: alpha behavior and acceptance contract

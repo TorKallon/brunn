@@ -32,6 +32,8 @@ source material.
 ```mermaid
 flowchart LR
     A["Codex, OpenClaw, or another agent"] --> B["Thin CLI, MCP, or HTTP"]
+    H["Hosted ChatGPT or Claude"] --> G["OAuth remote MCP gateway"]
+    G --> R
     B --> R["Rust API"]
     S["TypeScript SPA"] --> R
     R --> P[("PostgreSQL and pgvector")]
@@ -45,6 +47,15 @@ flowchart LR
 All development components run in Docker. PostgreSQL and object storage stay
 private. Production uses S3 or another compatible cloud object store; MinIO is
 the development implementation.
+
+The remote MCP gateway is a stateless protocol and OAuth adapter, not another
+durable store. Each hosted client authorizes with its own root-scoped
+read/write Straylight credential. The gateway encrypts that credential into
+short-lived OAuth access and rotating refresh tokens and creates a fresh API
+client per MCP request. It never has a process-global upstream credential.
+Local stdio clients retain the complete 12-tool surface. Hosted clients expose
+the ten tools that do not depend on the adapter host's filesystem; hosted
+`memory.stage` and `asset.fetch` are deliberately absent.
 
 ## Canonical Data
 

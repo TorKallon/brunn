@@ -34,6 +34,15 @@ const releaseRuntime = {
   STRAYLIGHT_MAX_CONCURRENT_TRANSFERS: "8",
   STRAYLIGHT_READINESS_TIMEOUT_SECONDS: "5",
   STRAYLIGHT_REQUESTS_PER_MINUTE: "600",
+  STRAYLIGHT_INTENTION_LEDGER: preserve(),
+  STRAYLIGHT_LEXICAL_SINGLE_SCAN: preserve(),
+  STRAYLIGHT_RESUME_DELTAS: preserve(),
+  STRAYLIGHT_SEARCH_CHAR_CAP: preserve(),
+  STRAYLIGHT_SEARCH_FAIR_SHARE: preserve(),
+  STRAYLIGHT_SEARCH_TOP1_HYDRATION: preserve(),
+  STRAYLIGHT_SEMANTIC_LANE: preserve(),
+  STRAYLIGHT_SUPERSESSION_DEMOTION: preserve(),
+  STRAYLIGHT_VERBATIM_SPANS: preserve(),
   STRAYLIGHT_ACCOUNT_EXPORT_TTL_HOURS: "24",
   STRAYLIGHT_ACCOUNT_EXPORT_TEMP_DIR: "/tmp/straylight-exports",
   STRAYLIGHT_ACCOUNT_DELETION_BACKUP_RETENTION_DAYS: "30",
@@ -164,6 +173,33 @@ const worker = service("worker", {
   },
 });
 
+const mcp = service("mcp", {
+  build: {
+    builder: "DOCKERFILE",
+    dockerfilePath: "apps/mcp/Dockerfile.remote",
+    watchPatterns: ["apps/mcp/**"],
+  },
+  healthcheck: "/healthz",
+  healthcheckTimeout: 300,
+  replicas: { "us-west2": 1 },
+  deploy: {
+    drainingSeconds: 30,
+    limitOverride: {
+      containers: {
+        cpu: 0.5,
+        memoryBytes: 256 * 1024 * 1024,
+      },
+    },
+  },
+  env: {
+    PORT: "8080",
+    STRAYLIGHT_API_URL: "http://api.railway.internal:8080",
+    STRAYLIGHT_MCP_PUBLIC_URL: "https://straylight.rourkem.com",
+    STRAYLIGHT_MCP_SEALING_KEY: preserve(),
+    STRAYLIGHT_BUILD_REVISION: preserve(),
+  },
+});
+
 const web = service("web", {
   build: {
     builder: "DOCKERFILE",
@@ -185,6 +221,7 @@ const web = service("web", {
   env: {
     PORT: "8080",
     STRAYLIGHT_API_HOST: api.env.RAILWAY_PRIVATE_DOMAIN,
+    STRAYLIGHT_MCP_HOST: mcp.env.RAILWAY_PRIVATE_DOMAIN,
     STRAYLIGHT_DNS_RESOLVER: "[fd12::10]",
     STRAYLIGHT_BUILD_REVISION: preserve(),
   },
@@ -223,7 +260,7 @@ const datadog = service("datadog-agent", {
 });
 
 export default defineRailway(() => {
-  const application = group("Application", [web, api, worker]);
+  const application = group("Application", [web, api, worker, mcp]);
   const storage = group("Storage", [db, postgresData]);
   const operations = group("Operations", [datadog]);
 
