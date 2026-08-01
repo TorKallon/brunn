@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   briefingEditionFixture,
   briefingListFixture,
+  briefingTopicsFixture,
 } from "./briefingFixtures";
 import { installApiMock, renderApp } from "./renderApp";
 
@@ -70,6 +71,21 @@ describe("accessibility contracts", () => {
     await user.click(screen.getByRole("button", { name: "2 more" }));
     expect(
       screen.getByRole("region", { name: "Frontier labs item detail" }),
+    ).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("has no automated violations on the topics page with the editor open", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/briefings/topics": briefingTopicsFixture,
+    });
+    const user = userEvent.setup();
+    const { container } = renderApp("/topics", "read-write-token");
+    await user.click(
+      await screen.findByRole("row", { name: "Edit topic Stock watchlist" }),
+    );
+    expect(
+      screen.getByRole("textbox", { name: "Name" }),
     ).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });

@@ -16,6 +16,7 @@ import { CapturePage } from "./pages/CapturePage";
 import { ControlPage } from "./pages/ControlPage";
 import { DreamsPage } from "./pages/DreamsPage";
 import { ExplorePage } from "./pages/ExplorePage";
+import { TopicsPage } from "./pages/TopicsPage";
 import { WorkPage } from "./pages/WorkPage";
 
 function RootLayout() {
@@ -62,6 +63,11 @@ const briefingEditionRoute = createRoute({
         : "morning",
   }),
 });
+const topicsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/topics",
+  component: TopicsPage,
+});
 const assetsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/assets", component: AssetsPage });
 const sessionRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -107,6 +113,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   briefingsRoute,
   briefingEditionRoute,
+  topicsRoute,
   workRoute,
   sessionRoute,
   assetsRoute,

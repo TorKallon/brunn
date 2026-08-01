@@ -7,6 +7,7 @@ import {
   CircleUserRound,
   FilePenLine,
   FolderOpen,
+  Layers3,
   LogOut,
   Menu,
   Search,
@@ -22,6 +23,7 @@ import { ReadOnlyNotice, StatusBadge } from "./StateViews";
 
 const navItems = [
   { to: "/briefings", label: "Briefings", icon: Sunrise },
+  { to: "/topics", label: "Topics", icon: Layers3 },
   { to: "/work", label: "Workspace", icon: FolderOpen },
   { to: "/explore", label: "Search", icon: Search },
   { to: "/capture", label: "Write", icon: FilePenLine },
