@@ -42,6 +42,10 @@ pub fn router(state: AppState) -> Router {
             "/workspace/briefings/publish",
             post(briefing_service::publish).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
         )
+        .route(
+            "/workspace/briefings/dedupe-check",
+            post(briefing_service::dedupe_check),
+        )
         .route("/workspace/changes", get(simple_core::changes))
         .route("/workspace/checkpoint", post(simple_core::checkpoint))
         .route("/workspace/binaries", get(simple_core::list_binaries))

@@ -670,6 +670,260 @@ pub async fn rebuild_briefing_ledger(
     Ok(rebuild)
 }
 
+pub const DEDUPE_CANDIDATE_LIMIT: usize = 64;
+pub const DEDUPE_NEAR_LIMIT: usize = 5;
+pub const CANDIDATE_TOPIC_LIMIT_CHARS: usize = 80;
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct DedupeCheckRequest {
+    #[serde(default)]
+    pub candidates: Vec<DedupeCandidate>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct DedupeCandidate {
+    #[serde(default)]
+    pub urls: Vec<String>,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub summary: String,
+    pub event_at: Option<String>,
+    pub topic: Option<String>,
+    pub story_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ExactStoryHit {
+    pub story_key: String,
+    pub title: String,
+    pub last_delivered_date: Option<NaiveDate>,
+    pub last_delivered_edition_ref: Option<String>,
+    pub last_delivered_headline: Option<String>,
+    pub delivery_count: i32,
+    pub suppression_count: i32,
+    pub matched_by: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct DedupeCandidateReport {
+    pub exact: Vec<ExactStoryHit>,
+    pub near: Vec<Value>,
+    pub verdict_hint: &'static str,
+}
+
+pub fn validate_dedupe_request(request: &DedupeCheckRequest) -> ApiResult<()> {
+    if request.candidates.is_empty() || request.candidates.len() > DEDUPE_CANDIDATE_LIMIT {
+        return Err(ApiError::invalid(format!(
+            "dedupe-check requires between 1 and {DEDUPE_CANDIDATE_LIMIT} candidates",
+        )));
+    }
+    for candidate in &request.candidates {
+        require_collection_limit("candidate urls", candidate.urls.len(), STORY_URL_LIMIT)?;
+        require_char_limit("candidate title", &candidate.title, HEADLINE_LIMIT_CHARS)?;
+        require_char_limit("candidate summary", &candidate.summary, BODY_LIMIT_CHARS)?;
+        if let Some(topic) = &candidate.topic {
+            require_char_limit("candidate topic", topic, CANDIDATE_TOPIC_LIMIT_CHARS)?;
+        }
+        if let Some(story_key) = &candidate.story_key {
+            require_story_key(story_key)?;
+        }
+        if let Some(event_at) = &candidate.event_at {
+            parse_calendar_date(event_at)?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_calendar_date(value: &str) -> ApiResult<NaiveDate> {
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .filter(|date| date.format("%Y-%m-%d").to_string() == value)
+        .ok_or_else(|| ApiError::invalid("event_at must be a YYYY-MM-DD calendar date"))
+}
+
+/// Verdict hints only; the agent adjudicates `near` and `possible_update`.
+/// An exact URL hit on a delivered story is a duplicate; a story that was
+/// seen but never delivered, or whose candidate event is newer than the last
+/// delivery, is a possible update; everything else is unseen.
+pub fn classify_candidate(exact: &[ExactStoryHit], event_at: Option<NaiveDate>) -> &'static str {
+    let delivered_url_hit = exact
+        .iter()
+        .any(|hit| hit.matched_by.iter().any(|lane| lane == "url") && hit.delivery_count > 0);
+    if delivered_url_hit {
+        return "duplicate";
+    }
+    let possible_update = exact.iter().any(|hit| match hit.last_delivered_date {
+        None => true,
+        Some(delivered) => event_at.is_some_and(|event| event > delivered),
+    });
+    if possible_update {
+        "possible_update"
+    } else {
+        "unseen"
+    }
+}
+
+fn exact_hit_from_row(row: &sqlx::postgres::PgRow, matched_by: &str) -> ExactStoryHit {
+    ExactStoryHit {
+        story_key: row.get("story_key"),
+        title: row.get("title"),
+        last_delivered_date: row.get("last_delivered_date"),
+        last_delivered_edition_ref: row.get("last_delivered_edition_ref"),
+        last_delivered_headline: row.get("last_delivered_headline"),
+        delivery_count: row.get("delivery_count"),
+        suppression_count: row.get("suppression_count"),
+        matched_by: vec![matched_by.to_owned()],
+    }
+}
+
+pub async fn dedupe_candidate_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    candidate: &DedupeCandidate,
+) -> ApiResult<DedupeCandidateReport> {
+    let mut url_hashes = Vec::new();
+    for url in &candidate.urls {
+        if let Ok(canonical) = canonicalize_url(url) {
+            let hash = story_url_hash(&canonical);
+            if !url_hashes.contains(&hash) {
+                url_hashes.push(hash);
+            }
+        }
+    }
+    let mut exact = Vec::new();
+    if !url_hashes.is_empty() {
+        let rows = sqlx::query(
+            r#"
+            SELECT DISTINCT story.story_key,story.title,story.last_delivered_date,
+                   story.last_delivered_edition_ref,story.last_delivered_headline,
+                   story.delivery_count,story.suppression_count
+            FROM straylight.briefing_story_urls AS url
+            JOIN straylight.briefing_stories AS story
+              ON story.user_id=url.user_id AND story.story_key=url.story_key
+            WHERE url.user_id=$1 AND url.url_hash=ANY($2)
+            ORDER BY story.story_key
+            "#,
+        )
+        .bind(user_id)
+        .bind(&url_hashes)
+        .fetch_all(&mut **tx)
+        .await?;
+        exact.extend(rows.iter().map(|row| exact_hit_from_row(row, "url")));
+    }
+    if let Some(story_key) = candidate.story_key.as_deref() {
+        let row = sqlx::query(
+            r#"
+            SELECT story_key,title,last_delivered_date,last_delivered_edition_ref,
+                   last_delivered_headline,delivery_count,suppression_count
+            FROM straylight.briefing_stories
+            WHERE user_id=$1 AND story_key=$2
+            "#,
+        )
+        .bind(user_id)
+        .bind(story_key)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if let Some(row) = row {
+            match exact.iter_mut().find(|hit| hit.story_key == story_key) {
+                Some(hit) => hit.matched_by.push("story_key".to_owned()),
+                None => exact.push(exact_hit_from_row(&row, "story_key")),
+            }
+        }
+    }
+    let mut near = Vec::new();
+    let title = candidate.title.trim();
+    if !title.is_empty() {
+        let rows = sqlx::query(
+            r#"
+            SELECT story_key,title,last_delivered_date,last_delivered_edition_ref,
+                   last_delivered_headline,delivery_count,suppression_count
+            FROM straylight.briefing_stories
+            WHERE user_id=$1
+              AND title <> ''
+              AND to_tsvector('english',title) @@ plainto_tsquery('english',$2)
+            ORDER BY last_seen_at DESC,story_key
+            LIMIT $3
+            "#,
+        )
+        .bind(user_id)
+        .bind(title)
+        .bind((DEDUPE_NEAR_LIMIT + exact.len()) as i64)
+        .fetch_all(&mut **tx)
+        .await?;
+        near.extend(
+            rows.iter()
+                .filter(|row| {
+                    let story_key: String = row.get("story_key");
+                    !exact.iter().any(|hit| hit.story_key == story_key)
+                })
+                .take(DEDUPE_NEAR_LIMIT)
+                .map(|row| {
+                    json!({
+                        "lane": "ledger_titles",
+                        "story_key": row.get::<String, _>("story_key"),
+                        "title": row.get::<String, _>("title"),
+                        "last_delivered_date": row.get::<Option<NaiveDate>, _>("last_delivered_date"),
+                        "delivery_count": row.get::<i32, _>("delivery_count"),
+                    })
+                }),
+        );
+        let lexical = sqlx::query(crate::retrieval_sql::SIMPLE_LEXICAL_CANDIDATES_SQL)
+            .bind(title)
+            .fetch_all(&mut **tx)
+            .await?;
+        let mut seen_paths = HashSet::new();
+        for row in lexical {
+            let path: String = row.get("path");
+            if !path.starts_with("Briefings/") || !seen_paths.insert(path.clone()) {
+                continue;
+            }
+            near.push(json!({
+                "lane": "workspace_lexical",
+                "path": path,
+                "title": row.get::<String, _>("title"),
+                "heading": row.get::<String, _>("heading"),
+                "score": row.get::<f64, _>("score"),
+            }));
+            if seen_paths.len() >= DEDUPE_NEAR_LIMIT {
+                break;
+            }
+        }
+    }
+    let event_at = candidate
+        .event_at
+        .as_deref()
+        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok());
+    let verdict_hint = classify_candidate(&exact, event_at);
+    Ok(DedupeCandidateReport {
+        exact,
+        near,
+        verdict_hint,
+    })
+}
+
+pub async fn dedupe_check(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(request): Json<DedupeCheckRequest>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::Read)?;
+    validate_dedupe_request(&request)?;
+    let mut tx = state.begin_read(&auth).await?;
+    let mut candidates = Vec::with_capacity(request.candidates.len());
+    for candidate in &request.candidates {
+        candidates.push(dedupe_candidate_in_tx(&mut tx, auth.user_id.0, candidate).await?);
+    }
+    let generation = simple_core::max_generation_in_tx(&mut tx, auth.user_id.0).await?;
+    tx.commit().await?;
+    let mut envelope = WorkspaceEnvelope::complete(json!({
+        "candidates": candidates,
+        "workspace_generation": generation,
+    }));
+    envelope.corpus_revision = Some(format!("generation:{generation}"));
+    Ok(Json(envelope))
+}
+
 async fn insert_story_urls(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
@@ -1065,6 +1319,130 @@ mod tests {
             "a validation-passing edition can exceed the 4 MiB write cap, \
              so the prepare-stage entry_too_large guard remains load-bearing",
         );
+    }
+
+    fn exact_hit(
+        matched_by: &[&str],
+        delivery_count: i32,
+        last_delivered_date: Option<&str>,
+    ) -> ExactStoryHit {
+        ExactStoryHit {
+            story_key: "story-alpha".to_owned(),
+            title: "Alpha story".to_owned(),
+            last_delivered_date: last_delivered_date
+                .map(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").expect("test date")),
+            last_delivered_edition_ref: last_delivered_date.map(|_| "entry:test".to_owned()),
+            last_delivered_headline: last_delivered_date.map(|_| "**Alpha.**".to_owned()),
+            delivery_count,
+            suppression_count: 0,
+            matched_by: matched_by.iter().map(|lane| (*lane).to_owned()).collect(),
+        }
+    }
+
+    fn date(value: &str) -> Option<NaiveDate> {
+        Some(NaiveDate::parse_from_str(value, "%Y-%m-%d").expect("test date"))
+    }
+
+    #[test]
+    fn classify_marks_delivered_url_hits_as_duplicates() {
+        let exact = [exact_hit(&["url"], 1, Some("2026-07-28"))];
+        assert_eq!(classify_candidate(&exact, None), "duplicate");
+        assert_eq!(
+            classify_candidate(&exact, date("2026-07-30")),
+            "duplicate",
+            "the URL identity dominates a newer candidate event date",
+        );
+        assert_eq!(
+            classify_candidate(&[exact_hit(&["url", "story_key"], 3, Some("2026-07-28"))], None),
+            "duplicate",
+        );
+    }
+
+    #[test]
+    fn classify_marks_newer_events_on_seen_stories_as_possible_updates() {
+        let story_key_hit = [exact_hit(&["story_key"], 1, Some("2026-07-28"))];
+        assert_eq!(
+            classify_candidate(&story_key_hit, date("2026-07-30")),
+            "possible_update",
+        );
+        assert_eq!(
+            classify_candidate(&story_key_hit, date("2026-07-28")),
+            "unseen",
+            "an event no newer than the last delivery is not an update hint",
+        );
+        assert_eq!(classify_candidate(&story_key_hit, None), "unseen");
+    }
+
+    #[test]
+    fn classify_marks_seen_but_never_delivered_stories_as_possible_updates() {
+        assert_eq!(
+            classify_candidate(&[exact_hit(&["story_key"], 0, None)], None),
+            "possible_update",
+        );
+        assert_eq!(
+            classify_candidate(&[exact_hit(&["url"], 0, None)], None),
+            "possible_update",
+            "a URL hit on an undelivered story is an update hint, not a duplicate",
+        );
+    }
+
+    #[test]
+    fn classify_marks_unmatched_candidates_as_unseen() {
+        assert_eq!(classify_candidate(&[], None), "unseen");
+        assert_eq!(classify_candidate(&[], date("2026-08-01")), "unseen");
+    }
+
+    fn dedupe_fixture() -> DedupeCheckRequest {
+        DedupeCheckRequest {
+            candidates: vec![DedupeCandidate {
+                urls: vec!["https://example.com/alpha".to_owned()],
+                title: "Alpha story".to_owned(),
+                summary: "Alpha resurfaced.".to_owned(),
+                event_at: Some("2026-07-30".to_owned()),
+                topic: Some("ai".to_owned()),
+                story_key: Some("story-alpha".to_owned()),
+            }],
+        }
+    }
+
+    #[test]
+    fn dedupe_validation_accepts_the_fixture_and_rejects_bad_shapes() {
+        assert!(validate_dedupe_request(&dedupe_fixture()).is_ok());
+
+        let empty = DedupeCheckRequest { candidates: vec![] };
+        assert!(validate_dedupe_request(&empty).is_err());
+
+        let mut oversize = dedupe_fixture();
+        oversize.candidates =
+            vec![oversize.candidates[0].clone(); DEDUPE_CANDIDATE_LIMIT + 1];
+        assert!(validate_dedupe_request(&oversize).is_err());
+
+        let mut too_many_urls = dedupe_fixture();
+        too_many_urls.candidates[0].urls =
+            vec!["https://example.com/".to_owned(); STORY_URL_LIMIT + 1];
+        assert!(validate_dedupe_request(&too_many_urls).is_err());
+
+        let mut bad_story_key = dedupe_fixture();
+        bad_story_key.candidates[0].story_key = Some("Bad Key".to_owned());
+        assert!(validate_dedupe_request(&bad_story_key).is_err());
+
+        let mut bad_event = dedupe_fixture();
+        bad_event.candidates[0].event_at = Some("2026-7-30".to_owned());
+        assert!(validate_dedupe_request(&bad_event).is_err());
+
+        let mut long_title = dedupe_fixture();
+        long_title.candidates[0].title = "t".repeat(HEADLINE_LIMIT_CHARS + 1);
+        assert!(validate_dedupe_request(&long_title).is_err());
+    }
+
+    #[test]
+    fn dedupe_candidate_defaults_apply_on_deserialization() {
+        let candidate: DedupeCandidate = serde_json::from_str(r#"{"title":"Alpha"}"#)
+            .expect("minimal candidate deserializes");
+        assert!(candidate.urls.is_empty());
+        assert!(candidate.summary.is_empty());
+        assert!(candidate.event_at.is_none());
+        assert!(candidate.story_key.is_none());
     }
 
     #[test]
