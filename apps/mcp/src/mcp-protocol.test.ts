@@ -36,6 +36,9 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     "asset.fetch",
     "asset.list",
     "asset.metadata",
+    "briefing.dedupe",
+    "briefing.publish",
+    "briefing.topics",
     "memory.capture",
     "memory.changes",
     "memory.checkpoint",
@@ -145,6 +148,63 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   assert.deepEqual(
     [...(assetFetch.inputSchema.required ?? [])].sort(),
     ["asset_ref", "session_id"],
+  );
+  const briefingPublish = response.tools.find((tool) => tool.name === "briefing.publish");
+  assert.ok(briefingPublish);
+  assert.deepEqual(
+    [...(briefingPublish.inputSchema.required ?? [])].sort(),
+    ["date", "edition"],
+  );
+  const publishDate = briefingPublish.inputSchema.properties?.date as {
+    description?: string;
+  } | undefined;
+  assert.match(publishDate?.description ?? "", /YYYY-MM-DD/);
+  const publishSections = briefingPublish.inputSchema.properties?.sections as {
+    maxItems?: number;
+    items?: {
+      properties?: {
+        items?: {
+          maxItems?: number;
+          items?: {
+            properties?: {
+              story?: { properties?: { key?: { description?: string } } };
+            };
+          };
+        };
+      };
+    };
+  } | undefined;
+  assert.equal(publishSections?.maxItems, 24);
+  assert.equal(publishSections?.items?.properties?.items?.maxItems, 32);
+  assert.match(
+    publishSections?.items?.properties?.items?.items?.properties?.story?.properties?.key
+      ?.description ?? "",
+    /never invent/,
+  );
+  const briefingDedupe = response.tools.find((tool) => tool.name === "briefing.dedupe");
+  assert.ok(briefingDedupe);
+  const dedupeCandidates = briefingDedupe.inputSchema.properties?.candidates as {
+    minItems?: number;
+    maxItems?: number;
+    items?: {
+      properties?: {
+        urls?: { maxItems?: number };
+        story_key?: { description?: string };
+      };
+    };
+  } | undefined;
+  assert.equal(dedupeCandidates?.minItems, 1);
+  assert.equal(dedupeCandidates?.maxItems, 64);
+  assert.equal(dedupeCandidates?.items?.properties?.urls?.maxItems, 8);
+  assert.match(
+    dedupeCandidates?.items?.properties?.story_key?.description ?? "",
+    /verbatim/,
+  );
+  const briefingTopics = response.tools.find((tool) => tool.name === "briefing.topics");
+  assert.ok(briefingTopics);
+  assert.deepEqual(
+    [...(briefingTopics.inputSchema.required ?? [])].sort(),
+    ["session_id"],
   );
 
   const call = await client.callTool({ name: "memory.status", arguments: {} });

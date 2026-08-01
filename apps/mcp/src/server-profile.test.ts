@@ -32,6 +32,9 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
     assert.deepEqual(response.tools.map((tool) => tool.name).sort(), [
       "asset.list",
       "asset.metadata",
+      "briefing.dedupe",
+      "briefing.publish",
+      "briefing.topics",
       "memory.capture",
       "memory.changes",
       "memory.checkpoint",

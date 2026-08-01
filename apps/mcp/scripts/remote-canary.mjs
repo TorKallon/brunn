@@ -73,6 +73,9 @@ try {
   assert.deepEqual(toolNames, [
     "asset.list",
     "asset.metadata",
+    "briefing.dedupe",
+    "briefing.publish",
+    "briefing.topics",
     "memory.capture",
     "memory.changes",
     "memory.checkpoint",
@@ -123,6 +126,10 @@ try {
     },
   }));
   assert.match(JSON.stringify(read), new RegExp(escapeRegExp(marker)));
+  const briefingTopics = toolBody(await client.callTool({
+    name: "briefing.topics",
+    arguments: { session_id: sessionId },
+  }));
 
   process.stdout.write(`${JSON.stringify({
     label,
@@ -134,6 +141,7 @@ try {
     write_reference: findString(written, "entry_ref", false)
       ?? findString(written, "reference", false),
     replay_status: findString(replayed, "status", false),
+    briefing_topics_status: findString(briefingTopics, "status", false),
     marker_verified: true,
   }, null, 2)}\n`);
 } finally {

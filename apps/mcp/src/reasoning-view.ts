@@ -7,6 +7,7 @@ const REASONING_OPERATIONS = new Set([
   "memory.compute",
   "memory.verify",
   "memory.checkpoint",
+  "briefing.dedupe",
 ]);
 const OPEN_TEXT_SOURCE_LIMIT = 12;
 const OPEN_TEXT_TOTAL_CHARS = 32_000;
@@ -44,6 +45,9 @@ export function compactReasoningResponse(operation: string, body: JsonObject): J
       break;
     case "memory.checkpoint":
       compact.data = compactCheckpointData(data);
+      break;
+    case "briefing.dedupe":
+      compact.data = compactDedupeData(data);
       break;
     default:
       compact.data = compactGenericData(data, ["steps", "rows_returned", "estimated_tokens"]);
@@ -357,6 +361,31 @@ function compactCheckpointData(data: JsonObject): JsonObject {
   }
   if (isPresent(parentCheckpoint)) compact.parent_checkpoint_id = parentCheckpoint;
   if (sourceRefs.length > 0) compact.source_refs = sourceRefs;
+  return compact;
+}
+
+function compactDedupeData(data: JsonObject): JsonObject {
+  const compact = compactGenericData(data, ["workspace_generation"]);
+  if (Array.isArray(data.candidates)) {
+    compact.candidates = data.candidates
+      .map(asObject)
+      .filter((item): item is JsonObject => item !== undefined)
+      .map(compactDedupeCandidate);
+  }
+  return compact;
+}
+
+function compactDedupeCandidate(candidate: JsonObject): JsonObject {
+  const compact = pick(candidate, ["verdict_hint"]);
+  if (Array.isArray(candidate.exact)) {
+    compact.exact = candidate.exact;
+  }
+  if (Array.isArray(candidate.near)) {
+    compact.near = candidate.near
+      .map(asObject)
+      .filter((item): item is JsonObject => item !== undefined)
+      .map((item) => pick(item, ["lane", "story_key", "title", "last_delivered_date", "path"]));
+  }
   return compact;
 }
 

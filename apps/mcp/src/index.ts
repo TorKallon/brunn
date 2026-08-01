@@ -30,6 +30,83 @@ const queryItem = z.object({
   limit: z.number().int().min(1).max(50).default(8),
 });
 
+const editionDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe(
+  "Exact edition date YYYY-MM-DD.",
+);
+const storyKey = z.string().regex(/^[a-z0-9][a-z0-9-]{2,79}$/);
+const storyUrl = z.string().min(1).max(2_048);
+
+const briefingStoryRef = z.object({
+  key: storyKey.describe(
+    "Lowercase story slug. When briefing.dedupe returned this story, copy its story_key " +
+    "verbatim; never invent a variant of a key the ledger already has. Mint a new slug only " +
+    "for a story with no dedupe match.",
+  ),
+  urls: z.array(storyUrl).max(8).optional().describe(
+    "Canonical source URLs for the story; the service canonicalizes and hashes them for dedupe.",
+  ),
+  title: z.string().max(500).optional(),
+  entities: z.array(z.string()).optional(),
+  event_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe(
+    "Exact date the underlying event happened, YYYY-MM-DD. Omit this field when unknown; never guess.",
+  ),
+});
+
+const briefingTimes = z.object({
+  published_at: z.string().optional(),
+  event_at: z.string().optional(),
+  first_seen_at: z.string().optional(),
+});
+
+const briefingItem = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/).describe(
+    "Lowercase item slug, unique within the edition. Reuse the same id when republishing an " +
+    "unchanged or revised item so revision deltas stay accurate.",
+  ),
+  kind: z.enum(["news", "metric", "health", "ops", "digest", "tracker", "schedule"]),
+  headline_md: z.string().max(500),
+  body_md: z.string().max(4_000).optional(),
+  why_it_matters: z.string().max(1_000).optional(),
+  detail_md: z.string().max(16_000).optional(),
+  what_changed: z.string().max(1_000).optional(),
+  delta: z.enum(["new", "update", "corroboration"]).optional().describe(
+    "Omit this field for a first delivery; the service records new. Use update or corroboration " +
+    "only when briefing.dedupe showed the story was already delivered.",
+  ),
+  story: briefingStoryRef.optional(),
+  times: briefingTimes.optional(),
+});
+
+const briefingSection = z.object({
+  topic: z.string().describe("Exact topic slug from briefing.topics; never invent one."),
+  title: z.string(),
+  items: z.array(briefingItem).max(32),
+});
+
+const briefingOmission = z.object({
+  story_key: storyKey.optional().describe(
+    "Story key for the omitted story; copy it verbatim from the briefing.dedupe result that " +
+    "identified the duplicate when one exists.",
+  ),
+  urls: z.array(storyUrl).max(8).optional(),
+  reason: z.string().min(1),
+});
+
+const dedupeCandidate = z.object({
+  urls: z.array(storyUrl).max(8).optional(),
+  title: z.string().max(500).optional(),
+  summary: z.string().max(4_000).optional(),
+  event_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe(
+    "Exact date the underlying event happened, YYYY-MM-DD. Omit this field when unknown; never guess.",
+  ),
+  topic: z.string().max(80).optional(),
+  story_key: storyKey.optional().describe(
+    "Story key to look up exactly. Copy keys verbatim from prior briefing.dedupe or " +
+    "briefing.publish results when checking a known story; a key absent from the ledger " +
+    "simply returns no match.",
+  ),
+});
+
 function createReadItem(maxChars: number) {
   return z.object({
     ref: reference.optional().describe(
@@ -295,6 +372,58 @@ if (surface === "local") {
   );
 }
 
+registerJsonTool(
+  "briefing.publish",
+  "Publish or revise one typed briefing edition; Straylight renders the canonical Markdown entry " +
+  "and updates the delivered-story ledger. Republishing the same date and edition revises the " +
+  "same entry.",
+  {
+    date: editionDate,
+    edition: z.string().regex(/^[a-z0-9][a-z0-9-]{1,31}$/).describe(
+      "Lowercase edition slug such as morning.",
+    ),
+    timezone: z.string().optional().describe(
+      "IANA timezone name used to render generated-at times. Omit this field for the service default.",
+    ),
+    generated_at: z.string().optional().describe(
+      "Exact RFC3339 timestamp when the briefing content was generated. Omit this field to use the publish time.",
+    ),
+    summary_md: z.array(z.string()).max(12).optional().describe(
+      "30-second version: one Markdown bullet per line, most important first.",
+    ),
+    sections: z.array(briefingSection).max(24).optional(),
+    omitted: z.array(briefingOmission).max(64).optional().describe(
+      "Stories researched but deliberately not delivered, with the reason; recorded as suppressions in the ledger.",
+    ),
+    idempotency_key: z.string().min(1).max(240).optional(),
+    expected_version: z.number().int().nonnegative().optional().describe(
+      "Supply expected_version only when preventing a known stale overwrite matters.",
+    ),
+  },
+  (input) => client.request("/v1/workspace/briefings/publish", input),
+);
+
+registerJsonTool(
+  "briefing.dedupe",
+  "Check candidate stories against the delivered-story ledger before publishing; returns exact " +
+  "URL and story-key matches with delivery history, near matches, and a verdict hint per candidate.",
+  {
+    candidates: z.array(dedupeCandidate).min(1).max(64),
+  },
+  (input) => client.request("/v1/workspace/briefings/dedupe-check", input),
+);
+
+registerJsonTool(
+  "briefing.topics",
+  "Read the parsed briefing topics snapshot plus pending go-deeper requests and the recent feedback tail.",
+  {
+    session_id: reference.describe(
+      "Exact session:... reference returned by memory.open.",
+    ),
+  },
+  () => client.request("/v1/workspace/briefings/topics"),
+);
+
   return server;
 }
 
@@ -340,6 +469,7 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
     "memory.write",
     "memory.checkpoint",
     "memory.stage",
+    "briefing.publish",
   ]).has(name);
   server.registerTool(name, {
     description,
