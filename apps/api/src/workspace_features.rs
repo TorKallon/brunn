@@ -384,7 +384,7 @@ fn chain_item(entry: &FeatureEntry) -> SupersessionChainItem {
     }
 }
 
-fn bounded_prefix(value: &str, max_bytes: usize) -> &str {
+pub(crate) fn bounded_prefix(value: &str, max_bytes: usize) -> &str {
     let mut end = value.len().min(max_bytes);
     while end > 0 && !value.is_char_boundary(end) {
         end -= 1;
@@ -403,7 +403,7 @@ fn push_list_value(fields: &mut DerivedFrontmatter, active_list: Option<&str>, v
     }
 }
 
-fn inline_list(value: &str) -> Vec<String> {
+pub(crate) fn inline_list(value: &str) -> Vec<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Vec::new();
@@ -417,7 +417,7 @@ fn inline_list(value: &str) -> Vec<String> {
         .collect()
 }
 
-fn bounded_scalar(value: &str, max_chars: usize) -> Option<String> {
+pub(crate) fn bounded_scalar(value: &str, max_chars: usize) -> Option<String> {
     let value = value.trim();
     let value = if value.len() >= 2
         && ((value.starts_with('"') && value.ends_with('"'))

@@ -1,8 +1,11 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 
-use axum::{Extension, Json, extract::State};
-use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
+use axum::{
+    Extension, Json,
+    extract::{Path, Query, State},
+};
+use chrono::{DateTime, FixedOffset, NaiveDate, SecondsFormat, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -19,6 +22,7 @@ use crate::{
     error::{ApiError, ApiResult},
     models::{Capability, ResponseStatus},
     simple_core::{self, WorkspaceEnvelope, WriteRequest},
+    workspace_features,
 };
 
 pub const SUMMARY_LINE_LIMIT: usize = 12;
@@ -445,11 +449,7 @@ pub async fn publish(
     let mut tx = state.begin_write(&auth).await?;
     simple_core::require_local_publish_lock(
         &mut tx,
-        format!(
-            "simple-entry:{}:{}",
-            auth.user_id.0,
-            simple_core::portable_path_key(&path)
-        ),
+        entry_lock_key(auth.user_id.0, &path),
         state.config.read_path_roundtrip_v1,
     )
     .await?;
@@ -729,17 +729,17 @@ pub fn validate_dedupe_request(request: &DedupeCheckRequest) -> ApiResult<()> {
             require_story_key(story_key)?;
         }
         if let Some(event_at) = &candidate.event_at {
-            parse_calendar_date(event_at)?;
+            parse_calendar_date(event_at)
+                .ok_or_else(|| ApiError::invalid("event_at must be a YYYY-MM-DD calendar date"))?;
         }
     }
     Ok(())
 }
 
-fn parse_calendar_date(value: &str) -> ApiResult<NaiveDate> {
+fn parse_calendar_date(value: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .ok()
         .filter(|date| date.format("%Y-%m-%d").to_string() == value)
-        .ok_or_else(|| ApiError::invalid("event_at must be a YYYY-MM-DD calendar date"))
 }
 
 /// Verdict hints only; the agent adjudicates `near` and `possible_update`.
@@ -922,6 +922,1075 @@ pub async fn dedupe_check(
     }));
     envelope.corpus_revision = Some(format!("generation:{generation}"));
     Ok(Json(envelope))
+}
+
+pub const BRIEFING_LIST_DEFAULT_LIMIT: usize = 14;
+pub const BRIEFING_LIST_MAX_LIMIT: usize = 60;
+pub const FEEDBACK_TAIL_LINES: usize = 50;
+pub const NOTE_LIMIT_CHARS: usize = 1_000;
+pub const DEFAULT_TOPIC_SECTION_ORDER: i64 = 1_000;
+pub const DEFAULT_TOPIC_FRESHNESS_HOURS: i64 = 48;
+pub const TOPIC_MODES: [&str; 5] = [
+    "every_briefing",
+    "on_material_delta",
+    "scheduled",
+    "paused",
+    "muted",
+];
+pub const FEEDBACK_VERDICTS: [&str; 6] = [
+    "useful",
+    "not_important",
+    "already_knew",
+    "repeated",
+    "wrong",
+    "follow_closer",
+];
+
+/// Split a document into (frontmatter, body-after-closing-fence). The fence
+/// must open on the first line and close within the same 4 KiB bound the
+/// workspace-features parser applies; the returned body is byte-verbatim.
+pub(crate) fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+    let bounded =
+        workspace_features::bounded_prefix(content, workspace_features::FRONTMATTER_LIMIT_BYTES);
+    let mut offset = 0;
+    let mut frontmatter_start = None;
+    for line in bounded.split_inclusive('\n') {
+        let trimmed = line.trim_end_matches('\n').trim_end_matches('\r').trim();
+        match frontmatter_start {
+            None => {
+                if trimmed != "---" {
+                    return None;
+                }
+                frontmatter_start = Some(offset + line.len());
+            }
+            Some(start) => {
+                if trimmed == "---" {
+                    return Some((&content[start..offset], &content[offset + line.len()..]));
+                }
+            }
+        }
+        offset += line.len();
+    }
+    None
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct BriefingTopic {
+    pub slug: String,
+    pub name: String,
+    pub section_order: i64,
+    pub mode: String,
+    pub editions: Vec<String>,
+    pub schedule: Option<String>,
+    pub entities: Vec<String>,
+    pub symbols: Vec<String>,
+    pub suppress_unchanged: bool,
+    pub freshness_hours: i64,
+    pub body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parse_error: Option<String>,
+}
+
+fn note_parse_error(slot: &mut Option<String>, message: String) {
+    if slot.is_none() {
+        *slot = Some(message);
+    }
+}
+
+pub fn parse_topic_document(slug: &str, content: &str) -> BriefingTopic {
+    let mut topic = BriefingTopic {
+        slug: slug.to_owned(),
+        name: slug.to_owned(),
+        section_order: DEFAULT_TOPIC_SECTION_ORDER,
+        mode: "every_briefing".to_owned(),
+        editions: vec!["morning".to_owned()],
+        schedule: None,
+        entities: Vec::new(),
+        symbols: Vec::new(),
+        suppress_unchanged: true,
+        freshness_hours: DEFAULT_TOPIC_FRESHNESS_HOURS,
+        body: content.to_owned(),
+        parse_error: None,
+    };
+    let Some((frontmatter, body)) = split_frontmatter(content) else {
+        topic.parse_error =
+            Some("frontmatter is missing or not closed; raw content preserved as body".to_owned());
+        return topic;
+    };
+    topic.body = body
+        .strip_prefix("\r\n")
+        .or_else(|| body.strip_prefix('\n'))
+        .unwrap_or(body)
+        .to_owned();
+    let mut active_list: Option<&'static str> = None;
+    for raw in frontmatter.lines() {
+        let line = raw.trim_end_matches('\r');
+        if line.starts_with(' ') || line.starts_with('\t') {
+            if let Some(value) = line.trim().strip_prefix("- ")
+                && let Some(value) = workspace_features::bounded_scalar(value, 80)
+            {
+                match active_list {
+                    Some("editions") => topic.editions.push(value),
+                    Some("entities") => topic.entities.push(value),
+                    Some("symbols") => topic.symbols.push(value),
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        let Some((raw_key, raw_value)) = line.split_once(':') else {
+            active_list = None;
+            continue;
+        };
+        let key = raw_key.trim();
+        let value = raw_value.trim();
+        active_list = match key {
+            "editions" | "entities" | "symbols" if value.is_empty() => {
+                if key == "editions" {
+                    topic.editions.clear();
+                }
+                Some(match key {
+                    "editions" => "editions",
+                    "entities" => "entities",
+                    _ => "symbols",
+                })
+            }
+            _ => None,
+        };
+        match key {
+            "name" => {
+                if let Some(name) = workspace_features::bounded_scalar(value, 120) {
+                    topic.name = name;
+                }
+            }
+            "section_order" => {
+                match workspace_features::bounded_scalar(value, 32)
+                    .and_then(|order| order.parse::<i64>().ok())
+                {
+                    Some(order) => topic.section_order = order,
+                    None => note_parse_error(
+                        &mut topic.parse_error,
+                        format!("section_order must be an integer, got {value:?}"),
+                    ),
+                }
+            }
+            "mode" => {
+                let mode = workspace_features::bounded_scalar(value, 32)
+                    .map(|mode| mode.to_lowercase())
+                    .unwrap_or_default();
+                if TOPIC_MODES.contains(&mode.as_str()) {
+                    topic.mode = mode;
+                } else {
+                    note_parse_error(
+                        &mut topic.parse_error,
+                        format!("mode must be one of: {}", TOPIC_MODES.join(", ")),
+                    );
+                }
+            }
+            "editions" if !value.is_empty() => {
+                let editions = workspace_features::inline_list(value);
+                if !editions.is_empty() {
+                    topic.editions = editions;
+                }
+            }
+            "entities" if !value.is_empty() => {
+                topic.entities = workspace_features::inline_list(value);
+            }
+            "symbols" if !value.is_empty() => {
+                topic.symbols = workspace_features::inline_list(value);
+            }
+            "schedule" => {
+                topic.schedule = workspace_features::bounded_scalar(value, 80)
+                    .filter(|schedule| schedule != "null" && schedule != "~");
+            }
+            "suppress_unchanged" => {
+                match workspace_features::bounded_scalar(value, 8).as_deref() {
+                    Some("true") => topic.suppress_unchanged = true,
+                    Some("false") => topic.suppress_unchanged = false,
+                    _ => note_parse_error(
+                        &mut topic.parse_error,
+                        format!("suppress_unchanged must be true or false, got {value:?}"),
+                    ),
+                }
+            }
+            "freshness_hours" => {
+                match workspace_features::bounded_scalar(value, 32)
+                    .and_then(|hours| hours.parse::<i64>().ok())
+                    .filter(|hours| *hours > 0)
+                {
+                    Some(hours) => topic.freshness_hours = hours,
+                    None => note_parse_error(
+                        &mut topic.parse_error,
+                        format!("freshness_hours must be a positive integer, got {value:?}"),
+                    ),
+                }
+            }
+            _ => {}
+        }
+    }
+    topic
+}
+
+/// Replace (or insert) one top-level scalar frontmatter key, preserving every
+/// other frontmatter line in order and the body byte-for-byte. A document
+/// without well-formed frontmatter gains a new block above its content.
+pub fn patch_topic_frontmatter(content: &str, key: &str, value: &str) -> String {
+    let Some((frontmatter, body)) = split_frontmatter(content) else {
+        return format!("---\n{key}: {value}\n---\n{content}");
+    };
+    let mut lines = Vec::new();
+    let mut replaced = false;
+    for raw in frontmatter.lines() {
+        let is_key_line = !raw.starts_with(' ')
+            && !raw.starts_with('\t')
+            && raw
+                .split_once(':')
+                .is_some_and(|(candidate, _)| candidate.trim() == key);
+        if is_key_line && !replaced {
+            lines.push(format!("{key}: {value}"));
+            replaced = true;
+        } else {
+            lines.push(raw.to_owned());
+        }
+    }
+    if !replaced {
+        lines.push(format!("{key}: {value}"));
+    }
+    let mut rebuilt = String::from("---\n");
+    for line in &lines {
+        rebuilt.push_str(line);
+        rebuilt.push('\n');
+    }
+    rebuilt.push_str("---\n");
+    rebuilt.push_str(body);
+    rebuilt
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct BriefingRequestFields {
+    pub status: Option<String>,
+    pub date: Option<String>,
+    pub item_id: Option<String>,
+    pub edition_ref: Option<String>,
+    pub topic: Option<String>,
+    pub note: String,
+}
+
+pub fn parse_request_document(content: &str) -> BriefingRequestFields {
+    let mut fields = BriefingRequestFields::default();
+    let Some((frontmatter, body)) = split_frontmatter(content) else {
+        return fields;
+    };
+    fields.note = body.trim().to_owned();
+    for raw in frontmatter.lines() {
+        let line = raw.trim_end_matches('\r');
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let Some((raw_key, raw_value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = workspace_features::bounded_scalar(raw_value, 256);
+        match raw_key.trim() {
+            "status" => fields.status = value.map(|status| status.to_lowercase()),
+            "date" => fields.date = value,
+            "item_id" => fields.item_id = value,
+            "edition_ref" => fields.edition_ref = value,
+            "topic" => fields.topic = value,
+            _ => {}
+        }
+    }
+    fields
+}
+
+pub fn request_entry_path(date: &str, item_id: &str) -> String {
+    format!("Briefings/Requests/{date} - {item_id}.md")
+}
+
+pub fn render_request_document(
+    date: &str,
+    edition_ref: &str,
+    item_id: &str,
+    topic_slug: Option<&str>,
+    note: Option<&str>,
+) -> String {
+    let mut document = String::from("---\nkind: briefing_request\nstatus: pending\n");
+    let _ = writeln!(document, "date: {date}");
+    let _ = writeln!(document, "edition_ref: {edition_ref}");
+    let _ = writeln!(document, "item_id: {item_id}");
+    if let Some(topic) = topic_slug {
+        let _ = writeln!(document, "topic: {topic}");
+    }
+    document.push_str("---\n\n");
+    document.push_str(
+        note.map(str::trim)
+            .filter(|note| !note.is_empty())
+            .unwrap_or("Go deeper on this item."),
+    );
+    document.push('\n');
+    document
+}
+
+pub fn feedback_log_path(now: DateTime<Utc>) -> String {
+    format!("Briefings/Feedback/{}.md", now.format("%Y-%m"))
+}
+
+pub fn feedback_log_line(
+    now: DateTime<Utc>,
+    edition_ref: &str,
+    item_id: &str,
+    action: &str,
+    verdict: Option<&str>,
+) -> String {
+    let mut line = format!(
+        "- {} {edition_ref} {item_id} {action}",
+        now.to_rfc3339_opts(SecondsFormat::Secs, true),
+    );
+    if let Some(verdict) = verdict {
+        line.push(' ');
+        line.push_str(verdict);
+    }
+    line
+}
+
+pub fn append_log_line(existing: Option<&str>, line: &str) -> String {
+    match existing {
+        None => format!("{line}\n"),
+        Some("") => format!("{line}\n"),
+        Some(content) if content.ends_with('\n') => format!("{content}{line}\n"),
+        Some(content) => format!("{content}\n{line}\n"),
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct BriefingItemActionRequest {
+    pub action: String,
+    pub edition_ref: Option<String>,
+    pub item_id: Option<String>,
+    pub topic_slug: Option<String>,
+    pub verdict: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ValidatedItemAction<'a> {
+    Log {
+        action: &'a str,
+        edition_ref: &'a str,
+        item_id: &'a str,
+        verdict: Option<&'a str>,
+    },
+    Expand {
+        edition_ref: &'a str,
+        item_id: &'a str,
+        topic_slug: Option<&'a str>,
+        note: Option<&'a str>,
+    },
+    MuteTopic {
+        topic_slug: &'a str,
+    },
+}
+
+fn parse_entry_ref(reference: &str) -> Option<Uuid> {
+    reference.strip_prefix("entry:")?.parse().ok()
+}
+
+fn optional_topic_slug(value: Option<&str>) -> ApiResult<Option<&str>> {
+    match value {
+        None => Ok(None),
+        Some(slug) if ITEM_ID.is_match(slug) => Ok(Some(slug)),
+        Some(_) => Err(ApiError::invalid(
+            "topic_slug must be a lowercase slug of 2 to 64 characters",
+        )),
+    }
+}
+
+pub fn validate_item_action(
+    request: &BriefingItemActionRequest,
+) -> ApiResult<ValidatedItemAction<'_>> {
+    let require_edition_ref = || {
+        request
+            .edition_ref
+            .as_deref()
+            .filter(|reference| parse_entry_ref(reference).is_some())
+            .ok_or_else(|| ApiError::invalid("edition_ref must be an entry:<uuid> reference"))
+    };
+    let require_item_id = || {
+        request
+            .item_id
+            .as_deref()
+            .filter(|item_id| ITEM_ID.is_match(item_id))
+            .ok_or_else(|| ApiError::invalid("item_id must be a lowercase slug of 2 to 64 characters"))
+    };
+    match request.action.as_str() {
+        action @ ("read" | "feedback") => {
+            let edition_ref = require_edition_ref()?;
+            let item_id = require_item_id()?;
+            let verdict = match (action, request.verdict.as_deref()) {
+                ("read", None) => None,
+                ("read", Some(_)) => {
+                    return Err(ApiError::invalid(
+                        "verdict is only valid for the feedback action",
+                    ));
+                }
+                (_, Some(verdict)) if FEEDBACK_VERDICTS.contains(&verdict) => Some(verdict),
+                _ => {
+                    return Err(ApiError::invalid(format!(
+                        "feedback requires a verdict, one of: {}",
+                        FEEDBACK_VERDICTS.join(", "),
+                    )));
+                }
+            };
+            Ok(ValidatedItemAction::Log {
+                action,
+                edition_ref,
+                item_id,
+                verdict,
+            })
+        }
+        "expand" => {
+            let edition_ref = require_edition_ref()?;
+            let item_id = require_item_id()?;
+            let topic_slug = optional_topic_slug(request.topic_slug.as_deref())?;
+            let note = request
+                .note
+                .as_deref()
+                .map(str::trim)
+                .filter(|note| !note.is_empty());
+            if let Some(note) = note {
+                require_char_limit("note", note, NOTE_LIMIT_CHARS)?;
+            }
+            Ok(ValidatedItemAction::Expand {
+                edition_ref,
+                item_id,
+                topic_slug,
+                note,
+            })
+        }
+        "mute_topic" => {
+            let topic_slug = optional_topic_slug(request.topic_slug.as_deref())?
+                .ok_or_else(|| ApiError::invalid("mute_topic requires a topic_slug"))?;
+            Ok(ValidatedItemAction::MuteTopic { topic_slug })
+        }
+        _ => Err(ApiError::invalid(
+            "action must be one of: read, feedback, expand, mute_topic",
+        )),
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct BriefingListQuery {
+    pub limit: Option<usize>,
+    pub after_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct BriefingEditionQuery {
+    pub version: Option<i64>,
+}
+
+pub async fn list_editions_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    limit: i64,
+    after_path: Option<&str>,
+) -> ApiResult<(Vec<Value>, bool)> {
+    let cursor = match after_path {
+        None => None,
+        Some(path) => {
+            let date = sqlx::query_scalar::<_, Option<String>>(
+                r#"
+                SELECT version.metadata->'briefing'->>'date'
+                FROM straylight.entries AS entry
+                JOIN straylight.entry_versions AS version
+                  ON version.user_id=entry.user_id
+                 AND version.entry_id=entry.id
+                 AND version.version=entry.current_version
+                WHERE entry.user_id=$1
+                  AND entry.path=$2
+                  AND entry.deleted_at IS NULL
+                  AND version.metadata->>'kind'='briefing_edition'
+                "#,
+            )
+            .bind(user_id)
+            .bind(path)
+            .fetch_optional(&mut **tx)
+            .await?
+            .flatten();
+            match date {
+                Some(date) => Some((date, path.to_owned())),
+                None => {
+                    return Err(ApiError::invalid(
+                        "after_path must name an existing briefing edition",
+                    ));
+                }
+            }
+        }
+    };
+    let rows = sqlx::query(
+        r#"
+        SELECT entry.id,entry.path,entry.current_version,
+               version.metadata->'briefing' AS briefing,
+               version.created_at
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND entry.deleted_at IS NULL
+          AND entry.path LIKE 'Briefings/%'
+          AND version.metadata->>'kind'='briefing_edition'
+          AND version.metadata->'briefing'->>'date' IS NOT NULL
+          AND ($2::text IS NULL
+               OR (version.metadata->'briefing'->>'date',entry.path) < ($2,$3))
+        ORDER BY version.metadata->'briefing'->>'date' DESC,entry.path DESC
+        LIMIT $4
+        "#,
+    )
+    .bind(user_id)
+    .bind(cursor.as_ref().map(|(date, _)| date.clone()))
+    .bind(cursor.as_ref().map(|(_, path)| path.clone()))
+    .bind(limit + 1)
+    .fetch_all(&mut **tx)
+    .await?;
+    let truncated = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);
+    let editions = rows
+        .into_iter()
+        .take(usize::try_from(limit).unwrap_or(usize::MAX))
+        .map(|row| {
+            let entry_id: Uuid = row.get("id");
+            let briefing = row
+                .get::<Option<Value>, _>("briefing")
+                .unwrap_or_else(|| json!({}));
+            let sections = briefing.get("sections").and_then(Value::as_array);
+            let section_titles: Vec<Value> = sections
+                .into_iter()
+                .flatten()
+                .filter_map(|section| section.get("title").cloned())
+                .collect();
+            let item_count: usize = sections
+                .into_iter()
+                .flatten()
+                .map(|section| {
+                    section
+                        .get("items")
+                        .and_then(Value::as_array)
+                        .map_or(0, Vec::len)
+                })
+                .sum();
+            json!({
+                "date": briefing.get("date").cloned().unwrap_or(Value::Null),
+                "edition": briefing.get("edition").cloned().unwrap_or(Value::Null),
+                "path": row.get::<String, _>("path"),
+                "entry_ref": format!("entry:{entry_id}"),
+                "version": row.get::<i64, _>("current_version"),
+                "generated_at": briefing.get("generated_at").cloned().unwrap_or(Value::Null),
+                "summary_md": briefing.get("summary_md").cloned().unwrap_or_else(|| json!([])),
+                "section_titles": section_titles,
+                "item_count": item_count,
+            })
+        })
+        .collect();
+    Ok((editions, truncated))
+}
+
+pub async fn list_editions(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Query(query): Query<BriefingListQuery>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::Read)?;
+    let limit = query
+        .limit
+        .unwrap_or(BRIEFING_LIST_DEFAULT_LIMIT)
+        .clamp(1, BRIEFING_LIST_MAX_LIMIT) as i64;
+    let mut tx = state.begin_read(&auth).await?;
+    let (editions, truncated) =
+        list_editions_in_tx(&mut tx, auth.user_id.0, limit, query.after_path.as_deref()).await?;
+    let generation = simple_core::max_generation_in_tx(&mut tx, auth.user_id.0).await?;
+    tx.commit().await?;
+    let next = truncated
+        .then(|| {
+            editions
+                .last()
+                .and_then(|edition| edition.get("path").cloned())
+        })
+        .flatten()
+        .map(|path| json!({"after_path": path}));
+    let mut envelope = WorkspaceEnvelope::complete(json!({
+        "editions": editions,
+        "limit": limit,
+        "truncated": truncated,
+        "next": next,
+        "workspace_generation": generation,
+    }));
+    envelope.corpus_revision = Some(format!("generation:{generation}"));
+    Ok(Json(envelope))
+}
+
+pub async fn get_edition_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    date: &str,
+    edition: &str,
+    version: Option<i64>,
+) -> ApiResult<Value> {
+    let path = edition_entry_path(date, edition);
+    let row = sqlx::query(
+        r#"
+        SELECT entry.id,entry.path,entry.current_version,
+               version.version,version.content,version.metadata,version.created_at
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=coalesce($3,entry.current_version)
+        WHERE entry.user_id=$1
+          AND lower(normalize(entry.path, NFC))=$2
+          AND entry.deleted_at IS NULL
+          AND version.metadata->>'kind'='briefing_edition'
+        "#,
+    )
+    .bind(user_id)
+    .bind(simple_core::portable_path_key(&path))
+    .bind(version)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(row) = row else {
+        return Err(ApiError::not_found("briefing_not_found", &path));
+    };
+    let entry_id: Uuid = row.get("id");
+    let versions = sqlx::query(
+        r#"
+        SELECT version,created_at
+        FROM straylight.entry_versions
+        WHERE user_id=$1 AND entry_id=$2
+        ORDER BY version
+        "#,
+    )
+    .bind(user_id)
+    .bind(entry_id)
+    .fetch_all(&mut **tx)
+    .await?
+    .into_iter()
+    .map(|version_row| {
+        json!({
+            "version": version_row.get::<i64, _>("version"),
+            "created_at": version_row.get::<DateTime<Utc>, _>("created_at"),
+        })
+    })
+    .collect::<Vec<_>>();
+    Ok(json!({
+        "path": row.get::<String, _>("path"),
+        "entry_ref": format!("entry:{entry_id}"),
+        "version": row.get::<i64, _>("version"),
+        "current_version": row.get::<i64, _>("current_version"),
+        "date": date,
+        "edition": edition,
+        "briefing": row
+            .get::<Value, _>("metadata")
+            .get("briefing")
+            .cloned()
+            .unwrap_or(Value::Null),
+        "markdown": row.get::<String, _>("content"),
+        "created_at": row.get::<DateTime<Utc>, _>("created_at"),
+        "versions": versions,
+    }))
+}
+
+pub async fn get_edition(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((date, edition)): Path<(String, String)>,
+    Query(query): Query<BriefingEditionQuery>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::Read)?;
+    parse_calendar_date(&date)
+        .ok_or_else(|| ApiError::invalid("date must be a YYYY-MM-DD calendar date"))?;
+    if !EDITION_SLUG.is_match(&edition) {
+        return Err(ApiError::invalid(
+            "edition must be a lowercase slug of 2 to 32 characters",
+        ));
+    }
+    if query.version.is_some_and(|version| version < 1) {
+        return Err(ApiError::invalid("version must be a positive integer"));
+    }
+    let mut tx = state.begin_read(&auth).await?;
+    let mut data = get_edition_in_tx(&mut tx, auth.user_id.0, &date, &edition, query.version).await?;
+    let generation = simple_core::max_generation_in_tx(&mut tx, auth.user_id.0).await?;
+    tx.commit().await?;
+    data["workspace_generation"] = json!(generation);
+    let mut envelope = WorkspaceEnvelope::complete(data);
+    envelope.corpus_revision = Some(format!("generation:{generation}"));
+    Ok(Json(envelope))
+}
+
+fn topic_slug_from_path(path: &str) -> Option<String> {
+    let name = path
+        .strip_prefix("Briefings/Topics/")?
+        .strip_suffix(".md")?;
+    (!name.is_empty() && !name.contains('/')).then(|| name.to_owned())
+}
+
+fn request_date_from_path(path: &str) -> Option<String> {
+    let date = path.strip_prefix("Briefings/Requests/")?.get(..10)?;
+    parse_calendar_date(date).map(|_| date.to_owned())
+}
+
+pub async fn topics_snapshot_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    now: DateTime<Utc>,
+) -> ApiResult<Value> {
+    let rows = sqlx::query(
+        r#"
+        SELECT entry.id,entry.path,entry.current_version,version.content
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND entry.deleted_at IS NULL
+          AND entry.path LIKE 'Briefings/Topics/%'
+        ORDER BY entry.path
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut loaded = Vec::new();
+    for row in rows {
+        let path: String = row.get("path");
+        let Some(slug) = topic_slug_from_path(&path) else {
+            continue;
+        };
+        let topic = parse_topic_document(&slug, &row.get::<String, _>("content"));
+        loaded.push((
+            topic,
+            path,
+            row.get::<Uuid, _>("id"),
+            row.get::<i64, _>("current_version"),
+        ));
+    }
+    loaded.sort_by(|left, right| {
+        left.0
+            .section_order
+            .cmp(&right.0.section_order)
+            .then_with(|| left.0.slug.cmp(&right.0.slug))
+    });
+    let mut topics = Vec::new();
+    for (topic, path, entry_id, version) in loaded {
+        let mut value = serde_json::to_value(&topic)?;
+        value["path"] = json!(path);
+        value["entry_ref"] = json!(format!("entry:{entry_id}"));
+        value["version"] = json!(version);
+        topics.push(value);
+    }
+    let rows = sqlx::query(
+        r#"
+        SELECT entry.id,entry.path,version.content
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND entry.deleted_at IS NULL
+          AND entry.path LIKE 'Briefings/Requests/%'
+        ORDER BY entry.path
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut pending_requests = Vec::new();
+    for row in rows {
+        let path: String = row.get("path");
+        let fields = parse_request_document(&row.get::<String, _>("content"));
+        if fields.status.as_deref() != Some("pending") {
+            continue;
+        }
+        let entry_id: Uuid = row.get("id");
+        let date = fields.date.clone().or_else(|| request_date_from_path(&path));
+        pending_requests.push(json!({
+            "path": path,
+            "entry_ref": format!("entry:{entry_id}"),
+            "date": date,
+            "item_id": fields.item_id,
+            "edition_ref": fields.edition_ref,
+            "topic": fields.topic,
+            "note": fields.note,
+        }));
+    }
+    let feedback_path = feedback_log_path(now);
+    let feedback = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT version.content
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND entry.deleted_at IS NULL
+          AND lower(normalize(entry.path, NFC))=$2
+        "#,
+    )
+    .bind(user_id)
+    .bind(simple_core::portable_path_key(&feedback_path))
+    .fetch_optional(&mut **tx)
+    .await?;
+    let feedback_tail: Vec<String> = feedback
+        .map(|content| {
+            let lines: Vec<&str> = content.lines().collect();
+            lines[lines.len().saturating_sub(FEEDBACK_TAIL_LINES)..]
+                .iter()
+                .map(|line| (*line).to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(json!({
+        "topics": topics,
+        "pending_requests": pending_requests,
+        "feedback_path": feedback_path,
+        "feedback_tail": feedback_tail,
+    }))
+}
+
+pub async fn topics_snapshot(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::Read)?;
+    let mut tx = state.begin_read(&auth).await?;
+    let mut data = topics_snapshot_in_tx(&mut tx, auth.user_id.0, Utc::now()).await?;
+    let generation = simple_core::max_generation_in_tx(&mut tx, auth.user_id.0).await?;
+    tx.commit().await?;
+    data["workspace_generation"] = json!(generation);
+    let mut envelope = WorkspaceEnvelope::complete(data);
+    envelope.corpus_revision = Some(format!("generation:{generation}"));
+    Ok(Json(envelope))
+}
+
+struct LockedDocument {
+    content: String,
+    metadata: Value,
+}
+
+async fn fetch_locked_document(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    path: &str,
+) -> ApiResult<Option<LockedDocument>> {
+    let row = sqlx::query(
+        r#"
+        SELECT entry.deleted_at,version.content,version.metadata
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND lower(normalize(entry.path, NFC))=$2
+        FOR UPDATE OF entry
+        "#,
+    )
+    .bind(user_id)
+    .bind(simple_core::portable_path_key(path))
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(row
+        .filter(|row| row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_none())
+        .map(|row| LockedDocument {
+            content: row.get("content"),
+            metadata: row.get("metadata"),
+        }))
+}
+
+fn entry_lock_key(user_id: Uuid, path: &str) -> String {
+    format!("simple-entry:{user_id}:{}", simple_core::portable_path_key(path))
+}
+
+async fn write_briefing_document(
+    state: &AppState,
+    auth: &AuthContext,
+    mut tx: Transaction<'_, Postgres>,
+    path: String,
+    content: String,
+    metadata: Value,
+    mut data: Value,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    let prepared = simple_core::prepare_markdown(
+        state,
+        WriteRequest {
+            path: path.clone(),
+            content,
+            media_type: "text/markdown".to_owned(),
+            expected_version: None,
+            idempotency_key: None,
+            metadata,
+        },
+    )
+    .await?;
+    let content_sha256 = prepared.content_sha256.clone();
+    let result = simple_core::upsert_markdown_in_tx(
+        &mut tx,
+        auth.user_id.0,
+        Some(auth.credential_id.0),
+        prepared,
+    )
+    .await?;
+    let generation = match result.generation {
+        Some(value) => value,
+        None => simple_core::max_generation_in_tx(&mut tx, auth.user_id.0).await?,
+    };
+    tx.commit().await?;
+    state.workspace_features.invalidate(auth.user_id.0).await;
+    data["path"] = json!(path);
+    data["entry_ref"] = json!(format!("entry:{}", result.entry_id));
+    data["version_ref"] = json!(result.version_id.map(|id| format!("entry-version:{id}")));
+    data["version"] = json!(result.version);
+    data["content_hash"] = json!(format!("sha256:{content_sha256}"));
+    let mut envelope = WorkspaceEnvelope::complete(data);
+    envelope.status = if result.no_op {
+        ResponseStatus::NoOp
+    } else {
+        ResponseStatus::Committed
+    };
+    envelope.corpus_revision = Some(format!("generation:{generation}"));
+    Ok(Json(envelope))
+}
+
+pub async fn item_action(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(request): Json<BriefingItemActionRequest>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::Save)?;
+    match validate_item_action(&request)? {
+        ValidatedItemAction::Log {
+            action,
+            edition_ref,
+            item_id,
+            verdict,
+        } => {
+            let now = Utc::now();
+            let path = feedback_log_path(now);
+            let line = feedback_log_line(now, edition_ref, item_id, action, verdict);
+            let mut tx = state.begin_write(&auth).await?;
+            simple_core::require_local_publish_lock(
+                &mut tx,
+                entry_lock_key(auth.user_id.0, &path),
+                state.config.read_path_roundtrip_v1,
+            )
+            .await?;
+            let existing = fetch_locked_document(&mut tx, auth.user_id.0, &path).await?;
+            let content =
+                append_log_line(existing.as_ref().map(|document| document.content.as_str()), &line);
+            write_briefing_document(
+                &state,
+                &auth,
+                tx,
+                path,
+                content,
+                json!({"kind": "briefing_feedback_log"}),
+                json!({"action": action, "line": line}),
+            )
+            .await
+        }
+        ValidatedItemAction::Expand {
+            edition_ref,
+            item_id,
+            topic_slug,
+            note,
+        } => {
+            let edition_entry_id = parse_entry_ref(edition_ref).expect("validated edition_ref");
+            let mut tx = state.begin_write(&auth).await?;
+            let date = sqlx::query_scalar::<_, Option<String>>(
+                r#"
+                SELECT version.metadata->'briefing'->>'date'
+                FROM straylight.entries AS entry
+                JOIN straylight.entry_versions AS version
+                  ON version.user_id=entry.user_id
+                 AND version.entry_id=entry.id
+                 AND version.version=entry.current_version
+                WHERE entry.user_id=$1
+                  AND entry.id=$2
+                  AND entry.deleted_at IS NULL
+                  AND version.metadata->>'kind'='briefing_edition'
+                "#,
+            )
+            .bind(auth.user_id.0)
+            .bind(edition_entry_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .flatten()
+            .filter(|date| parse_calendar_date(date).is_some())
+            .ok_or_else(|| {
+                ApiError::invalid("edition_ref does not resolve to a briefing edition with a date")
+            })?;
+            let path = request_entry_path(&date, item_id);
+            simple_core::require_local_publish_lock(
+                &mut tx,
+                entry_lock_key(auth.user_id.0, &path),
+                state.config.read_path_roundtrip_v1,
+            )
+            .await?;
+            let existing = fetch_locked_document(&mut tx, auth.user_id.0, &path).await?;
+            if let Some(document) = &existing
+                && parse_request_document(&document.content).status.as_deref() == Some("pending")
+            {
+                return Err(ApiError::conflict(
+                    "request_exists",
+                    "a pending expansion request already exists for this item",
+                    json!({"path": path}),
+                ));
+            }
+            let content = render_request_document(&date, edition_ref, item_id, topic_slug, note);
+            write_briefing_document(
+                &state,
+                &auth,
+                tx,
+                path,
+                content,
+                json!({"kind": "briefing_request"}),
+                json!({
+                    "action": "expand",
+                    "date": date,
+                    "item_id": item_id,
+                    "status": "pending",
+                }),
+            )
+            .await
+        }
+        ValidatedItemAction::MuteTopic { topic_slug } => {
+            let path = format!("Briefings/Topics/{topic_slug}.md");
+            let mut tx = state.begin_write(&auth).await?;
+            simple_core::require_local_publish_lock(
+                &mut tx,
+                entry_lock_key(auth.user_id.0, &path),
+                state.config.read_path_roundtrip_v1,
+            )
+            .await?;
+            let Some(document) = fetch_locked_document(&mut tx, auth.user_id.0, &path).await?
+            else {
+                return Err(ApiError::not_found("briefing_topic_not_found", &path));
+            };
+            let content = patch_topic_frontmatter(&document.content, "mode", "muted");
+            write_briefing_document(
+                &state,
+                &auth,
+                tx,
+                path,
+                content,
+                document.metadata,
+                json!({"action": "mute_topic", "slug": topic_slug, "mode": "muted"}),
+            )
+            .await
+        }
+    }
 }
 
 async fn insert_story_urls(
@@ -1454,5 +2523,299 @@ mod tests {
         let mut request = fixture_request();
         request.omitted[0].story_key = Some("-bad".to_owned());
         assert!(validate_publish_request(&request).is_err());
+    }
+
+    const TOPIC_DOCUMENT: &str = "---\n\
+        kind: briefing_topic\n\
+        name: Stock watchlist\n\
+        section_order: 70\n\
+        mode: on_material_delta\n\
+        editions: [morning, health-update]\n\
+        schedule: 10:00 America/Los_Angeles\n\
+        entities:\n  - Alphabet\n  - Microsoft\n\
+        symbols: [GOOGL, MSFT]\n\
+        suppress_unchanged: false\n\
+        freshness_hours: 24\n\
+        ---\n\
+        \n\
+        Absolute dollar changes, not percentages.\n";
+
+    #[test]
+    fn topic_parse_reads_every_configured_field() {
+        let topic = parse_topic_document("stocks", TOPIC_DOCUMENT);
+        assert_eq!(topic.slug, "stocks");
+        assert_eq!(topic.name, "Stock watchlist");
+        assert_eq!(topic.section_order, 70);
+        assert_eq!(topic.mode, "on_material_delta");
+        assert_eq!(topic.editions, ["morning", "health-update"]);
+        assert_eq!(topic.schedule.as_deref(), Some("10:00 America/Los_Angeles"));
+        assert_eq!(topic.entities, ["Alphabet", "Microsoft"]);
+        assert_eq!(topic.symbols, ["GOOGL", "MSFT"]);
+        assert!(!topic.suppress_unchanged);
+        assert_eq!(topic.freshness_hours, 24);
+        assert_eq!(topic.body, "Absolute dollar changes, not percentages.\n");
+        assert!(topic.parse_error.is_none());
+    }
+
+    #[test]
+    fn topic_parse_applies_defaults_for_missing_fields() {
+        let topic = parse_topic_document("ai", "---\nkind: briefing_topic\n---\nWatch labs.\n");
+        assert_eq!(topic.name, "ai", "name defaults to the slug");
+        assert_eq!(topic.section_order, DEFAULT_TOPIC_SECTION_ORDER);
+        assert_eq!(topic.mode, "every_briefing");
+        assert_eq!(topic.editions, ["morning"]);
+        assert!(topic.schedule.is_none());
+        assert!(topic.entities.is_empty());
+        assert!(topic.symbols.is_empty());
+        assert!(topic.suppress_unchanged);
+        assert_eq!(topic.freshness_hours, DEFAULT_TOPIC_FRESHNESS_HOURS);
+        assert_eq!(topic.body, "Watch labs.\n");
+        assert!(topic.parse_error.is_none());
+    }
+
+    #[test]
+    fn topic_parse_preserves_raw_body_on_malformed_frontmatter() {
+        for content in [
+            "---\nkind: briefing_topic\nno closing fence\n",
+            "no frontmatter at all\n",
+            "",
+        ] {
+            let topic = parse_topic_document("stocks", content);
+            assert!(topic.parse_error.is_some(), "content {content:?} must error");
+            assert_eq!(topic.body, content, "raw body preserved for {content:?}");
+            assert_eq!(topic.mode, "every_briefing");
+            assert_eq!(topic.section_order, DEFAULT_TOPIC_SECTION_ORDER);
+        }
+    }
+
+    #[test]
+    fn topic_parse_flags_unknown_mode_and_bad_numbers_but_keeps_parsing() {
+        let topic = parse_topic_document(
+            "stocks",
+            "---\nmode: sometimes\nsection_order: 70\n---\nBody.\n",
+        );
+        assert_eq!(topic.mode, "every_briefing", "unknown mode keeps the default");
+        assert!(
+            topic
+                .parse_error
+                .as_deref()
+                .is_some_and(|error| error.contains("mode must be one of")),
+        );
+        assert_eq!(topic.section_order, 70, "later fields still parse");
+
+        let topic = parse_topic_document("stocks", "---\nsection_order: soon\n---\nBody.\n");
+        assert!(
+            topic
+                .parse_error
+                .as_deref()
+                .is_some_and(|error| error.contains("section_order")),
+        );
+        assert_eq!(topic.section_order, DEFAULT_TOPIC_SECTION_ORDER);
+    }
+
+    #[test]
+    fn patch_preserves_body_bytes_and_key_order_when_replacing_mode() {
+        let patched = patch_topic_frontmatter(TOPIC_DOCUMENT, "mode", "muted");
+        let expected = TOPIC_DOCUMENT.replace("mode: on_material_delta", "mode: muted");
+        assert_eq!(patched, expected);
+        let (_, original_body) = split_frontmatter(TOPIC_DOCUMENT).expect("fixture splits");
+        let (_, patched_body) = split_frontmatter(&patched).expect("patched splits");
+        assert_eq!(patched_body.as_bytes(), original_body.as_bytes());
+    }
+
+    #[test]
+    fn patch_inserts_a_missing_key_before_the_closing_fence() {
+        let patched = patch_topic_frontmatter(
+            "---\nkind: briefing_topic\n---\nBody stays.\n",
+            "mode",
+            "muted",
+        );
+        assert_eq!(
+            patched,
+            "---\nkind: briefing_topic\nmode: muted\n---\nBody stays.\n",
+        );
+    }
+
+    #[test]
+    fn patch_wraps_documents_without_frontmatter() {
+        let patched = patch_topic_frontmatter("Just prose.\n", "mode", "muted");
+        assert_eq!(patched, "---\nmode: muted\n---\nJust prose.\n");
+    }
+
+    #[test]
+    fn split_frontmatter_requires_a_closed_leading_fence() {
+        assert!(split_frontmatter("no fence").is_none());
+        assert!(split_frontmatter("---\nunclosed: true\n").is_none());
+        let (frontmatter, body) =
+            split_frontmatter("---\nkind: x\n---\nBody.").expect("closed fence splits");
+        assert_eq!(frontmatter, "kind: x\n");
+        assert_eq!(body, "Body.");
+    }
+
+    fn action_request(value: Value) -> BriefingItemActionRequest {
+        serde_json::from_value(value).expect("action request deserializes")
+    }
+
+    const EDITION_REF: &str = "entry:018f4c1e-0000-7000-8000-000000000001";
+
+    #[test]
+    fn item_action_validation_rejects_unknown_actions_and_missing_fields() {
+        assert!(
+            validate_item_action(&action_request(json!({"action": "promote"}))).is_err(),
+            "unknown actions are rejected",
+        );
+        assert!(
+            validate_item_action(&action_request(json!({"action": "read"}))).is_err(),
+            "read requires edition_ref and item_id",
+        );
+        assert!(
+            validate_item_action(&action_request(
+                json!({"action": "expand", "edition_ref": EDITION_REF})
+            ))
+            .is_err(),
+            "expand requires item_id",
+        );
+        assert!(
+            validate_item_action(&action_request(
+                json!({"action": "expand", "item_id": "alpha-item"})
+            ))
+            .is_err(),
+            "expand requires edition_ref",
+        );
+        assert!(
+            validate_item_action(&action_request(
+                json!({"action": "expand", "edition_ref": "not-a-ref", "item_id": "alpha-item"})
+            ))
+            .is_err(),
+            "edition_ref must be an entry:<uuid> reference",
+        );
+        assert!(
+            validate_item_action(&action_request(json!({"action": "mute_topic"}))).is_err(),
+            "mute_topic requires topic_slug",
+        );
+        assert!(
+            validate_item_action(&action_request(
+                json!({"action": "mute_topic", "topic_slug": "Bad Slug"})
+            ))
+            .is_err(),
+        );
+    }
+
+    #[test]
+    fn item_action_validation_enforces_the_verdict_vocabulary() {
+        let useful = action_request(json!({
+            "action": "feedback",
+            "edition_ref": EDITION_REF,
+            "item_id": "alpha-item",
+            "verdict": "useful",
+        }));
+        assert!(matches!(
+            validate_item_action(&useful),
+            Ok(ValidatedItemAction::Log { verdict: Some("useful"), .. }),
+        ));
+        let unknown_verdict = action_request(json!({
+            "action": "feedback",
+            "edition_ref": EDITION_REF,
+            "item_id": "alpha-item",
+            "verdict": "meh",
+        }));
+        assert!(
+            validate_item_action(&unknown_verdict).is_err(),
+            "unknown verdicts are rejected",
+        );
+        assert!(
+            validate_item_action(&action_request(json!({
+                "action": "feedback",
+                "edition_ref": EDITION_REF,
+                "item_id": "alpha-item",
+            })))
+            .is_err(),
+            "feedback requires a verdict",
+        );
+        assert!(
+            validate_item_action(&action_request(json!({
+                "action": "read",
+                "edition_ref": EDITION_REF,
+                "item_id": "alpha-item",
+                "verdict": "useful",
+            })))
+            .is_err(),
+            "read rejects a verdict",
+        );
+        assert!(matches!(
+            validate_item_action(&action_request(json!({
+                "action": "read",
+                "edition_ref": EDITION_REF,
+                "item_id": "alpha-item",
+            }))),
+            Ok(ValidatedItemAction::Log { action: "read", verdict: None, .. }),
+        ));
+    }
+
+    #[test]
+    fn feedback_lines_append_deterministically() {
+        let now = DateTime::parse_from_rfc3339("2026-08-01T17:03:09Z")
+            .expect("test timestamp")
+            .with_timezone(&Utc);
+        let line = feedback_log_line(now, EDITION_REF, "alpha-item", "feedback", Some("useful"));
+        assert_eq!(
+            line,
+            format!("- 2026-08-01T17:03:09Z {EDITION_REF} alpha-item feedback useful"),
+        );
+        let read_line = feedback_log_line(now, EDITION_REF, "alpha-item", "read", None);
+        assert_eq!(
+            read_line,
+            format!("- 2026-08-01T17:03:09Z {EDITION_REF} alpha-item read"),
+        );
+        assert_eq!(feedback_log_path(now), "Briefings/Feedback/2026-08.md");
+
+        assert_eq!(append_log_line(None, &read_line), format!("{read_line}\n"));
+        assert_eq!(
+            append_log_line(Some("- earlier\n"), &read_line),
+            format!("- earlier\n{read_line}\n"),
+        );
+        assert_eq!(
+            append_log_line(Some("- earlier"), &read_line),
+            format!("- earlier\n{read_line}\n"),
+            "a missing trailing newline is repaired before appending",
+        );
+    }
+
+    #[test]
+    fn request_documents_render_and_parse_round_trip() {
+        assert_eq!(
+            request_entry_path("2026-08-01", "openai-hf-incident"),
+            "Briefings/Requests/2026-08-01 - openai-hf-incident.md",
+        );
+        let document = render_request_document(
+            "2026-08-01",
+            EDITION_REF,
+            "openai-hf-incident",
+            Some("ai"),
+            Some("Compare with the Anthropic incident."),
+        );
+        assert_eq!(
+            document,
+            format!(
+                "---\nkind: briefing_request\nstatus: pending\ndate: 2026-08-01\n\
+                 edition_ref: {EDITION_REF}\nitem_id: openai-hf-incident\ntopic: ai\n---\n\n\
+                 Compare with the Anthropic incident.\n",
+            ),
+        );
+        let fields = parse_request_document(&document);
+        assert_eq!(fields.status.as_deref(), Some("pending"));
+        assert_eq!(fields.date.as_deref(), Some("2026-08-01"));
+        assert_eq!(fields.item_id.as_deref(), Some("openai-hf-incident"));
+        assert_eq!(fields.edition_ref.as_deref(), Some(EDITION_REF));
+        assert_eq!(fields.topic.as_deref(), Some("ai"));
+        assert_eq!(fields.note, "Compare with the Anthropic incident.");
+
+        let minimal =
+            render_request_document("2026-08-01", EDITION_REF, "openai-hf-incident", None, None);
+        assert!(minimal.ends_with("---\n\nGo deeper on this item.\n"));
+        assert!(!minimal.contains("topic:"));
+        let fields = parse_request_document(&minimal);
+        assert!(fields.topic.is_none());
+        assert_eq!(fields.note, "Go deeper on this item.");
     }
 }

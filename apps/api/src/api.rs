@@ -46,6 +46,19 @@ pub fn router(state: AppState) -> Router {
             "/workspace/briefings/dedupe-check",
             post(briefing_service::dedupe_check),
         )
+        .route("/workspace/briefings", get(briefing_service::list_editions))
+        .route(
+            "/workspace/briefings/topics",
+            get(briefing_service::topics_snapshot),
+        )
+        .route(
+            "/workspace/briefings/items/action",
+            post(briefing_service::item_action),
+        )
+        .route(
+            "/workspace/briefings/{date}/{edition}",
+            get(briefing_service::get_edition),
+        )
         .route("/workspace/changes", get(simple_core::changes))
         .route("/workspace/checkpoint", post(simple_core::checkpoint))
         .route("/workspace/binaries", get(simple_core::list_binaries))
