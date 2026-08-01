@@ -1,6 +1,7 @@
 # Hosted ChatGPT and Claude access
 
-Status: owner production connector design, 2026-07-31
+Status: production gateway live; ChatGPT Work qualified; Claude account install
+pending its required interactive approval, 2026-07-31
 
 Straylight exposes one authenticated Streamable HTTP MCP resource at:
 
@@ -71,6 +72,18 @@ Deploy `mcp` before `web`, then verify health, discovery, an unauthenticated
 OAuth challenge, a full authorization-code exchange, all ten tools, and a
 read/write canary using a dedicated client credential.
 
+The checked-in canary consumes a credential only from its environment and does
+not print or persist it:
+
+```bash
+cd apps/mcp
+STRAYLIGHT_REMOTE_TOKEN="$(security find-generic-password -s straylight.rourkem.com -a CLIENT_ACCOUNT -w)" \
+STRAYLIGHT_REMOTE_LABEL="client label" \
+STRAYLIGHT_REMOTE_CANARY_PATH="operations/canaries/client.md" \
+STRAYLIGHT_REMOTE_MARKER="UNIQUE_MARKER" \
+node scripts/remote-canary.mjs
+```
+
 ## Product setup
 
 For ChatGPT Work, enable Developer mode and add the MCP URL as a personal
@@ -85,6 +98,22 @@ OAuth with the dedicated Claude credential. Claude remote connectors sync to
 the same account's web, desktop, iOS, and Android surfaces. Set the connector's
 tool access to always available when the client offers that setting.
 
+Anthropic's supported prefilled installer is:
+
+```text
+https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Straylight&connectorUrl=https%3A%2F%2Fstraylight.rourkem.com%2Fmcp
+```
+
+It may be opened on any device with the intended Claude account. Anthropic
+requires an interactive account sign-in, connector review, and OAuth approval;
+Claude Code's local `mcp add` command does not install an account connector and
+does not provision Claude mobile.
+
+The production qualification record, including credential identifiers,
+canaries, product-side results, and the remaining Claude client-state blocker,
+is in
+[`results/2026-07-31-chatgpt-claude-remote-cutover.md`](../results/2026-07-31-chatgpt-claude-remote-cutover.md).
+
 Current product references:
 
 - [OpenAI plugin availability](https://learn.chatgpt.com/docs/plugins)
@@ -92,3 +121,4 @@ Current product references:
 - [OpenAI MCP authentication](https://developers.openai.com/plugins/build/auth)
 - [Claude custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
 - [Claude connector authentication](https://claude.com/docs/connectors/building/authentication)
+- [Claude custom-connector install links](https://claude.com/docs/connectors/building/directory-vs-custom)

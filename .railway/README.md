@@ -81,6 +81,11 @@ the database. No owner path, content, manifest row, or credential belongs in
 committed results. See
 [`results/2026-07-31-railway-simplified-cutover.md`](../results/2026-07-31-railway-simplified-cutover.md).
 
+The OAuth remote MCP gateway is also live. ChatGPT Work is connected and passed
+an account-side exact-read; the Claude server path passed, while Claude's
+account-side install still requires an authenticated Claude client. See
+[`results/2026-07-31-chatgpt-claude-remote-cutover.md`](../results/2026-07-31-chatgpt-claude-remote-cutover.md).
+
 `straylight.rourkem.com` is the selected owner-alpha hostname. The API remains
 reachable only through the web proxy, and `/api/v1/admin/*` is not exposed by
 that proxy. The remote MCP service also remains private; the web edge exposes
