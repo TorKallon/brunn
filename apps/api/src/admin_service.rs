@@ -28,6 +28,7 @@ const OWNER_CAPABILITIES: &[&str] = &[
     "delete",
     "dream",
     "credential:manage",
+    "admin",
 ];
 
 #[derive(Debug, Deserialize)]

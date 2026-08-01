@@ -712,7 +712,7 @@ export interface DreamDetail extends DreamSummary {
 export interface CredentialSummary {
   id: string;
   name: string;
-  access: "read_only" | "read_write";
+  access: "read_only" | "read_write" | "owner";
   scope_ids: string[];
   created_at?: string;
   last_used_at?: string | null;

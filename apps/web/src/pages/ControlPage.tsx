@@ -59,7 +59,7 @@ export function ControlPage() {
   const [credentialName, setCredentialName] = useState("");
   const [credentialAccess, setCredentialAccess] = useState<
     "read_only" | "read_write"
-  >("read_only");
+  >("read_write");
   const [copied, setCopied] = useState(false);
 
   const manifestQuery = useQuery({
@@ -107,6 +107,7 @@ export function ControlPage() {
       }),
     onSuccess: () => {
       setCredentialName("");
+      setCredentialAccess("read_write");
       setCreateOpen(false);
       void queryClient.invalidateQueries({ queryKey: ["credentials"] });
     },

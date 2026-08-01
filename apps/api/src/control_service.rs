@@ -929,47 +929,8 @@ pub async fn create_credential(
             "credential name must contain 1 to 120 characters",
         ));
     }
-    let access = request
-        .get("access")
-        .and_then(Value::as_str)
-        .unwrap_or("read_only");
-    let capabilities: Vec<&str> = match access {
-        "read_only" => vec!["open", "query", "read", "compute", "verify", "status"],
-        "read_write" => vec![
-            "open",
-            "query",
-            "read",
-            "compute",
-            "verify",
-            "status",
-            "checkpoint",
-            "save",
-            "stage",
-            "correct",
-            "delete",
-            "dream",
-        ],
-        "owner" => vec![
-            "open",
-            "query",
-            "read",
-            "compute",
-            "verify",
-            "status",
-            "checkpoint",
-            "save",
-            "stage",
-            "correct",
-            "delete",
-            "dream",
-            "credential:manage",
-        ],
-        _ => {
-            return Err(ApiError::invalid(
-                "credential access must be read_only, read_write, or owner",
-            ));
-        }
-    };
+    let (access, capabilities) =
+        credential_template(request.get("access").and_then(Value::as_str))?;
     let requested_scopes = request
         .get("scope_ids")
         .and_then(Value::as_array)
@@ -1028,6 +989,54 @@ pub async fn create_credential(
         "created_at": Utc::now(),
         "revoked_at": null
     }))
+}
+
+fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'static str>)> {
+    match access.unwrap_or("read_write") {
+        "read_only" => Ok((
+            "read_only",
+            vec!["open", "query", "read", "compute", "verify", "status"],
+        )),
+        "read_write" => Ok((
+            "read_write",
+            vec![
+                "open",
+                "query",
+                "read",
+                "compute",
+                "verify",
+                "status",
+                "checkpoint",
+                "save",
+                "stage",
+                "correct",
+                "delete",
+                "dream",
+            ],
+        )),
+        "owner" => Ok((
+            "owner",
+            vec![
+                "open",
+                "query",
+                "read",
+                "compute",
+                "verify",
+                "status",
+                "checkpoint",
+                "save",
+                "stage",
+                "correct",
+                "delete",
+                "dream",
+                "credential:manage",
+                "admin",
+            ],
+        )),
+        _ => Err(ApiError::invalid(
+            "credential access must be read_only, read_write, or owner",
+        )),
+    }
 }
 
 fn map_credential_issue_error(error: sqlx::Error) -> ApiError {
@@ -1424,13 +1433,62 @@ fn credential_row_value(row: sqlx::postgres::PgRow) -> ApiResult<Value> {
     Ok(json!({
         "id": format!("credential:{}", row.try_get::<Uuid,_>("id")?),
         "name": row.try_get::<String,_>("label")?,
-        "access": if capabilities.iter().any(|value| value == "save" || value == "checkpoint") { "read_write" } else { "read_only" },
+        "access": credential_access_label(&capabilities),
         "scope_ids": row.try_get::<Vec<String>,_>("scope_refs")?,
         "capabilities": capabilities,
         "created_at": row.try_get::<DateTime<Utc>,_>("created_at")?,
         "revoked_at": disabled_at,
         "status": if disabled_at.is_some() { "revoked" } else { "active" }
     }))
+}
+
+fn credential_access_label(capabilities: &[String]) -> &'static str {
+    if capabilities
+        .iter()
+        .any(|value| value == "credential:manage")
+    {
+        "owner"
+    } else if capabilities
+        .iter()
+        .any(|value| value == "save" || value == "checkpoint")
+    {
+        "read_write"
+    } else {
+        "read_only"
+    }
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::{credential_access_label, credential_template};
+
+    #[test]
+    fn omitted_credential_access_defaults_to_read_write() {
+        let (access, capabilities) = credential_template(None).expect("default template");
+        assert_eq!(access, "read_write");
+        assert!(capabilities.contains(&"save"));
+        assert!(!capabilities.contains(&"credential:manage"));
+    }
+
+    #[test]
+    fn owner_template_has_every_capability() {
+        let (access, capabilities) = credential_template(Some("owner")).expect("owner template");
+        assert_eq!(access, "owner");
+        assert_eq!(capabilities.len(), 14);
+        assert!(capabilities.contains(&"dream"));
+        assert!(capabilities.contains(&"credential:manage"));
+        assert!(capabilities.contains(&"admin"));
+    }
+
+    #[test]
+    fn credential_manager_is_labeled_owner() {
+        let capabilities = vec![
+            "open".to_owned(),
+            "save".to_owned(),
+            "credential:manage".to_owned(),
+        ];
+        assert_eq!(credential_access_label(&capabilities), "owner");
+    }
 }
 
 fn list_limit(query: &ListQuery) -> usize {

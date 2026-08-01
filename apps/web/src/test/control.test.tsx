@@ -151,4 +151,44 @@ describe("workspace activity and access", () => {
       await screen.findByRole("button", { name: "New credential" }),
     ).toBeDisabled();
   });
+
+  it("defaults new credentials to read/write", async () => {
+    let createdBody: unknown;
+    installApiMock({
+      "GET /api/v1/credentials": {
+        status: "complete",
+        data: { items: [] },
+      },
+      "POST /api/v1/credentials": async (request: Request) => {
+        createdBody = await request.json();
+        return {
+          status: "complete",
+          data: {
+            id: "credential_created",
+            name: "Codex on Erebus RW",
+            access: "read_write",
+            scope_ids: ["scope_1"],
+            token: "sl_created_once",
+          },
+        };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp("/control", "owner-token");
+
+    await user.click(await screen.findByRole("tab", { name: "Access" }));
+    await user.click(screen.getByRole("button", { name: "New credential" }));
+    expect(screen.getByRole("combobox", { name: "Access" })).toHaveValue(
+      "read_write",
+    );
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Codex on Erebus RW");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(await screen.findByText("Credential created")).toBeInTheDocument();
+    expect(createdBody).toEqual({
+      name: "Codex on Erebus RW",
+      access: "read_write",
+      scope_ids: ["scope_1"],
+    });
+  });
 });

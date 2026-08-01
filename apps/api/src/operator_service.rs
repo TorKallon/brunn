@@ -25,6 +25,7 @@ const OWNER_CAPABILITIES: &[&str] = &[
     "delete",
     "dream",
     "credential:manage",
+    "admin",
 ];
 
 pub async fn provision_user(
