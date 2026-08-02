@@ -1,6 +1,13 @@
 import Foundation
 import Security
 
+@MainActor
+protocol CredentialStoring: AnyObject {
+    func load() throws -> String?
+    func save(_ token: String) throws
+    func delete() throws
+}
+
 enum KeychainCredentialError: Error, LocalizedError {
     case unexpectedStatus(OSStatus)
     case invalidData
@@ -16,7 +23,7 @@ enum KeychainCredentialError: Error, LocalizedError {
 }
 
 @MainActor
-final class KeychainCredentialStore {
+final class KeychainCredentialStore: CredentialStoring {
     private let service = "com.rourkem.straylight.api"
     private let account = "owner-alpha-read-only"
 

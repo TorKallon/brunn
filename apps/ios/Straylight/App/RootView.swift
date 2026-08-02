@@ -7,9 +7,7 @@ struct RootView: View {
         Group {
             switch model.phase {
             case .launching:
-                ProgressView("Opening Straylight…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(StraylightTheme.canvas)
+                StartupView()
             case .connectionRequired:
                 ConnectionView()
             case .ready:
@@ -29,6 +27,32 @@ struct RootView: View {
                 }
             }
         }
+    }
+}
+
+private struct StartupView: View {
+    var body: some View {
+        ZStack {
+            Color("LaunchBackground")
+                .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                Image("LaunchSignal")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 132, height: 132)
+                    .accessibilityHidden(true)
+
+                Text("Straylight")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+
+                ProgressView()
+                    .tint(.white.opacity(0.9))
+                    .accessibilityLabel("Opening Straylight")
+            }
+        }
+        .accessibilityIdentifier("straylight-startup")
     }
 }
 

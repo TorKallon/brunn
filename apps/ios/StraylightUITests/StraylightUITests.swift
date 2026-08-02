@@ -1,6 +1,24 @@
 import XCTest
 
 final class StraylightUITests: XCTestCase {
+    @MainActor
+    func testFirstRunConnectionScreenAppearsPromptly() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-connection-required",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+
+        app.launch()
+
+        XCTAssertTrue(
+            app.buttons["Connect this iPhone"].waitForExistence(timeout: 2),
+            "The first-run connection screen remained behind startup UI."
+        )
+        XCTAssertFalse(element("straylight-startup", in: app).exists)
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

@@ -3,6 +3,44 @@ import XCTest
 
 final class StraylightTests: XCTestCase {
     @MainActor
+    func testFirstRunShowsConnectionWithoutCallingTheAPI() async {
+        let credentialStore = TestCredentialStore(token: nil)
+        let calls = CallCounter()
+        let model = AppModel(
+            credentialStore: credentialStore,
+            bootstrapIdentityLoader: { _ in
+                await calls.increment()
+                return Self.readOnlyIdentity
+            }
+        )
+
+        await model.bootstrap()
+        let callCount = await calls.value
+
+        XCTAssertEqual(model.phase, .connectionRequired)
+        XCTAssertEqual(callCount, 0)
+    }
+
+    @MainActor
+    func testStoredCredentialValidationStopsWaitingAtStartupBudget() async {
+        let credentialStore = TestCredentialStore(token: "sl_stale")
+        let model = AppModel(
+            credentialStore: credentialStore,
+            bootstrapValidationTimeout: .milliseconds(40),
+            bootstrapIdentityLoader: { _ in
+                try await Task.sleep(for: .seconds(30))
+                return Self.readOnlyIdentity
+            }
+        )
+
+        await model.bootstrap()
+
+        XCTAssertEqual(model.phase, .connectionRequired)
+        XCTAssertFalse(credentialStore.wasDeleted)
+        XCTAssertTrue(model.connectionMessage?.contains("taking too long") == true)
+    }
+
+    @MainActor
     func testDemoBootstrapsWithoutCredentialOrNetwork() {
         let model = AppModel()
         model.enterDemo()
@@ -25,11 +63,7 @@ final class StraylightTests: XCTestCase {
     }
 
     func testOnlyLeastPrivilegeReadOnlyCredentialIsAccepted() {
-        let readOnly = MeData(
-            user: UserSummary(id: "user:one", displayName: "Owner"),
-            capabilities: ["open", "query", "read", "compute", "verify", "status"],
-            readOnly: true
-        )
+        let readOnly = Self.readOnlyIdentity
         let owner = MeData(
             user: UserSummary(id: "user:one", displayName: "Owner"),
             capabilities: ["read", "credential:manage", "admin"]
@@ -44,6 +78,12 @@ final class StraylightTests: XCTestCase {
         XCTAssertFalse(AppModel.isAllowedDeviceCredential(owner))
         XCTAssertFalse(AppModel.isAllowedDeviceCredential(readWrite))
     }
+
+    private static let readOnlyIdentity = MeData(
+        user: UserSummary(id: "user:one", displayName: "Owner"),
+        capabilities: ["open", "query", "read", "compute", "verify", "status"],
+        readOnly: true
+    )
 
     func testNotificationParserRejectsArbitraryPayload() {
         XCTAssertNil(NotificationRouteParser.route(from: ["url": "https://example.com"]))
@@ -118,5 +158,36 @@ final class StraylightTests: XCTestCase {
         XCTAssertTrue(model.isNewsItemRead("ios-direction"))
         XCTAssertEqual(model.newsItems, before)
         XCTAssertEqual(model.latestBriefing, SampleData.briefing)
+    }
+}
+
+@MainActor
+private final class TestCredentialStore: CredentialStoring {
+    private var token: String?
+    private(set) var wasDeleted = false
+
+    init(token: String?) {
+        self.token = token
+    }
+
+    func load() throws -> String? {
+        token
+    }
+
+    func save(_ token: String) throws {
+        self.token = token
+    }
+
+    func delete() throws {
+        wasDeleted = true
+        token = nil
+    }
+}
+
+private actor CallCounter {
+    private(set) var value = 0
+
+    func increment() {
+        value += 1
     }
 }

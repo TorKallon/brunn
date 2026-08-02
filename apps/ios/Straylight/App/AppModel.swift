@@ -1,5 +1,15 @@
 import Foundation
 
+private enum BootstrapValidationError: LocalizedError {
+    case timedOut
+
+    var errorDescription: String? {
+        "The saved connection could not be verified quickly enough."
+    }
+}
+
+typealias BootstrapIdentityLoader = @Sendable (StraylightAPI) async throws -> MeData
+
 enum AppPhase: Equatable {
     case launching
     case connectionRequired
@@ -50,24 +60,37 @@ final class AppModel: ObservableObject {
     }
 
     let api: StraylightAPI
-    private let credentialStore: KeychainCredentialStore
+    private let credentialStore: any CredentialStoring
     private let briefingCache: BriefingCache
+    private let bootstrapValidationTimeout: Duration
+    private let bootstrapIdentityLoader: BootstrapIdentityLoader
     private var pendingRoute: AppRoute?
     private var nextBriefingHistoryPath: String?
 
     init(
         api: StraylightAPI = StraylightAPI(),
-        credentialStore: KeychainCredentialStore = KeychainCredentialStore(),
-        briefingCache: BriefingCache = BriefingCache()
+        credentialStore: any CredentialStoring = KeychainCredentialStore(),
+        briefingCache: BriefingCache = BriefingCache(),
+        bootstrapValidationTimeout: Duration = .seconds(6),
+        bootstrapIdentityLoader: @escaping BootstrapIdentityLoader = { api in
+            try await api.me()
+        }
     ) {
         self.api = api
         self.credentialStore = credentialStore
         self.briefingCache = briefingCache
+        self.bootstrapValidationTimeout = bootstrapValidationTimeout
+        self.bootstrapIdentityLoader = bootstrapIdentityLoader
     }
 
     func bootstrap() async {
         if ProcessInfo.processInfo.arguments.contains("--demo") {
             enterDemo()
+            return
+        }
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-connection-required") {
+            phase = .connectionRequired
             return
         }
 
@@ -87,7 +110,7 @@ final class AppModel: ObservableObject {
                 applyPendingRouteLocally()
             }
             do {
-                let identity = try await api.me()
+                let identity = try await loadBootstrapIdentity()
                 guard Self.isAllowedDeviceCredential(identity) else {
                     do {
                         try credentialStore.delete()
@@ -108,6 +131,11 @@ final class AppModel: ObservableObject {
                 accept(identity)
                 await refreshBriefing()
                 await resumePendingRoute()
+            } catch is BootstrapValidationError {
+                await api.setBearerToken(nil)
+                connectionValidated = false
+                phase = .connectionRequired
+                connectionMessage = "The saved connection is taking too long to verify. Paste the device credential again, or retry when connectivity returns."
             } catch let error as StraylightAPIError where error.isUnauthorized {
                 do {
                     try credentialStore.delete()
@@ -226,6 +254,28 @@ final class AppModel: ObservableObject {
     func retryBootstrap() async {
         phase = .launching
         await bootstrap()
+    }
+
+    private func loadBootstrapIdentity() async throws -> MeData {
+        let api = api
+        let identityLoader = bootstrapIdentityLoader
+        let timeout = bootstrapValidationTimeout
+
+        return try await withThrowingTaskGroup(of: MeData.self) { group in
+            group.addTask {
+                try await identityLoader(api)
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw BootstrapValidationError.timedOut
+            }
+
+            defer { group.cancelAll() }
+            guard let identity = try await group.next() else {
+                throw BootstrapValidationError.timedOut
+            }
+            return identity
+        }
     }
 
     func clearBriefingCache() async {
