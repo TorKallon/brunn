@@ -48,6 +48,8 @@ pub struct Config {
     pub semantic_lane: bool,
     pub embed_cache: bool,
     pub semantic_deadline: Option<Duration>,
+    pub semantic_query_provider_timeout: Duration,
+    pub semantic_query_concurrency: usize,
     pub embedding_backfill_guard: bool,
     pub embedding_backfill_batch_chunks: usize,
     pub embedding_backfill_inter_batch_delay: Duration,
@@ -222,6 +224,11 @@ impl Config {
                 0 => None,
                 milliseconds => Some(Duration::from_millis(milliseconds)),
             },
+            semantic_query_provider_timeout: Duration::from_millis(env_parse(
+                "STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS",
+                "5000",
+            )?),
+            semantic_query_concurrency: env_parse("STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY", "8")?,
             embedding_backfill_guard: env_parse("STRAYLIGHT_EMBEDDING_BACKFILL_GUARD", "true")?,
             embedding_backfill_batch_chunks: env_parse(
                 "STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS",
@@ -332,6 +339,18 @@ impl Config {
         if config.embedding_backfill_inter_batch_delay < Duration::from_millis(250) {
             return Err(ApiError::configuration(
                 "STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS must be at least 250",
+            ));
+        }
+        if config.semantic_query_provider_timeout.is_zero()
+            || config.semantic_query_provider_timeout > Duration::from_secs(60)
+        {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS must be between 1 and 60000",
+            ));
+        }
+        if !(1..=64).contains(&config.semantic_query_concurrency) {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY must be between 1 and 64",
             ));
         }
         if !config.embedding_backfill_open_p95_limit_ms.is_finite()
@@ -784,6 +803,8 @@ mod tests {
                     .env("STRAYLIGHT_SEMANTIC_LANE", "true")
                     .env("STRAYLIGHT_EMBED_CACHE", "false")
                     .env("STRAYLIGHT_SEMANTIC_DEADLINE_MS", "0")
+                    .env("STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS", "1500")
+                    .env("STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY", "3")
                     .env("STRAYLIGHT_EMBEDDING_BACKFILL_GUARD", "false")
                     .env("STRAYLIGHT_EMBEDDING_BACKFILL_BATCH_CHUNKS", "32")
                     .env("STRAYLIGHT_EMBEDDING_BACKFILL_INTER_BATCH_MS", "500")
@@ -855,6 +876,11 @@ mod tests {
                 assert!(!config.intention_ledger);
                 assert_eq!(config.supersession_demotion_weight, 1.5);
                 assert!(!config.resume_deltas);
+                assert_eq!(
+                    config.semantic_query_provider_timeout,
+                    Duration::from_millis(5000)
+                );
+                assert_eq!(config.semantic_query_concurrency, 8);
             }
             "minio_aliases" => {
                 let config = Config::from_env().unwrap();
@@ -918,6 +944,11 @@ mod tests {
                 assert!(config.semantic_lane);
                 assert!(!config.embed_cache);
                 assert_eq!(config.semantic_deadline, None);
+                assert_eq!(
+                    config.semantic_query_provider_timeout,
+                    Duration::from_millis(1500)
+                );
+                assert_eq!(config.semantic_query_concurrency, 3);
                 assert!(!config.embedding_backfill_guard);
                 assert_eq!(config.embedding_backfill_batch_chunks, 32);
                 assert_eq!(
