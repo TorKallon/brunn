@@ -36,7 +36,7 @@ function AuthLayout({
     <main className="login-layout">
       <section className="login-panel" aria-labelledby="auth-title">
         <div className="brand brand-login" aria-label="Straylight">
-          <span className="brand-mark" aria-hidden="true">S</span>
+          <img className="brand-mark" src="/straylight-mark.png" alt="" aria-hidden="true" />
           <div>
             <strong>Straylight</strong>
             <span>Workspace &amp; memory</span>

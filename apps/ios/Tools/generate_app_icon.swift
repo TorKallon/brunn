@@ -1,47 +1,32 @@
 import AppKit
+import Foundation
 
-let size = NSSize(width: 1024, height: 1024)
-let image = NSImage(size: size)
-image.lockFocus()
+let scriptURL = URL(fileURLWithPath: #filePath)
+let iosRoot = scriptURL.deletingLastPathComponent().deletingLastPathComponent()
+let repositoryRoot = iosRoot.deletingLastPathComponent().deletingLastPathComponent()
 
-let background = NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 190, yRadius: 190)
-NSColor(calibratedRed: 0.055, green: 0.384, blue: 0.286, alpha: 1).setFill()
-background.fill()
+let defaultSource = repositoryRoot
+    .appendingPathComponent("assets/brand/straylight-night-signal-1024.png")
+let defaultOutput = iosRoot
+    .appendingPathComponent("Straylight/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
 
-let paragraph = NSMutableParagraphStyle()
-paragraph.alignment = .center
-let attributes: [NSAttributedString.Key: Any] = [
-    .font: NSFont.systemFont(ofSize: 560, weight: .bold),
-    .foregroundColor: NSColor.white,
-    .paragraphStyle: paragraph,
-]
-let letter = NSAttributedString(string: "S", attributes: attributes)
-letter.draw(in: NSRect(x: 0, y: 190, width: 1024, height: 650))
+let source = CommandLine.arguments.count > 1
+    ? URL(fileURLWithPath: CommandLine.arguments[1])
+    : defaultSource
+let output = CommandLine.arguments.count > 2
+    ? URL(fileURLWithPath: CommandLine.arguments[2])
+    : defaultOutput
 
-image.unlockFocus()
-
-guard let bitmap = NSBitmapImageRep(
-    bitmapDataPlanes: nil,
-    pixelsWide: 1024,
-    pixelsHigh: 1024,
-    bitsPerSample: 8,
-    samplesPerPixel: 3,
-    hasAlpha: false,
-    isPlanar: false,
-    colorSpaceName: .deviceRGB,
-    bytesPerRow: 0,
-    bitsPerPixel: 0
-) else {
-    fatalError("Could not render the Straylight app icon")
+let png = try Data(contentsOf: source)
+guard let bitmap = NSBitmapImageRep(data: png) else {
+    fatalError("The Night Signal master is not a readable bitmap")
 }
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-image.draw(in: NSRect(origin: .zero, size: size))
-NSGraphicsContext.restoreGraphicsState()
-
-guard let png = bitmap.representation(using: .png, properties: [:]) else {
-    fatalError("Could not encode the Straylight app icon")
+guard bitmap.pixelsWide == 1024, bitmap.pixelsHigh == 1024 else {
+    fatalError("The Night Signal master must be exactly 1024 × 1024 pixels")
+}
+guard bitmap.representation(using: .png, properties: [:]) != nil, !bitmap.hasAlpha else {
+    fatalError("The Night Signal master must be an opaque PNG")
 }
 
-let output = URL(fileURLWithPath: CommandLine.arguments[1])
 try png.write(to: output, options: .atomic)
+print("Installed Night Signal app icon at \(output.path)")
