@@ -168,6 +168,38 @@ case "$public_host" in
     ;;
 esac
 
+public_url=$(require_value STRAYLIGHT_PUBLIC_URL)
+[ "$public_url" = "https://$public_host" ] || {
+  echo "STRAYLIGHT_PUBLIC_URL must equal https://STRAYLIGHT_PUBLIC_HOST" >&2
+  exit 1
+}
+
+auth_email_from=$(require_value AUTH_EMAIL_FROM)
+case "$auth_email_from" in
+  *@*.*)
+    ;;
+  *)
+    echo "AUTH_EMAIL_FROM must contain a valid sender email address" >&2
+    exit 1
+    ;;
+esac
+case "$auth_email_from" in
+  *example.com*|*example.net*|*example.org*|*replace*|*placeholder*)
+    echo "AUTH_EMAIL_FROM must not use a placeholder sender" >&2
+    exit 1
+    ;;
+esac
+
+auth_email_reply_to=$(read_value AUTH_EMAIL_REPLY_TO)
+case "$auth_email_reply_to" in
+  ""|*@*.*)
+    ;;
+  *)
+    echo "AUTH_EMAIL_REPLY_TO must be empty or a valid email address" >&2
+    exit 1
+    ;;
+esac
+
 acme_email=$(require_value STRAYLIGHT_ACME_EMAIL)
 case "$acme_email" in
   *@*.*)

@@ -55,6 +55,7 @@ services:
       - database_url_ro
       - continuation_signing_key
       - openai_api_key
+      - resend_api_key
     depends_on: !override
       migrate:
         condition: service_completed_successfully

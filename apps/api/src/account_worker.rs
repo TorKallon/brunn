@@ -906,10 +906,16 @@ async fn build_export_inner(
                 "database returned an unsafe export table identifier".to_owned(),
             ));
         }
-        let projection = if table == "api_credentials" {
-            "to_jsonb(table_row) - 'token_hash'"
-        } else {
-            "to_jsonb(table_row)"
+        if matches!(
+            table.as_str(),
+            "web_sessions" | "password_reset_tokens" | "web_auth_rate_limits"
+        ) {
+            continue;
+        }
+        let projection = match table.as_str() {
+            "api_credentials" => "to_jsonb(table_row) - 'token_hash'",
+            "web_identities" => "to_jsonb(table_row) - 'password_hash'",
+            _ => "to_jsonb(table_row)",
         };
         let query = format!(
             "SELECT {projection} FROM straylight.\"{table}\" AS table_row \

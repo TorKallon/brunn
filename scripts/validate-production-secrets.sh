@@ -45,6 +45,7 @@ database_url_ro
 database_url_admin
 continuation_signing_key
 openai_api_key
+resend_api_key
 dd_api_key
 "
 if [ "$object_store_mode" = "self-hosted-minio" ]; then
@@ -94,6 +95,7 @@ require_minimum_bytes postgres_app_rw_password 16
 require_minimum_bytes postgres_app_ro_password 16
 require_minimum_bytes continuation_signing_key 32
 require_minimum_bytes openai_api_key 20
+require_minimum_bytes resend_api_key 20
 require_minimum_bytes dd_api_key 20
 if [ "$object_store_mode" = "self-hosted-minio" ]; then
   require_minimum_bytes minio_root_password 16
@@ -101,7 +103,7 @@ if [ "$object_store_mode" = "self-hosted-minio" ]; then
 fi
 
 for name in postgres_admin_password postgres_app_rw_password \
-  postgres_app_ro_password continuation_signing_key openai_api_key dd_api_key; do
+  postgres_app_ro_password continuation_signing_key openai_api_key resend_api_key dd_api_key; do
   if grep -Eiq '(^|[_-])(replace|change-?me|placeholder|example)([_-]|$)' \
     "$secrets_dir/$name"; then
     echo "$name contains a placeholder value" >&2

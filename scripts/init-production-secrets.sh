@@ -3,21 +3,22 @@ set -eu
 umask 077
 
 usage() {
-  echo "usage: $0 SECRETS_DIR OPENAI_KEY_FILE DATADOG_KEY_FILE" >&2
+  echo "usage: $0 SECRETS_DIR OPENAI_KEY_FILE RESEND_KEY_FILE DATADOG_KEY_FILE" >&2
   exit 64
 }
 
-[ "$#" -eq 3 ] || usage
+[ "$#" -eq 4 ] || usage
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 secrets_dir=$1
 openai_source=$2
-datadog_source=$3
+resend_source=$3
+datadog_source=$4
 
 [ ! -e "$secrets_dir" ] || {
   echo "refusing to replace an existing secrets path: $secrets_dir" >&2
   exit 1
 }
-for source in "$openai_source" "$datadog_source"; do
+for source in "$openai_source" "$resend_source" "$datadog_source"; do
   [ -f "$source" ] && [ ! -L "$source" ] && [ -s "$source" ] || {
     echo "account key source must be a nonempty regular file: $source" >&2
     exit 1
@@ -84,6 +85,7 @@ write_secret minio_app_access_key "$minio_app_access_key"
 write_secret minio_app_secret_key "$minio_app_secret_key"
 write_secret continuation_signing_key "$(random_hex 32)"
 write_secret openai_api_key "$(read_account_key "$openai_source")"
+write_secret resend_api_key "$(read_account_key "$resend_source")"
 write_secret dd_api_key "$(read_account_key "$datadog_source")"
 
 "$root/scripts/validate-production-secrets.sh" "$work_dir" >/dev/null

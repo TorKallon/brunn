@@ -22,6 +22,8 @@ class ProductionContractTests(unittest.TestCase):
             "STRAYLIGHT_S3_SECRET_KEY": "",
             "STRAYLIGHT_MINIO_ACCESS_KEY": "",
             "STRAYLIGHT_MINIO_SECRET_KEY": "",
+            "AUTH_EMAIL_FROM": "Straylight <login@example.com>",
+            "STRAYLIGHT_PUBLIC_URL": "https://straylight.example.com",
         }
         result = subprocess.run(
             [
@@ -113,6 +115,7 @@ class ProductionContractTests(unittest.TestCase):
             "STRAYLIGHT_CONTINUATION_SECRET",
             "STRAYLIGHT_CONTINUATION_SIGNING_KEY",
             "OPENAI_API_KEY",
+            "RESEND_API_KEY",
             "STRAYLIGHT_DEV_READ_WRITE_TOKEN",
             "STRAYLIGHT_DEV_READ_ONLY_TOKEN",
         }
@@ -134,6 +137,15 @@ class ProductionContractTests(unittest.TestCase):
             "",
             self.compose["services"]["api"]["environment"]["DATABASE_URL_ADMIN_FILE"],
         )
+        self.assertEqual(
+            "/run/secrets/resend_api_key",
+            self.compose["services"]["api"]["environment"]["RESEND_API_KEY_FILE"],
+        )
+        for service in ["migrate", "worker"]:
+            self.assertNotIn(
+                "RESEND_API_KEY_FILE",
+                self.compose["services"][service]["environment"],
+            )
 
     def test_runtime_services_have_explicit_limits(self):
         for service in [
@@ -458,6 +470,16 @@ class ProductionContractTests(unittest.TestCase):
         )
         self.assertNotIn("try_files $uri $uri/", nginx)
 
+    def test_browser_auth_has_a_small_rate_limited_proxy_boundary(self):
+        nginx = (ROOT / "apps/web/nginx.conf").read_text()
+        self.assertIn("zone=straylight_auth_limit:1m rate=2r/s", nginx)
+        auth_proxy = nginx.split("location ^~ /api/v1/auth/ {", 1)[1].split(
+            "location /api/ {", 1
+        )[0]
+        self.assertIn("client_max_body_size 16k;", auth_proxy)
+        self.assertIn("limit_req zone=straylight_auth_limit burst=10 nodelay;", auth_proxy)
+        self.assertIn("proxy_pass http://straylight_api/v1/auth/;", auth_proxy)
+
     def test_build_context_excludes_secrets_and_operational_data(self):
         patterns = set((ROOT / ".dockerignore").read_text().splitlines())
         self.assertTrue(
@@ -498,6 +520,7 @@ class ProductionContractTests(unittest.TestCase):
                 "minio_app_secret_key": "s" * 24,
                 "continuation_signing_key": "c" * 32,
                 "openai_api_key": "sk-unit-" + ("o" * 32),
+                "resend_api_key": "re-unit-" + ("r" * 32),
                 "dd_api_key": "d" * 32,
             }
             for name, value in values.items():
@@ -521,6 +544,9 @@ class ProductionContractTests(unittest.TestCase):
                         "STRAYLIGHT_DREAM_MODEL=gpt-5.6",
                         "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=24000",
                         "OPENAI_BASE_URL=https://api.openai.com/v1",
+                        "AUTH_EMAIL_FROM=Straylight <login@solark.io>",
+                        "AUTH_EMAIL_REPLY_TO=owner@straylight.dev",
+                        "STRAYLIGHT_PUBLIC_URL=https://alpha.straylight.dev",
                         "STRAYLIGHT_DREAM_SCHEDULER_ENABLED=false",
                         "STRAYLIGHT_METRICS_ENABLED=true",
                         "STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125",
@@ -669,6 +695,7 @@ class ProductionContractTests(unittest.TestCase):
                 ),
                 "continuation_signing_key": "c" * 32,
                 "openai_api_key": "sk-unit-" + ("o" * 32),
+                "resend_api_key": "re-unit-" + ("r" * 32),
                 "dd_api_key": "d" * 32,
             }
             for name, value in values.items():
@@ -694,6 +721,9 @@ class ProductionContractTests(unittest.TestCase):
                         "STRAYLIGHT_DREAM_MODEL=gpt-5.6",
                         "STRAYLIGHT_MATERIALIZE_TOKEN_BUDGET=24000",
                         "OPENAI_BASE_URL=https://api.openai.com/v1",
+                        "AUTH_EMAIL_FROM=Straylight <login@solark.io>",
+                        "AUTH_EMAIL_REPLY_TO=owner@carrystate.dev",
+                        "STRAYLIGHT_PUBLIC_URL=https://alpha.carrystate.dev",
                         "STRAYLIGHT_DREAM_SCHEDULER_ENABLED=false",
                         "STRAYLIGHT_METRICS_ENABLED=true",
                         "STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125",
@@ -1114,8 +1144,10 @@ fi
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             openai_key = directory / "openai.key"
+            resend_key = directory / "resend.key"
             datadog_key = directory / "datadog.key"
             openai_key.write_text("sk-unit-" + ("o" * 32))
+            resend_key.write_text("re-unit-" + ("r" * 32))
             datadog_key.write_text("d" * 32)
             destination = directory / "generated"
             result = subprocess.run(
@@ -1123,6 +1155,7 @@ fi
                     str(ROOT / "scripts/init-production-secrets.sh"),
                     str(destination),
                     str(openai_key),
+                    str(resend_key),
                     str(datadog_key),
                 ],
                 cwd=ROOT,
@@ -1134,6 +1167,7 @@ fi
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual(0o700, destination.stat().st_mode & 0o777)
             self.assertNotIn(openai_key.read_text(), result.stdout + result.stderr)
+            self.assertNotIn(resend_key.read_text(), result.stdout + result.stderr)
             self.assertNotIn(datadog_key.read_text(), result.stdout + result.stderr)
             self.assertEqual(
                 {
@@ -1147,6 +1181,7 @@ fi
                     "minio_root_password",
                     "minio_root_user",
                     "openai_api_key",
+                    "resend_api_key",
                     "postgres_admin_password",
                     "postgres_app_ro_password",
                     "postgres_app_rw_password",

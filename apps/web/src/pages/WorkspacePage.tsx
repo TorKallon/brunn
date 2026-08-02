@@ -31,7 +31,7 @@ import type {
 } from "../lib/types";
 
 export function WorkspacePage() {
-  const { sessionId } = useParams({ from: "/sessions/$sessionId" });
+  const { sessionId } = useParams({ from: "/authenticated/sessions/$sessionId" });
   const api = useApi();
   const queryClient = useQueryClient();
   const navigate = useNavigate();

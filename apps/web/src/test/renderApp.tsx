@@ -1,8 +1,8 @@
 import { QueryClient } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
+import { StrictMode } from "react";
 import { vi } from "vitest";
 import { StraylightApp } from "../App";
-import { AUTH_SESSION_KEY } from "../lib/auth";
 import { createTestRouter } from "../router";
 
 interface MockResponse {
@@ -32,7 +32,12 @@ export const defaultMe = {
     semantic_index_updated_at: now,
   },
   data: {
-    user: { id: "user_1", display_name: "Aether", email: "aether@example.com" },
+    user: {
+      id: "user_1",
+      display_name: "Aether",
+      username: "aether",
+      email: "aether@example.com",
+    },
     active_scope: { id: "scope_1", name: "Primary", access: "read_write" },
     scopes: [{ id: "scope_1", name: "Primary", access: "read_write" }],
     corpus_revision: "rev_001",
@@ -72,6 +77,18 @@ function isMockResponse(value: unknown): value is MockResponse {
 
 export function installApiMock(routes: Record<string, MockRoute> = {}) {
   const allRoutes: Record<string, MockRoute> = {
+    "GET /api/v1/auth/session": {
+      status: "complete",
+      data: {
+        user: {
+          id: "user_1",
+          display_name: "Aether",
+          username: "aether",
+          email: "aether@example.com",
+        },
+        expires_at: "2099-07-12T18:00:00Z",
+      },
+    },
     "GET /api/v1/me": defaultMe,
     "GET /api/v1/status": defaultStatus,
     "GET /api/v1/sessions": { status: "complete", data: { items: [] } },
@@ -137,7 +154,9 @@ export function installApiMock(routes: Record<string, MockRoute> = {}) {
   };
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = input instanceof Request ? input : new Request(new URL(String(input), window.location.origin), init);
+    const request = input instanceof Request
+      ? input
+      : new Request(new URL(String(input), window.location.origin), init);
     const path = new URL(request.url).pathname;
     const key = `${request.method.toUpperCase()} ${path}`;
     const route = allRoutes[key];
@@ -154,8 +173,11 @@ export function installApiMock(routes: Record<string, MockRoute> = {}) {
   return fetchMock;
 }
 
-export function renderApp(path: string, token?: string) {
-  if (token) window.sessionStorage.setItem(AUTH_SESSION_KEY, token);
+export function renderApp(
+  path: string,
+  _legacyTokenHint?: string,
+  options: { strict?: boolean } = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: 0, refetchOnWindowFocus: false },
@@ -163,8 +185,9 @@ export function renderApp(path: string, token?: string) {
     },
   });
   const router = createTestRouter(path);
+  const app = <StraylightApp router={router} queryClient={queryClient} />;
   return {
-    ...render(<StraylightApp router={router} queryClient={queryClient} />),
+    ...render(options.strict ? <StrictMode>{app}</StrictMode> : app),
     queryClient,
     router,
   };

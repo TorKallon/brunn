@@ -35,14 +35,15 @@ Never rebuild a candidate on the production host.
 
 ## Secrets And Configuration
 
-Create local files containing the OpenAI and Datadog API keys without putting
-either value in shell history. Generate the remaining secrets in one local
+Create local files containing the OpenAI, Resend, and Datadog API keys without
+putting any value in shell history. Generate the remaining secrets in one local
 command:
 
 ```bash
 make production-secrets \
   SECRETS_DIR=/approved/private/path/straylight-secrets \
   OPENAI_KEY_FILE=/approved/private/path/openai.key \
+  RESEND_KEY_FILE=/approved/private/path/resend.key \
   DATADOG_KEY_FILE=/approved/private/path/datadog.key
 ```
 
@@ -128,6 +129,31 @@ The token appears only in that file and is stored only as a hash by Straylight.
 Move it to the approved password manager, remove the local output, and use the
 owner credential only for credential administration. Create separate
 read/write and read-only agent tokens in the SPA.
+
+Configure the owner's browser identity without passing a password through the
+shell. The command creates a dedicated Web UI principal whose discarded bearer
+secret cannot be recovered:
+
+```bash
+docker compose \
+  --env-file production.env \
+  --file compose.yaml \
+  --file compose.production.yaml \
+  run --rm -T migrate operator configure-web-identity \
+  --user-id 'user:<uuid>' \
+  --username '<username>' \
+  --email '<recovery email>'
+```
+
+Use **Forgot password** on the public Web UI to establish the first password.
+The API sends the single-use, 30-minute link through Resend; it stores only a
+hash of the reset secret, and completing the reset revokes every existing Web
+UI session. Keep `resend_api_key` in the production secret bundle and keep
+`AUTH_EMAIL_FROM`, optional `AUTH_EMAIL_REPLY_TO`, and
+`STRAYLIGHT_PUBLIC_URL` in the non-secret production environment file.
+Successful sign-in creates persistent session and CSRF cookies with a 30-day
+absolute lifetime. Logout, password reset, identity reconfiguration, principal
+disablement, and account lifecycle fences still revoke those sessions early.
 
 If an owner loses all owner credentials and there is no sign of compromise, use
 the same private path:

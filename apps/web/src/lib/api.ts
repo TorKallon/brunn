@@ -1,5 +1,7 @@
 import type {
   ApiEnvelope,
+  AuthCompletionData,
+  AuthSessionData,
   AssetDownload,
   AssetListData,
   AssetRecord,
@@ -48,6 +50,12 @@ import type {
 
 const API_ROOT = "/api/v1";
 const MAX_BROWSER_DOWNLOAD_BYTES = 64 * 1024 * 1024;
+export const SESSION_INVALIDATED_EVENT = "straylight:session-invalidated";
+const PUBLIC_AUTH_PATHS = new Set([
+  "/auth/login",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+]);
 
 export class ApiError extends Error {
   readonly status: number;
@@ -86,6 +94,11 @@ async function parseBody(response: Response): Promise<unknown> {
 }
 
 export interface StraylightApi {
+  authSession(): Promise<ApiEnvelope<AuthSessionData>>;
+  login(username: string, password: string): Promise<ApiEnvelope<AuthSessionData>>;
+  logout(): Promise<ApiEnvelope<AuthCompletionData>>;
+  forgotPassword(identifier: string): Promise<ApiEnvelope<AuthCompletionData>>;
+  resetPassword(token: string, password: string): Promise<ApiEnvelope<AuthCompletionData>>;
   me(): Promise<ApiEnvelope<MeData>>;
   status(): Promise<ApiEnvelope<ServiceStatus>>;
   workspaceOpen(payload: JsonObject): Promise<ApiEnvelope<WorkspaceOpenData>>;
@@ -189,22 +202,28 @@ export interface StraylightApi {
   usage(): Promise<ApiEnvelope<DataUsage>>;
 }
 
-export function createApiClient(getToken: () => string | null): StraylightApi {
+export function createApiClient(): StraylightApi {
   async function request<T>(
     path: string,
     init: RequestInit = {},
   ): Promise<ApiEnvelope<T>> {
-    const token = getToken();
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
-    if (token) headers.set("Authorization", `Bearer ${token}`);
     if (init.body && !(init.body instanceof FormData)) {
       headers.set("Content-Type", "application/json");
+    }
+    if (isUnsafeMethod(init.method)) {
+      const csrfToken = readCsrfToken();
+      if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
     }
 
     let response: Response;
     try {
-      response = await fetch(`${API_ROOT}${path}`, { ...init, headers });
+      response = await fetch(`${API_ROOT}${path}`, {
+        ...init,
+        credentials: "same-origin",
+        headers,
+      });
     } catch (error) {
       throw new ApiError(
         0,
@@ -213,6 +232,7 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
       );
     }
 
+    notifyInvalidSession(response, path);
     const body = await parseBody(response);
     if (!response.ok) {
       const errorBody = body as {
@@ -253,14 +273,16 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
     expected?: { contentHash: string; sizeBytes: number },
   ): Promise<AssetDownload> {
     const headers = new Headers({ Accept: "application/octet-stream" });
-    const token = getToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
     let response: Response;
     try {
-      response = await fetch(`${API_ROOT}${path}`, { headers });
+      response = await fetch(`${API_ROOT}${path}`, {
+        credentials: "same-origin",
+        headers,
+      });
     } catch (error) {
       throw new ApiError(0, "network_error", error instanceof Error ? error.message : "The service could not be reached.");
     }
+    notifyInvalidSession(response, path);
     if (!response.ok) {
       const body = await parseBody(response) as {
         code?: string;
@@ -341,6 +363,14 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
   }
 
   return {
+    authSession: () => get<AuthSessionData>("/auth/session"),
+    login: (username, password) =>
+      post<AuthSessionData>("/auth/login", { username, password }),
+    logout: () => post<AuthCompletionData>("/auth/logout", {}),
+    forgotPassword: (identifier) =>
+      post<AuthCompletionData>("/auth/forgot-password", { identifier }),
+    resetPassword: (token, password) =>
+      post<AuthCompletionData>("/auth/reset-password", { token, password }),
     me: () => get<MeData>("/me"),
     status: () => get<ServiceStatus>("/status"),
     workspaceOpen: (payload) =>
@@ -500,6 +530,37 @@ export function createApiClient(getToken: () => string | null): StraylightApi {
       ),
     usage: () => get<DataUsage>("/usage"),
   };
+}
+
+function isUnsafeMethod(method?: string): boolean {
+  const normalized = (method ?? "GET").toUpperCase();
+  return !["GET", "HEAD", "OPTIONS"].includes(normalized);
+}
+
+function notifyInvalidSession(response: Response, path: string): void {
+  if (
+    response.status === 401
+    && !PUBLIC_AUTH_PATHS.has(path)
+    && typeof window !== "undefined"
+  ) {
+    window.dispatchEvent(new Event(SESSION_INVALIDATED_EVENT));
+  }
+}
+
+function readCsrfToken(): string | null {
+  const cookies = document.cookie.split(";");
+  for (const name of ["__Host-straylight_csrf", "straylight_csrf"]) {
+    const prefix = `${name}=`;
+    const cookie = cookies.map((value) => value.trim()).find((value) => value.startsWith(prefix));
+    if (!cookie) continue;
+    const value = cookie.slice(prefix.length);
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  return null;
 }
 
 function parseDownloadSize(value: string | null): number | undefined {

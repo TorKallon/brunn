@@ -382,6 +382,11 @@ pre,
   background: var(--surface-subtle);
 }
 
+.user-menu-error {
+  margin: 5px 8px 7px;
+  line-height: 1.35;
+}
+
 .app-content {
   min-width: 0;
 }
@@ -703,6 +708,21 @@ pre,
   outline: 0;
 }
 
+.input-with-action:focus-within {
+  border-color: var(--brand);
+  outline: 2px solid rgb(22 102 80 / 20%);
+  outline-offset: 1px;
+}
+
+.input-with-action.input-invalid {
+  border-color: #bd6868;
+  background: var(--red-soft);
+}
+
+.input-with-action.input-invalid input {
+  background: transparent;
+}
+
 .field-error {
   color: var(--red);
   font-size: 0.76rem;
@@ -883,10 +903,96 @@ pre,
   background: var(--brand);
 }
 
-.login-panel > label {
+.auth-heading {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.auth-heading h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.45rem;
+  line-height: 1.2;
+}
+
+.auth-heading p,
+.auth-result p,
+.auth-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.auth-form,
+.auth-result {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form .field {
+  gap: 6px;
+}
+
+.auth-form .field > label {
   color: #4f5a57;
   font-size: 0.75rem;
   font-weight: 650;
+}
+
+.auth-form .input-with-action {
+  min-height: 42px;
+}
+
+.auth-form .icon-button {
+  min-width: 34px;
+  min-height: 34px;
+}
+
+.auth-link-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -3px;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.auth-link-row a,
+.auth-footer a:not(.button) {
+  color: var(--brand);
+}
+
+.auth-result {
+  justify-items: start;
+  padding-block: 4px;
+}
+
+.auth-result .success-icon {
+  color: var(--brand);
+}
+
+.auth-result .button {
+  margin-top: 2px;
+}
+
+.auth-help {
+  margin-top: -7px;
+  font-size: 0.72rem;
+}
+
+.auth-footer {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.auth-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .login-button {
@@ -2255,6 +2361,8 @@ pre,
 }
 
 @media (max-width: 600px) {
+  .login-layout { padding: 14px; }
+  .login-panel { padding: 20px; }
   .topbar { padding-right: 10px; }
   .context-strip { gap: 7px; }
   .context-strip > div:first-child { display: none; }

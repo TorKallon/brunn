@@ -22,7 +22,7 @@ function requestOf(fetchMock: ReturnType<typeof installFetch>): Request {
     : new Request(new URL(String(input), "https://straylight.test"), init);
 }
 
-const api = () => createApiClient(() => "test-token");
+const api = () => createApiClient();
 
 describe("briefing api client", () => {
   it("lists editions with the default limit", async () => {
@@ -43,7 +43,8 @@ describe("briefing api client", () => {
     expect(url.pathname).toBe("/api/v1/workspace/briefings");
     expect(url.searchParams.get("limit")).toBe("14");
     expect(url.searchParams.has("after_path")).toBe(false);
-    expect(request.headers.get("Authorization")).toBe("Bearer test-token");
+    expect(request.credentials).toBe("same-origin");
+    expect(request.headers.get("Authorization")).toBeNull();
     expect(envelope.status).toBe("complete");
     expect(envelope.data.workspace_generation).toBe(7);
   });
@@ -121,6 +122,7 @@ describe("briefing api client", () => {
   });
 
   it("posts item actions as json without undefined fields", async () => {
+    document.cookie = "straylight_csrf=briefing-csrf; Path=/";
     const fetchMock = installFetch({
       status: "committed",
       data: {
@@ -144,6 +146,7 @@ describe("briefing api client", () => {
       "/api/v1/workspace/briefings/items/action",
     );
     expect(request.headers.get("Content-Type")).toBe("application/json");
+    expect(request.headers.get("X-CSRF-Token")).toBe("briefing-csrf");
     expect(await request.json()).toEqual({
       action: "feedback",
       edition_ref: "entry:11111111-1111-4111-8111-111111111111",

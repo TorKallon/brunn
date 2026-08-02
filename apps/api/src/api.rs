@@ -13,7 +13,7 @@ use tower_http::{
 
 use crate::{
     auth, briefing_service, db::AppState, dreams, eval_service, request_context, service,
-    simple_core, telemetry,
+    simple_core, telemetry, web_auth,
 };
 
 pub fn router(state: AppState) -> Router {
@@ -234,6 +234,17 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             auth::middleware,
         ));
+    let web_auth_routes = Router::new()
+        .route("/auth/session", get(web_auth::session))
+        .route("/auth/login", post(web_auth::login))
+        .route("/auth/logout", post(web_auth::logout))
+        .route("/auth/forgot-password", post(web_auth::forgot_password))
+        .route("/auth/reset-password", post(web_auth::reset_password))
+        .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            state.config.request_timeout,
+        ));
 
     Router::new()
         .route("/health", get(service::health))
@@ -243,7 +254,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/ready", get(service::ready))
         .route("/openapi.json", get(service::openapi))
-        .nest("/v1", protected)
+        .nest("/v1", web_auth_routes.merge(protected))
         .with_state(state.clone())
         .layer(
             ServiceBuilder::new()
@@ -261,6 +272,7 @@ pub fn router(state: AppState) -> Router {
                             http::header::RANGE,
                             request_id.clone(),
                             HeaderName::from_static("x-carrystate-part-sha256"),
+                            HeaderName::from_static("x-csrf-token"),
                         ])
                         .expose_headers([
                             request_id,
@@ -272,7 +284,8 @@ pub fn router(state: AppState) -> Router {
                             http::header::CONTENT_DISPOSITION,
                             http::header::CONTENT_RANGE,
                         ])
-                        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE]),
+                        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+                        .allow_credentials(true),
                 ),
         )
 }

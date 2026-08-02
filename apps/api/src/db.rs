@@ -42,6 +42,8 @@ pub struct AppState {
     pub semantic_runtime: SemanticRuntime,
     pub foreground_latency: ForegroundLatencyTracker,
     pub foreground_latency_client: reqwest::Client,
+    pub web_auth_email_client: reqwest::Client,
+    pub web_auth_password_limiter: Arc<Semaphore>,
 }
 
 impl AppState {
@@ -87,6 +89,13 @@ impl AppState {
                     "could not build foreground-latency client: {error}"
                 ))
             })?;
+        let web_auth_email_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|error| {
+                ApiError::configuration(format!("could not build web-auth email client: {error}"))
+            })?;
+        let web_auth_password_limiter = Arc::new(Semaphore::new(4));
         Ok(Self {
             config,
             auth_pool,
@@ -103,6 +112,8 @@ impl AppState {
             semantic_runtime,
             foreground_latency,
             foreground_latency_client,
+            web_auth_email_client,
+            web_auth_password_limiter,
         })
     }
 

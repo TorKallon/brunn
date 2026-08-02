@@ -258,6 +258,195 @@ pub async fn recover_user(
     }))
 }
 
+pub async fn configure_web_identity(
+    database_url: &str,
+    user_ref: &str,
+    username: &str,
+    email: &str,
+) -> ApiResult<Value> {
+    let user_id = parse_user_ref(user_ref)?;
+    let username = normalize_web_username(username)?;
+    let email = normalize_web_email(email)?;
+    let pool = db::operator_pool(database_url).await?;
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('straylight.operator.web_identity:' || $1::text,0))",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    let user = sqlx::query(
+        "SELECT display_name, account_status FROM straylight.users WHERE id=$1 FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| ApiError::not_found("user_not_found", user_ref))?;
+    let account_status: String = user.try_get("account_status")?;
+    if account_status != "active" {
+        return Err(ApiError::conflict(
+            "account_not_active",
+            "web identity configuration requires an active account",
+            json!({"account_status": account_status}),
+        ));
+    }
+    let identity_conflict = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+          SELECT 1
+          FROM straylight.web_identities
+          WHERE user_id<>$1
+            AND (username_normalized=$2 OR email_normalized=$3)
+        )
+        "#,
+    )
+    .bind(user_id)
+    .bind(&username)
+    .bind(&email)
+    .fetch_one(&mut *tx)
+    .await?;
+    if identity_conflict {
+        return Err(ApiError::conflict(
+            "web_identity_conflict",
+            "the username or email is already assigned",
+            json!({}),
+        ));
+    }
+
+    let existing_credential_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT web_credential_id FROM straylight.web_identities WHERE user_id=$1",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let capabilities: Vec<String> = OWNER_CAPABILITIES
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect();
+    let (credential_id, credential_created) = match existing_credential_id {
+        Some(credential_id) => {
+            let updated = sqlx::query(
+                r#"
+                UPDATE straylight.api_credentials
+                SET label='Web UI session principal',
+                    capabilities=$1,
+                    disabled_at=NULL
+                WHERE user_id=$2 AND id=$3
+                "#,
+            )
+            .bind(&capabilities)
+            .bind(user_id)
+            .bind(credential_id)
+            .execute(&mut *tx)
+            .await?;
+            if updated.rows_affected() != 1 {
+                return Err(ApiError::Internal(
+                    "web identity principal is missing".to_owned(),
+                ));
+            }
+            (credential_id, false)
+        }
+        None => {
+            // The random bearer material is immediately discarded. Only its
+            // one-way digest exists so this principal can be used by web
+            // sessions without creating another usable bearer credential.
+            let discarded_bearer = generate_token();
+            let credential_id = sqlx::query_scalar::<_, Uuid>(
+                r#"
+                INSERT INTO straylight.api_credentials (
+                  user_id, label, token_hash, capabilities
+                ) VALUES ($1,'Web UI session principal',$2,$3)
+                RETURNING id
+                "#,
+            )
+            .bind(user_id)
+            .bind(hash_token(&discarded_bearer))
+            .bind(&capabilities)
+            .fetch_one(&mut *tx)
+            .await?;
+            drop(discarded_bearer);
+            (credential_id, true)
+        }
+    };
+    let scope_grants = sqlx::query(
+        r#"
+        INSERT INTO straylight.credential_scope_grants (
+          credential_id, user_id, scope_id
+        )
+        SELECT $1, scope.user_id, scope.id
+        FROM straylight.scopes AS scope
+        WHERE scope.user_id=$2
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(credential_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    let password_configured = sqlx::query_scalar::<_, bool>(
+        r#"
+        INSERT INTO straylight.web_identities (
+          user_id, username, username_normalized,
+          email, email_normalized, password_hash, web_credential_id
+        ) VALUES ($1,$2,$2,$3,$3,NULL,$4)
+        ON CONFLICT (user_id) DO UPDATE
+        SET username=EXCLUDED.username,
+            username_normalized=EXCLUDED.username_normalized,
+            email=EXCLUDED.email,
+            email_normalized=EXCLUDED.email_normalized,
+            web_credential_id=EXCLUDED.web_credential_id,
+            updated_at=clock_timestamp()
+        RETURNING password_hash IS NOT NULL
+        "#,
+    )
+    .bind(user_id)
+    .bind(&username)
+    .bind(&email)
+    .bind(credential_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.audit_events (
+          user_id, credential_id, actor_ref, action, details, content_free
+        ) VALUES (
+          $1, $2, 'operator:local', 'operator.web_identity.configure',
+          jsonb_build_object(
+            'web_credential_id',$2,
+            'credential_created',$3,
+            'scope_grants_added',$4,
+            'password_configured',$5
+          ), true
+        )
+        "#,
+    )
+    .bind(user_id)
+    .bind(credential_id)
+    .bind(credential_created)
+    .bind(i64::try_from(scope_grants).unwrap_or(i64::MAX))
+    .bind(password_configured)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(json!({
+        "user": {
+            "id": format!("user:{user_id}"),
+            "display_name": user.try_get::<String, _>("display_name")?,
+            "username": username,
+            "email": email
+        },
+        "web_credential": {
+            "id": format!("credential:{credential_id}"),
+            "created": credential_created,
+            "bearer_token_status": "discarded"
+        },
+        "password_status": if password_configured { "configured" } else { "reset_required" },
+        "scope_grants_added": scope_grants
+    }))
+}
+
 pub async fn record_backup_watermark(
     database_url: &str,
     oldest_retained_created_at: &str,
@@ -370,6 +559,38 @@ fn parse_user_ref(value: &str) -> ApiResult<Uuid> {
         .map_err(|_| ApiError::invalid("user reference must be user:<uuid> or a UUID"))
 }
 
+fn normalize_web_username(value: &str) -> ApiResult<String> {
+    let value = value.trim().to_ascii_lowercase();
+    let valid = (3..=64).contains(&value.len())
+        && value.bytes().enumerate().all(|(index, byte)| match byte {
+            b'a'..=b'z' | b'0'..=b'9' => true,
+            b'.' | b'_' | b'-' => index > 0,
+            _ => false,
+        });
+    if !valid {
+        return Err(ApiError::invalid(
+            "username must contain 3 to 64 lowercase letters, digits, dots, underscores, or hyphens and start with a letter or digit",
+        ));
+    }
+    Ok(value)
+}
+
+fn normalize_web_email(value: &str) -> ApiResult<String> {
+    let value = value.trim().to_ascii_lowercase();
+    let (local, domain) = value.split_once('@').unwrap_or_default();
+    if value.len() > 254
+        || local.is_empty()
+        || domain.is_empty()
+        || domain.contains('@')
+        || !domain.contains('.')
+        || value.chars().any(char::is_whitespace)
+        || value.chars().any(char::is_control)
+    {
+        return Err(ApiError::invalid("email must be a valid address"));
+    }
+    Ok(value)
+}
+
 fn generate_token() -> String {
     let mut secret = [0_u8; 32];
     rand::rng().fill_bytes(&mut secret);
@@ -396,5 +617,15 @@ mod tests {
         assert!(validate_name("bad\nname", 20, "name").is_err());
         assert!(parse_user_ref(&Uuid::nil().to_string()).is_ok());
         assert!(parse_user_ref("user:not-a-uuid").is_err());
+        assert_eq!(
+            normalize_web_username(" Owner.Name ").unwrap(),
+            "owner.name"
+        );
+        assert!(normalize_web_username("-owner").is_err());
+        assert_eq!(
+            normalize_web_email(" Owner@Example.com ").unwrap(),
+            "owner@example.com"
+        );
+        assert!(normalize_web_email("owner@example").is_err());
     }
 }

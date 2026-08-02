@@ -11,7 +11,7 @@ import { useCurrent } from "../lib/current";
 import { formatBytes, formatDate, shortId } from "../lib/format";
 
 export function SourcePage() {
-  const { sourceId } = useParams({ from: "/sources/$sourceId" });
+  const { sourceId } = useParams({ from: "/authenticated/sources/$sourceId" });
   const api = useApi();
   const current = useCurrent();
   const [activeTab, setActiveTab] = useState("preview");

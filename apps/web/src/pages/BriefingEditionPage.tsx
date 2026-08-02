@@ -19,8 +19,8 @@ import { editionTitle, useBriefingsIndex } from "./BriefingsPage";
 const SUMMARY_PREVIEW_COUNT = 3;
 
 export function BriefingEditionPage() {
-  const { date } = useParams({ from: "/briefings/$date" });
-  const { edition } = useSearch({ from: "/briefings/$date" });
+  const { date } = useParams({ from: "/authenticated/briefings/$date" });
+  const { edition } = useSearch({ from: "/authenticated/briefings/$date" });
   const api = useApi();
   const readOnly = useReadOnly();
   const navigate = useNavigate();

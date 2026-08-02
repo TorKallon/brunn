@@ -63,7 +63,18 @@ export interface ApiEnvelope<T> {
 export interface UserSummary {
   id: string;
   display_name: string;
+  username?: string;
   email?: string;
+}
+
+export interface AuthSessionData {
+  user: UserSummary;
+  expires_at: string;
+}
+
+export interface AuthCompletionData {
+  message?: string;
+  status?: string;
 }
 
 export interface ScopeSummary {

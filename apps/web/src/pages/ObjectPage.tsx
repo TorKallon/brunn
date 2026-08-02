@@ -10,7 +10,7 @@ import { useApi } from "../lib/auth";
 import { formatDate, humanize, shortId } from "../lib/format";
 
 export function ObjectPage() {
-  const { objectId } = useParams({ from: "/objects/$objectId" });
+  const { objectId } = useParams({ from: "/authenticated/objects/$objectId" });
   const api = useApi();
   const [activeTab, setActiveTab] = useState("overview");
   const objectQuery = useQuery({

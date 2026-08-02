@@ -93,6 +93,11 @@ services:
     environment:
       <<: *production-app-environment
       DATABASE_URL_ADMIN_FILE: ""
+      RESEND_API_KEY: ""
+      RESEND_API_KEY_FILE: /run/secrets/resend_api_key
+      AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:?set AUTH_EMAIL_FROM}
+      AUTH_EMAIL_REPLY_TO: ${AUTH_EMAIL_REPLY_TO:-}
+      STRAYLIGHT_PUBLIC_URL: ${STRAYLIGHT_PUBLIC_URL:?set STRAYLIGHT_PUBLIC_URL}
     labels:
       com.datadoghq.tags.env: production
       com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
@@ -107,6 +112,7 @@ services:
       - minio_app_secret_key
       - continuation_signing_key
       - openai_api_key
+      - resend_api_key
 
   worker:
     build: !reset null
@@ -241,5 +247,7 @@ secrets:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/continuation_signing_key
   openai_api_key:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/openai_api_key
+  resend_api_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/resend_api_key
   dd_api_key:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/dd_api_key

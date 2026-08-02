@@ -28,10 +28,27 @@ async function expectNoAutomatedViolations(container: HTMLElement) {
 
 
 describe("accessibility contracts", () => {
-  it("has no automated violations on the token entry screen", async () => {
-    const { container } = renderApp("/work");
+  it("has no automated violations on the sign-in screen", async () => {
+    const { container } = renderApp("/login");
     expect(
-      await screen.findByRole("heading", { name: "Straylight" }),
+      await screen.findByRole("heading", { name: "Sign in" }),
+    ).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("has no automated violations on the password-recovery screen", async () => {
+    const { container } = renderApp("/forgot-password");
+    expect(
+      await screen.findByRole("heading", { name: "Reset your password" }),
+    ).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("has no automated violations on the password-reset screen", async () => {
+    window.history.replaceState({}, "", "/reset-password#token=test-token");
+    const { container } = renderApp("/reset-password");
+    expect(
+      await screen.findByRole("heading", { name: "Choose a new password" }),
     ).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });

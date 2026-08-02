@@ -67,6 +67,10 @@ pub struct Config {
     pub readiness_timeout: Duration,
     pub requests_per_minute: u32,
     pub allowed_origins: Vec<String>,
+    pub resend_api_key: Option<String>,
+    pub auth_email_from: Option<String>,
+    pub auth_email_reply_to: Option<String>,
+    pub public_url: String,
     pub account_export_ttl: Duration,
     pub account_export_temp_dir: PathBuf,
     pub account_deletion_backup_retention_days: i32,
@@ -83,6 +87,14 @@ impl Config {
 
     pub fn from_env() -> ApiResult<Self> {
         let deployment_environment = env_default("STRAYLIGHT_ENV", "development");
+        if !matches!(
+            deployment_environment.as_str(),
+            "development" | "production"
+        ) {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_ENV must be development or production",
+            ));
+        }
         let non_production_default = if deployment_environment == "production" {
             "false"
         } else {
@@ -257,6 +269,14 @@ impl Config {
             )?),
             requests_per_minute: env_parse("STRAYLIGHT_REQUESTS_PER_MINUTE", "600")?,
             allowed_origins: parse_allowed_origins(&env_default("STRAYLIGHT_ALLOWED_ORIGINS", ""))?,
+            resend_api_key: first_env_or_file(&["RESEND_API_KEY"])?,
+            auth_email_from: first_env(&["AUTH_EMAIL_FROM"]).map(|value| value.trim().to_owned()),
+            auth_email_reply_to: first_env(&["AUTH_EMAIL_REPLY_TO"])
+                .map(|value| value.trim().to_owned()),
+            public_url: env_default("STRAYLIGHT_PUBLIC_URL", "https://straylight.rourkem.com")
+                .trim()
+                .trim_end_matches('/')
+                .to_owned(),
             account_export_ttl: Duration::from_secs(
                 env_parse::<u64>("STRAYLIGHT_ACCOUNT_EXPORT_TTL_HOURS", "24")?
                     .saturating_mul(60 * 60),
@@ -404,7 +424,24 @@ impl Config {
                 "production CORS origins must use HTTPS",
             ));
         }
+        if !self.public_url.to_ascii_lowercase().starts_with("https://") {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_PUBLIC_URL must use HTTPS in production",
+            ));
+        }
         Ok(())
+    }
+
+    pub fn web_email_configured(&self) -> bool {
+        self.resend_api_key.is_some() && self.auth_email_from.is_some()
+    }
+
+    pub fn validate_web_auth(&self) -> ApiResult<()> {
+        validate_web_auth_config(self)
+    }
+
+    pub fn secure_web_cookies(&self) -> bool {
+        self.deployment_environment == "production"
     }
 }
 
@@ -512,6 +549,61 @@ fn validate_explicit_s3_credentials(
     ))
 }
 
+fn validate_web_auth_config(config: &Config) -> ApiResult<()> {
+    if config.resend_api_key.is_some() != config.auth_email_from.is_some() {
+        return Err(ApiError::configuration(
+            "RESEND_API_KEY and AUTH_EMAIL_FROM must be configured together",
+        ));
+    }
+    if config.auth_email_reply_to.is_some() && !config.web_email_configured() {
+        return Err(ApiError::configuration(
+            "AUTH_EMAIL_REPLY_TO requires RESEND_API_KEY and AUTH_EMAIL_FROM",
+        ));
+    }
+    if config.deployment_environment == "production" && !config.web_email_configured() {
+        return Err(ApiError::configuration(
+            "production Web UI authentication requires RESEND_API_KEY and AUTH_EMAIL_FROM",
+        ));
+    }
+    if let Some(api_key) = config.resend_api_key.as_deref()
+        && (api_key.len() < 20
+            || api_key.chars().any(char::is_whitespace)
+            || api_key.chars().any(char::is_control)
+            || contains_placeholder(api_key))
+    {
+        return Err(ApiError::configuration(
+            "RESEND_API_KEY is too short, contains whitespace, or is a placeholder",
+        ));
+    }
+    for (name, value) in [
+        ("AUTH_EMAIL_FROM", config.auth_email_from.as_deref()),
+        ("AUTH_EMAIL_REPLY_TO", config.auth_email_reply_to.as_deref()),
+    ] {
+        if let Some(value) = value
+            && (!value.contains('@') || value.chars().any(char::is_control))
+        {
+            return Err(ApiError::configuration(format!(
+                "{name} must be a printable email sender value"
+            )));
+        }
+    }
+    let public_url = reqwest::Url::parse(&config.public_url)
+        .map_err(|_| ApiError::configuration("STRAYLIGHT_PUBLIC_URL must be an absolute URL"))?;
+    if !matches!(public_url.scheme(), "http" | "https")
+        || public_url.host_str().is_none()
+        || public_url.query().is_some()
+        || public_url.fragment().is_some()
+        || !public_url.username().is_empty()
+        || public_url.password().is_some()
+        || public_url.path() != "/"
+    {
+        return Err(ApiError::configuration(
+            "STRAYLIGHT_PUBLIC_URL must be an HTTP(S) origin without credentials, path, query, or fragment",
+        ));
+    }
+    Ok(())
+}
+
 fn contains_placeholder(value: &str) -> bool {
     value.to_ascii_lowercase().contains("replace")
 }
@@ -615,8 +707,25 @@ mod tests {
         run_config_env_probe("resume_delta_flag");
     }
 
+    #[test]
+    fn resend_secret_file_is_supported_for_the_api() {
+        run_config_env_probe("resend_secret_file");
+    }
+
+    #[test]
+    fn production_web_mail_configuration_fails_closed() {
+        run_config_env_probe("production_missing_web_mail");
+        run_config_env_probe("production_placeholder_web_mail");
+    }
+
+    #[test]
+    fn deployment_environment_typos_fail_closed() {
+        run_config_env_probe("invalid_environment");
+    }
+
     fn run_config_env_probe(scenario: &str) {
         let mut command = Command::new(std::env::current_exe().unwrap());
+        let mut resend_secret_file = None;
         command
             .arg("--exact")
             .arg("config::tests::config_env_probe")
@@ -687,9 +796,34 @@ mod tests {
                         "750",
                     );
             }
+            "resend_secret_file" => {
+                let mut secret = tempfile::NamedTempFile::new().unwrap();
+                writeln!(secret, "re_unit_1234567890abcdef").unwrap();
+                command
+                    .env("RESEND_API_KEY_FILE", secret.path())
+                    .env("AUTH_EMAIL_FROM", "Straylight <login@example.com>")
+                    .env("STRAYLIGHT_PUBLIC_URL", "http://localhost:13110");
+                resend_secret_file = Some(secret);
+            }
+            "production_missing_web_mail" => {
+                command
+                    .env("STRAYLIGHT_ENV", "production")
+                    .env("OPENAI_API_KEY", "sk-unit-openai");
+            }
+            "production_placeholder_web_mail" => {
+                command
+                    .env("STRAYLIGHT_ENV", "production")
+                    .env("OPENAI_API_KEY", "sk-unit-openai")
+                    .env("RESEND_API_KEY", "replace-with-resend-key")
+                    .env("AUTH_EMAIL_FROM", "Straylight <login@example.com>");
+            }
+            "invalid_environment" => {
+                command.env("STRAYLIGHT_ENV", "Production");
+            }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
         let output = command.output().unwrap();
+        drop(resend_secret_file);
         assert!(
             output.status.success(),
             "config probe {scenario} failed\nstdout:\n{}\nstderr:\n{}",
@@ -798,6 +932,32 @@ mod tests {
                     config.embedding_backfill_foreground_status_timeout,
                     Duration::from_millis(750)
                 );
+            }
+            "resend_secret_file" => {
+                let config = Config::from_env().unwrap();
+                config.validate_web_auth().unwrap();
+                assert_eq!(
+                    config.resend_api_key.as_deref(),
+                    Some("re_unit_1234567890abcdef")
+                );
+                assert_eq!(
+                    config.auth_email_from.as_deref(),
+                    Some("Straylight <login@example.com>")
+                );
+            }
+            "production_missing_web_mail" => {
+                let config = Config::from_env().unwrap();
+                assert!(config.validate_web_auth().is_err());
+            }
+            "production_placeholder_web_mail" => {
+                let config = Config::from_env().unwrap();
+                assert!(config.validate_web_auth().is_err());
+            }
+            "invalid_environment" => {
+                let error = Config::from_env()
+                    .err()
+                    .expect("invalid environment must fail");
+                assert!(error.to_string().contains("STRAYLIGHT_ENV"));
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }

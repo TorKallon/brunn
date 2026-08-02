@@ -84,7 +84,8 @@ describe("workspace binaries", () => {
         request: Request,
       ) => {
         downloadRequested = true;
-        expect(request.headers.get("authorization")).toBe("Bearer asset-token");
+        expect(request.credentials).toBe("same-origin");
+        expect(request.headers.get("authorization")).toBeNull();
         return new Response(new Uint8Array([0xff, 0xd8, 0xff]), {
           headers: {
             "Content-Type": "image/jpeg",

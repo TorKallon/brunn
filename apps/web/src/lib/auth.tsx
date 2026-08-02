@@ -1,57 +1,30 @@
 import {
   createContext,
   type PropsWithChildren,
-  useCallback,
   useContext,
+  useEffect,
   useMemo,
-  useState,
 } from "react";
 import { createApiClient, type StraylightApi } from "./api";
 
-export const AUTH_SESSION_KEY = "straylight.access_token";
-
-interface AuthContextValue {
-  token: string | null;
-  authenticate: (token: string) => void;
-  signOut: () => void;
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null);
+export const AUTH_SESSION_QUERY_KEY = ["auth", "session"] as const;
 const ApiContext = createContext<StraylightApi | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [token, setToken] = useState<string | null>(() =>
-    window.sessionStorage.getItem(AUTH_SESSION_KEY),
-  );
+  const api = useMemo(() => createApiClient(), []);
 
-  const authenticate = useCallback((nextToken: string) => {
-    const normalized = nextToken.trim();
-    window.sessionStorage.setItem(AUTH_SESSION_KEY, normalized);
-    setToken(normalized);
+  useEffect(() => {
+    try {
+      window.sessionStorage.removeItem("straylight.access_token");
+    } catch {
+      // Hardened browser policies may disable storage. The legacy value is
+      // never read or used by the cookie-session client.
+    }
   }, []);
-
-  const signOut = useCallback(() => {
-    window.sessionStorage.removeItem(AUTH_SESSION_KEY);
-    setToken(null);
-  }, []);
-
-  const authValue = useMemo(
-    () => ({ token, authenticate, signOut }),
-    [authenticate, signOut, token],
-  );
-  const api = useMemo(() => createApiClient(() => token), [token]);
 
   return (
-    <AuthContext.Provider value={authValue}>
-      <ApiContext.Provider value={api}>{children}</ApiContext.Provider>
-    </AuthContext.Provider>
+    <ApiContext.Provider value={api}>{children}</ApiContext.Provider>
   );
-}
-
-export function useAuth(): AuthContextValue {
-  const value = useContext(AuthContext);
-  if (!value) throw new Error("useAuth must be used inside AuthProvider");
-  return value;
 }
 
 export function useApi(): StraylightApi {

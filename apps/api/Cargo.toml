@@ -20,6 +20,7 @@ path = "src/bin/carrystate.rs"
 
 [dependencies]
 anyhow = "1"
+argon2 = "0.5"
 async-trait = "0.1"
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "default-https-client", "rt-tokio"] }
 aws-sdk-s3 = { version = "1", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"] }
@@ -70,6 +71,7 @@ url = "2"
 uuid = { version = "1", features = ["serde", "v4", "v7"] }
 walkdir = "2"
 zip = { version = "4", default-features = false, features = ["deflate", "time"] }
+zxcvbn = "3.1.1"
 
 [dev-dependencies]
 http-body-util = "0.1"

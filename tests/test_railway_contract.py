@@ -115,6 +115,37 @@ class RailwayContractTests(unittest.TestCase):
             worker_block,
         )
 
+    def test_password_recovery_mail_secret_is_api_scoped(self):
+        api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
+            'const worker = service("worker"', 1
+        )[0]
+        worker_block = RAILWAY.split('const worker = service("worker"', 1)[1].split(
+            'const mcp = service("mcp"', 1
+        )[0]
+        web_block = RAILWAY.split('const web = service("web"', 1)[1].split(
+            'const datadog = service("datadog-agent"', 1
+        )[0]
+        self.assertIn("RESEND_API_KEY: preserve()", api_block)
+        self.assertNotIn("RESEND_API_KEY", worker_block)
+        self.assertNotIn("RESEND_API_KEY", web_block)
+        self.assertIn(
+            'STRAYLIGHT_PUBLIC_URL: "https://straylight.rourkem.com"',
+            RAILWAY,
+        )
+        self.assertIn('AUTH_EMAIL_FROM: "Straylight <login@solark.io>"', RAILWAY)
+
+    def test_browser_auth_has_a_small_rate_limited_proxy_boundary(self):
+        self.assertIn(
+            "zone=straylight_auth_limit:1m rate=2r/s",
+            WEB_PROXY,
+        )
+        auth_proxy = WEB_PROXY.split("location ^~ /api/v1/auth/ {", 1)[1].split(
+            "location /api/ {", 1
+        )[0]
+        self.assertIn("client_max_body_size 16k;", auth_proxy)
+        self.assertIn("limit_req zone=straylight_auth_limit burst=10 nodelay;", auth_proxy)
+        self.assertIn("proxy_pass http://straylight_api/v1/auth/;", auth_proxy)
+
     def test_reasoning_and_token_contract_is_frozen(self):
         expected = {
             "STRAYLIGHT_LEGACY_API_ENABLED": "false",
@@ -156,6 +187,12 @@ class RailwayContractTests(unittest.TestCase):
         )
         self.assertIn("STRAYLIGHT_MCP_SEALING_KEY: preserve()", mcp_block)
         self.assertNotIn("STRAYLIGHT_API_TOKEN", mcp_block)
+
+        oauth_proxy = WEB_PROXY.split(
+            "# The public web service is the only edge.", 1
+        )[1].split("location / {", 1)[0]
+        self.assertIn('proxy_set_header Cookie "";', oauth_proxy)
+        self.assertIn("proxy_hide_header Set-Cookie;", oauth_proxy)
         self.assertIn('ENTRYPOINT ["/nodejs/bin/node", "dist/remote.js"]', MCP_DOCKERFILE)
 
     def test_hosted_object_store_is_external_versioned_s3(self):

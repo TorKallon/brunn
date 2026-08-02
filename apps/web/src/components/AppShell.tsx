@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   Binary,
@@ -16,7 +16,8 @@ import {
   X,
 } from "lucide-react";
 import { type PropsWithChildren, useState } from "react";
-import { useApi, useAuth } from "../lib/auth";
+import { ApiError } from "../lib/api";
+import { useApi } from "../lib/auth";
 import { useCurrent, useReadOnly } from "../lib/current";
 import { formatRelative } from "../lib/format";
 import { ReadOnlyNotice, StatusBadge } from "./StateViews";
@@ -35,8 +36,9 @@ const navItems = [
 export function AppShell({ children }: PropsWithChildren) {
   const [navOpen, setNavOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
-  const { signOut } = useAuth();
   const api = useApi();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const current = useCurrent();
   const readOnly = useReadOnly();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -49,6 +51,19 @@ export function AppShell({ children }: PropsWithChildren) {
   const me = current.data;
   const freshness = me.freshness ?? current.freshness;
   const serviceStatus = statusQuery.data?.data.status ?? (statusQuery.isError ? "unavailable" : "checking");
+  const logoutMutation = useMutation({
+    mutationFn: () => api.logout(),
+    onSuccess: async () => {
+      queryClient.clear();
+      await navigate({ to: "/login", replace: true });
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.status === 401) {
+        queryClient.clear();
+        await navigate({ to: "/login", replace: true });
+      }
+    },
+  });
 
   return (
     <div className="app-layout">
@@ -133,15 +148,25 @@ export function AppShell({ children }: PropsWithChildren) {
               <ChevronDown size={15} aria-hidden="true" />
             </button>
             {userOpen ? (
-              <div className="user-menu">
+              <div className="user-menu" role="menu">
                 <div>
                   <strong>{me.user.display_name}</strong>
                   {me.user.email ? <span>{me.user.email}</span> : null}
                 </div>
-                <button type="button" onClick={signOut}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => logoutMutation.mutate()}
+                  disabled={logoutMutation.isPending}
+                >
                   <LogOut size={16} aria-hidden="true" />
-                  Sign out
+                  {logoutMutation.isPending ? "Signing out…" : "Sign out"}
                 </button>
+                {logoutMutation.isError && !(logoutMutation.error instanceof ApiError && logoutMutation.error.status === 401) ? (
+                  <p className="field-error user-menu-error" role="alert">
+                    Sign-out failed. Check your connection and try again.
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>

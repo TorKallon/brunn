@@ -25,8 +25,9 @@ production-images:
 production-secrets:
 	@test -n "$(SECRETS_DIR)" || { echo "set SECRETS_DIR=/path/to/secrets" >&2; exit 1; }
 	@test -n "$(OPENAI_KEY_FILE)" || { echo "set OPENAI_KEY_FILE=/path/to/key-file" >&2; exit 1; }
+	@test -n "$(RESEND_KEY_FILE)" || { echo "set RESEND_KEY_FILE=/path/to/key-file" >&2; exit 1; }
 	@test -n "$(DATADOG_KEY_FILE)" || { echo "set DATADOG_KEY_FILE=/path/to/key-file" >&2; exit 1; }
-	./scripts/init-production-secrets.sh "$(SECRETS_DIR)" "$(OPENAI_KEY_FILE)" "$(DATADOG_KEY_FILE)"
+	./scripts/init-production-secrets.sh "$(SECRETS_DIR)" "$(OPENAI_KEY_FILE)" "$(RESEND_KEY_FILE)" "$(DATADOG_KEY_FILE)"
 
 pull:
 	$(COMPOSE) pull --ignore-buildable

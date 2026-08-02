@@ -57,6 +57,14 @@ enum OperatorCommand {
         #[arg(long)]
         revoke_existing_owner_credentials: bool,
     },
+    ConfigureWebIdentity {
+        #[arg(long)]
+        user_id: String,
+        #[arg(long)]
+        username: String,
+        #[arg(long)]
+        email: String,
+    },
     RecordBackupWatermark {
         #[arg(long)]
         oldest_retained_created_at: String,
@@ -155,6 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Serve => {
             let bind = config.bind;
+            config.validate_web_auth()?;
             let state = AppState::connect(config).await?;
             if metrics_enabled {
                 telemetry::spawn_runtime_metrics(state.clone());
@@ -235,6 +244,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &user_id,
                         &credential_name,
                         revoke_existing_owner_credentials,
+                    )
+                    .await?
+                }
+                OperatorCommand::ConfigureWebIdentity {
+                    user_id,
+                    username,
+                    email,
+                } => {
+                    operator_service::configure_web_identity(
+                        &database_url,
+                        &user_id,
+                        &username,
+                        &email,
                     )
                     .await?
                 }

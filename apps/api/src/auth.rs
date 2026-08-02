@@ -2,7 +2,7 @@ use std::{collections::HashSet, str::FromStr, time::Instant};
 
 use axum::{
     extract::{Request, State},
-    http::header::AUTHORIZATION,
+    http::{Method, header::AUTHORIZATION},
     middleware::Next,
     response::Response,
 };
@@ -15,6 +15,7 @@ use crate::{
     db::AppState,
     error::{ApiError, ApiResult},
     models::{Capability, CredentialId, UserId},
+    web_auth,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -61,26 +62,51 @@ pub async fn middleware(
     next: Next,
 ) -> Result<Response, ApiError> {
     let started = Instant::now();
-    let token = match request
+    let bearer = request
         .headers()
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .filter(|value| !value.trim().is_empty())
-    {
-        Some(token) => token,
-        None => {
-            metrics::counter!("auth.attempts", "result" => "missing").increment(1);
-            metrics::histogram!("auth.duration_ms", "result" => "missing")
-                .record(started.elapsed().as_secs_f64() * 1_000.0);
-            return Err(ApiError::unauthenticated());
-        }
+        .filter(|value| !value.trim().is_empty());
+    let session_token = if bearer.is_none() {
+        web_auth::session_token(request.headers(), &state)
+    } else {
+        None
     };
+    if bearer.is_none() && session_token.is_none() {
+        metrics::counter!("auth.attempts", "result" => "missing").increment(1);
+        metrics::histogram!("auth.duration_ms", "result" => "missing")
+            .record(started.elapsed().as_secs_f64() * 1_000.0);
+        return Err(ApiError::unauthenticated());
+    }
     state.preauth_rate_limiter.check()?;
-    let auth = match authenticate(&state, token).await {
+    let (authentication, method) = if let Some(token) = bearer {
+        (authenticate(&state, token).await, "bearer")
+    } else if let Some(token) = session_token {
+        let authentication = match web_auth::authenticate_session(&state, &token).await {
+            Ok(Some(session)) => {
+                if is_unsafe_method(request.method()) {
+                    web_auth::require_csrf(request.headers(), &state, &token).map(|()| session.auth)
+                } else {
+                    Ok(session.auth)
+                }
+            }
+            Ok(None) => Err(ApiError::unauthenticated()),
+            Err(error) => Err(error),
+        };
+        (authentication, "session")
+    } else {
+        unreachable!("a bearer or session token was established above")
+    };
+    let auth = match authentication {
         Ok(auth) => auth,
         Err(error) => {
-            metrics::counter!("auth.attempts", "result" => "failed").increment(1);
+            metrics::counter!(
+                "auth.attempts",
+                "result" => "failed",
+                "method" => method
+            )
+            .increment(1);
             metrics::histogram!("auth.duration_ms", "result" => "failed")
                 .record(started.elapsed().as_secs_f64() * 1_000.0);
             return Err(error);
@@ -95,7 +121,8 @@ pub async fn middleware(
     metrics::counter!(
         "auth.attempts",
         "result" => "success",
-        "access" => access
+        "access" => access,
+        "method" => method
     )
     .increment(1);
     metrics::histogram!("auth.duration_ms", "result" => "success")
@@ -104,6 +131,10 @@ pub async fn middleware(
         .record(auth.scope_refs.len() as f64);
     request.extensions_mut().insert(auth);
     Ok(next.run(request).await)
+}
+
+fn is_unsafe_method(method: &Method) -> bool {
+    !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
 }
 
 pub async fn authenticate(state: &AppState, token: &str) -> ApiResult<AuthContext> {
@@ -150,5 +181,13 @@ mod tests {
         let hash = hash_token("straylight-test-secret");
         assert_eq!(hash.len(), 64);
         assert!(!hash.contains("secret"));
+    }
+
+    #[test]
+    fn csrf_is_only_needed_for_unsafe_methods() {
+        assert!(!is_unsafe_method(&Method::GET));
+        assert!(!is_unsafe_method(&Method::HEAD));
+        assert!(is_unsafe_method(&Method::POST));
+        assert!(is_unsafe_method(&Method::DELETE));
     }
 }

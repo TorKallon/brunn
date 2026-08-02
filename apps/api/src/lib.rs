@@ -50,6 +50,7 @@ pub mod upload_service;
 pub mod usage;
 pub mod usage_service;
 pub mod vault_service;
+pub mod web_auth;
 pub mod worker;
 pub mod workspace_features;
 pub mod write_service;
