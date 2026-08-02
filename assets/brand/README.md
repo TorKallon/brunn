@@ -10,12 +10,13 @@ concept board approved by the user. Its SHA-256 digest is
 `eab0ad6d1cbe2136628a19cea62ed592b8950613a5170c3790df75f784e5cc0e`.
 
 The mark uses a midnight field, one off-center blue-white source, and a single
-ice-blue-to-cobalt beam. The production palette intentionally contains no
-green, teal, pink, purple, violet, lavender, or periwinkle.
+ice-blue-to-cobalt beam. The production palette is emphatically blue, with
+subtle sapphire/indigo depth and no pink, hot magenta, or fuchsia.
 
-The concept board remains the historical selection reference. The production
-assets incorporate the user's follow-up color correction to use blue and white
-only.
+The concept board remains the historical selection reference. The user later
+clarified that restrained cool violet is welcome when it improves the design;
+the objection was to the all-pink/purple chroma-key screen, not nuanced shading
+inside a primarily blue identity.
 
 Derived assets:
 
@@ -34,4 +35,4 @@ appearance. The transparent master's SHA-256 digest is
 
 The master was generated from the user-approved concept board on 2026-08-02.
 Its SHA-256 digest is
-`937875cc8dffa442a2d1c98373cc491438cc7c173676f36054753dc80f8d9edd`.
+`d050cd7fbd092b620763930a3487d693be97b55b45a722bd05d6dc7f0af43f2e`.

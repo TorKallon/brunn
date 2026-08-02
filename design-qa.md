@@ -15,8 +15,8 @@ at `assets/brand/reference/straylight-night-signal-selected-board.png`.
 - The visible identity uses a midnight sidebar, blue interaction accents, and
   a readable serif system stack for `Straylight`; green is no longer used as a
   core web brand color.
-- The production assets use only midnight navy, neutral/azure blue, and white;
-  no visible pink, purple, violet, lavender, or periwinkle remains.
+- The production assets stay blue-dominant while using layered sapphire/cobalt
+  shading and internal beam gradations; no visible pink or hot magenta remains.
 - The 64 px favicon remains recognizable when reduced to 32 px and 16 px.
 - The login implementation was captured at
   `/Users/aether/.codex/visualizations/2026/08/02/019fc465-35c6-7671-ae30-6cc291b72b59/straylight-web-brand-login.png`.
