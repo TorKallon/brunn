@@ -41,6 +41,8 @@ const releaseRuntime = {
   STRAYLIGHT_SEARCH_FAIR_SHARE: preserve(),
   STRAYLIGHT_SEARCH_TOP1_HYDRATION: preserve(),
   STRAYLIGHT_SEMANTIC_LANE: preserve(),
+  STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS: "5000",
+  STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY: "8",
   STRAYLIGHT_SUPERSESSION_DEMOTION: preserve(),
   STRAYLIGHT_VERBATIM_SPANS: preserve(),
   STRAYLIGHT_ACCOUNT_EXPORT_TTL_HOURS: "24",
@@ -84,7 +86,9 @@ const db = service("db", {
     limitOverride: {
       containers: {
         cpu: 2,
-        memoryBytes: 2 * 1024 * 1024 * 1024,
+        // 2026-08-02 owner-authorized memory experiment: the 1.25 GB HNSW
+        // index plus the lexical working set could not stay cached in 2 GiB.
+        memoryBytes: 4 * 1024 * 1024 * 1024,
       },
     },
   },
