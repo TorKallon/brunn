@@ -13,6 +13,11 @@ apps/web/dist/
 apps/mcp/node_modules/
 .railway/node_modules/
 apps/mcp/dist/
+apps/ios/.build/
+apps/ios/DerivedData/
+apps/ios/*.xcworkspace/xcuserdata/
+apps/ios/*.xcodeproj/xcuserdata/
+apps/ios/**/xcuserdata/
 
 runs/
 backups/
