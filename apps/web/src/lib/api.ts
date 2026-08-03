@@ -95,7 +95,7 @@ async function parseBody(response: Response): Promise<unknown> {
 
 export interface StraylightApi {
   authSession(): Promise<ApiEnvelope<AuthSessionData>>;
-  login(username: string, password: string): Promise<ApiEnvelope<AuthSessionData>>;
+  login(email: string, password: string): Promise<ApiEnvelope<AuthSessionData>>;
   logout(): Promise<ApiEnvelope<AuthCompletionData>>;
   forgotPassword(identifier: string): Promise<ApiEnvelope<AuthCompletionData>>;
   resetPassword(token: string, password: string): Promise<ApiEnvelope<AuthCompletionData>>;
@@ -364,8 +364,8 @@ export function createApiClient(): StraylightApi {
 
   return {
     authSession: () => get<AuthSessionData>("/auth/session"),
-    login: (username, password) =>
-      post<AuthSessionData>("/auth/login", { username, password }),
+    login: (email, password) =>
+      post<AuthSessionData>("/auth/login", { email, password }),
     logout: () => post<AuthCompletionData>("/auth/logout", {}),
     forgotPassword: (identifier) =>
       post<AuthCompletionData>("/auth/forgot-password", { identifier }),

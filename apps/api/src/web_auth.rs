@@ -77,7 +77,8 @@ type HmacSha256 = Hmac<Sha256>;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoginRequest {
-    username: String,
+    #[serde(alias = "username")]
+    email: String,
     password: String,
 }
 
@@ -104,7 +105,6 @@ pub struct AuthenticatedWebSession {
     pub auth: AuthContext,
     pub session_id: Uuid,
     pub expires_at: DateTime<Utc>,
-    pub username: String,
     pub email: String,
     pub display_name: String,
 }
@@ -114,13 +114,14 @@ pub async fn login(
     Json(request): Json<LoginRequest>,
 ) -> ApiResult<Response> {
     state.preauth_rate_limiter.check()?;
-    let identifier = normalize_login_username(&request.username).ok_or_else(|| {
-        ApiError::invalid(
-            "username must contain 3 to 64 lowercase letters, digits, dots, underscores, or hyphens",
-        )
-    })?;
+    let identifier = normalize_identifier(&request.email)
+        .ok_or_else(|| ApiError::invalid("enter a valid email address"))?;
     let identity = lookup_identity(&state, &identifier).await?;
-    let rate_key = identifier_rate_key(&state.config.continuation_secret, "login", &identifier)?;
+    let rate_key = login_rate_key(
+        &state.config.continuation_secret,
+        &identifier,
+        identity.as_ref().map(|value| value.user_id),
+    )?;
     let rate_allowed = consume_rate_limit(
         &state,
         "login",
@@ -347,7 +348,6 @@ pub async fn authenticate_session(
         },
         session_id: row.try_get("web_session_id")?,
         expires_at: row.try_get("expires_at")?,
-        username: row.try_get("username")?,
         email: row.try_get("email")?,
         display_name: row.try_get("display_name")?,
     }))
@@ -385,7 +385,7 @@ fn auth_envelope(session: &AuthenticatedWebSession) -> Json<ApiEnvelope<Value>> 
         "user": {
             "id": format!("user:{}", session.auth.user_id.0),
             "display_name": session.display_name,
-            "username": session.username,
+            "username": session.email,
             "email": session.email
         },
         "expires_at": session.expires_at.to_rfc3339_opts(SecondsFormat::Millis, true)
@@ -507,17 +507,6 @@ fn normalize_identifier(value: &str) -> Option<String> {
     Some(value.to_lowercase())
 }
 
-fn normalize_login_username(value: &str) -> Option<String> {
-    let value = value.trim().to_ascii_lowercase();
-    ((3..=64).contains(&value.len())
-        && value.bytes().enumerate().all(|(index, byte)| match byte {
-            b'a'..=b'z' | b'0'..=b'9' => true,
-            b'.' | b'_' | b'-' => index > 0,
-            _ => false,
-        }))
-    .then_some(value)
-}
-
 fn normalize_password_input(value: &str) -> Option<String> {
     if value.len() > MAX_PASSWORD_BYTES
         || value.chars().count() > MAX_PASSWORD_CHARS
@@ -595,7 +584,7 @@ fn invalid_credentials() -> ApiError {
     ApiError::public(
         StatusCode::UNAUTHORIZED,
         "invalid_credentials",
-        "the username or password is invalid",
+        "the email or password is invalid",
     )
 }
 
@@ -703,6 +692,13 @@ fn identifier_rate_key(secret: &str, kind: &str, identifier: &str) -> ApiResult<
     mac.update(b"\0");
     mac.update(identifier.as_bytes());
     Ok(hex::encode(mac.finalize().into_bytes()))
+}
+
+fn login_rate_key(secret: &str, identifier: &str, user_id: Option<Uuid>) -> ApiResult<String> {
+    match user_id {
+        Some(user_id) => identifier_rate_key(secret, "login-user", &user_id.to_string()),
+        None => identifier_rate_key(secret, "login", identifier),
+    }
 }
 
 fn resolved_user_rate_key(state: &AppState, kind: &str, user_id: Uuid) -> ApiResult<String> {
@@ -921,10 +917,13 @@ mod tests {
         assert!(normalize_identifier(" Owner ").is_some_and(|value| value == "owner"));
         assert!(normalize_identifier("").is_none());
         assert_eq!(
-            normalize_login_username(" Owner.Name ").as_deref(),
+            normalize_identifier(" Owner.Name ").as_deref(),
             Some("owner.name")
         );
-        assert!(normalize_login_username("owner@example.com").is_none());
+        assert_eq!(
+            normalize_identifier(" Owner@Example.com ").as_deref(),
+            Some("owner@example.com")
+        );
     }
 
     #[test]
@@ -940,6 +939,34 @@ mod tests {
         assert_ne!(username_bucket, email_bucket);
         assert_eq!(first_user_bucket, second_user_bucket);
         assert_ne!(first_user_bucket, username_bucket);
+    }
+
+    #[test]
+    fn resolved_user_rate_bucket_is_shared_across_login_aliases() {
+        let secret = "c".repeat(32);
+        let user_id = Uuid::now_v7();
+        let username_bucket = login_rate_key(&secret, "owner", Some(user_id)).unwrap();
+        let email_bucket = login_rate_key(&secret, "owner@example.com", Some(user_id)).unwrap();
+        let unknown_bucket = login_rate_key(&secret, "unknown@example.com", None).unwrap();
+        assert_eq!(username_bucket, email_bucket);
+        assert_ne!(username_bucket, unknown_bucket);
+    }
+
+    #[test]
+    fn login_request_uses_email_and_accepts_legacy_username_payloads() {
+        let current: LoginRequest = serde_json::from_value(json!({
+            "email": "owner@example.com",
+            "password": "not-a-real-password"
+        }))
+        .unwrap();
+        assert_eq!(current.email, "owner@example.com");
+
+        let legacy: LoginRequest = serde_json::from_value(json!({
+            "username": "owner",
+            "password": "not-a-real-password"
+        }))
+        .unwrap();
+        assert_eq!(legacy.email, "owner");
     }
 
     #[test]

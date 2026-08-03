@@ -66,6 +66,14 @@ async fn web_identity_sessions_resets_and_account_purge_are_fail_closed() {
     );
     assert!(configured["web_credential"].get("token").is_none());
 
+    let app_rw_can_create_web_sessions = sqlx::query_scalar::<_, bool>(
+        "SELECT has_function_privilege('app_rw', 'straylight_auth.create_web_session(uuid,text,timestamptz,text,text)', 'EXECUTE')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("check Web-session function privilege");
+    assert!(app_rw_can_create_web_sessions);
+
     let identity = sqlx::query(
         "SELECT password_hash,web_credential_id FROM straylight.web_identities WHERE user_id=$1",
     )
@@ -80,6 +88,16 @@ async fn web_identity_sessions_resets_and_account_purge_are_fail_closed() {
             .is_none()
     );
     let web_credential_id: Uuid = identity.try_get("web_credential_id").unwrap();
+    for login_identifier in [&username, &email] {
+        let resolved_user_id = sqlx::query_scalar::<_, Uuid>(
+            "SELECT user_id FROM straylight_auth.lookup_web_identity($1)",
+        )
+        .bind(login_identifier)
+        .fetch_one(&pool)
+        .await
+        .expect("resolve Web identity by login alias");
+        assert_eq!(resolved_user_id, user_id);
+    }
     let grants = sqlx::query_scalar::<_, i64>(
         "SELECT count(*) FROM straylight.credential_scope_grants WHERE user_id=$1 AND credential_id=$2",
     )
@@ -162,10 +180,10 @@ async fn web_identity_sessions_resets_and_account_purge_are_fail_closed() {
             .bind(&first_session_hash)
             .bind(Utc::now() + ChronoDuration::days(30))
             .bind("$argon2id$fixture")
-            .bind(&username)
+            .bind(&email)
             .fetch_one(&pool)
             .await
-            .expect("create first web session");
+            .expect("create first web session with the account email");
     let first_session_has_30_day_lifetime = sqlx::query_scalar::<_, bool>(
         "SELECT expires_at - created_at > interval '29 days' FROM straylight.web_sessions WHERE id=$1",
     )
@@ -244,6 +262,23 @@ async fn web_identity_sessions_resets_and_account_purge_are_fail_closed() {
     .await
     .expect("change web identity email");
     assert_reset_used(&pool, old_email_reset_id).await;
+    let stale_email_login =
+        sqlx::query_scalar::<_, Uuid>("SELECT straylight_auth.create_web_session($1,$2,$3,$4,$5)")
+            .bind(user_id)
+            .bind(hash_token(&format!("stale-email-session:{user_id}")))
+            .bind(Utc::now() + ChronoDuration::days(30))
+            .bind("$argon2id$fixture")
+            .bind(&email)
+            .fetch_one(&pool)
+            .await
+            .expect_err("the pre-change email must not create a web session");
+    assert_eq!(
+        stale_email_login
+            .as_database_error()
+            .and_then(|error| error.code())
+            .as_deref(),
+        Some("P0002")
+    );
     let stale_email_issue =
         sqlx::query_scalar::<_, Uuid>("SELECT straylight_auth.issue_password_reset($1,$2,$3,$4)")
             .bind(user_id)
@@ -268,10 +303,10 @@ async fn web_identity_sessions_resets_and_account_purge_are_fail_closed() {
             .bind(&third_session_hash)
             .bind(Utc::now() + ChronoDuration::days(30))
             .bind("$argon2id$fixture")
-            .bind(&username)
+            .bind(&updated_email)
             .fetch_one(&pool)
             .await
-            .expect("create third web session");
+            .expect("create third web session with the updated account email");
     let first_reset_hash = hash_token(&format!("first-reset:{user_id}"));
     let second_reset_hash = hash_token(&format!("second-reset:{user_id}"));
     for reset_hash in [&first_reset_hash, &second_reset_hash] {

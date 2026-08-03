@@ -146,6 +146,9 @@ docker compose \
 ```
 
 Use **Forgot password** on the public Web UI to establish the first password.
+The account email is the only user-facing sign-in identifier; the operator
+`--username` value is a legacy internal handle and must not be presented as a
+separate credential the owner needs to remember.
 The API sends the single-use, 30-minute link through Resend; it stores only a
 hash of the reset secret, and completing the reset revokes every existing Web
 UI session. Keep `resend_api_key` in the production secret bundle and keep

@@ -29,7 +29,7 @@ const sessionEnvelope = {
 };
 
 describe("web authentication", () => {
-  it("signs in with a username and password without browser token storage", async () => {
+  it("signs in with an email and password without browser token storage", async () => {
     window.sessionStorage.setItem("straylight.access_token", "legacy-bearer-secret");
     const requests: Request[] = [];
     installApiMock({
@@ -37,7 +37,7 @@ describe("web authentication", () => {
       "POST /api/v1/auth/login": async (request: Request) => {
         requests.push(request);
         expect(await request.json()).toEqual({
-          username: "aether",
+          email: "aether@example.com",
           password: "correct horse battery staple",
         });
         return sessionEnvelope;
@@ -54,7 +54,7 @@ describe("web authentication", () => {
       await screen.findByRole("heading", { name: "Sign in" }),
     ).toBeInTheDocument();
     queryClient.setQueryData(["previous-user", "private"], { secret: true });
-    await user.type(screen.getByLabelText("Username"), "aether");
+    await user.type(screen.getByLabelText("Email"), "aether@example.com");
     await user.type(
       screen.getByLabelText("Password"),
       "correct horse battery staple",
@@ -90,14 +90,40 @@ describe("web authentication", () => {
     const user = userEvent.setup();
     renderApp("/work");
 
-    await user.type(await screen.findByLabelText("Username"), "unknown-user");
+    await user.type(await screen.findByLabelText("Email"), "unknown@example.com");
     await user.type(screen.getByLabelText("Password"), "wrong-password");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(
       await screen.findByRole("alert"),
-    ).toHaveTextContent("The username or password is incorrect.");
+    ).toHaveTextContent("The email or password is incorrect.");
     expect(screen.queryByText("Internal account lookup detail")).not.toBeInTheDocument();
+  });
+
+  it("does not describe invalid email input as an outage", async () => {
+    installApiMock({
+      "GET /api/v1/auth/session": unauthenticated,
+      "POST /api/v1/auth/login": {
+        status: 400,
+        body: {
+          error: {
+            code: "invalid_request",
+            message: "Internal validation detail",
+          },
+        },
+      },
+    });
+    const user = userEvent.setup();
+    renderApp("/work");
+
+    await user.type(await screen.findByLabelText("Email"), "owner@example.com");
+    await user.type(screen.getByLabelText("Password"), "wrong-password");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Enter a valid email address.",
+    );
+    expect(screen.queryByText("Internal validation detail")).not.toBeInTheDocument();
   });
 
   it("requests recovery without revealing whether an account exists", async () => {
@@ -112,7 +138,7 @@ describe("web authentication", () => {
     renderApp("/forgot-password");
 
     await user.type(
-      await screen.findByLabelText("Username or email"),
+      await screen.findByLabelText("Email"),
       "aether@example.com",
     );
     await user.click(screen.getByRole("button", { name: "Send reset link" }));

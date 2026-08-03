@@ -9,7 +9,6 @@ import {
   LockKeyhole,
   LogIn,
   Mail,
-  UserRound,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -109,10 +108,10 @@ export function LoginPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const search = useSearch({ from: "/login" });
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const loginMutation = useMutation({
-    mutationFn: () => api.login(username.trim(), password),
+    mutationFn: () => api.login(email.trim(), password),
     onSuccess: async (session) => {
       queryClient.clear();
       queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, session);
@@ -128,30 +127,30 @@ export function LoginPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!username.trim() || !password || loginMutation.isPending) return;
+    if (!email.trim() || !password || loginMutation.isPending) return;
     loginMutation.mutate();
   }
 
   return (
     <AuthLayout
       title="Sign in"
-      description="Use your Straylight username and password."
+      description="Use your account email and password."
     >
       <form className="auth-form" onSubmit={submit} aria-busy={loginMutation.isPending} noValidate>
         <div className="field">
-          <label htmlFor="username">Username</label>
+          <label htmlFor="email">Email</label>
           <div className={`input-with-action ${error ? "input-invalid" : ""}`}>
-            <UserRound size={17} aria-hidden="true" />
+            <Mail size={17} aria-hidden="true" />
             <input
-              id="username"
-              name="username"
-              type="text"
+              id="email"
+              name="email"
+              type="email"
               autoComplete="username"
               autoCapitalize="none"
               spellCheck={false}
-              value={username}
+              value={email}
               onChange={(event) => {
-                setUsername(event.target.value);
+                setEmail(event.target.value);
                 resetError();
               }}
               aria-invalid={Boolean(error) || undefined}
@@ -181,7 +180,7 @@ export function LoginPage() {
         <button
           className="button primary login-button"
           type="submit"
-          disabled={!username.trim() || !password || loginMutation.isPending}
+          disabled={!email.trim() || !password || loginMutation.isPending}
         >
           {loginMutation.isPending ? (
             <LoaderCircle className="spin" size={17} aria-hidden="true" />
@@ -214,7 +213,7 @@ export function ForgotPasswordPage() {
   return (
     <AuthLayout
       title="Reset your password"
-      description="Enter your username or account email."
+      description="Enter your account email."
     >
       {requestMutation.isSuccess ? (
         <div className="auth-result" role="status">
@@ -224,20 +223,20 @@ export function ForgotPasswordPage() {
             If an account matches that information, we sent a password reset link.
           </p>
           <button className="button secondary" type="button" onClick={() => requestMutation.reset()}>
-            Try another username or email
+            Try another email
           </button>
         </div>
       ) : (
         <form className="auth-form" onSubmit={submit} aria-busy={requestMutation.isPending} noValidate>
           <div className="field">
-            <label htmlFor="recovery-identifier">Username or email</label>
+            <label htmlFor="recovery-identifier">Email</label>
             <div className={`input-with-action ${error ? "input-invalid" : ""}`}>
               <Mail size={17} aria-hidden="true" />
               <input
                 id="recovery-identifier"
                 name="identifier"
-                type="text"
-                autoComplete="username"
+                type="email"
+                autoComplete="email"
                 autoCapitalize="none"
                 spellCheck={false}
                 value={identifier}
@@ -418,7 +417,8 @@ function scrubResetTokenFragment(): void {
 
 function loginErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.status === 401) return "The username or password is incorrect.";
+    if (error.status === 401) return "The email or password is incorrect.";
+    if (error.status === 400) return "Enter a valid email address.";
     if (error.status === 429) return "Too many sign-in attempts. Wait a moment and try again.";
     if (error.status === 0) return "Straylight could not be reached. Check your connection and try again.";
   }
