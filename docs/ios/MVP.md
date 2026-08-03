@@ -34,7 +34,7 @@ The production API base is `https://straylight.rourkem.com/api/v1`.
 
 | Client job | Endpoint |
 | --- | --- |
-| Validate the dedicated device credential | `GET /me` |
+| Create and validate the account session | `POST /auth/login`, `GET /auth/session`, `GET /me` |
 | List and paginate editions | `GET /workspace/briefings?limit=&after_path=` |
 | Read an edition or pinned version | `GET /workspace/briefings/{date}/{edition}?version=` |
 | Read topics and pending deep-dives | `GET /workspace/briefings/topics` |
@@ -53,18 +53,18 @@ delivery.
 
 ## Authentication and mutations
 
-The owner-alpha connection accepts only a dedicated least-privilege
-`read_only` bearer. The credential is validated with `/me`, stored with
-`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, and sent only over HTTPS from
-an ephemeral URL session with no shared cookies or response cache. Owner,
-generic read/write, credential-management, and admin credentials are rejected
-before storage.
+The app signs in with the same email and password as the web UI. The password
+is sent only to `POST /auth/login` and is never stored by the app. Hosted
+Straylight returns the same revocable, 30-day `HttpOnly` session used by the
+web app; iOS persists that cookie across launches and sends the readable CSRF
+cookie as `X-CSRF-Token` on unsafe methods. Logout clears both server and local
+session state. Requests use HTTPS with response caching disabled.
 
 The deployed item-action endpoint requires the broad `save` capability and has
 no idempotency key. The iOS client includes the typed request/response contract
-but does not enable automatic or interactive writes with a read-only device
-credential. A narrow mobile briefing-interaction capability should precede
-Mark read, feedback, Go deeper, or Mute topic server writes.
+but does not enable automatic or interactive writes. A narrow mobile
+briefing-interaction contract should precede Mark read, feedback, Go deeper,
+or Mute topic server writes.
 
 ## Push boundary
 

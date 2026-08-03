@@ -22,11 +22,12 @@ final class StraylightTests: XCTestCase {
     }
 
     @MainActor
-    func testStoredCredentialValidationStopsWaitingAtStartupBudget() async {
+    func testStoredSessionValidationStopsWaitingAtStartupBudget() async {
         let credentialStore = TestCredentialStore(token: "sl_stale")
         let model = AppModel(
             credentialStore: credentialStore,
             bootstrapValidationTimeout: .milliseconds(40),
+            storedSessionChecker: { _ in true },
             bootstrapIdentityLoader: { _ in
                 try await Task.sleep(for: .seconds(30))
                 return Self.readOnlyIdentity
@@ -36,7 +37,7 @@ final class StraylightTests: XCTestCase {
         await model.bootstrap()
 
         XCTAssertEqual(model.phase, .connectionRequired)
-        XCTAssertFalse(credentialStore.wasDeleted)
+        XCTAssertTrue(credentialStore.wasDeleted)
         XCTAssertTrue(model.connectionMessage?.contains("taking too long") == true)
     }
 
@@ -75,6 +76,7 @@ final class StraylightTests: XCTestCase {
             credentialStore: TestCredentialStore(token: "sl_cached"),
             briefingCache: cache,
             bootstrapValidationTimeout: .seconds(2),
+            storedSessionChecker: { _ in true },
             bootstrapIdentityLoader: { _ in
                 await identityGate.load()
             },
@@ -114,6 +116,7 @@ final class StraylightTests: XCTestCase {
             api: Self.offlineAPI(),
             credentialStore: TestCredentialStore(token: "sl_valid"),
             briefingCache: BriefingCache(fileURL: cacheURL),
+            storedSessionChecker: { _ in true },
             bootstrapIdentityLoader: { _ in Self.readOnlyIdentity },
             dashboardLoader: { _, _ in try await dashboardGate.load() }
         )
@@ -183,21 +186,33 @@ final class StraylightTests: XCTestCase {
         XCTAssertEqual(model.selectedTab, .news)
     }
 
-    func testOnlyLeastPrivilegeReadOnlyCredentialIsAccepted() {
-        let readOnly = Self.readOnlyIdentity
+    @MainActor
+    func testPasswordLoginAcceptsOwnerSession() async {
         let owner = MeData(
             user: UserSummary(id: "user:one", displayName: "Owner"),
-            capabilities: ["read", "credential:manage", "admin"]
-        )
-        let readWrite = MeData(
-            user: UserSummary(id: "user:one", displayName: "Owner"),
-            capabilities: ["query", "read", "status", "save"],
+            credentialID: "credential:web-owner",
+            capabilities: ["read", "credential:manage", "admin"],
             readOnly: false
         )
+        let model = AppModel(
+            api: Self.offlineAPI(),
+            credentialStore: TestCredentialStore(token: "legacy-token"),
+            loginLoader: { _, email, password in
+                XCTAssertEqual(email, "rourkem@rourkem.com")
+                XCTAssertEqual(password, "correct horse battery staple")
+                return owner
+            }
+        )
 
-        XCTAssertTrue(AppModel.isAllowedDeviceCredential(readOnly))
-        XCTAssertFalse(AppModel.isAllowedDeviceCredential(owner))
-        XCTAssertFalse(AppModel.isAllowedDeviceCredential(readWrite))
+        await model.connect(
+            email: " rourkem@rourkem.com ",
+            password: "correct horse battery staple"
+        )
+
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertEqual(model.user, owner.user)
+        XCTAssertEqual(model.currentCredentialID, owner.credentialID)
+        XCTAssertTrue(model.connectionValidated)
     }
 
     private static let readOnlyIdentity = MeData(

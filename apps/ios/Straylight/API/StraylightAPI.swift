@@ -39,34 +39,84 @@ public enum StraylightAPIError: Error, Sendable, Equatable, LocalizedError {
 }
 
 public actor StraylightAPI {
+    private static let sessionCookieNames = [
+        "__Host-straylight_session",
+        "straylight_session",
+    ]
+    private static let csrfCookieNames = [
+        "__Host-straylight_csrf",
+        "straylight_csrf",
+    ]
+
     private let configuration: StraylightAPIConfiguration
     private let session: URLSession
-    private var bearerToken: String?
+    private let cookieStorage: HTTPCookieStorage
 
     public init(
         configuration: StraylightAPIConfiguration = .init(),
-        bearerToken: String? = nil,
-        session: URLSession? = nil
+        session: URLSession? = nil,
+        cookieStorage: HTTPCookieStorage? = nil
     ) {
         self.configuration = configuration
-        self.bearerToken = bearerToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedCookieStorage = cookieStorage
+            ?? session?.configuration.httpCookieStorage
+            ?? HTTPCookieStorage.shared
+        self.cookieStorage = resolvedCookieStorage
         if let session {
             self.session = session
         } else {
-            let sessionConfiguration = URLSessionConfiguration.ephemeral
+            let sessionConfiguration = URLSessionConfiguration.default
             sessionConfiguration.waitsForConnectivity = true
             sessionConfiguration.timeoutIntervalForRequest = 30
             sessionConfiguration.timeoutIntervalForResource = 60
             sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalCacheData
             sessionConfiguration.urlCache = nil
-            sessionConfiguration.httpCookieStorage = nil
-            sessionConfiguration.httpShouldSetCookies = false
+            sessionConfiguration.httpCookieStorage = resolvedCookieStorage
+            sessionConfiguration.httpShouldSetCookies = true
             self.session = URLSession(configuration: sessionConfiguration)
         }
     }
 
-    public func setBearerToken(_ token: String?) {
-        bearerToken = token?.trimmingCharacters(in: .whitespacesAndNewlines)
+    public func hasAuthenticatedSession() -> Bool {
+        cookiesForServer().contains { Self.sessionCookieNames.contains($0.name) }
+    }
+
+    public func clearAuthenticatedSession() {
+        for cookie in cookiesForServer()
+            where Self.sessionCookieNames.contains(cookie.name)
+                || Self.csrfCookieNames.contains(cookie.name)
+        {
+            cookieStorage.deleteCookie(cookie)
+        }
+    }
+
+    public func login(email: String, password: String) async throws -> AuthSessionData {
+        struct LoginRequest: Encodable, Sendable {
+            let email: String
+            let password: String
+        }
+
+        let response: WorkspaceEnvelope<AuthSessionData> = try await post(
+            path: "auth/login",
+            body: LoginRequest(email: email, password: password)
+        )
+        return response.data
+    }
+
+    public func authSession() async throws -> AuthSessionData {
+        let response: WorkspaceEnvelope<AuthSessionData> = try await get(path: "auth/session")
+        return response.data
+    }
+
+    public func logout() async throws {
+        let response: WorkspaceEnvelope<AuthCompletionData> = try await request(
+            path: "auth/logout",
+            queryItems: [],
+            method: "POST",
+            body: nil
+        )
+        _ = response
+        clearAuthenticatedSession()
     }
 
     public func me() async throws -> MeData {
@@ -185,17 +235,18 @@ public actor StraylightAPI {
         method: String,
         body: Data?
     ) async throws -> Response {
-        guard let bearerToken, !bearerToken.isEmpty else {
-            throw StraylightAPIError.notConnected
-        }
         let url = try makeURL(path: path, queryItems: queryItems)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        if !["GET", "HEAD", "OPTIONS"].contains(method.uppercased()),
+           let csrfToken = csrfToken()
+        {
+            request.setValue(csrfToken, forHTTPHeaderField: "X-CSRF-Token")
         }
 
         let (data, response) = try await session.data(for: request)
@@ -212,6 +263,14 @@ public actor StraylightAPI {
         } catch {
             throw StraylightAPIError.decoding(error.localizedDescription)
         }
+    }
+
+    private func cookiesForServer() -> [HTTPCookie] {
+        cookieStorage.cookies(for: configuration.baseURL) ?? []
+    }
+
+    private func csrfToken() -> String? {
+        cookiesForServer().first { Self.csrfCookieNames.contains($0.name) }?.value
     }
 
     private func makeURL(path: String, queryItems: [URLQueryItem]) throws -> URL {

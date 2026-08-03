@@ -9,6 +9,8 @@ private enum BootstrapValidationError: LocalizedError {
 }
 
 typealias BootstrapIdentityLoader = @Sendable (StraylightAPI) async throws -> MeData
+typealias StoredSessionChecker = @Sendable (StraylightAPI) async -> Bool
+typealias LoginLoader = @Sendable (StraylightAPI, String, String) async throws -> MeData
 typealias DashboardLoader = @Sendable (StraylightAPI, String) async throws -> WorkspaceDashboardData
 
 enum AppPhase: Equatable {
@@ -69,7 +71,9 @@ final class AppModel: ObservableObject {
     private let credentialStore: any CredentialStoring
     private let briefingCache: BriefingCache
     private let bootstrapValidationTimeout: Duration
+    private let storedSessionChecker: StoredSessionChecker
     private let bootstrapIdentityLoader: BootstrapIdentityLoader
+    private let loginLoader: LoginLoader
     private let dashboardLoader: DashboardLoader
     private var pendingRoute: AppRoute?
     private var nextBriefingHistoryPath: String?
@@ -80,8 +84,16 @@ final class AppModel: ObservableObject {
         credentialStore: any CredentialStoring = KeychainCredentialStore(),
         briefingCache: BriefingCache = BriefingCache(),
         bootstrapValidationTimeout: Duration = .seconds(6),
+        storedSessionChecker: @escaping StoredSessionChecker = { api in
+            api.hasAuthenticatedSession()
+        },
         bootstrapIdentityLoader: @escaping BootstrapIdentityLoader = { api in
-            try await api.me()
+            _ = try await api.authSession()
+            return try await api.me()
+        },
+        loginLoader: @escaping LoginLoader = { api, email, password in
+            _ = try await api.login(email: email, password: password)
+            return try await api.me()
         },
         dashboardLoader: @escaping DashboardLoader = { api, timezone in
             try await api.dashboard(timezone: timezone).data
@@ -91,7 +103,9 @@ final class AppModel: ObservableObject {
         self.credentialStore = credentialStore
         self.briefingCache = briefingCache
         self.bootstrapValidationTimeout = bootstrapValidationTimeout
+        self.storedSessionChecker = storedSessionChecker
         self.bootstrapIdentityLoader = bootstrapIdentityLoader
+        self.loginLoader = loginLoader
         self.dashboardLoader = dashboardLoader
     }
 
@@ -107,111 +121,83 @@ final class AppModel: ObservableObject {
         }
 
         invalidateDashboardContext()
+        try? credentialStore.delete()
+        guard await storedSessionChecker(api) else {
+            phase = .connectionRequired
+            return
+        }
+
+        await loadCachedBriefing()
+        if latestBriefing != nil {
+            user = UserSummary(id: "cached", displayName: "Owner")
+            connectionValidated = false
+            phase = .ready
+            connectionMessage = "Checking Straylight while the last protected briefing remains available."
+            applyPendingRouteLocally()
+        }
 
         do {
-            guard let token = try credentialStore.load() else {
-                phase = .connectionRequired
+            let identity = try await loadBootstrapIdentity()
+            accept(identity)
+            Task { await refreshDashboard() }
+            await refreshBriefing()
+            await resumePendingRoute()
+        } catch is BootstrapValidationError {
+            connectionValidated = false
+            phase = .connectionRequired
+            connectionMessage = "The saved sign-in is taking too long to verify. Sign in again, or retry when connectivity returns."
+        } catch let error as StraylightAPIError where error.isUnauthorized {
+            await api.clearAuthenticatedSession()
+            do {
+                try await briefingCache.clear()
+                cacheSavedAt = nil
+                cachedAt = nil
+                latestBriefing = nil
+            } catch {
+                phase = .failed("The expired sign-in was removed, but the protected cache could not be cleared. \(error.localizedDescription)")
                 return
             }
-            await api.setBearerToken(token)
-            await loadCachedBriefing()
+            connectionValidated = false
+            phase = .connectionRequired
+            connectionMessage = "Your session expired. Sign in again."
+        } catch {
             if latestBriefing != nil {
                 user = UserSummary(id: "cached", displayName: "Owner")
-                readOnlyCredential = true
                 connectionValidated = false
                 phase = .ready
-                connectionMessage = "Checking Straylight while the last protected briefing remains available."
+                connectionMessage = "Showing the last protected briefing because Straylight could not be reached."
                 applyPendingRouteLocally()
+            } else {
+                phase = .failed(error.localizedDescription)
             }
-            do {
-                let identity = try await loadBootstrapIdentity()
-                guard Self.isAllowedDeviceCredential(identity) else {
-                    do {
-                        try credentialStore.delete()
-                        try await briefingCache.clear()
-                        cacheSavedAt = nil
-                        cachedAt = nil
-                        latestBriefing = nil
-                    } catch {
-                        await api.setBearerToken(nil)
-                        phase = .failed(Self.credentialRemovalFailure(error))
-                        return
-                    }
-                    await api.setBearerToken(nil)
-                    phase = .connectionRequired
-                    connectionMessage = Self.credentialScopeMessage
-                    return
-                }
-                accept(identity)
-                Task { await refreshDashboard() }
-                await refreshBriefing()
-                await resumePendingRoute()
-            } catch is BootstrapValidationError {
-                await api.setBearerToken(nil)
-                connectionValidated = false
-                phase = .connectionRequired
-                connectionMessage = "The saved connection is taking too long to verify. Paste the device credential again, or retry when connectivity returns."
-            } catch let error as StraylightAPIError where error.isUnauthorized {
-                do {
-                    try credentialStore.delete()
-                    try await briefingCache.clear()
-                    cacheSavedAt = nil
-                    cachedAt = nil
-                    latestBriefing = nil
-                } catch {
-                    await api.setBearerToken(nil)
-                    phase = .failed(Self.credentialRemovalFailure(error))
-                    return
-                }
-                await api.setBearerToken(nil)
-                connectionValidated = false
-                phase = .connectionRequired
-                connectionMessage = "This device credential is no longer accepted."
-            } catch {
-                if latestBriefing != nil {
-                    user = UserSummary(id: "cached", displayName: "Owner")
-                    readOnlyCredential = true
-                    connectionValidated = false
-                    phase = .ready
-                    connectionMessage = "Showing the last protected briefing because Straylight could not be reached."
-                    applyPendingRouteLocally()
-                } else {
-                    phase = .failed(error.localizedDescription)
-                }
-            }
-        } catch {
-            phase = .failed(error.localizedDescription)
         }
     }
 
-    func connect(with token: String) async {
-        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else {
-            connectionMessage = "Paste the dedicated device credential."
+    func connect(email: String, password: String) async {
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !email.isEmpty, !password.isEmpty else {
+            connectionMessage = "Enter your email and password."
             return
         }
         invalidateDashboardContext()
         phase = .launching
         connectionMessage = nil
-        await api.setBearerToken(token)
+        await api.clearAuthenticatedSession()
         do {
-            let identity = try await api.me()
-            guard Self.isAllowedDeviceCredential(identity) else {
-                await api.setBearerToken(nil)
-                phase = .connectionRequired
-                connectionMessage = Self.credentialScopeMessage
-                return
-            }
-            try credentialStore.save(token)
+            let identity = try await loginLoader(api, email, password)
             accept(identity)
             Task { await refreshDashboard() }
             await loadCachedBriefing()
             await refreshBriefing()
             await resumePendingRoute()
         } catch {
-            await api.setBearerToken(nil)
+            await api.clearAuthenticatedSession()
             phase = .connectionRequired
-            connectionMessage = error.localizedDescription
+            if let error = error as? StraylightAPIError, error.isUnauthorized {
+                connectionMessage = "The email or password is incorrect."
+            } else {
+                connectionMessage = error.localizedDescription
+            }
         }
     }
 
@@ -243,6 +229,8 @@ final class AppModel: ObservableObject {
     }
 
     func disconnect() async {
+        try? await api.logout()
+        await api.clearAuthenticatedSession()
         do {
             try credentialStore.delete()
             try await briefingCache.clear()
@@ -250,7 +238,6 @@ final class AppModel: ObservableObject {
             privacyMessage = "Disconnect is incomplete: private local data could not be removed. \(error.localizedDescription) Retry before considering this iPhone disconnected."
             return
         }
-        await api.setBearerToken(nil)
         invalidateDashboardContext()
         user = nil
         currentCredentialID = nil
@@ -569,24 +556,6 @@ final class AppModel: ObservableObject {
                 connectionMessage = "The linked briefing could not be loaded."
             }
         }
-    }
-
-    nonisolated static func isAllowedDeviceCredential(_ identity: MeData) -> Bool {
-        let readOnlyCapabilities: Set = [
-            "open", "query", "read", "compute", "verify", "status",
-        ]
-        let capabilities = Set(identity.capabilities)
-        let requiredCapabilities: Set = ["query", "read", "status"]
-        return identity.readOnly
-            && capabilities.isSubset(of: readOnlyCapabilities)
-            && requiredCapabilities.isSubset(of: capabilities)
-    }
-
-    private static let credentialScopeMessage =
-        "This alpha accepts only a dedicated read_only credential. Broader read_write and owner credentials are intentionally rejected."
-
-    private static func credentialRemovalFailure(_ error: Error) -> String {
-        "The rejected credential could not be removed from Keychain. \(error.localizedDescription)"
     }
 
     private func accept(_ identity: MeData) {

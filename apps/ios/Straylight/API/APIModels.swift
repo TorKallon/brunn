@@ -44,6 +44,29 @@ public struct UserSummary: Codable, Sendable, Equatable {
     }
 }
 
+public struct AuthSessionData: Codable, Sendable, Equatable {
+    public let user: UserSummary
+    public let expiresAt: String
+
+    public init(user: UserSummary, expiresAt: String) {
+        self.user = user
+        self.expiresAt = expiresAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case user
+        case expiresAt = "expires_at"
+    }
+}
+
+public struct AuthCompletionData: Codable, Sendable, Equatable {
+    public let message: String?
+
+    public init(message: String? = nil) {
+        self.message = message
+    }
+}
+
 public struct MeData: Codable, Sendable, Equatable {
     public let user: UserSummary
     public let credentialID: String?

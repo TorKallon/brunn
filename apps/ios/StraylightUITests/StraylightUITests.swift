@@ -13,9 +13,11 @@ final class StraylightUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(
-            app.buttons["Connect this iPhone"].waitForExistence(timeout: 2),
-            "The first-run connection screen remained behind startup UI."
+            app.textFields["login-email"].waitForExistence(timeout: 2),
+            "The first-run sign-in screen remained behind startup UI."
         )
+        XCTAssertTrue(app.secureTextFields["login-password"].exists)
+        XCTAssertTrue(app.buttons["Sign in"].exists)
         XCTAssertFalse(element("straylight-startup", in: app).exists)
     }
 

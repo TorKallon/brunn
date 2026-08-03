@@ -77,8 +77,8 @@ struct MoreView: View {
                 }
             } footer: {
                 Text(model.isDemo
-                    ? "Leaving the demo returns to the owner-alpha connection screen."
-                    : "This removes the local Keychain credential and cache. Revoke the device credential separately to invalidate it server-side.")
+                    ? "Leaving the demo returns to the sign-in screen."
+                    : "This signs out this iPhone and removes its protected briefing cache. Other signed-in devices stay connected.")
             }
 
             Section {
@@ -98,7 +98,7 @@ struct MoreView: View {
 
     private var accessLabel: String {
         if model.isDemo { return "Demo" }
-        return model.connectionValidated ? "Read only" : "Offline snapshot · unvalidated"
+        return model.connectionValidated ? "Signed in" : "Offline snapshot · unvalidated"
     }
 
     private var offlineDataLabel: String {
