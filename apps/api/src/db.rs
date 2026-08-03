@@ -79,7 +79,7 @@ impl AppState {
         let transfer_limiter = Arc::new(Semaphore::new(config.max_concurrent_transfers));
         let usage_tracker = UsageTracker::start(admin_pool.clone());
         let workspace_features = WorkspaceFeatureCache::default();
-        let semantic_runtime = SemanticRuntime::default();
+        let semantic_runtime = SemanticRuntime::new(config.semantic_query_concurrency);
         let foreground_latency = ForegroundLatencyTracker::default();
         let foreground_latency_client = reqwest::Client::builder()
             .timeout(config.embedding_backfill_foreground_status_timeout)

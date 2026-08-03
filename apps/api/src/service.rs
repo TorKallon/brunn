@@ -200,6 +200,10 @@ fn runtime_features(state: &AppState) -> Value {
         "semantic_deadline_ms": state.config.semantic_deadline.map(|value| {
             u64::try_from(value.as_millis()).unwrap_or(u64::MAX)
         }),
+        "semantic_query_provider_timeout_ms": u64::try_from(
+            state.config.semantic_query_provider_timeout.as_millis()
+        ).unwrap_or(u64::MAX),
+        "semantic_query_concurrency": state.config.semantic_query_concurrency,
         "embedding_backfill_guard": state.config.embedding_backfill_guard,
         "embedding_backfill_batch_chunks": state.config.embedding_backfill_batch_chunks,
         "embedding_backfill_inter_batch_ms": u64::try_from(

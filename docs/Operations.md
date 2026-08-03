@@ -67,11 +67,20 @@ Semantic retrieval remains an experimental, default-off accelerator:
 STRAYLIGHT_SEMANTIC_LANE=false
 STRAYLIGHT_EMBED_CACHE=true
 STRAYLIGHT_SEMANTIC_DEADLINE_MS=300
+STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS=5000
+STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY=8
 STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=true
 ```
 
 `STRAYLIGHT_SEMANTIC_DEADLINE_MS=0` removes the semantic-specific deadline but
-does not remove the outer 2.5-second retrieval-lane timeout. Turning
+does not remove the outer 2.5-second retrieval-lane timeout. The semantic lane
+runs concurrently with exact+lexical and can only defer at its deadline;
+exact+lexical results are always retained. Online query embeddings are
+deduplicated per normalized query (single flight), capped globally at
+`STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY` concurrent provider calls (1–64), and
+hard-bounded by `STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS` (1–60000)
+independent of the 60-second provider client used by backfill; a timed-out or
+failed call is negative-cached for 60 seconds. Turning
 `STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=false` stops the worker from claiming
 embedding jobs. With the guard on, each publication is capped at 64 chunks and
 full batches are separated by at least 250ms. In Compose the worker also reads

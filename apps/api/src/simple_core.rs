@@ -749,27 +749,9 @@ pub async fn open(
         } else {
             ResponseStatus::Partial
         };
-        envelope.gaps.extend(lane_failures.into_iter().map(|lane| {
-            if lane == "semantic_unavailable" {
-                json!({
-                    "kind": "retrieval_lane_unavailable",
-                    "lane": "semantic",
-                    "message": "semantic retrieval is disabled or has no indexed evidence; exact and lexical evidence was retained"
-                })
-            } else if lane == "semantic_deferred" {
-                json!({
-                    "kind": "retrieval_lane_deferred",
-                    "lane": "semantic",
-                    "message": "semantic retrieval exceeded its accelerator deadline; exact and lexical evidence was retained"
-                })
-            } else {
-                json!({
-                    "kind": "retrieval_lane_failed",
-                    "lane": lane,
-                    "message": "this lane failed; evidence from other lanes was retained"
-                })
-            }
-        }));
+        envelope
+            .gaps
+            .extend(lane_failures.into_iter().map(retrieval_lane_gap));
     } else if !envelope.gaps.is_empty() {
         envelope.status = ResponseStatus::Partial;
     }
@@ -990,6 +972,7 @@ pub async fn search(
         envelope.gaps.push(json!({
             "kind": "retrieval_lane_deferred",
             "lane": "semantic",
+            "reason": "deadline_deferred",
             "message": "semantic retrieval exceeded its accelerator deadline; exact and lexical evidence was retained"
         }));
     }
@@ -3476,6 +3459,21 @@ async fn feature_snapshot(
     ))
 }
 
+/// The three retrieval lanes always start together; total retrieval wall
+/// time tracks the slowest lane rather than the lane sum.
+async fn join_retrieval_lanes<E, L, S>(
+    exact: E,
+    lexical: L,
+    semantic: S,
+) -> (E::Output, L::Output, S::Output)
+where
+    E: std::future::Future,
+    L: std::future::Future,
+    S: std::future::Future,
+{
+    tokio::join!(exact, lexical, semantic)
+}
+
 async fn search_one(
     state: &AppState,
     auth: &AuthContext,
@@ -3496,7 +3494,6 @@ async fn search_one(
     }
     let lanes = retrieval_lane_selection(requested_modes)?;
     let lexical_enabled = lanes.lexical;
-    let semantic_requested = lanes.semantic;
     let exact_enabled = lanes.exact;
     let exact_paths = if exact_enabled {
         path_hints(query)
@@ -3531,7 +3528,9 @@ async fn search_one(
             (Ok((vec![], None)), elapsed_ms(started))
         }
     };
-    let ((exact, exact_ms), (lexical, lexical_ms)) = tokio::join!(exact_future, lexical_future);
+    let semantic_future = semantic_lane(state, auth, query, features, lanes);
+    let ((exact, exact_ms), (lexical, lexical_ms), semantic_report) =
+        join_retrieval_lanes(exact_future, lexical_future, semantic_future).await;
     timings.exact = exact_ms;
     timings.lexical = lexical_ms;
     let mut failures = Vec::new();
@@ -3552,58 +3551,8 @@ async fn search_one(
             }
         }
     }
+    apply_semantic_outcome(semantic_report, &mut merged, &mut failures, &mut timings);
     timings.merge += elapsed_ms(merge_started);
-    if semantic_requested && !state.config.semantic_lane {
-        state.semantic_runtime.record_disabled();
-        failures.push("semantic_unavailable");
-    }
-    let semantic_enabled = semantic_requested && state.config.semantic_lane;
-    let semantic_forced = lanes.semantic_only;
-    let semantic_ready_started = Instant::now();
-    let semantic_ready = if semantic_enabled && !semantic_forced {
-        match semantic_search_allowed(state, auth).await {
-            Ok(ready) => ready,
-            Err(error) => {
-                tracing::warn!(
-                    ?error,
-                    "could not inspect semantic index status; using exact and lexical lanes"
-                );
-                false
-            }
-        }
-    } else {
-        semantic_forced
-    };
-    timings.semantic_ready = elapsed_ms(semantic_ready_started);
-    if semantic_enabled && semantic_ready {
-        let semantic_started = Instant::now();
-        state.semantic_runtime.record_requested();
-        match bounded_semantic_lane(state, semantic_candidates(state, auth, query, features)).await
-        {
-            Ok(result) => {
-                state.semantic_runtime.record_success();
-                timings.embed = result.embed_ms;
-                timings.semantic_db = result.database_ms;
-                let merge_started = Instant::now();
-                for candidate in result.candidates {
-                    merge_candidate(&mut merged, candidate);
-                }
-                timings.merge += elapsed_ms(merge_started);
-            }
-            Err(SemanticLaneFailure::Failed(error)) => {
-                state.semantic_runtime.record_failure();
-                tracing::warn!(lane = "semantic", ?error, "simple retrieval lane failed");
-                failures.push("semantic");
-            }
-            Err(SemanticLaneFailure::Deferred) => {
-                state.semantic_runtime.record_deferral();
-                failures.push("semantic_deferred");
-            }
-        }
-        timings.semantic = elapsed_ms(semantic_started);
-    } else if semantic_enabled {
-        failures.push("semantic_unavailable");
-    }
     let mut candidates = merged.into_values().collect::<Vec<_>>();
     annotate_candidates(
         &mut candidates,
@@ -3616,7 +3565,7 @@ async fn search_one(
     Ok((candidates, failures, timings, workspace_generation))
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct RetrievalLaneSelection {
     exact: bool,
     lexical: bool,
@@ -3659,6 +3608,210 @@ async fn semantic_search_allowed(state: &AppState, auth: &AuthContext) -> ApiRes
     .await?;
     tx.commit().await?;
     Ok(has_semantic_coverage)
+}
+
+#[derive(Debug)]
+enum SemanticOutcome {
+    NotRequested,
+    Disabled,
+    IndexUnavailable,
+    ReadinessError,
+    Success(SemanticCandidates),
+    Failed,
+    Deferred,
+}
+
+#[derive(Debug)]
+struct SemanticLaneReport {
+    outcome: SemanticOutcome,
+    ready_ms: f64,
+    lane_ms: f64,
+}
+
+/// Runs the semantic lane concurrently with exact+lexical. The policy check,
+/// readiness probe, and retrieval all fit inside the single semantic
+/// deadline, so semantic latency is never additive and the lane can only
+/// defer, never stall the request.
+async fn semantic_lane(
+    state: &AppState,
+    auth: &AuthContext,
+    query: &str,
+    features: Option<&WorkspaceFeatureSnapshot>,
+    lanes: RetrievalLaneSelection,
+) -> SemanticLaneReport {
+    if !lanes.semantic {
+        return SemanticLaneReport {
+            outcome: SemanticOutcome::NotRequested,
+            ready_ms: 0.0,
+            lane_ms: 0.0,
+        };
+    }
+    if !state.config.semantic_lane {
+        state.semantic_runtime.record_disabled();
+        return SemanticLaneReport {
+            outcome: SemanticOutcome::Disabled,
+            ready_ms: 0.0,
+            lane_ms: 0.0,
+        };
+    }
+    state.semantic_runtime.record_requested();
+    let lane_started = Instant::now();
+    let deadline = state
+        .config
+        .semantic_deadline
+        .unwrap_or(RETRIEVAL_LANE_TIMEOUT)
+        .min(RETRIEVAL_LANE_TIMEOUT);
+    let ready_started = Instant::now();
+    let readiness = if lanes.semantic_only {
+        Ok(Ok(true))
+    } else {
+        tokio::time::timeout(deadline, semantic_search_allowed(state, auth)).await
+    };
+    let ready_ms = elapsed_ms(ready_started);
+    let outcome = match readiness {
+        Err(_) => {
+            let deferred = state.config.semantic_deadline.is_some();
+            metrics::histogram!(
+                "simple.retrieval.lane_duration_ms",
+                "lane" => "semantic",
+                "result" => if deferred { "deferred" } else { "timeout" }
+            )
+            .record(elapsed_ms(lane_started));
+            if deferred {
+                metrics::counter!("simple.semantic.deferred").increment(1);
+                state.semantic_runtime.record_deferral();
+                SemanticOutcome::Deferred
+            } else {
+                metrics::counter!("simple.retrieval.lane_timeout", "lane" => "semantic")
+                    .increment(1);
+                state.semantic_runtime.record_failure();
+                tracing::warn!(
+                    lane = "semantic",
+                    "semantic readiness probe exceeded the retrieval lane timeout"
+                );
+                SemanticOutcome::Failed
+            }
+        }
+        Ok(Err(error)) => {
+            tracing::warn!(
+                ?error,
+                "could not inspect semantic index status; using exact and lexical lanes"
+            );
+            state.semantic_runtime.record_readiness_error();
+            SemanticOutcome::ReadinessError
+        }
+        Ok(Ok(false)) => {
+            state.semantic_runtime.record_index_unavailable();
+            SemanticOutcome::IndexUnavailable
+        }
+        Ok(Ok(true)) => {
+            let remaining = deadline.saturating_sub(lane_started.elapsed());
+            match bounded_semantic_lane(
+                state,
+                remaining,
+                semantic_candidates(state, auth, query, features),
+            )
+            .await
+            {
+                Ok(result) => {
+                    state.semantic_runtime.record_success();
+                    SemanticOutcome::Success(result)
+                }
+                Err(SemanticLaneFailure::Failed(error)) => {
+                    state.semantic_runtime.record_failure();
+                    tracing::warn!(lane = "semantic", ?error, "simple retrieval lane failed");
+                    SemanticOutcome::Failed
+                }
+                Err(SemanticLaneFailure::Deferred) => {
+                    state.semantic_runtime.record_deferral();
+                    SemanticOutcome::Deferred
+                }
+            }
+        }
+    };
+    SemanticLaneReport {
+        outcome,
+        ready_ms,
+        lane_ms: elapsed_ms(lane_started),
+    }
+}
+
+/// Exact+lexical results are always preserved: every non-success semantic
+/// outcome only appends its failure token and leaves `merged` untouched.
+fn apply_semantic_outcome(
+    report: SemanticLaneReport,
+    merged: &mut HashMap<Uuid, Candidate>,
+    failures: &mut Vec<&'static str>,
+    timings: &mut RetrievalTimings,
+) {
+    timings.semantic_ready = report.ready_ms;
+    match report.outcome {
+        SemanticOutcome::NotRequested => {}
+        SemanticOutcome::Disabled => failures.push("semantic_disabled"),
+        SemanticOutcome::IndexUnavailable => failures.push("semantic_index_unavailable"),
+        SemanticOutcome::ReadinessError => failures.push("semantic_readiness_error"),
+        SemanticOutcome::Success(result) => {
+            timings.semantic = report.lane_ms;
+            timings.embed = result.embed_ms;
+            timings.semantic_db = result.database_ms;
+            metrics::histogram!("simple.semantic.embed_ms").record(result.embed_ms);
+            metrics::histogram!("simple.semantic.db_ms").record(result.database_ms);
+            for candidate in result.candidates {
+                merge_candidate(merged, candidate);
+            }
+        }
+        SemanticOutcome::Failed => {
+            timings.semantic = report.lane_ms;
+            failures.push("semantic");
+        }
+        SemanticOutcome::Deferred => {
+            timings.semantic = report.lane_ms;
+            failures.push("semantic_deferred");
+        }
+    }
+}
+
+/// Maps a retrieval failure token to its response gap. Semantic reasons are
+/// split so callers can distinguish policy, index, dependency, and deadline
+/// conditions instead of one conflated warning.
+fn retrieval_lane_gap(lane: &'static str) -> Value {
+    match lane {
+        "semantic_disabled" => json!({
+            "kind": "retrieval_lane_unavailable",
+            "lane": "semantic",
+            "reason": "policy_disabled",
+            "message": "semantic retrieval is disabled by policy; exact and lexical evidence was retained"
+        }),
+        "semantic_index_unavailable" => json!({
+            "kind": "retrieval_lane_unavailable",
+            "lane": "semantic",
+            "reason": "index_unavailable",
+            "message": "semantic retrieval has no indexed evidence; exact and lexical evidence was retained"
+        }),
+        "semantic_readiness_error" => json!({
+            "kind": "retrieval_lane_unavailable",
+            "lane": "semantic",
+            "reason": "dependency_error",
+            "message": "semantic retrieval could not inspect its index; exact and lexical evidence was retained"
+        }),
+        "semantic_deferred" => json!({
+            "kind": "retrieval_lane_deferred",
+            "lane": "semantic",
+            "reason": "deadline_deferred",
+            "message": "semantic retrieval exceeded its accelerator deadline; exact and lexical evidence was retained"
+        }),
+        "semantic" => json!({
+            "kind": "retrieval_lane_failed",
+            "lane": "semantic",
+            "reason": "dependency_error",
+            "message": "this lane failed; evidence from other lanes was retained"
+        }),
+        other => json!({
+            "kind": "retrieval_lane_failed",
+            "lane": other,
+            "message": "this lane failed; evidence from other lanes was retained"
+        }),
+    }
 }
 
 fn sort_candidates(candidates: &mut [Candidate]) {
@@ -3729,17 +3882,13 @@ enum SemanticLaneFailure {
 
 async fn bounded_semantic_lane<F>(
     state: &AppState,
+    deadline: Duration,
     future: F,
 ) -> Result<SemanticCandidates, SemanticLaneFailure>
 where
     F: std::future::Future<Output = ApiResult<SemanticCandidates>>,
 {
     let started = Instant::now();
-    let deadline = state
-        .config
-        .semantic_deadline
-        .unwrap_or(RETRIEVAL_LANE_TIMEOUT)
-        .min(RETRIEVAL_LANE_TIMEOUT);
     match tokio::time::timeout(deadline, future).await {
         Ok(Ok(result)) => {
             metrics::histogram!(
@@ -4066,7 +4215,12 @@ async fn semantic_candidates(
     let embed_started = Instant::now();
     let vector = state
         .semantic_runtime
-        .query_embedding(state.embedder.clone(), query, state.config.embed_cache)
+        .query_embedding(
+            state.embedder.clone(),
+            query,
+            state.config.embed_cache,
+            state.config.semantic_query_provider_timeout,
+        )
         .await?;
     let embed_ms = elapsed_ms(embed_started);
     let database_started = Instant::now();
@@ -8089,6 +8243,133 @@ mod tests {
             verbatim_matches: vec![],
             superseded_by: None,
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retrieval_lanes_run_concurrently_not_serially() {
+        let started = tokio::time::Instant::now();
+        join_retrieval_lanes(
+            tokio::time::sleep(Duration::from_millis(120)),
+            tokio::time::sleep(Duration::from_millis(180)),
+            tokio::time::sleep(Duration::from_millis(300)),
+        )
+        .await;
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_millis(300));
+        assert!(
+            elapsed < Duration::from_millis(320),
+            "mixed retrieval wall time must approximate the slowest lane, not the lane sum; observed {elapsed:?}"
+        );
+    }
+
+    fn semantic_report(outcome: SemanticOutcome) -> SemanticLaneReport {
+        SemanticLaneReport {
+            outcome,
+            ready_ms: 1.0,
+            lane_ms: 2.0,
+        }
+    }
+
+    #[test]
+    fn semantic_failure_deferral_and_unavailability_never_remove_other_lane_results() {
+        let mut merged = HashMap::new();
+        merge_candidate(&mut merged, candidate_with_sections(1, &[64]));
+        merge_candidate(&mut merged, candidate_with_sections(2, &[64]));
+        let mut failures: Vec<&'static str> = vec![];
+        let mut timings = RetrievalTimings::default();
+        for outcome in [
+            SemanticOutcome::Disabled,
+            SemanticOutcome::IndexUnavailable,
+            SemanticOutcome::ReadinessError,
+            SemanticOutcome::Failed,
+            SemanticOutcome::Deferred,
+        ] {
+            apply_semantic_outcome(
+                semantic_report(outcome),
+                &mut merged,
+                &mut failures,
+                &mut timings,
+            );
+            assert_eq!(merged.len(), 2);
+        }
+        assert_eq!(
+            failures,
+            vec![
+                "semantic_disabled",
+                "semantic_index_unavailable",
+                "semantic_readiness_error",
+                "semantic",
+                "semantic_deferred"
+            ]
+        );
+    }
+
+    #[test]
+    fn semantic_success_merges_candidates_and_records_lane_timings() {
+        let mut merged = HashMap::new();
+        merge_candidate(&mut merged, candidate_with_sections(1, &[64]));
+        let mut failures: Vec<&'static str> = vec![];
+        let mut timings = RetrievalTimings::default();
+        apply_semantic_outcome(
+            SemanticLaneReport {
+                outcome: SemanticOutcome::Success(SemanticCandidates {
+                    candidates: vec![candidate_with_sections(9, &[64])],
+                    embed_ms: 10.0,
+                    database_ms: 20.0,
+                }),
+                ready_ms: 3.0,
+                lane_ms: 40.0,
+            },
+            &mut merged,
+            &mut failures,
+            &mut timings,
+        );
+        assert_eq!(merged.len(), 2);
+        assert!(failures.is_empty());
+        assert_eq!(timings.semantic_ready, 3.0);
+        assert_eq!(timings.semantic, 40.0);
+        assert_eq!(timings.embed, 10.0);
+        assert_eq!(timings.semantic_db, 20.0);
+    }
+
+    #[test]
+    fn semantic_gap_reasons_are_distinct_per_condition() {
+        for (token, kind, reason) in [
+            (
+                "semantic_disabled",
+                "retrieval_lane_unavailable",
+                "policy_disabled",
+            ),
+            (
+                "semantic_index_unavailable",
+                "retrieval_lane_unavailable",
+                "index_unavailable",
+            ),
+            (
+                "semantic_readiness_error",
+                "retrieval_lane_unavailable",
+                "dependency_error",
+            ),
+            (
+                "semantic_deferred",
+                "retrieval_lane_deferred",
+                "deadline_deferred",
+            ),
+            ("semantic", "retrieval_lane_failed", "dependency_error"),
+        ] {
+            let gap = retrieval_lane_gap(token);
+            assert_eq!(gap["kind"], kind, "kind for {token}");
+            assert_eq!(gap["lane"], "semantic", "lane for {token}");
+            assert_eq!(gap["reason"], reason, "reason for {token}");
+            assert!(
+                gap["message"].as_str().unwrap().contains("retained"),
+                "message for {token} must state other evidence is retained"
+            );
+        }
+        let generic = retrieval_lane_gap("lexical");
+        assert_eq!(generic["kind"], "retrieval_lane_failed");
+        assert_eq!(generic["lane"], "lexical");
+        assert!(generic.get("reason").is_none());
     }
 
     #[test]
