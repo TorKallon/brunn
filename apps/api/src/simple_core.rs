@@ -525,6 +525,7 @@ pub async fn open(
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
     let total_started = Instant::now();
     auth.require(Capability::Open)?;
+    metrics::counter!("simple.open.requests").increment(1);
     if request.task.trim().is_empty() {
         return Err(ApiError::invalid("task is required"));
     }
@@ -791,6 +792,7 @@ pub async fn search(
     Json(request): Json<SearchRequest>,
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
     auth.require(Capability::Query)?;
+    metrics::counter!("simple.search.requests").increment(1);
     let started = Instant::now();
     let budget_options = SearchBudgetOptions::from_request(&state.config, request.token_budget);
     let generation_started = Instant::now();
@@ -3664,10 +3666,17 @@ async fn semantic_lane(
     let ready_started = Instant::now();
     let readiness = if lanes.semantic_only {
         Ok(Ok(true))
+    } else if let Some(cached) = state.semantic_runtime.cached_readiness(auth.user_id.0) {
+        Ok(Ok(cached))
     } else {
-        tokio::time::timeout(deadline, semantic_search_allowed(state, auth)).await
+        let probed = tokio::time::timeout(deadline, semantic_search_allowed(state, auth)).await;
+        if let Ok(Ok(ready)) = &probed {
+            state.semantic_runtime.store_readiness(auth.user_id.0, *ready);
+        }
+        probed
     };
     let ready_ms = elapsed_ms(ready_started);
+    metrics::histogram!("simple.semantic.ready_ms").record(ready_ms);
     let outcome = match readiness {
         Err(_) => {
             let deferred = state.config.semantic_deadline.is_some();

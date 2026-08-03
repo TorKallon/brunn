@@ -10,6 +10,7 @@ use std::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tokio::sync::{Semaphore, watch};
+use uuid::Uuid;
 
 use crate::{
     embeddings::SharedEmbedder,
@@ -20,6 +21,11 @@ const QUERY_CACHE_CAPACITY: usize = 4_096;
 const QUERY_CACHE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const QUERY_CACHE_NEGATIVE_TTL: Duration = Duration::from_secs(60);
 const DEFAULT_ONLINE_QUERY_CONCURRENCY: usize = 8;
+// Coverage rarely disappears once present, so a ready workspace stays cached
+// for minutes; a not-ready workspace rechecks quickly so first-time indexing
+// becomes visible promptly.
+const READINESS_POSITIVE_TTL: Duration = Duration::from_secs(300);
+const READINESS_NEGATIVE_TTL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct QueryEmbeddingKey {
@@ -184,6 +190,7 @@ struct SemanticCounters {
     saturation_waits: AtomicU64,
     provider_timeouts: AtomicU64,
     post_deferral_completions: AtomicU64,
+    readiness_cache_hits: AtomicU64,
     successes: AtomicU64,
     failures: AtomicU64,
     deferrals: AtomicU64,
@@ -203,6 +210,7 @@ pub struct SemanticRuntimeSnapshot {
     pub saturation_waits: u64,
     pub provider_timeouts: u64,
     pub post_deferral_completions: u64,
+    pub readiness_cache_hits: u64,
     pub successes: u64,
     pub failures: u64,
     pub deferrals: u64,
@@ -217,6 +225,7 @@ pub struct SemanticRuntime {
     counters: Arc<SemanticCounters>,
     inflight: InflightMap,
     online_permits: Arc<Semaphore>,
+    readiness: Arc<Mutex<HashMap<Uuid, (bool, Instant)>>>,
 }
 
 impl Default for SemanticRuntime {
@@ -248,6 +257,7 @@ impl SemanticRuntime {
             counters: Arc::new(SemanticCounters::default()),
             inflight: Arc::new(Mutex::new(HashMap::new())),
             online_permits: Arc::new(Semaphore::new(online_query_concurrency.max(1))),
+            readiness: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -258,7 +268,48 @@ impl SemanticRuntime {
             counters: Arc::new(SemanticCounters::default()),
             inflight: Arc::new(Mutex::new(HashMap::new())),
             online_permits: Arc::new(Semaphore::new(online_query_concurrency.max(1))),
+            readiness: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Cached per-user semantic index readiness. Coverage is stable, so this
+    /// removes one database round-trip from every request's semantic lane and
+    /// keeps a slow readiness probe from consuming the semantic deadline.
+    pub fn cached_readiness(&self, user_id: Uuid) -> Option<bool> {
+        self.cached_readiness_at(user_id, Instant::now())
+    }
+
+    fn cached_readiness_at(&self, user_id: Uuid, now: Instant) -> Option<bool> {
+        let mut readiness = self
+            .readiness
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let Some((ready, stored_at)) = readiness.get(&user_id).copied() else {
+            return None;
+        };
+        let ttl = if ready {
+            READINESS_POSITIVE_TTL
+        } else {
+            READINESS_NEGATIVE_TTL
+        };
+        if now.saturating_duration_since(stored_at) >= ttl {
+            readiness.remove(&user_id);
+            return None;
+        }
+        drop(readiness);
+        self.record_readiness_cache_hit();
+        Some(ready)
+    }
+
+    pub fn store_readiness(&self, user_id: Uuid, ready: bool) {
+        self.store_readiness_at(user_id, ready, Instant::now());
+    }
+
+    fn store_readiness_at(&self, user_id: Uuid, ready: bool, now: Instant) {
+        self.readiness
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(user_id, (ready, now));
     }
 
     #[cfg(test)]
@@ -284,6 +335,7 @@ impl SemanticRuntime {
             saturation_waits: load(&self.counters.saturation_waits),
             provider_timeouts: load(&self.counters.provider_timeouts),
             post_deferral_completions: load(&self.counters.post_deferral_completions),
+            readiness_cache_hits: load(&self.counters.readiness_cache_hits),
             successes: load(&self.counters.successes),
             failures: load(&self.counters.failures),
             deferrals: load(&self.counters.deferrals),
@@ -360,6 +412,13 @@ impl SemanticRuntime {
         metrics::counter!("simple.semantic.post_response_completion").increment(1);
     }
 
+    fn record_readiness_cache_hit(&self) {
+        self.counters
+            .readiness_cache_hits
+            .fetch_add(1, Ordering::Relaxed);
+        metrics::counter!("simple.semantic.readiness_cache_hit").increment(1);
+    }
+
     pub async fn query_embedding(
         &self,
         embedder: SharedEmbedder,
@@ -369,11 +428,13 @@ impl SemanticRuntime {
     ) -> ApiResult<Vec<f32>> {
         if !cache_enabled {
             self.counters.cache_bypasses.fetch_add(1, Ordering::Relaxed);
-            let _permit = self.acquire_online_permit().await;
-            return match tokio::time::timeout(
-                provider_timeout,
-                one_query_embedding(embedder.as_ref(), query),
-            )
+            // The timeout envelope covers semaphore acquisition as well as the
+            // provider call, so a saturated permit queue cannot extend total
+            // provider-path time past the configured bound.
+            return match tokio::time::timeout(provider_timeout, async {
+                let _permit = self.acquire_online_permit().await;
+                one_query_embedding(embedder.as_ref(), query).await
+            })
             .await
             {
                 Ok(result) => result,
@@ -453,12 +514,14 @@ impl SemanticRuntime {
                 inflight: runtime.inflight.clone(),
                 key: key.clone(),
             };
-            let _permit = runtime.acquire_online_permit().await;
             let dimensions = embedder.dimensions();
-            let value = match tokio::time::timeout(
-                provider_timeout,
-                one_query_embedding(embedder.as_ref(), &query),
-            )
+            // The timeout envelope covers semaphore acquisition as well as the
+            // provider call, so queued leaders under unique-miss saturation
+            // expire on schedule instead of waiting indefinitely for a permit.
+            let value = match tokio::time::timeout(provider_timeout, async {
+                let _permit = runtime.acquire_online_permit().await;
+                one_query_embedding(embedder.as_ref(), &query).await
+            })
             .await
             {
                 Ok(Ok(vector)) if vector.len() == dimensions => {
@@ -858,6 +921,64 @@ mod tests {
         assert_eq!(embedder.calls.load(Ordering::Relaxed), 6);
         assert_eq!(embedder.max.load(Ordering::Relaxed), 2);
         assert_eq!(runtime.snapshot().saturation_waits, 4);
+        assert_eq!(runtime.inflight_len(), 0);
+    }
+
+    #[test]
+    fn readiness_cache_honors_positive_and_negative_ttls() {
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(8, Duration::from_secs(60), Duration::from_secs(1)),
+            8,
+        );
+        let user = Uuid::from_u128(7);
+        let now = Instant::now();
+        assert_eq!(runtime.cached_readiness_at(user, now), None);
+        runtime.store_readiness_at(user, true, now);
+        assert_eq!(
+            runtime.cached_readiness_at(user, now + READINESS_POSITIVE_TTL - Duration::from_secs(1)),
+            Some(true)
+        );
+        assert_eq!(
+            runtime.cached_readiness_at(user, now + READINESS_POSITIVE_TTL),
+            None
+        );
+        runtime.store_readiness_at(user, false, now);
+        assert_eq!(
+            runtime.cached_readiness_at(user, now + READINESS_NEGATIVE_TTL - Duration::from_secs(1)),
+            Some(false)
+        );
+        assert_eq!(
+            runtime.cached_readiness_at(user, now + READINESS_NEGATIVE_TTL),
+            None
+        );
+        assert_eq!(runtime.snapshot().readiness_cache_hits, 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn provider_timeout_covers_semaphore_acquisition() {
+        let embedder = Arc::new(SlowEmbedder {
+            calls: AtomicUsize::new(0),
+            delay: Duration::from_secs(3_600),
+            fail: false,
+            model: "mock-v1".to_owned(),
+            received: Mutex::new(Vec::new()),
+        });
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(8, Duration::from_secs(60), Duration::from_secs(60)),
+            1,
+        );
+        // The permit holder expires strictly later than the queued waiter, so
+        // the waiter's envelope must elapse while it is still waiting for the
+        // single permit.
+        let (first, second) = tokio::join!(
+            runtime.query_embedding(embedder.clone(), "alpha", true, Duration::from_millis(400)),
+            runtime.query_embedding(embedder.clone(), "bravo", true, Duration::from_millis(200)),
+        );
+        assert!(first.is_err());
+        assert!(second.is_err());
+        // The queued leader never reached the provider.
+        assert_eq!(embedder.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(runtime.snapshot().provider_timeouts, 2);
         assert_eq!(runtime.inflight_len(), 0);
     }
 
