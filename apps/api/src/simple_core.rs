@@ -7823,7 +7823,7 @@ fn record_entry_usage(
 ) {
     state
         .usage_tracker
-        .record(auth.user_id.0, entry_ids.iter().copied(), operation);
+        .record(auth, entry_ids.iter().copied(), operation);
 }
 
 fn record_serialized_product_read<T: Serialize>(
@@ -7853,12 +7853,9 @@ fn record_product_activity(
     operation: ProductActivityOperation,
     bytes: u64,
 ) {
-    state.usage_tracker.record_product_activity(
-        auth.user_id.0,
-        auth.credential_id.0,
-        operation,
-        bytes,
-    );
+    state
+        .usage_tracker
+        .record_product_activity(auth, operation, bytes);
 }
 
 fn validate_eval_import(request: &EvalImportRequest) -> ApiResult<()> {

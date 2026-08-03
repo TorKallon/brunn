@@ -2173,12 +2173,9 @@ fn record_product_activity(
     operation: ProductActivityOperation,
     bytes: u64,
 ) {
-    state.usage_tracker.record_product_activity(
-        auth.user_id.0,
-        auth.credential_id.0,
-        operation,
-        bytes,
-    );
+    state
+        .usage_tracker
+        .record_product_activity(auth, operation, bytes);
 }
 
 pub async fn item_action(

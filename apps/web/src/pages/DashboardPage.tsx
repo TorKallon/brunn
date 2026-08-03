@@ -11,7 +11,6 @@ import {
   Sunrise,
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { MarkdownView } from "../components/MarkdownView";
 import { Page } from "../components/Page";
 import {
   ErrorState,
@@ -28,7 +27,6 @@ import {
   shortId,
 } from "../lib/format";
 import type {
-  BriefingListRow,
   DashboardActivityPoint,
   DashboardAccessClient,
 } from "../lib/types";
@@ -60,50 +58,33 @@ export function DashboardPage() {
 
   return (
     <Page>
-      <section className="dashboard-hero" aria-labelledby="dashboard-heading">
-        <div className="dashboard-hero-copy">
-          <span className="dashboard-kicker">{formatDayLabel(today)}</span>
-          <h1 id="dashboard-heading">
-            {current.data.user.display_name}&rsquo;s Straylight
-          </h1>
-          <p>
-            A quiet view of what your memory is holding, how it is being used,
-            and which clients can reach it.
-          </p>
-          <div className="dashboard-hero-actions">
-            {featuredEdition ? (
-              <Link
-                className="button primary dashboard-primary-action"
-                to="/briefings/$date"
-                params={{ date: featuredEdition.date }}
-                search={{ edition: featuredEdition.edition }}
-              >
-                <Sunrise size={17} aria-hidden="true" />
-                {todayEdition ? "Read today’s briefing" : "Read latest briefing"}
-                <ArrowRight size={16} aria-hidden="true" />
-              </Link>
-            ) : (
-              <Link className="button primary" to="/briefings">
-                <Sunrise size={17} aria-hidden="true" />
-                Open briefings
-              </Link>
-            )}
-            <Link className="button secondary" to="/briefings">
-              All briefings
-            </Link>
-            <Link className="button dashboard-search-link" to="/explore">
-              <Search size={16} aria-hidden="true" />
-              Search memory
-            </Link>
-          </div>
-        </div>
-        <BriefingSpotlight
-          edition={featuredEdition}
-          loading={briefingQuery.isPending}
-          error={briefingQuery.isError}
-          isToday={Boolean(todayEdition)}
-        />
-      </section>
+      <h1 className="sr-only">Dashboard</h1>
+      <nav className="dashboard-shortcuts" aria-label="Dashboard shortcuts">
+        {featuredEdition ? (
+          <Link
+            className="button primary dashboard-primary-action"
+            to="/briefings/$date"
+            params={{ date: featuredEdition.date }}
+            search={{ edition: featuredEdition.edition }}
+          >
+            <Sunrise size={17} aria-hidden="true" />
+            {todayEdition ? "Read today’s briefing" : "Read latest briefing"}
+            <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+        ) : (
+          <Link className="button primary dashboard-primary-action" to="/briefings">
+            <Sunrise size={17} aria-hidden="true" />
+            Open briefings
+          </Link>
+        )}
+        <Link className="button secondary" to="/briefings">
+          All briefings
+        </Link>
+        <Link className="button secondary" to="/explore">
+          <Search size={16} aria-hidden="true" />
+          Search memory
+        </Link>
+      </nav>
 
       {dashboardQuery.isPending ? (
         <LoadingState label="Loading workspace overview" />
@@ -260,69 +241,6 @@ export function DashboardPage() {
         </>
       ) : null}
     </Page>
-  );
-}
-
-function BriefingSpotlight({
-  edition,
-  loading,
-  error,
-  isToday,
-}: {
-  edition?: BriefingListRow;
-  loading: boolean;
-  error: boolean;
-  isToday: boolean;
-}) {
-  if (loading) {
-    return (
-      <aside className="briefing-spotlight briefing-spotlight-loading">
-        <Sunrise size={20} aria-hidden="true" />
-        <span>Finding the latest briefing…</span>
-      </aside>
-    );
-  }
-  if (error) {
-    return (
-      <aside className="briefing-spotlight briefing-spotlight-loading">
-        <Sunrise size={20} aria-hidden="true" />
-        <strong>Briefings are temporarily unavailable</strong>
-        <span>The workspace overview will continue loading independently.</span>
-      </aside>
-    );
-  }
-  if (!edition) {
-    return (
-      <aside className="briefing-spotlight">
-        <span className="dashboard-eyebrow">Briefings</span>
-        <h2>Your daily thread will appear here</h2>
-        <p>Published editions are kept together in Briefings.</p>
-      </aside>
-    );
-  }
-  return (
-    <aside className="briefing-spotlight">
-      <div className="briefing-spotlight-heading">
-        <span className="dashboard-eyebrow">
-          {isToday ? "Today’s briefing" : "Latest briefing"}
-        </span>
-        <span>{edition.date}</span>
-      </div>
-      <h2>{humanize(edition.edition)}</h2>
-      {edition.summary_md[0] ? (
-        <MarkdownView
-          className="briefing-spotlight-summary"
-          markdown={edition.summary_md[0]}
-        />
-      ) : (
-        <p>{edition.item_count} source-backed updates are ready.</p>
-      )}
-      <div className="briefing-spotlight-meta">
-        <span>{edition.item_count} items</span>
-        <span>{edition.section_titles.length} sections</span>
-        <span>{formatRelative(edition.generated_at)}</span>
-      </div>
-    </aside>
   );
 }
 
@@ -536,16 +454,6 @@ function localDateKey(timezone: string): string {
   } catch {
     return new Date().toISOString().slice(0, 10);
   }
-}
-
-function formatDayLabel(date: string): string {
-  const parsed = new Date(`${date}T12:00:00`);
-  if (Number.isNaN(parsed.valueOf())) return date;
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  }).format(parsed);
 }
 
 function shortDay(date: string): string {

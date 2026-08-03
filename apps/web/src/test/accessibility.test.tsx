@@ -64,7 +64,7 @@ describe("accessibility contracts", () => {
     installApiMock();
     const { container } = renderApp("/dashboard", "read-write-token");
     expect(
-      await screen.findByRole("heading", { name: "Aether’s Straylight" }),
+      await screen.findByRole("navigation", { name: "Dashboard shortcuts" }),
     ).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });

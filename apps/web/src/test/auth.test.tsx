@@ -62,7 +62,7 @@ describe("web authentication", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Aether’s Straylight" }),
+      await screen.findByRole("navigation", { name: "Dashboard shortcuts" }),
     ).toBeInTheDocument();
     expect(window.sessionStorage).toHaveLength(0);
     expect(queryClient.getQueryData(["previous-user", "private"])).toBeUndefined();

@@ -38,24 +38,26 @@ describe("landing dashboard", () => {
     });
     renderApp("/");
 
-    expect(
-      await screen.findByRole("heading", { name: "Aether’s Straylight" }),
-    ).toBeInTheDocument();
-    const todayLink = screen.getByRole("link", {
+    const shortcuts = await screen.findByRole("navigation", {
+      name: "Dashboard shortcuts",
+    });
+    expect(screen.getByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    const todayLink = await within(shortcuts).findByRole("link", {
       name: /Read today’s briefing/,
     });
     expect(todayLink).toHaveAttribute(
       "href",
       "/briefings/2026-08-02?edition=morning",
     );
-    expect(screen.getByRole("link", { name: "All briefings" })).toHaveAttribute(
+    expect(within(shortcuts).getByRole("link", { name: "All briefings" })).toHaveAttribute(
       "href",
       "/briefings",
     );
-    expect(screen.getByRole("link", { name: "Search memory" })).toHaveAttribute(
+    expect(within(shortcuts).getByRole("link", { name: "Search memory" })).toHaveAttribute(
       "href",
       "/explore",
     );
+    expect(screen.queryByText(/A quiet view of what your memory is holding/)).not.toBeInTheDocument();
   });
 
   it("shows separate storage, activity, charts, and access-client state", async () => {
@@ -112,10 +114,11 @@ describe("landing dashboard", () => {
     });
     renderApp("/dashboard");
 
-    expect(
-      await screen.findByText("Briefings are temporarily unavailable"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Text artifacts")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Open briefings" })).toHaveAttribute(
+      "href",
+      "/briefings",
+    );
+    expect(await screen.findByText("Text artifacts")).toBeInTheDocument();
     await waitFor(() => expect(dashboardRequest).toBeDefined());
     expect(new URL(dashboardRequest!.url).searchParams.get("timezone")).toBeTruthy();
   });

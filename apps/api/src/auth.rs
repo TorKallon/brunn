@@ -129,16 +129,13 @@ pub async fn middleware(
         .record(started.elapsed().as_secs_f64() * 1_000.0);
     metrics::histogram!("auth.scope_count", "access" => access)
         .record(auth.scope_refs.len() as f64);
-    let activity_user_id = auth.user_id.0;
-    let activity_credential_id = auth.credential_id.0;
+    let activity_auth = auth.clone();
     request.extensions_mut().insert(auth);
     let response = next.run(request).await;
     if response.status().is_success() {
-        state.usage_tracker.record_credential_activity(
-            activity_user_id,
-            activity_credential_id,
-            "control",
-        );
+        state
+            .usage_tracker
+            .record_credential_activity(&activity_auth, "control");
     }
     Ok(response)
 }

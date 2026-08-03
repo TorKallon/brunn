@@ -77,7 +77,7 @@ impl AppState {
             PreauthRateLimiter::new(config.requests_per_minute.saturating_mul(10));
         let request_rate_limiter = RequestRateLimiter::new(config.requests_per_minute);
         let transfer_limiter = Arc::new(Semaphore::new(config.max_concurrent_transfers));
-        let usage_tracker = UsageTracker::start(admin_pool.clone());
+        let usage_tracker = UsageTracker::start(rw_pool.clone());
         let workspace_features = WorkspaceFeatureCache::default();
         let semantic_runtime = SemanticRuntime::new(config.semantic_query_concurrency);
         let foreground_latency = ForegroundLatencyTracker::default();

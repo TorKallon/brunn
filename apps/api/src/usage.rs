@@ -12,6 +12,8 @@ use sqlx::PgPool;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use crate::{auth::AuthContext, db::set_context, error::ApiResult};
+
 const ENTRY_CHANNEL_CAPACITY: usize = 4_096;
 const ACTIVITY_CHANNEL_CAPACITY: usize = 4_096;
 const MAX_PENDING_KEYS: usize = 5_000;
@@ -102,25 +104,49 @@ pub struct ProductActivityTrackerHealth {
 }
 
 struct EntryUsageEvent {
-    user_id: Uuid,
+    auth: AuthContext,
     entry_ids: Vec<Uuid>,
     operation: UsageOperation,
 }
 
 enum ActivityEvent {
     Product {
-        user_id: Uuid,
-        credential_id: Uuid,
+        auth: AuthContext,
         operation: ProductActivityOperation,
         bytes: i64,
         occurred_at: DateTime<Utc>,
     },
     Credential {
-        user_id: Uuid,
-        credential_id: Uuid,
+        auth: AuthContext,
         operation: &'static str,
         occurred_at: DateTime<Utc>,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct PrincipalKey {
+    user_id: Uuid,
+    credential_id: Uuid,
+}
+
+impl PrincipalKey {
+    fn from_auth(auth: &AuthContext) -> Self {
+        Self {
+            user_id: auth.user_id.0,
+            credential_id: auth.credential_id.0,
+        }
+    }
+}
+
+struct EntryUsagePending {
+    auth: AuthContext,
+    entries: HashMap<Uuid, UsageDelta>,
+}
+
+struct ActivityPending {
+    auth: AuthContext,
+    product: HashMap<(DateTime<Utc>, ProductActivityOperation), ProductActivityDelta>,
+    credential: Option<CredentialActivityDelta>,
 }
 
 #[derive(Default)]
@@ -272,10 +298,7 @@ impl Default for UsageTracker {
 }
 
 impl UsageTracker {
-    pub fn start(pool: Option<PgPool>) -> Self {
-        let Some(pool) = pool else {
-            return Self::default();
-        };
+    pub fn start(pool: PgPool) -> Self {
         let (entry_sender, entry_receiver) = mpsc::channel(ENTRY_CHANNEL_CAPACITY);
         let (activity_sender, activity_receiver) = mpsc::channel(ACTIVITY_CHANNEL_CAPACITY);
         let activity_health = Arc::new(ProductActivityTrackerHealthState::new(true));
@@ -294,7 +317,7 @@ impl UsageTracker {
 
     pub fn record(
         &self,
-        user_id: Uuid,
+        auth: &AuthContext,
         entry_ids: impl IntoIterator<Item = Uuid>,
         operation: UsageOperation,
     ) {
@@ -311,7 +334,7 @@ impl UsageTracker {
         }
         if sender
             .try_send(EntryUsageEvent {
-                user_id,
+                auth: auth.clone(),
                 entry_ids,
                 operation,
             })
@@ -325,8 +348,7 @@ impl UsageTracker {
 
     pub fn record_product_activity(
         &self,
-        user_id: Uuid,
-        credential_id: Uuid,
+        auth: &AuthContext,
         operation: ProductActivityOperation,
         bytes: u64,
     ) {
@@ -335,8 +357,7 @@ impl UsageTracker {
         };
         let occurred_at = Utc::now();
         let event = ActivityEvent::Product {
-            user_id,
-            credential_id,
+            auth: auth.clone(),
             operation,
             bytes: i64::try_from(bytes).unwrap_or(i64::MAX),
             occurred_at,
@@ -351,19 +372,13 @@ impl UsageTracker {
         }
     }
 
-    pub fn record_credential_activity(
-        &self,
-        user_id: Uuid,
-        credential_id: Uuid,
-        operation: &'static str,
-    ) {
+    pub fn record_credential_activity(&self, auth: &AuthContext, operation: &'static str) {
         let Some(sender) = &self.activity_sender else {
             return;
         };
         let occurred_at = Utc::now();
         let event = ActivityEvent::Credential {
-            user_id,
-            credential_id,
+            auth: auth.clone(),
             operation: credential_activity_label(operation),
             occurred_at,
         };
@@ -383,7 +398,7 @@ impl UsageTracker {
 }
 
 async fn run_entry_usage(pool: PgPool, mut receiver: mpsc::Receiver<EntryUsageEvent>) {
-    let mut entry_pending = HashMap::<(Uuid, Uuid), UsageDelta>::new();
+    let mut entry_pending = HashMap::<PrincipalKey, EntryUsagePending>::new();
     let mut interval = tokio::time::interval(FLUSH_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -394,7 +409,12 @@ async fn run_entry_usage(pool: PgPool, mut receiver: mpsc::Receiver<EntryUsageEv
                     return;
                 };
                 aggregate_entry_usage(&mut entry_pending, event);
-                if entry_pending.len() >= MAX_PENDING_KEYS {
+                if entry_pending
+                    .values()
+                    .map(|principal| principal.entries.len())
+                    .sum::<usize>()
+                    >= MAX_PENDING_KEYS
+                {
                     flush_entry_usage(&pool, &mut entry_pending).await;
                 }
             }
@@ -410,60 +430,53 @@ async fn run_activity(
     mut receiver: mpsc::Receiver<ActivityEvent>,
     health: Arc<ProductActivityTrackerHealthState>,
 ) {
-    let mut product_pending = HashMap::<
-        (Uuid, Uuid, DateTime<Utc>, ProductActivityOperation),
-        ProductActivityDelta,
-    >::new();
-    let mut credential_pending = HashMap::<(Uuid, Uuid), CredentialActivityDelta>::new();
+    let mut pending = HashMap::<PrincipalKey, ActivityPending>::new();
     let mut interval = tokio::time::interval(FLUSH_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
             event = receiver.recv() => {
                 let Some(event) = event else {
-                    flush_activity(
-                        &pool,
-                        &mut product_pending,
-                        &mut credential_pending,
-                        &health,
-                    ).await;
+                    flush_activity(&pool, &mut pending, &health).await;
                     return;
                 };
-                aggregate_activity(&mut product_pending, &mut credential_pending, event);
-                if product_pending.len().saturating_add(credential_pending.len())
-                    >= MAX_PENDING_KEYS
+                aggregate_activity(&mut pending, event);
+                if pending
+                    .values()
+                    .map(|principal| {
+                        principal.product.len() + usize::from(principal.credential.is_some())
+                    })
+                    .sum::<usize>() >= MAX_PENDING_KEYS
                 {
-                    flush_activity(
-                        &pool,
-                        &mut product_pending,
-                        &mut credential_pending,
-                        &health,
-                    ).await;
+                    flush_activity(&pool, &mut pending, &health).await;
                 }
             }
             _ = interval.tick() => {
-                flush_activity(
-                    &pool,
-                    &mut product_pending,
-                    &mut credential_pending,
-                    &health,
-                ).await
+                flush_activity(&pool, &mut pending, &health).await
             },
         }
     }
 }
 
 fn aggregate_entry_usage(
-    entry_pending: &mut HashMap<(Uuid, Uuid), UsageDelta>,
+    entry_pending: &mut HashMap<PrincipalKey, EntryUsagePending>,
     event: EntryUsageEvent,
 ) {
     let EntryUsageEvent {
-        user_id,
+        auth,
         entry_ids,
         operation,
     } = event;
+    let principal_key = PrincipalKey::from_auth(&auth);
+    let principal = entry_pending
+        .entry(principal_key)
+        .or_insert_with(|| EntryUsagePending {
+            auth: auth.clone(),
+            entries: HashMap::new(),
+        });
+    principal.auth = auth;
     for entry_id in entry_ids.into_iter().collect::<HashSet<_>>() {
-        let delta = entry_pending.entry((user_id, entry_id)).or_default();
+        let delta = principal.entries.entry(entry_id).or_default();
         match operation {
             UsageOperation::Read => delta.reads = delta.reads.saturating_add(1),
             UsageOperation::Search => delta.searches = delta.searches.saturating_add(1),
@@ -471,26 +484,27 @@ fn aggregate_entry_usage(
     }
 }
 
-fn aggregate_activity(
-    product_pending: &mut HashMap<
-        (Uuid, Uuid, DateTime<Utc>, ProductActivityOperation),
-        ProductActivityDelta,
-    >,
-    credential_pending: &mut HashMap<(Uuid, Uuid), CredentialActivityDelta>,
-    event: ActivityEvent,
-) {
+fn aggregate_activity(pending: &mut HashMap<PrincipalKey, ActivityPending>, event: ActivityEvent) {
     match event {
         ActivityEvent::Product {
-            user_id,
-            credential_id,
+            auth,
             operation,
             bytes,
             occurred_at,
         } => {
+            let principal_key = PrincipalKey::from_auth(&auth);
+            let principal = pending
+                .entry(principal_key)
+                .or_insert_with(|| ActivityPending {
+                    auth: auth.clone(),
+                    product: HashMap::new(),
+                    credential: None,
+                });
+            principal.auth = auth;
             let bucket_start = utc_minute_bucket(occurred_at);
-            let key = (user_id, credential_id, bucket_start, operation);
-            let delta = product_pending
-                .entry(key)
+            let delta = principal
+                .product
+                .entry((bucket_start, operation))
                 .or_insert_with(|| ProductActivityDelta {
                     operation_count: 0,
                     byte_count: 0,
@@ -503,18 +517,24 @@ fn aggregate_activity(
             delta.last_recorded_at = delta.last_recorded_at.max(occurred_at);
         }
         ActivityEvent::Credential {
-            user_id,
-            credential_id,
+            auth,
             operation,
             occurred_at,
         } => {
-            let delta = credential_pending
-                .entry((user_id, credential_id))
-                .or_insert(CredentialActivityDelta {
-                    request_count: 0,
-                    last_operation: operation,
-                    last_used_at: occurred_at,
+            let principal_key = PrincipalKey::from_auth(&auth);
+            let principal = pending
+                .entry(principal_key)
+                .or_insert_with(|| ActivityPending {
+                    auth: auth.clone(),
+                    product: HashMap::new(),
+                    credential: None,
                 });
+            principal.auth = auth;
+            let delta = principal.credential.get_or_insert(CredentialActivityDelta {
+                request_count: 0,
+                last_operation: operation,
+                last_used_at: occurred_at,
+            });
             delta.request_count = delta.request_count.saturating_add(1);
             if occurred_at >= delta.last_used_at {
                 delta.last_operation = operation;
@@ -543,250 +563,178 @@ fn credential_activity_label(operation: &'static str) -> &'static str {
 
 async fn flush_activity(
     pool: &PgPool,
-    product_pending: &mut HashMap<
-        (Uuid, Uuid, DateTime<Utc>, ProductActivityOperation),
-        ProductActivityDelta,
-    >,
-    credential_pending: &mut HashMap<(Uuid, Uuid), CredentialActivityDelta>,
+    pending: &mut HashMap<PrincipalKey, ActivityPending>,
     health: &ProductActivityTrackerHealthState,
 ) {
-    let ((), ()) = tokio::join!(
-        flush_product_activity(pool, product_pending, health),
-        flush_credential_activity(pool, credential_pending, health),
-    );
+    for (principal_key, principal) in std::mem::take(pending) {
+        flush_principal_activity(pool, principal_key, principal, health).await;
+    }
 }
 
-async fn flush_entry_usage(pool: &PgPool, pending: &mut HashMap<(Uuid, Uuid), UsageDelta>) {
+async fn flush_entry_usage(pool: &PgPool, pending: &mut HashMap<PrincipalKey, EntryUsagePending>) {
     if pending.is_empty() {
         return;
     }
-    let batch = std::mem::take(pending);
-    let mut user_ids = Vec::with_capacity(batch.len());
-    let mut entry_ids = Vec::with_capacity(batch.len());
-    let mut reads = Vec::with_capacity(batch.len());
-    let mut searches = Vec::with_capacity(batch.len());
-    for ((user_id, entry_id), delta) in batch {
-        user_ids.push(user_id);
+    for (principal_key, principal) in std::mem::take(pending) {
+        flush_principal_entry_usage(pool, principal_key, principal).await;
+    }
+}
+
+async fn flush_principal_entry_usage(
+    pool: &PgPool,
+    principal_key: PrincipalKey,
+    principal: EntryUsagePending,
+) {
+    let EntryUsagePending { auth, entries } = principal;
+    if entries.is_empty() {
+        return;
+    }
+    let mut entry_ids = Vec::with_capacity(entries.len());
+    let mut reads = Vec::with_capacity(entries.len());
+    let mut searches = Vec::with_capacity(entries.len());
+    for (entry_id, delta) in entries {
         entry_ids.push(entry_id);
         reads.push(delta.reads);
         searches.push(delta.searches);
     }
     let started = Instant::now();
-    let result = sqlx::query(
-        r#"
-        INSERT INTO straylight.entry_usage (
-          user_id,entry_id,read_count,search_count,first_used_at,last_used_at,
-          last_read_at,last_search_at
+    let result: ApiResult<()> = async {
+        let mut tx = pool.begin().await?;
+        set_context(&mut tx, &auth).await?;
+        sqlx::query(
+            r#"
+            SELECT straylight_auth.write_entry_usage($1,$2,$3,$4,$5)
+            "#,
         )
-        SELECT
-          item.user_id,item.entry_id,item.reads,item.searches,
-          clock_timestamp(),clock_timestamp(),
-          CASE WHEN item.reads>0 THEN clock_timestamp() END,
-          CASE WHEN item.searches>0 THEN clock_timestamp() END
-        FROM unnest($1::uuid[],$2::uuid[],$3::bigint[],$4::bigint[])
-          AS item(user_id,entry_id,reads,searches)
-        ON CONFLICT (user_id,entry_id) DO UPDATE SET
-          read_count=straylight.entry_usage.read_count+EXCLUDED.read_count,
-          search_count=straylight.entry_usage.search_count+EXCLUDED.search_count,
-          last_used_at=clock_timestamp(),
-          last_read_at=CASE WHEN EXCLUDED.read_count>0
-            THEN clock_timestamp() ELSE straylight.entry_usage.last_read_at END,
-          last_search_at=CASE WHEN EXCLUDED.search_count>0
-            THEN clock_timestamp() ELSE straylight.entry_usage.last_search_at END
-        "#,
-    )
-    .bind(&user_ids)
-    .bind(&entry_ids)
-    .bind(&reads)
-    .bind(&searches)
-    .execute(pool)
+        .bind(principal_key.user_id)
+        .bind(principal_key.credential_id)
+        .bind(&entry_ids)
+        .bind(&reads)
+        .bind(&searches)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
     .await;
     let outcome = if result.is_ok() { "flushed" } else { "dropped" };
     metrics::counter!("simple.usage.flushes", "result" => outcome).increment(1);
     metrics::histogram!("simple.usage.flush_size", "result" => outcome)
-        .record(user_ids.len() as f64);
+        .record(entry_ids.len() as f64);
     metrics::histogram!("simple.usage.flush_duration_ms", "result" => outcome)
         .record(started.elapsed().as_secs_f64() * 1_000.0);
     if let Err(error) = result {
-        tracing::warn!(?error, events = user_ids.len(), "usage batch dropped");
+        tracing::warn!(?error, events = entry_ids.len(), "usage batch dropped");
     }
 }
 
-async fn flush_product_activity(
+async fn flush_principal_activity(
     pool: &PgPool,
-    pending: &mut HashMap<
-        (Uuid, Uuid, DateTime<Utc>, ProductActivityOperation),
-        ProductActivityDelta,
-    >,
+    principal_key: PrincipalKey,
+    principal: ActivityPending,
     health: &ProductActivityTrackerHealthState,
 ) {
-    if pending.is_empty() {
-        return;
-    }
-    let batch = std::mem::take(pending);
-    let mut user_ids = Vec::with_capacity(batch.len());
-    let mut credential_ids = Vec::with_capacity(batch.len());
-    let mut bucket_starts = Vec::with_capacity(batch.len());
-    let mut operations = Vec::with_capacity(batch.len());
-    let mut operation_counts = Vec::with_capacity(batch.len());
-    let mut byte_counts = Vec::with_capacity(batch.len());
-    let mut first_recorded_at = Vec::with_capacity(batch.len());
-    let mut last_recorded_at = Vec::with_capacity(batch.len());
-    let mut event_count = 0_u64;
-    let mut data_through = DateTime::<Utc>::MIN_UTC;
-    for ((user_id, credential_id, bucket_start, operation), delta) in batch {
-        user_ids.push(user_id);
-        credential_ids.push(credential_id);
+    let ActivityPending {
+        auth,
+        product,
+        credential,
+    } = principal;
+    let product_key_count = product.len();
+    let mut bucket_starts = Vec::with_capacity(product_key_count);
+    let mut operations = Vec::with_capacity(product_key_count);
+    let mut operation_counts = Vec::with_capacity(product_key_count);
+    let mut byte_counts = Vec::with_capacity(product_key_count);
+    let mut first_recorded_at = Vec::with_capacity(product_key_count);
+    let mut last_recorded_at = Vec::with_capacity(product_key_count);
+    let mut product_event_count = 0_u64;
+    let mut data_through = None::<DateTime<Utc>>;
+    for ((bucket_start, operation), delta) in product {
         bucket_starts.push(bucket_start);
         operations.push(operation.as_str());
         operation_counts.push(delta.operation_count);
         byte_counts.push(delta.byte_count);
         first_recorded_at.push(delta.first_recorded_at);
         last_recorded_at.push(delta.last_recorded_at);
-        event_count = event_count.saturating_add(u64::try_from(delta.operation_count).unwrap_or(0));
-        data_through = data_through.max(delta.last_recorded_at);
+        product_event_count =
+            product_event_count.saturating_add(u64::try_from(delta.operation_count).unwrap_or(0));
+        data_through = Some(data_through.map_or(delta.last_recorded_at, |current| {
+            current.max(delta.last_recorded_at)
+        }));
     }
-    let started = Instant::now();
-    let result = sqlx::query(
-        r#"
-        INSERT INTO straylight.product_activity_minutely (
-          user_id,credential_id,bucket_start,operation,
-          operation_count,byte_count,first_recorded_at,last_recorded_at
-        )
-        SELECT
-          item.user_id,item.credential_id,item.bucket_start,item.operation,
-          item.operation_count,item.byte_count,
-          item.first_recorded_at,item.last_recorded_at
-        FROM unnest(
-          $1::uuid[],$2::uuid[],$3::timestamptz[],$4::text[],
-          $5::bigint[],$6::bigint[],$7::timestamptz[],$8::timestamptz[]
-        ) AS item(
-          user_id,credential_id,bucket_start,operation,
-          operation_count,byte_count,first_recorded_at,last_recorded_at
-        )
-        ON CONFLICT (user_id,credential_id,bucket_start,operation) DO UPDATE SET
-          operation_count=
-            straylight.product_activity_minutely.operation_count
-              + EXCLUDED.operation_count,
-          byte_count=
-            straylight.product_activity_minutely.byte_count
-              + EXCLUDED.byte_count,
-          first_recorded_at=least(
-            straylight.product_activity_minutely.first_recorded_at,
-            EXCLUDED.first_recorded_at
-          ),
-          last_recorded_at=greatest(
-            straylight.product_activity_minutely.last_recorded_at,
-            EXCLUDED.last_recorded_at
-          )
-        "#,
-    )
-    .bind(&user_ids)
-    .bind(&credential_ids)
-    .bind(&bucket_starts)
-    .bind(&operations)
-    .bind(&operation_counts)
-    .bind(&byte_counts)
-    .bind(&first_recorded_at)
-    .bind(&last_recorded_at)
-    .execute(pool)
-    .await;
-    let outcome = if result.is_ok() { "flushed" } else { "dropped" };
-    metrics::counter!("product.activity.flushes", "result" => outcome).increment(1);
-    metrics::histogram!("product.activity.flush_size", "result" => outcome)
-        .record(user_ids.len() as f64);
-    metrics::histogram!("product.activity.flush_duration_ms", "result" => outcome)
-        .record(started.elapsed().as_secs_f64() * 1_000.0);
-    let flushed_at = Utc::now();
-    match result {
-        Ok(_) => health.flush_succeeded(event_count, flushed_at, data_through),
-        Err(error) => {
-            health.flush_failed(event_count, flushed_at);
-            tracing::warn!(
-                ?error,
-                events = event_count,
-                "product activity batch dropped"
-            );
-        }
+    let credential_event_count = credential
+        .as_ref()
+        .and_then(|delta| u64::try_from(delta.request_count).ok())
+        .unwrap_or(0);
+    if let Some(delta) = &credential {
+        data_through = Some(data_through.map_or(delta.last_used_at, |current| {
+            current.max(delta.last_used_at)
+        }));
     }
-}
-
-async fn flush_credential_activity(
-    pool: &PgPool,
-    pending: &mut HashMap<(Uuid, Uuid), CredentialActivityDelta>,
-    health: &ProductActivityTrackerHealthState,
-) {
-    if pending.is_empty() {
+    let event_count = product_event_count.saturating_add(credential_event_count);
+    let Some(data_through) = data_through else {
         return;
-    }
-    let batch = std::mem::take(pending);
-    let mut user_ids = Vec::with_capacity(batch.len());
-    let mut credential_ids = Vec::with_capacity(batch.len());
-    let mut operations = Vec::with_capacity(batch.len());
-    let mut request_counts = Vec::with_capacity(batch.len());
-    let mut last_used_at = Vec::with_capacity(batch.len());
-    let mut event_count = 0_u64;
-    let mut data_through = DateTime::<Utc>::MIN_UTC;
-    for ((user_id, credential_id), delta) in batch {
-        user_ids.push(user_id);
-        credential_ids.push(credential_id);
-        operations.push(delta.last_operation);
-        request_counts.push(delta.request_count);
-        last_used_at.push(delta.last_used_at);
-        event_count = event_count.saturating_add(u64::try_from(delta.request_count).unwrap_or(0));
-        data_through = data_through.max(delta.last_used_at);
-    }
+    };
     let started = Instant::now();
-    let result = sqlx::query(
-        r#"
-        INSERT INTO straylight.credential_activity (
-          user_id,credential_id,last_operation,last_used_at,request_count
-        )
-        SELECT
-          item.user_id,item.credential_id,item.last_operation,
-          item.last_used_at,item.request_count
-        FROM unnest(
-          $1::uuid[],$2::uuid[],$3::text[],$4::timestamptz[],$5::bigint[]
-        ) AS item(
-          user_id,credential_id,last_operation,last_used_at,request_count
-        )
-        ON CONFLICT (user_id,credential_id) DO UPDATE SET
-          last_operation=CASE
-            WHEN EXCLUDED.last_used_at >= straylight.credential_activity.last_used_at
-              THEN EXCLUDED.last_operation
-            ELSE straylight.credential_activity.last_operation
-          END,
-          last_used_at=greatest(
-            straylight.credential_activity.last_used_at,
-            EXCLUDED.last_used_at
-          ),
-          request_count=
-            straylight.credential_activity.request_count + EXCLUDED.request_count
-        "#,
-    )
-    .bind(&user_ids)
-    .bind(&credential_ids)
-    .bind(&operations)
-    .bind(&last_used_at)
-    .bind(&request_counts)
-    .execute(pool)
+    let result: ApiResult<()> = async {
+        let mut tx = pool.begin().await?;
+        set_context(&mut tx, &auth).await?;
+        if !bucket_starts.is_empty() {
+            sqlx::query(
+                r#"
+                SELECT straylight_auth.write_product_activity(
+                  $1,$2,$3,$4,$5,$6,$7,$8
+                )
+                "#,
+            )
+            .bind(principal_key.user_id)
+            .bind(principal_key.credential_id)
+            .bind(&bucket_starts)
+            .bind(&operations)
+            .bind(&operation_counts)
+            .bind(&byte_counts)
+            .bind(&first_recorded_at)
+            .bind(&last_recorded_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        if let Some(delta) = &credential {
+            sqlx::query(
+                r#"
+                SELECT straylight_auth.write_credential_activity($1,$2,$3,$4,$5)
+                "#,
+            )
+            .bind(principal_key.user_id)
+            .bind(principal_key.credential_id)
+            .bind(delta.last_operation)
+            .bind(delta.last_used_at)
+            .bind(delta.request_count)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
     .await;
     let outcome = if result.is_ok() { "flushed" } else { "dropped" };
-    metrics::counter!("credential.activity.flushes", "result" => outcome).increment(1);
-    metrics::histogram!("credential.activity.flush_size", "result" => outcome)
-        .record(user_ids.len() as f64);
-    metrics::histogram!("credential.activity.flush_duration_ms", "result" => outcome)
-        .record(started.elapsed().as_secs_f64() * 1_000.0);
+    if product_event_count > 0 {
+        metrics::counter!("product.activity.flushes", "result" => outcome).increment(1);
+        metrics::histogram!("product.activity.flush_size", "result" => outcome)
+            .record(product_key_count as f64);
+        metrics::histogram!("product.activity.flush_duration_ms", "result" => outcome)
+            .record(started.elapsed().as_secs_f64() * 1_000.0);
+    }
+    if credential_event_count > 0 {
+        metrics::counter!("credential.activity.flushes", "result" => outcome).increment(1);
+        metrics::histogram!("credential.activity.flush_size", "result" => outcome).record(1.0);
+        metrics::histogram!("credential.activity.flush_duration_ms", "result" => outcome)
+            .record(started.elapsed().as_secs_f64() * 1_000.0);
+    }
     let flushed_at = Utc::now();
     match result {
         Ok(_) => health.flush_succeeded(event_count, flushed_at, data_through),
         Err(error) => {
             health.flush_failed(event_count, flushed_at);
-            tracing::warn!(
-                ?error,
-                events = event_count,
-                "credential activity batch dropped"
-            );
+            tracing::warn!(?error, events = event_count, "activity batch dropped");
         }
     }
 }
@@ -794,16 +742,32 @@ async fn flush_credential_activity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{CredentialId, UserId};
+
+    fn auth_fixture(user_id: Uuid, credential_id: Uuid) -> AuthContext {
+        AuthContext {
+            credential_id: CredentialId(credential_id),
+            user_id: UserId(user_id),
+            capabilities: ["open", "query", "read", "status"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            scope_refs: vec!["scope:root".to_owned()],
+            read_only: true,
+        }
+    }
 
     #[test]
     fn aggregate_combines_repeated_hits() {
         let user_id = Uuid::now_v7();
+        let credential_id = Uuid::now_v7();
+        let auth = auth_fixture(user_id, credential_id);
         let entry_id = Uuid::now_v7();
         let mut entry_pending = HashMap::new();
         aggregate_entry_usage(
             &mut entry_pending,
             EntryUsageEvent {
-                user_id,
+                auth: auth.clone(),
                 entry_ids: vec![entry_id, entry_id],
                 operation: UsageOperation::Read,
             },
@@ -811,7 +775,7 @@ mod tests {
         aggregate_entry_usage(
             &mut entry_pending,
             EntryUsageEvent {
-                user_id,
+                auth: auth.clone(),
                 entry_ids: vec![entry_id],
                 operation: UsageOperation::Read,
             },
@@ -819,12 +783,17 @@ mod tests {
         aggregate_entry_usage(
             &mut entry_pending,
             EntryUsageEvent {
-                user_id,
+                auth: auth.clone(),
                 entry_ids: vec![entry_id],
                 operation: UsageOperation::Search,
             },
         );
-        let delta = entry_pending.get(&(user_id, entry_id)).unwrap();
+        let delta = entry_pending
+            .get(&PrincipalKey::from_auth(&auth))
+            .unwrap()
+            .entries
+            .get(&entry_id)
+            .unwrap();
         assert_eq!(delta.reads, 2);
         assert_eq!(delta.searches, 1);
     }
@@ -833,17 +802,15 @@ mod tests {
     fn product_activity_uses_utc_minutes_and_saturating_totals() {
         let user_id = Uuid::now_v7();
         let credential_id = Uuid::now_v7();
+        let auth = auth_fixture(user_id, credential_id);
         let first = "2026-08-02T23:59:40Z".parse().unwrap();
         let second = "2026-08-02T23:59:58Z".parse().unwrap();
-        let mut product_pending = HashMap::new();
-        let mut credential_pending = HashMap::new();
+        let mut pending = HashMap::new();
         for (bytes, occurred_at) in [(41, first), (1, second)] {
             aggregate_activity(
-                &mut product_pending,
-                &mut credential_pending,
+                &mut pending,
                 ActivityEvent::Product {
-                    user_id,
-                    credential_id,
+                    auth: auth.clone(),
                     operation: ProductActivityOperation::Read,
                     bytes,
                     occurred_at,
@@ -851,12 +818,15 @@ mod tests {
             );
         }
         let key = (
-            user_id,
-            credential_id,
             "2026-08-02T23:59:00Z".parse().unwrap(),
             ProductActivityOperation::Read,
         );
-        let delta = product_pending.get(&key).unwrap();
+        let delta = pending
+            .get(&PrincipalKey::from_auth(&auth))
+            .unwrap()
+            .product
+            .get(&key)
+            .unwrap();
         assert_eq!(delta.operation_count, 2);
         assert_eq!(delta.byte_count, 42);
         assert_eq!(delta.first_recorded_at, first);
@@ -867,17 +837,15 @@ mod tests {
     fn minute_buckets_preserve_fractional_offset_local_midnight() {
         let user_id = Uuid::now_v7();
         let credential_id = Uuid::now_v7();
+        let auth = auth_fixture(user_id, credential_id);
         let before_kathmandu_midnight = "2026-08-02T18:14:59Z".parse().unwrap();
         let kathmandu_midnight = "2026-08-02T18:15:00Z".parse().unwrap();
-        let mut product_pending = HashMap::new();
-        let mut credential_pending = HashMap::new();
+        let mut pending = HashMap::new();
         for occurred_at in [before_kathmandu_midnight, kathmandu_midnight] {
             aggregate_activity(
-                &mut product_pending,
-                &mut credential_pending,
+                &mut pending,
                 ActivityEvent::Product {
-                    user_id,
-                    credential_id,
+                    auth: auth.clone(),
                     operation: ProductActivityOperation::Read,
                     bytes: 1,
                     occurred_at,
@@ -885,41 +853,41 @@ mod tests {
             );
         }
 
-        assert!(product_pending.contains_key(&(
-            user_id,
-            credential_id,
+        let product = &pending
+            .get(&PrincipalKey::from_auth(&auth))
+            .unwrap()
+            .product;
+        assert!(product.contains_key(&(
             "2026-08-02T18:14:00Z".parse().unwrap(),
             ProductActivityOperation::Read,
         )));
-        assert!(product_pending.contains_key(&(
-            user_id,
-            credential_id,
-            kathmandu_midnight,
-            ProductActivityOperation::Read,
-        )));
+        assert!(product.contains_key(&(kathmandu_midnight, ProductActivityOperation::Read,)));
     }
 
     #[test]
     fn credential_activity_is_allowlisted_and_keeps_the_latest_touch() {
         let user_id = Uuid::now_v7();
         let credential_id = Uuid::now_v7();
+        let auth = auth_fixture(user_id, credential_id);
         let first = "2026-08-02T23:59:40Z".parse().unwrap();
         let second = "2026-08-02T23:59:58Z".parse().unwrap();
-        let mut product_pending = HashMap::new();
-        let mut credential_pending = HashMap::new();
+        let mut pending = HashMap::new();
         for (operation, occurred_at) in [("dashboard", first), ("not-allowed", second)] {
             aggregate_activity(
-                &mut product_pending,
-                &mut credential_pending,
+                &mut pending,
                 ActivityEvent::Credential {
-                    user_id,
-                    credential_id,
+                    auth: auth.clone(),
                     operation: credential_activity_label(operation),
                     occurred_at,
                 },
             );
         }
-        let delta = credential_pending.get(&(user_id, credential_id)).unwrap();
+        let delta = pending
+            .get(&PrincipalKey::from_auth(&auth))
+            .unwrap()
+            .credential
+            .as_ref()
+            .unwrap();
         assert_eq!(delta.request_count, 2);
         assert_eq!(delta.last_operation, "control");
         assert_eq!(delta.last_used_at, second);
@@ -937,17 +905,17 @@ mod tests {
         };
         let user_id = Uuid::now_v7();
         let credential_id = Uuid::now_v7();
+        let auth = auth_fixture(user_id, credential_id);
         activity_sender
             .try_send(ActivityEvent::Credential {
-                user_id,
-                credential_id,
+                auth: auth.clone(),
                 operation: "control",
                 occurred_at: Utc::now(),
             })
             .unwrap();
 
-        tracker.record_product_activity(user_id, credential_id, ProductActivityOperation::Read, 1);
-        tracker.record(user_id, [Uuid::now_v7()], UsageOperation::Read);
+        tracker.record_product_activity(&auth, ProductActivityOperation::Read, 1);
+        tracker.record(&auth, [Uuid::now_v7()], UsageOperation::Read);
 
         assert!(entry_receiver.try_recv().is_ok());
         assert_eq!(tracker.product_activity_health().dropped_events, 1);

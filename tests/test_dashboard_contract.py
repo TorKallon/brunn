@@ -4,7 +4,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "apps/api/migrations/0064_workspace_dashboard_activity.sql"
+TELEMETRY_WRITER = (
+    ROOT / "apps/api/migrations/0065_dashboard_telemetry_writer.sql"
+)
 API = ROOT / "apps/api/src/api.rs"
+DB = ROOT / "apps/api/src/db.rs"
 DASHBOARD = ROOT / "apps/api/src/dashboard_service.rs"
 SIMPLE_CORE = ROOT / "apps/api/src/simple_core.rs"
 USAGE = ROOT / "apps/api/src/usage.rs"
@@ -17,7 +21,9 @@ class DashboardContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.migration = MIGRATION.read_text(encoding="utf-8")
+        cls.telemetry_writer = TELEMETRY_WRITER.read_text(encoding="utf-8")
         cls.api = API.read_text(encoding="utf-8")
+        cls.db = DB.read_text(encoding="utf-8")
         cls.dashboard = DASHBOARD.read_text(encoding="utf-8")
         cls.simple_core = SIMPLE_CORE.read_text(encoding="utf-8")
         cls.usage = USAGE.read_text(encoding="utf-8")
@@ -94,7 +100,7 @@ class DashboardContractTests(unittest.TestCase):
             "const ACTIVITY_CHANNEL_CAPACITY: usize = 4_096",
             "const MAX_PENDING_KEYS: usize = 5_000",
             "try_send(event)",
-            '"product activity batch dropped"',
+            '"activity batch dropped"',
             "run_entry_usage",
             "run_activity",
             "ProductActivityTrackerStatus::Disabled",
@@ -104,6 +110,40 @@ class DashboardContractTests(unittest.TestCase):
             haystack = self.usage
             self.assertIn(marker, haystack)
         self.assertNotIn("ProductActivityOperation", self.dashboard)
+
+    def test_telemetry_writer_is_least_privilege_and_revalidates_principals(self) -> None:
+        for marker in (
+            "CREATE FUNCTION straylight_auth.write_entry_usage",
+            "CREATE FUNCTION straylight_auth.write_product_activity",
+            "CREATE FUNCTION straylight_auth.write_credential_activity",
+            "SECURITY DEFINER",
+            "SET search_path = pg_catalog, straylight, straylight_auth",
+            "SET row_security = off",
+            "straylight_auth.context_is_valid()",
+            "straylight_auth.current_user_id() IS DISTINCT FROM p_user_id",
+            "straylight_auth.current_credential_id() IS DISTINCT FROM p_credential_id",
+            "straylight_auth.validate_transaction_context(",
+            "straylight_auth.current_capabilities()",
+            "straylight_auth.current_scope_refs()",
+            "item_count > 5000",
+            "REVOKE ALL ON FUNCTION",
+            "TO app_rw",
+        ):
+            self.assertIn(marker, self.telemetry_writer)
+        self.assertGreaterEqual(
+            self.telemetry_writer.count("straylight_auth.validate_transaction_context("),
+            3,
+        )
+        self.assertNotIn("TO app_ro", self.telemetry_writer)
+        self.assertNotIn("GRANT INSERT", self.telemetry_writer)
+        self.assertNotIn("GRANT UPDATE", self.telemetry_writer)
+
+    def test_api_tracker_uses_rw_pool_and_queued_auth_context(self) -> None:
+        self.assertIn("UsageTracker::start(rw_pool.clone())", self.db)
+        self.assertNotIn("UsageTracker::start(admin_pool", self.db)
+        self.assertIn("auth: AuthContext", self.usage)
+        self.assertIn("auth: auth.clone()", self.usage)
+        self.assertIn("set_context(&mut tx, &auth).await?", self.usage)
 
     def test_briefings_and_successful_control_requests_are_instrumented(self) -> None:
         for marker in (
