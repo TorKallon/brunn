@@ -10,7 +10,7 @@ struct NewsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Briefing activity")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(StraylightTheme.forest)
+                        .foregroundStyle(StraylightTheme.signal)
                         .textCase(.uppercase)
                     Text("News")
                         .font(.largeTitle.bold())
@@ -127,7 +127,7 @@ private struct NewsRow: View {
                 Spacer(minLength: 4)
                 if !isRead {
                     Circle()
-                        .fill(StraylightTheme.forest)
+                        .fill(StraylightTheme.signal)
                         .frame(width: 7, height: 7)
                         .accessibilityLabel("Unread")
                 }
@@ -193,11 +193,11 @@ private struct NewsDetailView: View {
                 }
 
                 if let why = nonempty(news.item.whyItMatters) {
-                    DetailBlock(title: "Why it matters", text: why, tint: StraylightTheme.forest)
+                    DetailBlock(title: "Why it matters", text: why, tint: StraylightTheme.signal)
                 }
 
                 if let changed = nonempty(news.item.whatChanged) {
-                    DetailBlock(title: "What changed", text: changed, tint: StraylightTheme.blue)
+                    DetailBlock(title: "What changed", text: changed, tint: StraylightTheme.pulse)
                 }
 
                 if let detail = nonempty(news.item.detailMD) {
@@ -327,8 +327,8 @@ private struct NewsKindPill: View {
 
     private var color: Color {
         switch kind {
-        case .new: StraylightTheme.forest
-        case .update: StraylightTheme.blue
+        case .new: StraylightTheme.signal
+        case .update: StraylightTheme.pulse
         case .correction: StraylightTheme.red
         case .context: Color.secondary
         }

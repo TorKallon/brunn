@@ -1,23 +1,88 @@
 import SwiftUI
 
 enum StraylightTheme {
-    static let forest = Color(red: 0.055, green: 0.384, blue: 0.286)
-    static let ink = Color(red: 0.09, green: 0.10, blue: 0.10)
+    /// Cobalt beam accent — the single brand hue (docs/Brand.md).
+    static let signal = dynamic(light: 0x3158D9, dark: 0x8FA9FF)
+    /// Secondary data/info accent.
+    static let pulse = dynamic(light: 0x0F7583, dark: 0x5FB9D0)
+    static let ink = dynamic(light: 0x1B2130, dark: 0xE7EDF9)
+    static let amber = dynamic(light: 0x8B5B09, dark: 0xD9A251)
+    static let red = dynamic(light: 0xAC3B47, dark: 0xE08894)
+    /// Night chrome for brand surfaces (matches LaunchBackground).
+    static let night = dynamic(light: 0x06152C, dark: 0x030B18)
     static let canvas = Color(uiColor: .secondarySystemBackground)
     static let line = Color(uiColor: .separator).opacity(0.55)
-    static let blue = Color(red: 0.11, green: 0.42, blue: 0.62)
-    static let amber = Color(red: 0.66, green: 0.40, blue: 0.10)
-    static let red = Color(red: 0.68, green: 0.16, blue: 0.16)
+
+    // Transitional aliases for the in-flight dashboard feature; migrate its
+    // call sites to the canonical `night`, `signal`, and `pulse` once it lands.
+    static let navy = night
+    static let signalBlue = signal
+    static let signalCyan = pulse
+
+    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
+        Color(uiColor: UIColor { traits in
+            UIColor(rgb: traits.userInterfaceStyle == .dark ? dark : light)
+        })
+    }
+}
+
+private extension UIColor {
+    convenience init(rgb: UInt32) {
+        self.init(
+            red: CGFloat((rgb >> 16) & 0xFF) / 255,
+            green: CGFloat((rgb >> 8) & 0xFF) / 255,
+            blue: CGFloat(rgb & 0xFF) / 255,
+            alpha: 1
+        )
+    }
 }
 
 struct BrandMark: View {
+    var size: CGFloat = 32
+
     var body: some View {
-        Text("S")
-            .font(.system(.headline, design: .rounded, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 32, height: 32)
-            .background(StraylightTheme.forest, in: RoundedRectangle(cornerRadius: 7))
-            .accessibilityLabel("Straylight")
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.012, green: 0.043, blue: 0.094),
+                    Color(red: 0.043, green: 0.129, blue: 0.267),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            BeamShape()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            .white,
+                            Color(red: 0.78, green: 0.85, blue: 1.0),
+                            Color(red: 0.19, green: 0.35, blue: 0.85),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            Circle()
+                .fill(.white)
+                .frame(width: size * 0.14, height: size * 0.14)
+                .shadow(color: Color(red: 0.56, green: 0.66, blue: 1.0), radius: size * 0.10)
+                .position(x: size * 0.32, y: size * 0.30)
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        .accessibilityLabel("Straylight")
+    }
+}
+
+private struct BeamShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let origin = CGPoint(x: rect.width * 0.32, y: rect.height * 0.30)
+        path.move(to: origin)
+        path.addLine(to: CGPoint(x: rect.width * 1.05, y: rect.height * 0.78))
+        path.addLine(to: CGPoint(x: rect.width * 0.86, y: rect.height * 1.05))
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -28,13 +93,13 @@ struct Eyebrow: View {
         Text(text.uppercased())
             .font(.caption.weight(.bold))
             .tracking(0.7)
-            .foregroundStyle(StraylightTheme.forest)
+            .foregroundStyle(StraylightTheme.signal)
     }
 }
 
 struct StatusPill: View {
     let text: String
-    var color: Color = StraylightTheme.forest
+    var color: Color = StraylightTheme.signal
     var symbol: String?
 
     var body: some View {
@@ -61,7 +126,7 @@ struct SafeMarkdownText: View {
 
     var body: some View {
         Text(SafeMarkdown.attributedString(markdown))
-            .tint(StraylightTheme.forest)
+            .tint(StraylightTheme.signal)
     }
 }
 
@@ -91,7 +156,7 @@ struct BoundaryNotice: View {
         VStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 30, weight: .medium))
-                .foregroundStyle(StraylightTheme.forest)
+                .foregroundStyle(StraylightTheme.signal)
             Text(title)
                 .font(.headline)
                 .multilineTextAlignment(.center)

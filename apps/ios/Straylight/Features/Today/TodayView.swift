@@ -82,7 +82,7 @@ private struct ConnectionBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: isDemo ? "sparkles" : "wifi.exclamationmark")
-                .foregroundStyle(isDemo ? StraylightTheme.blue : StraylightTheme.amber)
+                .foregroundStyle(isDemo ? StraylightTheme.pulse : StraylightTheme.amber)
                 .accessibilityHidden(true)
             Text(message)
                 .font(.footnote)
@@ -294,7 +294,7 @@ private struct BriefingSummary: View {
                 topLeadingRadius: 6,
                 bottomLeadingRadius: 6
             )
-            .fill(StraylightTheme.forest)
+            .fill(StraylightTheme.signal)
             .frame(width: 3)
         }
         .accessibilityElement(children: .contain)
@@ -440,10 +440,10 @@ private struct DeltaPill: View {
 
     private var tint: Color {
         switch delta {
-        case "update": StraylightTheme.blue
+        case "update": StraylightTheme.pulse
         case "corroboration": StraylightTheme.amber
         case "correction": StraylightTheme.red
-        default: StraylightTheme.forest
+        default: StraylightTheme.signal
         }
     }
 }
@@ -638,7 +638,7 @@ private struct BriefingRevisionHistory: View {
                             if version.version == briefing.currentVersion {
                                 Text("CURRENT")
                                     .font(.caption2.weight(.bold))
-                                    .foregroundStyle(StraylightTheme.forest)
+                                    .foregroundStyle(StraylightTheme.signal)
                             }
                             Spacer(minLength: 8)
                             Text(

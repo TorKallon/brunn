@@ -116,7 +116,7 @@ private struct TaskRow: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: task.state == .waiting ? "clock" : "circle")
                 .font(.title3)
-                .foregroundStyle(task.state == .waiting ? StraylightTheme.amber : StraylightTheme.forest)
+                .foregroundStyle(task.state == .waiting ? StraylightTheme.amber : StraylightTheme.signal)
                 .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 6) {
                 Text(task.title)
@@ -129,7 +129,7 @@ private struct TaskRow: View {
                 }
                 HStack(spacing: 8) {
                     if let context = task.context {
-                        StatusPill(text: context, color: StraylightTheme.blue)
+                        StatusPill(text: context, color: StraylightTheme.pulse)
                     }
                     if let minutes = task.estimatedMinutes {
                         Label("\(minutes)m", systemImage: "clock")
@@ -161,7 +161,7 @@ private struct TaskDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 StatusPill(
                     text: task.state.rawValue.capitalized,
-                    color: task.state == .waiting ? StraylightTheme.amber : StraylightTheme.forest
+                    color: task.state == .waiting ? StraylightTheme.amber : StraylightTheme.signal
                 )
                 Text(task.title)
                     .font(.largeTitle.bold())

@@ -90,8 +90,8 @@ struct TopicsView: View {
     private func modeColor(_ mode: String) -> Color {
         switch mode {
         case "paused", "muted": .secondary
-        case "scheduled": StraylightTheme.blue
-        default: StraylightTheme.forest
+        case "scheduled": StraylightTheme.pulse
+        default: StraylightTheme.signal
         }
     }
 }

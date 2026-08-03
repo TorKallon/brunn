@@ -12,7 +12,7 @@ struct StraylightApp: App {
             RootView()
                 .environmentObject(model)
                 .environmentObject(notifications)
-                .tint(StraylightTheme.forest)
+                .tint(StraylightTheme.signal)
                 .task {
                     if let route = PushRouteBuffer.shared.take() {
                         await model.handle(route)

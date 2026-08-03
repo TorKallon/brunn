@@ -115,7 +115,7 @@ private struct NotificationPrimerView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Image(systemName: "bell.badge")
                     .font(.system(size: 42, weight: .medium))
-                    .foregroundStyle(StraylightTheme.forest)
+                    .foregroundStyle(StraylightTheme.signal)
                 Text("Push is waiting on the delivery service")
                     .font(.largeTitle.bold())
                 Text("The native reader is complete for published morning briefings, intraday activity, revisions, sources, and tracked topics. Remote notifications remain off because Straylight has no APNs device or delivery API yet.")

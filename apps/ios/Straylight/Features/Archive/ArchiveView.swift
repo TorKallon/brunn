@@ -9,7 +9,7 @@ struct ArchiveView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Published editions")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(StraylightTheme.forest)
+                        .foregroundStyle(StraylightTheme.signal)
                         .textCase(.uppercase)
                     Text("Briefing archive")
                         .font(.largeTitle.bold())

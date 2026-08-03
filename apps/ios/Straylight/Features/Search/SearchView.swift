@@ -69,7 +69,7 @@ private struct SearchResultRow: View {
             if let heading = candidate.heading, !heading.isEmpty {
                 Text(heading)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(StraylightTheme.forest)
+                    .foregroundStyle(StraylightTheme.signal)
                     .lineLimit(1)
             }
             Text(candidate.previewText)
@@ -111,9 +111,9 @@ private struct ContextSourceView: View {
 
                 if let item, let text = item.text {
                     HStack(spacing: 8) {
-                        StatusPill(text: "Raw Markdown", color: StraylightTheme.blue)
+                        StatusPill(text: "Raw Markdown", color: StraylightTheme.pulse)
                         if let version = item.version {
-                            StatusPill(text: "Pinned v\(version)", color: StraylightTheme.forest)
+                            StatusPill(text: "Pinned v\(version)", color: StraylightTheme.signal)
                         }
                     }
                     Text(text)
