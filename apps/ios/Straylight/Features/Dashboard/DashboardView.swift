@@ -145,7 +145,7 @@ private struct DashboardHero: View {
         .padding(20)
         .background(
             LinearGradient(
-                colors: [StraylightTheme.navy, Color(red: 0.045, green: 0.17, blue: 0.36)],
+                colors: [StraylightTheme.night, StraylightTheme.signal.opacity(0.34)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
@@ -255,7 +255,7 @@ private struct DashboardStorageSection: View {
                 identifier: "dashboard-storage-text"
             )
             StorageMetricCard(
-                title: "Referenced binaries",
+                title: "S3 object versions",
                 symbol: "externaldrive",
                 metric: dashboard.storage.binary,
                 tint: StraylightTheme.signalCyan,
@@ -282,12 +282,17 @@ private struct StorageMetricCard: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text(metric.count.formatted())
+            Text(metric.count?.formatted() ?? "Unavailable")
                 .font(.title2.bold())
                 .contentTransition(.numericText())
-            Text(DashboardFormat.bytes(metric.sizeBytes))
+            Text(metric.sizeBytes.map(DashboardFormat.bytes) ?? "Size unavailable")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if metric.status == "stale" {
+                Text("Last observed inventory")
+                    .font(.caption2)
+                    .foregroundStyle(StraylightTheme.amber)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 138, alignment: .leading)
         .padding(14)
@@ -298,8 +303,15 @@ private struct StorageMetricCard: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue("\(metric.count.formatted()) items, \(DashboardFormat.bytes(metric.sizeBytes))")
+        .accessibilityValue(accessibilityValue)
         .accessibilityIdentifier(identifier)
+    }
+
+    private var accessibilityValue: String {
+        guard let count = metric.count, let size = metric.sizeBytes else {
+            return "Inventory unavailable"
+        }
+        return "\(count.formatted()) items, \(DashboardFormat.bytes(size))"
     }
 }
 
@@ -319,17 +331,31 @@ private struct DashboardActivitySection: View {
             title: "A rough pulse of daily usage",
             detail: dashboard.timezone
         )
+        if let tracking = dashboard.tracking, tracking.status != "enabled" {
+            Label(
+                tracking.status == "disabled"
+                    ? "Usage tracking is unavailable; today’s zeroes are not authoritative."
+                    : "Usage tracking is degraded; recent totals may be incomplete.",
+                systemImage: "exclamationmark.triangle"
+            )
+            .font(.footnote)
+            .foregroundStyle(StraylightTheme.amber)
+        }
         LazyVGrid(columns: columns, spacing: 10) {
             TodayActivityCard(
                 title: "Reads today",
-                value: dashboard.today.readOperations,
-                detail: "\(DashboardFormat.bytes(dashboard.today.readBytes)) returned",
+                value: activityAvailable ? dashboard.today.readOperations : nil,
+                detail: activityAvailable
+                    ? "\(DashboardFormat.bytes(dashboard.today.readBytes)) returned"
+                    : "Tracking unavailable",
                 tint: StraylightTheme.signalBlue
             )
             TodayActivityCard(
                 title: "Writes today",
-                value: dashboard.today.writeOperations,
-                detail: "\(DashboardFormat.bytes(dashboard.today.writeBytes)) committed",
+                value: activityAvailable ? dashboard.today.writeOperations : nil,
+                detail: activityAvailable
+                    ? "\(DashboardFormat.bytes(dashboard.today.writeBytes)) committed"
+                    : "Tracking unavailable",
                 tint: StraylightTheme.signalCyan
             )
         }
@@ -362,11 +388,15 @@ private struct DashboardActivitySection: View {
         }
         return value
     }
+
+    private var activityAvailable: Bool {
+        dashboard.tracking?.status != "disabled"
+    }
 }
 
 private struct TodayActivityCard: View {
     let title: String
-    let value: Int64
+    let value: Int64?
     let detail: String
     let tint: Color
 
@@ -375,7 +405,7 @@ private struct TodayActivityCard: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Text(value.formatted())
+            Text(value?.formatted() ?? "Unavailable")
                 .font(.title2.bold())
                 .contentTransition(.numericText())
             Text(detail)
@@ -490,7 +520,7 @@ private struct DashboardAccessSection: View {
     var body: some View {
         DashboardSectionHeader(
             eyebrow: "Access",
-            title: "API credentials",
+            title: "Connected clients",
             detail: "\(clients.filter { $0.status == "active" }.count) active"
         )
         VStack(spacing: 0) {
@@ -504,7 +534,7 @@ private struct DashboardAccessSection: View {
                 }
             }
             if clients.isEmpty {
-                Label("No API credentials are visible.", systemImage: "checkmark.shield")
+                Label("No connected clients are visible.", systemImage: "checkmark.shield")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 90)
@@ -525,7 +555,7 @@ private struct AccessClientRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
-            Image(systemName: client.kind == "web_session" ? "safari" : "key.horizontal")
+            Image(systemName: client.kind == "web_ui" ? "safari" : "key.horizontal")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(client.status == "active" ? StraylightTheme.signalBlue : .secondary)
                 .frame(width: 36, height: 36)
@@ -583,7 +613,8 @@ private struct AccessClientRow: View {
         let capabilities = client.capabilities.isEmpty
             ? "capabilities not reported"
             : client.capabilities.joined(separator: ", ")
-        return "\(client.id) · \(scope) · \(capabilities)"
+        let management = client.manageable ? "manageable" : "system principal"
+        return "\(client.id) · \(scope) · \(capabilities) · \(management)"
     }
 
     private var todayOperations: String {

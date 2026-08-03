@@ -129,8 +129,18 @@ pub async fn middleware(
         .record(started.elapsed().as_secs_f64() * 1_000.0);
     metrics::histogram!("auth.scope_count", "access" => access)
         .record(auth.scope_refs.len() as f64);
+    let activity_user_id = auth.user_id.0;
+    let activity_credential_id = auth.credential_id.0;
     request.extensions_mut().insert(auth);
-    Ok(next.run(request).await)
+    let response = next.run(request).await;
+    if response.status().is_success() {
+        state.usage_tracker.record_credential_activity(
+            activity_user_id,
+            activity_credential_id,
+            "control",
+        );
+    }
+    Ok(response)
 }
 
 fn is_unsafe_method(method: &Method) -> bool {

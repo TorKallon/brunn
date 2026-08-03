@@ -50,7 +50,7 @@ final class StraylightTests: XCTestCase {
         XCTAssertEqual(model.selectedTab, .dashboard)
         XCTAssertEqual(model.currentCredentialID, "credential:demo-iphone")
         XCTAssertEqual(model.dashboard?.storage.text.count, 4_926)
-        XCTAssertEqual(model.dashboard?.access.count, 3)
+        XCTAssertEqual(model.dashboard?.access.count, 4)
         XCTAssertEqual(model.latestBriefing?.briefing?.schema, "briefing.v1")
         XCTAssertFalse(model.tasks.isEmpty)
         XCTAssertFalse(model.alerts.isEmpty)
@@ -226,6 +226,7 @@ final class StraylightTests: XCTestCase {
             timezone: dashboard.timezone,
             workspaceGeneration: dashboard.workspaceGeneration,
             activityTrackingStartedAt: dashboard.activityTrackingStartedAt,
+            tracking: dashboard.tracking,
             storage: dashboard.storage,
             today: dashboard.today,
             activity: dashboard.activity,

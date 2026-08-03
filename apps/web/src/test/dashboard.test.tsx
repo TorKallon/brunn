@@ -71,7 +71,7 @@ describe("landing dashboard", () => {
     expect(within(textCard!).getByText("128")).toBeInTheDocument();
     expect(within(textCard!).getByText("2.5 MB")).toBeInTheDocument();
 
-    const binaryCard = screen.getByText("Referenced binaries").closest("article");
+    const binaryCard = screen.getByText("S3 object versions").closest("article");
     expect(binaryCard).not.toBeNull();
     expect(within(binaryCard!).getByText("14")).toBeInTheDocument();
     expect(within(binaryCard!).getByText("18 MB")).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe("landing dashboard", () => {
     expect(screen.getByText("iPhone")).toBeInTheDocument();
     expect(screen.getByText("This client")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "API credentials" }),
+      screen.getByRole("heading", { name: "Connected clients" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("scope:root")).toHaveLength(2);
   });
@@ -118,5 +118,40 @@ describe("landing dashboard", () => {
     expect(screen.getByText("Text artifacts")).toBeInTheDocument();
     await waitFor(() => expect(dashboardRequest).toBeDefined());
     expect(new URL(dashboardRequest!.url).searchParams.get("timezone")).toBeTruthy();
+  });
+
+  it("does not present unavailable tracking or object inventory as trustworthy zeroes", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/dashboard": {
+        ...defaultDashboard,
+        data: {
+          ...defaultDashboard.data,
+          tracking: {
+            status: "disabled",
+            dropped_events: 0,
+            flush_failures: 0,
+          },
+          storage: {
+            ...defaultDashboard.data.storage,
+            binary: {
+              count: null,
+              size_bytes: null,
+              semantics: "physical_object_versions",
+              status: "unavailable",
+              observed_at: null,
+            },
+          },
+        },
+      },
+    });
+    renderApp("/dashboard");
+
+    expect(
+      await screen.findByText(
+        "Usage tracking is unavailable; today’s zeroes are not authoritative.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(4);
+    expect(screen.getByText("Physical inventory unavailable")).toBeInTheDocument();
   });
 });

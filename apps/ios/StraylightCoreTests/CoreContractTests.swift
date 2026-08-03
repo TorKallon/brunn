@@ -11,12 +11,19 @@ final class CoreContractTests: XCTestCase {
             "timezone": "America/Los_Angeles",
             "workspace_generation": 84,
             "activity_tracking_started_at": "2026-08-02T20:00:00Z",
+            "tracking": {
+              "status": "enabled",
+              "dropped_events": 0,
+              "flush_failures": 0
+            },
             "storage": {
               "text": {"count": 12482, "size_bytes": 19428821},
               "binary": {
                 "count": 418,
                 "size_bytes": 2874102394,
-                "semantics": "current_referenced_objects"
+                "semantics": "physical_object_versions",
+                "status": "fresh",
+                "observed_at": "2026-08-02T22:59:00Z"
               }
             },
             "today": {
@@ -38,6 +45,7 @@ final class CoreContractTests: XCTestCase {
               "id": "credential:ios",
               "name": "iPhone",
               "kind": "api_credential",
+              "manageable": true,
               "access": "read_only",
               "status": "active",
               "scope_ids": ["scope:root"],
@@ -62,6 +70,7 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(envelope.data.activity.first?.readOperations, 187)
         XCTAssertEqual(envelope.data.access.first?.name, "iPhone")
         XCTAssertEqual(envelope.data.access.first?.lastOperation, "workspace.read")
+        XCTAssertEqual(envelope.data.tracking?.status, "enabled")
         XCTAssertEqual(envelope.data.coverage?.days, 7)
     }
 

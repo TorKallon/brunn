@@ -9498,7 +9498,10 @@ mod tests {
         .await
         .expect("unforced replay");
         tx.commit().await.expect("commit unforced replay");
-        assert!(replay.no_op, "identical content without the flag stays a NoOp");
+        assert!(
+            replay.no_op,
+            "identical content without the flag stays a NoOp"
+        );
         assert_eq!(replay.version, 1);
 
         let mut tx = pool.begin().await.expect("begin forced write");

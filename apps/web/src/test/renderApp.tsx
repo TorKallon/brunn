@@ -79,12 +79,19 @@ export const defaultDashboard = {
     timezone: "UTC",
     workspace_generation: 12,
     activity_tracking_started_at: "2026-07-05T00:00:00Z",
+    tracking: {
+      status: "enabled",
+      dropped_events: 0,
+      flush_failures: 0,
+    },
     storage: {
       text: { count: 128, size_bytes: 2_621_440 },
       binary: {
         count: 14,
         size_bytes: 18_874_368,
-        semantics: "current_referenced_objects",
+        semantics: "physical_object_versions",
+        status: "fresh",
+        observed_at: now,
       },
     },
     today: {
@@ -106,7 +113,8 @@ export const defaultDashboard = {
       {
         id: "credential:current",
         name: "Straylight Web",
-        kind: "api_credential",
+        kind: "web_ui",
+        manageable: false,
         access: "owner",
         status: "active",
         scope_ids: ["scope:root"],
@@ -120,6 +128,7 @@ export const defaultDashboard = {
         id: "credential:ios",
         name: "iPhone",
         kind: "api_credential",
+        manageable: true,
         access: "read_only",
         status: "active",
         scope_ids: ["scope:root"],

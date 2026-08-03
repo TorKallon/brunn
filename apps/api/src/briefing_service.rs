@@ -22,6 +22,7 @@ use crate::{
     error::{ApiError, ApiResult},
     models::{Capability, ResponseStatus},
     simple_core::{self, WorkspaceEnvelope, WriteRequest},
+    usage::ProductActivityOperation,
     workspace_features,
 };
 
@@ -220,7 +221,11 @@ pub fn validate_publish_request(request: &BriefingPublishRequest) -> ApiResult<(
         if let Some(story_key) = &omission.story_key {
             require_story_key(story_key)?;
         }
-        require_char_limit("omission reason", &omission.reason, OMISSION_REASON_LIMIT_CHARS)?;
+        require_char_limit(
+            "omission reason",
+            &omission.reason,
+            OMISSION_REASON_LIMIT_CHARS,
+        )?;
         require_collection_limit("omission urls", omission.urls.len(), STORY_URL_LIMIT)?;
         for url in &omission.urls {
             canonicalize_url(url)?;
@@ -486,7 +491,10 @@ fn item_changed(previous_item: &Value, item: &BriefingItem) -> bool {
     let Ok(previous) = serde_json::from_value::<BriefingItem>(previous_item.clone()) else {
         return true;
     };
-    match (serde_json::to_string(&previous), serde_json::to_string(item)) {
+    match (
+        serde_json::to_string(&previous),
+        serde_json::to_string(item),
+    ) {
         (Ok(previous), Ok(current)) => previous != current,
         _ => true,
     }
@@ -502,11 +510,13 @@ pub async fn publish(
     let date = NaiveDate::parse_from_str(&request.date, "%Y-%m-%d")
         .map_err(|_| ApiError::invalid("date must be a YYYY-MM-DD calendar date"))?;
     let path = edition_entry_path(&request.date, &request.edition);
+    let content = render_edition_markdown(&request);
+    let committed_bytes = u64::try_from(content.len()).unwrap_or(u64::MAX);
     let mut prepared = simple_core::prepare_markdown(
         &state,
         WriteRequest {
             path: path.clone(),
-            content: render_edition_markdown(&request),
+            content,
             media_type: "text/markdown".to_owned(),
             expected_version: request.expected_version,
             idempotency_key: request.idempotency_key.clone(),
@@ -590,6 +600,14 @@ pub async fn publish(
         ResponseStatus::Committed
     };
     envelope.corpus_revision = Some(format!("generation:{generation}"));
+    if !result.no_op {
+        record_product_activity(
+            &state,
+            &auth,
+            ProductActivityOperation::BriefingPublish,
+            committed_bytes,
+        );
+    }
     Ok(Json(envelope))
 }
 
@@ -1089,6 +1107,7 @@ pub async fn dedupe_check(
         "workspace_generation": generation,
     }));
     envelope.corpus_revision = Some(format!("generation:{generation}"));
+    record_serialized_product_read(&state, &auth, ProductActivityOperation::Search, &envelope);
     Ok(Json(envelope))
 }
 
@@ -1287,16 +1306,14 @@ pub fn parse_topic_document(slug: &str, content: &str) -> BriefingTopic {
                 topic.schedule = workspace_features::bounded_scalar(value, 80)
                     .filter(|schedule| schedule != "null" && schedule != "~");
             }
-            "suppress_unchanged" => {
-                match workspace_features::bounded_scalar(value, 8).as_deref() {
-                    Some("true") => topic.suppress_unchanged = true,
-                    Some("false") => topic.suppress_unchanged = false,
-                    _ => note_parse_error(
-                        &mut topic.parse_error,
-                        format!("suppress_unchanged must be true or false, got {value:?}"),
-                    ),
-                }
-            }
+            "suppress_unchanged" => match workspace_features::bounded_scalar(value, 8).as_deref() {
+                Some("true") => topic.suppress_unchanged = true,
+                Some("false") => topic.suppress_unchanged = false,
+                _ => note_parse_error(
+                    &mut topic.parse_error,
+                    format!("suppress_unchanged must be true or false, got {value:?}"),
+                ),
+            },
             "freshness_hours" => {
                 match workspace_features::bounded_scalar(value, 32)
                     .and_then(|hours| hours.parse::<i64>().ok())
@@ -1504,7 +1521,9 @@ pub fn validate_item_action(
             .item_id
             .as_deref()
             .filter(|item_id| ITEM_ID.is_match(item_id))
-            .ok_or_else(|| ApiError::invalid("item_id must be a lowercase slug of 2 to 64 characters"))
+            .ok_or_else(|| {
+                ApiError::invalid("item_id must be a lowercase slug of 2 to 64 characters")
+            })
     };
     match request.action.as_str() {
         action @ ("read" | "feedback") => {
@@ -1748,6 +1767,12 @@ pub async fn list_editions(
         "workspace_generation": generation,
     }));
     envelope.corpus_revision = Some(format!("generation:{generation}"));
+    record_serialized_product_read(
+        &state,
+        &auth,
+        ProductActivityOperation::BriefingList,
+        &envelope,
+    );
     Ok(Json(envelope))
 }
 
@@ -1839,12 +1864,19 @@ pub async fn get_edition(
         return Err(ApiError::invalid("version must be a positive integer"));
     }
     let mut tx = state.begin_read(&auth).await?;
-    let mut data = get_edition_in_tx(&mut tx, auth.user_id.0, &date, &edition, query.version).await?;
+    let mut data =
+        get_edition_in_tx(&mut tx, auth.user_id.0, &date, &edition, query.version).await?;
     let generation = simple_core::max_generation_in_tx(&mut tx, auth.user_id.0).await?;
     tx.commit().await?;
     data["workspace_generation"] = json!(generation);
     let mut envelope = WorkspaceEnvelope::complete(data);
     envelope.corpus_revision = Some(format!("generation:{generation}"));
+    record_serialized_product_read(
+        &state,
+        &auth,
+        ProductActivityOperation::BriefingRead,
+        &envelope,
+    );
     Ok(Json(envelope))
 }
 
@@ -1940,7 +1972,10 @@ pub async fn topics_snapshot_in_tx(
             continue;
         }
         let entry_id: Uuid = row.get("id");
-        let date = fields.date.clone().or_else(|| request_date_from_path(&path));
+        let date = fields
+            .date
+            .clone()
+            .or_else(|| request_date_from_path(&path));
         let (note, _) = cap_chars(&fields.note, REQUEST_NOTE_LIMIT_CHARS);
         pending_requests.push(json!({
             "path": path,
@@ -2001,6 +2036,12 @@ pub async fn topics_snapshot(
     data["workspace_generation"] = json!(generation);
     let mut envelope = WorkspaceEnvelope::complete(data);
     envelope.corpus_revision = Some(format!("generation:{generation}"));
+    record_serialized_product_read(
+        &state,
+        &auth,
+        ProductActivityOperation::BriefingTopics,
+        &envelope,
+    );
     Ok(Json(envelope))
 }
 
@@ -2040,7 +2081,10 @@ async fn fetch_locked_document(
 }
 
 fn entry_lock_key(user_id: Uuid, path: &str) -> String {
-    format!("simple-entry:{user_id}:{}", simple_core::portable_path_key(path))
+    format!(
+        "simple-entry:{user_id}:{}",
+        simple_core::portable_path_key(path)
+    )
 }
 
 async fn write_briefing_document(
@@ -2052,6 +2096,7 @@ async fn write_briefing_document(
     metadata: Value,
     mut data: Value,
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    let committed_bytes = u64::try_from(content.len()).unwrap_or(u64::MAX);
     let prepared = simple_core::prepare_markdown(
         state,
         WriteRequest {
@@ -2090,7 +2135,50 @@ async fn write_briefing_document(
         ResponseStatus::Committed
     };
     envelope.corpus_revision = Some(format!("generation:{generation}"));
+    if !result.no_op {
+        record_product_activity(
+            state,
+            auth,
+            ProductActivityOperation::BriefingAction,
+            committed_bytes,
+        );
+    }
     Ok(Json(envelope))
+}
+
+fn record_serialized_product_read<T: Serialize>(
+    state: &AppState,
+    auth: &AuthContext,
+    operation: ProductActivityOperation,
+    response: &T,
+) {
+    match serde_json::to_vec(response) {
+        Ok(bytes) => record_product_activity(
+            state,
+            auth,
+            operation,
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        ),
+        Err(error) => tracing::warn!(
+            ?error,
+            operation = operation.as_str(),
+            "briefing activity response sizing failed"
+        ),
+    }
+}
+
+fn record_product_activity(
+    state: &AppState,
+    auth: &AuthContext,
+    operation: ProductActivityOperation,
+    bytes: u64,
+) {
+    state.usage_tracker.record_product_activity(
+        auth.user_id.0,
+        auth.credential_id.0,
+        operation,
+        bytes,
+    );
 }
 
 pub async fn item_action(
@@ -2117,8 +2205,10 @@ pub async fn item_action(
             )
             .await?;
             let existing = fetch_locked_document(&mut tx, auth.user_id.0, &path).await?;
-            let content =
-                append_log_line(existing.as_ref().map(|document| document.content.as_str()), &line);
+            let content = append_log_line(
+                existing.as_ref().map(|document| document.content.as_str()),
+                &line,
+            );
             write_briefing_document(
                 &state,
                 &auth,
@@ -2269,8 +2359,8 @@ mod tests {
                     items: vec![BriefingItem {
                         id: "openai-hf-incident".to_owned(),
                         kind: "news".to_owned(),
-                        headline_md:
-                            "**[OpenAI incident disclosed](https://example.com/openai)**".to_owned(),
+                        headline_md: "**[OpenAI incident disclosed](https://example.com/openai)**"
+                            .to_owned(),
                         body_md: "OpenAI described the failure in a postmortem.".to_owned(),
                         why_it_matters: "Agent sandboxing is now a procurement question."
                             .to_owned(),
@@ -2435,8 +2525,11 @@ mod tests {
         assert!(validate_publish_request(&request).is_err());
 
         let mut request = fixture_request();
-        request.sections[0].items[0].story.as_mut().expect("story").urls =
-            vec!["https://example.com/".to_owned(); STORY_URL_LIMIT + 1];
+        request.sections[0].items[0]
+            .story
+            .as_mut()
+            .expect("story")
+            .urls = vec!["https://example.com/".to_owned(); STORY_URL_LIMIT + 1];
         assert!(validate_publish_request(&request).is_err());
     }
 
@@ -2648,7 +2741,10 @@ mod tests {
             "the URL identity dominates a newer candidate event date",
         );
         assert_eq!(
-            classify_candidate(&[exact_hit(&["url", "story_key"], 3, Some("2026-07-28"))], None),
+            classify_candidate(
+                &[exact_hit(&["url", "story_key"], 3, Some("2026-07-28"))],
+                None
+            ),
             "duplicate",
         );
     }
@@ -2708,8 +2804,7 @@ mod tests {
         assert!(validate_dedupe_request(&empty).is_err());
 
         let mut oversize = dedupe_fixture();
-        oversize.candidates =
-            vec![oversize.candidates[0].clone(); DEDUPE_CANDIDATE_LIMIT + 1];
+        oversize.candidates = vec![oversize.candidates[0].clone(); DEDUPE_CANDIDATE_LIMIT + 1];
         assert!(validate_dedupe_request(&oversize).is_err());
 
         let mut too_many_urls = dedupe_fixture();
@@ -2732,8 +2827,8 @@ mod tests {
 
     #[test]
     fn dedupe_candidate_defaults_apply_on_deserialization() {
-        let candidate: DedupeCandidate = serde_json::from_str(r#"{"title":"Alpha"}"#)
-            .expect("minimal candidate deserializes");
+        let candidate: DedupeCandidate =
+            serde_json::from_str(r#"{"title":"Alpha"}"#).expect("minimal candidate deserializes");
         assert!(candidate.urls.is_empty());
         assert!(candidate.summary.is_empty());
         assert!(candidate.event_at.is_none());
@@ -2743,7 +2838,11 @@ mod tests {
     #[test]
     fn validation_rejects_malformed_story_keys() {
         let mut request = fixture_request();
-        request.sections[0].items[0].story.as_mut().expect("story").key = "AI".to_owned();
+        request.sections[0].items[0]
+            .story
+            .as_mut()
+            .expect("story")
+            .key = "AI".to_owned();
         assert!(validate_publish_request(&request).is_err());
 
         let mut request = fixture_request();
@@ -2778,8 +2877,11 @@ mod tests {
             "example.com/no-scheme",
         ] {
             let mut request = fixture_request();
-            request.sections[0].items[0].story.as_mut().expect("story").urls =
-                vec![url.to_owned()];
+            request.sections[0].items[0]
+                .story
+                .as_mut()
+                .expect("story")
+                .urls = vec![url.to_owned()];
             assert!(
                 validate_publish_request(&request).is_err(),
                 "story url {url:?} must be rejected",
@@ -2797,36 +2899,72 @@ mod tests {
     #[test]
     fn validation_enforces_publish_field_caps() {
         let cases: Vec<(&str, Box<dyn Fn(&mut BriefingPublishRequest)>)> = vec![
-            ("section topic", Box::new(|request| {
-                request.sections[0].topic = "t".repeat(SECTION_TOPIC_LIMIT_CHARS + 1);
-            })),
-            ("section title", Box::new(|request| {
-                request.sections[0].title = "t".repeat(SECTION_TITLE_LIMIT_CHARS + 1);
-            })),
-            ("story title", Box::new(|request| {
-                request.sections[0].items[0].story.as_mut().expect("story").title =
-                    "t".repeat(STORY_TITLE_LIMIT_CHARS + 1);
-            })),
-            ("entity length", Box::new(|request| {
-                request.sections[0].items[0].story.as_mut().expect("story").entities =
-                    vec!["e".repeat(ENTITY_LIMIT_CHARS + 1)];
-            })),
-            ("entity count", Box::new(|request| {
-                request.sections[0].items[0].story.as_mut().expect("story").entities =
-                    vec!["Entity".to_owned(); ENTITY_LIMIT + 1];
-            })),
-            ("omission reason", Box::new(|request| {
-                request.omitted[0].reason = "r".repeat(OMISSION_REASON_LIMIT_CHARS + 1);
-            })),
-            ("summary line", Box::new(|request| {
-                request.summary_md = vec!["s".repeat(SUMMARY_LINE_LIMIT_CHARS + 1)];
-            })),
-            ("timezone", Box::new(|request| {
-                request.timezone = Some("z".repeat(TIMEZONE_LIMIT_CHARS + 1));
-            })),
-            ("generated_at", Box::new(|request| {
-                request.generated_at = Some("g".repeat(GENERATED_AT_LIMIT_CHARS + 1));
-            })),
+            (
+                "section topic",
+                Box::new(|request| {
+                    request.sections[0].topic = "t".repeat(SECTION_TOPIC_LIMIT_CHARS + 1);
+                }),
+            ),
+            (
+                "section title",
+                Box::new(|request| {
+                    request.sections[0].title = "t".repeat(SECTION_TITLE_LIMIT_CHARS + 1);
+                }),
+            ),
+            (
+                "story title",
+                Box::new(|request| {
+                    request.sections[0].items[0]
+                        .story
+                        .as_mut()
+                        .expect("story")
+                        .title = "t".repeat(STORY_TITLE_LIMIT_CHARS + 1);
+                }),
+            ),
+            (
+                "entity length",
+                Box::new(|request| {
+                    request.sections[0].items[0]
+                        .story
+                        .as_mut()
+                        .expect("story")
+                        .entities = vec!["e".repeat(ENTITY_LIMIT_CHARS + 1)];
+                }),
+            ),
+            (
+                "entity count",
+                Box::new(|request| {
+                    request.sections[0].items[0]
+                        .story
+                        .as_mut()
+                        .expect("story")
+                        .entities = vec!["Entity".to_owned(); ENTITY_LIMIT + 1];
+                }),
+            ),
+            (
+                "omission reason",
+                Box::new(|request| {
+                    request.omitted[0].reason = "r".repeat(OMISSION_REASON_LIMIT_CHARS + 1);
+                }),
+            ),
+            (
+                "summary line",
+                Box::new(|request| {
+                    request.summary_md = vec!["s".repeat(SUMMARY_LINE_LIMIT_CHARS + 1)];
+                }),
+            ),
+            (
+                "timezone",
+                Box::new(|request| {
+                    request.timezone = Some("z".repeat(TIMEZONE_LIMIT_CHARS + 1));
+                }),
+            ),
+            (
+                "generated_at",
+                Box::new(|request| {
+                    request.generated_at = Some("g".repeat(GENERATED_AT_LIMIT_CHARS + 1));
+                }),
+            ),
         ];
         for (field, mutate) in cases {
             let mut request = fixture_request();
@@ -2923,7 +3061,10 @@ mod tests {
         .expect("synthetic key derives from the first canonical url");
         let canonical = canonicalize_url("https://example.com/keyless").expect("canonical");
         assert_eq!(key, format!("url-{}", &story_url_hash(&canonical)[..16]));
-        assert!(STORY_KEY.is_match(&key), "synthetic keys fit the story-key regex");
+        assert!(
+            STORY_KEY.is_match(&key),
+            "synthetic keys fit the story-key regex"
+        );
         assert!(synthetic_story_key(&["not a url".to_owned()]).is_none());
         assert!(synthetic_story_key(&[]).is_none());
     }
@@ -2933,10 +3074,14 @@ mod tests {
         let previous_metadata = edition_metadata(&fixture_request()).expect("metadata renders");
         let previous = previous_metadata.get("briefing").expect("briefing payload");
         let mut previous_with_delta = previous.clone();
-        previous_with_delta["delta"] = json!({"added": ["openai-hf-incident"], "changed": [], "removed": []});
+        previous_with_delta["delta"] =
+            json!({"added": ["openai-hf-incident"], "changed": [], "removed": []});
 
         let next_metadata = edition_metadata(&fixture_request()).expect("metadata renders");
-        let mut next = next_metadata.get("briefing").expect("briefing payload").clone();
+        let mut next = next_metadata
+            .get("briefing")
+            .expect("briefing payload")
+            .clone();
         next["delta"] = json!({"added": [], "changed": [], "removed": []});
         assert!(
             !briefing_requires_new_version(true, Some(&previous_with_delta), Some(&next)),
@@ -3023,7 +3168,10 @@ mod tests {
             "",
         ] {
             let topic = parse_topic_document("stocks", content);
-            assert!(topic.parse_error.is_some(), "content {content:?} must error");
+            assert!(
+                topic.parse_error.is_some(),
+                "content {content:?} must error"
+            );
             assert_eq!(topic.body, content, "raw body preserved for {content:?}");
             assert_eq!(topic.mode, "every_briefing");
             assert_eq!(topic.section_order, DEFAULT_TOPIC_SECTION_ORDER);
@@ -3036,7 +3184,10 @@ mod tests {
             "stocks",
             "---\nmode: sometimes\nsection_order: 70\n---\nBody.\n",
         );
-        assert_eq!(topic.mode, "every_briefing", "unknown mode keeps the default");
+        assert_eq!(
+            topic.mode, "every_briefing",
+            "unknown mode keeps the default"
+        );
         assert!(
             topic
                 .parse_error
@@ -3070,7 +3221,10 @@ mod tests {
         assert_eq!(oversized.body.chars().count(), TOPIC_BODY_LIMIT_CHARS);
 
         let malformed = parse_topic_document("ai", &oversized_body);
-        assert!(malformed.truncated, "the malformed raw-body path is capped too");
+        assert!(
+            malformed.truncated,
+            "the malformed raw-body path is capped too"
+        );
         assert_eq!(malformed.body.chars().count(), TOPIC_BODY_LIMIT_CHARS);
         assert!(malformed.parse_error.is_some());
     }
@@ -3173,7 +3327,10 @@ mod tests {
         }));
         assert!(matches!(
             validate_item_action(&useful),
-            Ok(ValidatedItemAction::Log { verdict: Some("useful"), .. }),
+            Ok(ValidatedItemAction::Log {
+                verdict: Some("useful"),
+                ..
+            }),
         ));
         let unknown_verdict = action_request(json!({
             "action": "feedback",
@@ -3210,7 +3367,11 @@ mod tests {
                 "edition_ref": EDITION_REF,
                 "item_id": "alpha-item",
             }))),
-            Ok(ValidatedItemAction::Log { action: "read", verdict: None, .. }),
+            Ok(ValidatedItemAction::Log {
+                action: "read",
+                verdict: None,
+                ..
+            }),
         ));
     }
 

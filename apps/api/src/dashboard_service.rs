@@ -12,12 +12,12 @@ use crate::{
     db::AppState,
     error::{ApiError, ApiResult},
     models::Capability,
+    object_store::PhysicalUsageStatus,
     simple_core::WorkspaceEnvelope,
 };
 
 const ACTIVITY_DAYS: i64 = 7;
 const DEFAULT_TIMEZONE: &str = "UTC";
-const BINARY_STORAGE_SEMANTICS: &str = "current_referenced_objects";
 const ACTIVITY_COVERAGE: &str = "tracked_operations_only";
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -32,6 +32,7 @@ pub struct DashboardData {
     pub timezone: String,
     pub workspace_generation: i64,
     pub activity_tracking_started_at: Option<DateTime<Utc>>,
+    pub tracking: DashboardTracking,
     pub storage: DashboardStorage,
     pub today: ActivityTotals,
     pub activity: Vec<ActivityDay>,
@@ -53,9 +54,11 @@ pub struct StorageTotal {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct BinaryStorageTotal {
-    pub count: i64,
-    pub size_bytes: i64,
+    pub count: Option<u64>,
+    pub size_bytes: Option<u64>,
     pub semantics: &'static str,
+    pub status: PhysicalUsageStatus,
+    pub observed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize)]
@@ -79,7 +82,8 @@ pub struct ActivityDay {
 pub struct AccessItem {
     pub id: String,
     pub name: String,
-    pub kind: &'static str,
+    pub kind: String,
+    pub manageable: bool,
     pub access: &'static str,
     pub status: &'static str,
     pub scope_ids: Vec<String>,
@@ -96,6 +100,16 @@ pub struct AccessItem {
 pub struct DashboardCoverage {
     pub days: i64,
     pub activity: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DashboardTracking {
+    pub status: &'static str,
+    pub tracking_started_at: Option<DateTime<Utc>>,
+    pub data_through: Option<DateTime<Utc>>,
+    pub last_flush_at: Option<DateTime<Utc>>,
+    pub dropped_events: u64,
+    pub flush_failures: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -126,6 +140,7 @@ pub async fn dashboard(
         ))
     })?;
     let generated_at = Utc::now();
+    let tracking_health = state.usage_tracker.product_activity_health();
     let local_today = generated_at.with_timezone(&timezone).date_naive();
     let first_date = local_today - Duration::days(ACTIVITY_DAYS - 1);
     let range_start = local_day_boundary(first_date, timezone)?;
@@ -135,29 +150,18 @@ pub async fn dashboard(
     let storage = sqlx::query(
         r#"
         WITH current_entries AS MATERIALIZED (
-          SELECT entry.kind,version.object_key,version.object_version_id,
-                 version.size_bytes
+          SELECT entry.kind,version.size_bytes
           FROM straylight.entries AS entry
           JOIN straylight.entry_versions AS version
             ON version.user_id=entry.user_id
            AND version.entry_id=entry.id
            AND version.version=entry.current_version
           WHERE entry.user_id=$1 AND entry.deleted_at IS NULL
-        ), current_objects AS MATERIALIZED (
-          SELECT object_key,object_version_id,max(size_bytes)::bigint AS size_bytes
-          FROM current_entries
-          WHERE kind='binary'
-            AND object_key IS NOT NULL
-            AND object_version_id IS NOT NULL
-          GROUP BY object_key,object_version_id
         )
         SELECT
           count(*) FILTER (WHERE kind='markdown')::bigint AS text_count,
           coalesce(sum(size_bytes) FILTER (WHERE kind='markdown'),0)::bigint
             AS text_size_bytes,
-          (SELECT count(*)::bigint FROM current_objects) AS binary_count,
-          (SELECT coalesce(sum(size_bytes),0)::bigint FROM current_objects)
-            AS binary_size_bytes,
           coalesce((
             SELECT max(generation)
             FROM straylight.workspace_changes
@@ -165,7 +169,7 @@ pub async fn dashboard(
           ),0)::bigint AS workspace_generation,
           (
             SELECT min(first_recorded_at)
-            FROM straylight.product_activity_hourly
+            FROM straylight.product_activity_minutely
             WHERE user_id=$1
           ) AS activity_tracking_started_at
         FROM current_entries
@@ -177,7 +181,7 @@ pub async fn dashboard(
     let activity_rows = sqlx::query(
         r#"
         SELECT credential_id,bucket_start,operation,operation_count,byte_count
-        FROM straylight.product_activity_hourly
+        FROM straylight.product_activity_minutely
         WHERE user_id=$1 AND bucket_start >= $2 AND bucket_start < $3
         ORDER BY bucket_start,credential_id,operation
         "#,
@@ -203,6 +207,10 @@ pub async fn dashboard(
         .fetch_all(&mut *tx)
         .await?;
     tx.commit().await?;
+    let physical_usage = state
+        .object_store
+        .physical_usage(&auth.user_id.0.to_string())
+        .await?;
 
     let (activity, per_credential_today) =
         aggregate_activity(first_date, local_today, timezone, &activity_rows)?;
@@ -220,7 +228,8 @@ pub async fn dashboard(
             Ok(AccessItem {
                 id: format!("credential:{credential_id}"),
                 name: row.try_get("label")?,
-                kind: "api_credential",
+                kind: row.try_get("kind")?,
+                manageable: row.try_get("manageable")?,
                 access: credential_access_label(&capabilities),
                 status: if revoked_at.is_some() {
                     "revoked"
@@ -239,20 +248,31 @@ pub async fn dashboard(
         })
         .collect::<ApiResult<Vec<_>>>()?;
 
+    let activity_tracking_started_at = storage.try_get("activity_tracking_started_at")?;
     Ok(Json(WorkspaceEnvelope::complete(DashboardData {
         generated_at,
         timezone: timezone.name().to_owned(),
         workspace_generation: storage.try_get("workspace_generation")?,
-        activity_tracking_started_at: storage.try_get("activity_tracking_started_at")?,
+        activity_tracking_started_at,
+        tracking: DashboardTracking {
+            status: tracking_health.status.as_str(),
+            tracking_started_at: activity_tracking_started_at,
+            data_through: tracking_health.data_through,
+            last_flush_at: tracking_health.last_successful_flush_at,
+            dropped_events: tracking_health.dropped_events,
+            flush_failures: tracking_health.failed_flushes,
+        },
         storage: DashboardStorage {
             text: StorageTotal {
                 count: storage.try_get("text_count")?,
                 size_bytes: storage.try_get("text_size_bytes")?,
             },
             binary: BinaryStorageTotal {
-                count: storage.try_get("binary_count")?,
-                size_bytes: storage.try_get("binary_size_bytes")?,
-                semantics: BINARY_STORAGE_SEMANTICS,
+                count: physical_usage.physical_object_versions,
+                size_bytes: physical_usage.physical_size_bytes,
+                semantics: physical_usage.object_count_semantics,
+                status: physical_usage.status,
+                observed_at: physical_usage.observed_at,
             },
         },
         today,
@@ -308,11 +328,13 @@ fn aggregate_activity(
 
 fn add_operation(totals: &mut ActivityTotals, operation: &str, count: i64, bytes: i64) {
     match operation {
-        "open" | "search" | "read" | "binary_fetch" => {
+        "open" | "search" | "read" | "binary_fetch" | "briefing_list" | "briefing_read"
+        | "briefing_topics" => {
             totals.read_operations = totals.read_operations.saturating_add(count);
             totals.read_bytes = totals.read_bytes.saturating_add(bytes);
         }
-        "write" | "capture" | "checkpoint" | "binary_upload" | "delete" => {
+        "write" | "capture" | "checkpoint" | "binary_upload" | "delete" | "briefing_publish"
+        | "briefing_action" => {
             totals.write_operations = totals.write_operations.saturating_add(count);
             totals.write_bytes = totals.write_bytes.saturating_add(bytes);
         }
@@ -342,13 +364,15 @@ fn local_day_boundary(date: NaiveDate, timezone: Tz) -> ApiResult<DateTime<Utc>>
 fn credential_access_label(capabilities: &[String]) -> &'static str {
     if capabilities
         .iter()
-        .any(|value| value == "credential:manage")
+        .any(|value| value == "credential:manage" || value == "admin")
     {
         "owner"
-    } else if capabilities
-        .iter()
-        .any(|value| value == "save" || value == "checkpoint")
-    {
+    } else if capabilities.iter().any(|value| {
+        matches!(
+            value.as_str(),
+            "checkpoint" | "save" | "stage" | "correct" | "delete" | "dream"
+        )
+    }) {
         "read_write"
     } else {
         "read_only"
@@ -402,6 +426,41 @@ mod tests {
         let start = local_day_boundary(spring, timezone).unwrap();
         let end = local_day_boundary(spring + Duration::days(1), timezone).unwrap();
         assert_eq!(end - start, Duration::hours(23));
+
+        let fall = NaiveDate::from_ymd_opt(2026, 11, 1).unwrap();
+        let start = local_day_boundary(fall, timezone).unwrap();
+        let end = local_day_boundary(fall + Duration::days(1), timezone).unwrap();
+        assert_eq!(end - start, Duration::hours(25));
+    }
+
+    #[test]
+    fn minute_buckets_respect_fractional_offset_midnight() {
+        let timezone: Tz = "Asia/Kathmandu".parse().unwrap();
+        let credential_id = Uuid::now_v7();
+        let rows = vec![
+            ActivityRow {
+                credential_id,
+                bucket_start: "2026-08-01T18:14:00Z".parse().unwrap(),
+                operation: "briefing_read".to_owned(),
+                operation_count: 2,
+                byte_count: 40,
+            },
+            ActivityRow {
+                credential_id,
+                bucket_start: "2026-08-01T18:15:00Z".parse().unwrap(),
+                operation: "briefing_publish".to_owned(),
+                operation_count: 1,
+                byte_count: 10,
+            },
+        ];
+        let first_date = NaiveDate::from_ymd_opt(2026, 7, 27).unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 8, 2).unwrap();
+        let (days, per_credential) =
+            aggregate_activity(first_date, today, timezone, &rows).unwrap();
+
+        assert_eq!(days[5].totals.read_operations, 2);
+        assert_eq!(days[6].totals.write_operations, 1);
+        assert_eq!(per_credential[&credential_id].write_bytes, 10);
     }
 
     #[test]
@@ -415,5 +474,13 @@ mod tests {
             credential_access_label(&["credential:manage".to_owned()]),
             "owner"
         );
+        assert_eq!(credential_access_label(&["admin".to_owned()]), "owner");
+        for capability in ["checkpoint", "save", "stage", "correct", "delete", "dream"] {
+            assert_eq!(
+                credential_access_label(&[capability.to_owned()]),
+                "read_write",
+                "{capability} must be classified as write-capable"
+            );
+        }
     }
 }

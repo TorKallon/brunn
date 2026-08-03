@@ -1,7 +1,8 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     io::{Cursor, Read},
     path::{Component, Path},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -14,6 +15,7 @@ use aws_sdk_s3::{
     types::{CompletedMultipartUpload, CompletedPart},
 };
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -33,12 +35,84 @@ const MAX_ARCHIVE_EXPANDED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_ARCHIVE_RATIO: u64 = 200;
 const MAX_ARCHIVE_PATH_BYTES: usize = 1_024;
 const MAX_ARCHIVE_INSPECTION_TIME: Duration = Duration::from_secs(5);
+const PHYSICAL_USAGE_CACHE_TTL: Duration = Duration::from_secs(60);
+const MAX_PHYSICAL_USAGE_CACHE_ENTRIES: usize = 128;
+const MAX_PHYSICAL_USAGE_PREFIX_BYTES: usize = 1_024;
+const PHYSICAL_OBJECT_COUNT_SEMANTICS: &str = "physical_object_versions";
 
 #[derive(Clone)]
 pub struct ObjectStore {
     client: Client,
     bucket: String,
     create_bucket: bool,
+    physical_usage_cache: Arc<Mutex<PhysicalUsageCache>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PhysicalUsageStatus {
+    Fresh,
+    Stale,
+    Unavailable,
+}
+
+/// Physical storage retained by S3 under one exact prefix.
+///
+/// The object count is the number of non-delete object versions, including
+/// current, retained, and orphaned versions. Delete markers and incomplete
+/// multipart uploads do not contribute to either value.
+#[derive(Clone, Debug, Serialize)]
+pub struct PhysicalUsageSnapshot {
+    pub status: PhysicalUsageStatus,
+    pub object_count_semantics: &'static str,
+    pub physical_object_versions: Option<u64>,
+    pub physical_size_bytes: Option<u64>,
+    pub observed_at: Option<DateTime<Utc>>,
+}
+
+impl PhysicalUsageSnapshot {
+    fn available(
+        status: PhysicalUsageStatus,
+        physical_object_versions: u64,
+        physical_size_bytes: u64,
+        observed_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            status,
+            object_count_semantics: PHYSICAL_OBJECT_COUNT_SEMANTICS,
+            physical_object_versions: Some(physical_object_versions),
+            physical_size_bytes: Some(physical_size_bytes),
+            observed_at: Some(observed_at),
+        }
+    }
+
+    fn unavailable() -> Self {
+        Self {
+            status: PhysicalUsageStatus::Unavailable,
+            object_count_semantics: PHYSICAL_OBJECT_COUNT_SEMANTICS,
+            physical_object_versions: None,
+            physical_size_bytes: None,
+            observed_at: None,
+        }
+    }
+
+    fn with_status(&self, status: PhysicalUsageStatus) -> Self {
+        let mut snapshot = self.clone();
+        snapshot.status = status;
+        snapshot
+    }
+}
+
+#[derive(Debug)]
+struct CachedPhysicalUsage {
+    snapshot: PhysicalUsageSnapshot,
+    refreshed_at: Instant,
+    last_accessed_at: Instant,
+}
+
+#[derive(Debug, Default)]
+struct PhysicalUsageCache {
+    entries: HashMap<String, CachedPhysicalUsage>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -175,7 +249,217 @@ impl ObjectStore {
             client: Client::from_conf(s3_config.build()),
             bucket: config.s3_bucket.clone(),
             create_bucket: config.s3_create_bucket,
+            physical_usage_cache: Arc::new(Mutex::new(PhysicalUsageCache::default())),
         })
+    }
+
+    /// Return a cached physical object-version inventory for one exact prefix.
+    ///
+    /// A successful scan is reused briefly to keep dashboard reads from
+    /// repeatedly walking S3. If a refresh fails, the last successful snapshot
+    /// is returned as `stale`; without a prior snapshot the result is explicitly
+    /// `unavailable` rather than presenting zero usage.
+    pub async fn physical_usage(&self, prefix: &str) -> ApiResult<PhysicalUsageSnapshot> {
+        let prefix = exact_physical_usage_prefix(prefix)?;
+        if let Some(snapshot) = self.cached_physical_usage(&prefix, false) {
+            metrics::counter!(
+                "object_store.physical_usage",
+                "result" => "cache_hit"
+            )
+            .increment(1);
+            return Ok(snapshot);
+        }
+
+        let started = Instant::now();
+        match self.scan_physical_usage(&prefix).await {
+            Ok(snapshot) => {
+                self.cache_physical_usage(prefix, snapshot.clone());
+                metrics::counter!(
+                    "object_store.physical_usage",
+                    "result" => "refreshed"
+                )
+                .increment(1);
+                metrics::histogram!(
+                    "object_store.duration_ms",
+                    "operation" => "physical_usage_inventory",
+                    "result" => "success"
+                )
+                .record(started.elapsed().as_secs_f64() * 1_000.0);
+                Ok(snapshot)
+            }
+            Err(error) => {
+                metrics::counter!(
+                    "object_store.physical_usage",
+                    "result" => "refresh_error"
+                )
+                .increment(1);
+                metrics::histogram!(
+                    "object_store.duration_ms",
+                    "operation" => "physical_usage_inventory",
+                    "result" => "error"
+                )
+                .record(started.elapsed().as_secs_f64() * 1_000.0);
+                if let Some(snapshot) = self.cached_physical_usage(&prefix, true) {
+                    tracing::warn!(
+                        prefix,
+                        error = %error,
+                        "physical object inventory refresh failed; serving the last good snapshot"
+                    );
+                    Ok(snapshot)
+                } else {
+                    tracing::warn!(
+                        prefix,
+                        error = %error,
+                        "physical object inventory is unavailable"
+                    );
+                    Ok(PhysicalUsageSnapshot::unavailable())
+                }
+            }
+        }
+    }
+
+    async fn scan_physical_usage(&self, prefix: &str) -> ApiResult<PhysicalUsageSnapshot> {
+        let mut physical_object_versions = 0u64;
+        let mut physical_size_bytes = 0u64;
+        let mut key_marker = None;
+        let mut version_id_marker = None;
+        let mut seen_page_markers = HashSet::new();
+        let mut seen_versions = HashSet::new();
+
+        loop {
+            let mut request = self
+                .client
+                .list_object_versions()
+                .bucket(&self.bucket)
+                .prefix(prefix);
+            if let Some(marker) = key_marker.as_deref() {
+                request = request.key_marker(marker);
+            }
+            if let Some(marker) = version_id_marker.as_deref() {
+                request = request.version_id_marker(marker);
+            }
+            let output = request.send().await.map_err(|error| {
+                ApiError::Internal(format!(
+                    "physical object inventory could not list versions: {error}"
+                ))
+            })?;
+
+            for version in output.versions() {
+                let key = version.key().filter(|key| !key.is_empty()).ok_or_else(|| {
+                    ApiError::Internal(
+                        "physical object inventory found a version without a key".to_owned(),
+                    )
+                })?;
+                if !key.starts_with(prefix) {
+                    return Err(ApiError::Internal(
+                        "physical object inventory returned a version outside its exact prefix"
+                            .to_owned(),
+                    ));
+                }
+                let version_id = version
+                    .version_id()
+                    .filter(|version_id| !version_id.is_empty())
+                    .ok_or_else(|| {
+                        ApiError::Internal(
+                            "physical object inventory found a version without an ID".to_owned(),
+                        )
+                    })?;
+                if !seen_versions.insert((key.to_owned(), version_id.to_owned())) {
+                    return Err(ApiError::Internal(
+                        "physical object inventory returned a duplicate object version".to_owned(),
+                    ));
+                }
+                let size = version.size().ok_or_else(|| {
+                    ApiError::Internal(
+                        "physical object inventory found a version without a size".to_owned(),
+                    )
+                })?;
+                let size = u64::try_from(size).map_err(|_| {
+                    ApiError::Internal(
+                        "physical object inventory found a negative version size".to_owned(),
+                    )
+                })?;
+                physical_object_versions =
+                    physical_object_versions.checked_add(1).ok_or_else(|| {
+                        ApiError::Internal("physical object version count overflowed".to_owned())
+                    })?;
+                physical_size_bytes = physical_size_bytes.checked_add(size).ok_or_else(|| {
+                    ApiError::Internal("physical object size total overflowed".to_owned())
+                })?;
+            }
+
+            if !output.is_truncated().unwrap_or(false) {
+                break;
+            }
+            let next = validated_next_version_markers(
+                prefix,
+                key_marker.as_deref(),
+                version_id_marker.as_deref(),
+                output.next_key_marker(),
+                output.next_version_id_marker(),
+            )?;
+            if !seen_page_markers.insert(next.clone()) {
+                return Err(ApiError::Internal(
+                    "physical object inventory repeated pagination markers".to_owned(),
+                ));
+            }
+            key_marker = Some(next.0);
+            version_id_marker = next.1;
+        }
+
+        Ok(PhysicalUsageSnapshot::available(
+            PhysicalUsageStatus::Fresh,
+            physical_object_versions,
+            physical_size_bytes,
+            Utc::now(),
+        ))
+    }
+
+    fn cached_physical_usage(
+        &self,
+        prefix: &str,
+        allow_stale: bool,
+    ) -> Option<PhysicalUsageSnapshot> {
+        let now = Instant::now();
+        let mut cache = self
+            .physical_usage_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let entry = cache.entries.get_mut(prefix)?;
+        entry.last_accessed_at = now;
+        if now.duration_since(entry.refreshed_at) <= PHYSICAL_USAGE_CACHE_TTL {
+            Some(entry.snapshot.with_status(PhysicalUsageStatus::Fresh))
+        } else if allow_stale {
+            Some(entry.snapshot.with_status(PhysicalUsageStatus::Stale))
+        } else {
+            None
+        }
+    }
+
+    fn cache_physical_usage(&self, prefix: String, snapshot: PhysicalUsageSnapshot) {
+        let now = Instant::now();
+        let mut cache = self
+            .physical_usage_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !cache.entries.contains_key(&prefix)
+            && cache.entries.len() >= MAX_PHYSICAL_USAGE_CACHE_ENTRIES
+            && let Some(oldest_prefix) = cache
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_accessed_at)
+                .map(|(prefix, _)| prefix.clone())
+        {
+            cache.entries.remove(&oldest_prefix);
+        }
+        cache.entries.insert(
+            prefix,
+            CachedPhysicalUsage {
+                snapshot,
+                refreshed_at: now,
+                last_accessed_at: now,
+            },
+        );
     }
 
     pub async fn ensure_bucket(&self) -> ApiResult<()> {
@@ -1847,6 +2131,62 @@ impl ObjectStore {
     }
 }
 
+fn exact_physical_usage_prefix(prefix: &str) -> ApiResult<String> {
+    if prefix.is_empty()
+        || prefix.len() > MAX_PHYSICAL_USAGE_PREFIX_BYTES
+        || prefix.trim() != prefix
+    {
+        return Err(ApiError::invalid(
+            "physical object inventory requires a non-empty exact prefix",
+        ));
+    }
+    let prefix = prefix.trim_end_matches('/');
+    if prefix.is_empty() {
+        return Err(ApiError::invalid(
+            "physical object inventory requires a non-empty exact prefix",
+        ));
+    }
+    Ok(format!("{prefix}/"))
+}
+
+fn validated_next_version_markers(
+    prefix: &str,
+    current_key_marker: Option<&str>,
+    current_version_id_marker: Option<&str>,
+    next_key_marker: Option<&str>,
+    next_version_id_marker: Option<&str>,
+) -> ApiResult<(String, Option<String>)> {
+    let next_key_marker = next_key_marker
+        .filter(|marker| !marker.is_empty())
+        .ok_or_else(|| {
+            ApiError::Internal(
+                "truncated physical object inventory omitted the next key marker".to_owned(),
+            )
+        })?;
+    if !next_key_marker.starts_with(prefix) {
+        return Err(ApiError::Internal(
+            "physical object inventory returned a pagination marker outside its exact prefix"
+                .to_owned(),
+        ));
+    }
+    let next_version_id_marker = match next_version_id_marker {
+        Some("") => {
+            return Err(ApiError::Internal(
+                "physical object inventory returned an empty version pagination marker".to_owned(),
+            ));
+        }
+        marker => marker.map(ToOwned::to_owned),
+    };
+    if current_key_marker == Some(next_key_marker)
+        && current_version_id_marker == next_version_id_marker.as_deref()
+    {
+        return Err(ApiError::Internal(
+            "physical object inventory pagination did not advance".to_owned(),
+        ));
+    }
+    Ok((next_key_marker.to_owned(), next_version_id_marker))
+}
+
 fn ensure_requested_version(
     requested: Option<&str>,
     returned: Option<&str>,
@@ -2245,6 +2585,64 @@ mod tests {
     use std::io::Write;
 
     use super::*;
+
+    #[test]
+    fn physical_usage_prefix_is_an_exact_namespace_boundary() {
+        assert_eq!(exact_physical_usage_prefix("user-id").unwrap(), "user-id/");
+        assert_eq!(
+            exact_physical_usage_prefix("user-id///").unwrap(),
+            "user-id/"
+        );
+        assert!(exact_physical_usage_prefix("").is_err());
+        assert!(exact_physical_usage_prefix("/").is_err());
+        assert!(exact_physical_usage_prefix(" user-id").is_err());
+        assert!(exact_physical_usage_prefix("user-id ").is_err());
+    }
+
+    #[test]
+    fn physical_usage_pagination_requires_prefix_scoped_progress() {
+        assert_eq!(
+            validated_next_version_markers(
+                "user/",
+                Some("user/blob"),
+                Some("v2"),
+                Some("user/blob"),
+                Some("v1"),
+            )
+            .unwrap(),
+            ("user/blob".to_owned(), Some("v1".to_owned()))
+        );
+        assert!(
+            validated_next_version_markers(
+                "user/",
+                Some("user/blob"),
+                Some("v1"),
+                Some("user/blob"),
+                Some("v1"),
+            )
+            .is_err()
+        );
+        assert!(validated_next_version_markers("user/", None, None, None, None).is_err());
+        assert!(
+            validated_next_version_markers("user/", None, None, Some("another-user/blob"), None,)
+                .is_err()
+        );
+        assert!(
+            validated_next_version_markers("user/", None, None, Some("user/blob"), Some(""),)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn unavailable_physical_usage_never_looks_like_zero_usage() {
+        let snapshot = PhysicalUsageSnapshot::unavailable();
+        let json = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(json["status"], "unavailable");
+        assert_eq!(json["object_count_semantics"], "physical_object_versions");
+        assert!(json["physical_object_versions"].is_null());
+        assert!(json["physical_size_bytes"].is_null());
+        assert!(json["observed_at"].is_null());
+    }
 
     #[test]
     fn zip_inventory_quarantines_traversal() {

@@ -8,6 +8,9 @@ API = ROOT / "apps/api/src/api.rs"
 DASHBOARD = ROOT / "apps/api/src/dashboard_service.rs"
 SIMPLE_CORE = ROOT / "apps/api/src/simple_core.rs"
 USAGE = ROOT / "apps/api/src/usage.rs"
+AUTH = ROOT / "apps/api/src/auth.rs"
+BRIEFINGS = ROOT / "apps/api/src/briefing_service.rs"
+OBJECT_STORE = ROOT / "apps/api/src/object_store.rs"
 
 
 class DashboardContractTests(unittest.TestCase):
@@ -18,10 +21,13 @@ class DashboardContractTests(unittest.TestCase):
         cls.dashboard = DASHBOARD.read_text(encoding="utf-8")
         cls.simple_core = SIMPLE_CORE.read_text(encoding="utf-8")
         cls.usage = USAGE.read_text(encoding="utf-8")
+        cls.auth = AUTH.read_text(encoding="utf-8")
+        cls.briefings = BRIEFINGS.read_text(encoding="utf-8")
+        cls.object_store = OBJECT_STORE.read_text(encoding="utf-8")
 
     def test_activity_rollup_is_bounded_content_free_and_user_scoped(self) -> None:
         for marker in (
-            "CREATE TABLE straylight.product_activity_hourly",
+            "CREATE TABLE straylight.product_activity_minutely",
             "PRIMARY KEY (user_id, credential_id, bucket_start, operation)",
             "CHECK (operation IN",
             "CHECK (operation_count >= 0)",
@@ -29,9 +35,11 @@ class DashboardContractTests(unittest.TestCase):
             "ENABLE ROW LEVEL SECURITY",
             "FORCE ROW LEVEL SECURITY",
             "straylight_auth.can_access_user(user_id)",
-            "GRANT SELECT ON straylight.product_activity_hourly TO app_rw, app_ro",
-            "product_activity_hourly_user_time_idx",
-            "product_activity_hourly_credential_recent_idx",
+            "bucket_start + interval '1 minute'",
+            "GRANT SELECT ON straylight.product_activity_minutely TO app_rw, app_ro",
+            "product_activity_minutely_user_time_idx",
+            "product_activity_minutely_credential_recent_idx",
+            "CREATE TABLE straylight.credential_activity",
         ):
             self.assertIn(marker, self.migration)
         self.assertNotIn("GRANT INSERT", self.migration)
@@ -52,8 +60,9 @@ class DashboardContractTests(unittest.TestCase):
             "straylight_auth.context_is_valid()",
             "straylight_auth.has_capability('read')",
             "straylight_auth.has_capability('status')",
-            "NOT EXISTS",
             "straylight.web_identities",
+            "'web_ui'",
+            "manageable",
         ):
             self.assertIn(marker, function)
         self.assertNotIn("token_hash", function)
@@ -68,8 +77,10 @@ class DashboardContractTests(unittest.TestCase):
             "auth.require(Capability::Read)?",
             "auth.require(Capability::Status)?",
             'const ACTIVITY_DAYS: i64 = 7',
-            'const BINARY_STORAGE_SEMANTICS: &str = "current_referenced_objects"',
             'const ACTIVITY_COVERAGE: &str = "tracked_operations_only"',
+            "product_activity_minutely",
+            "physical_usage",
+            "product_activity_health",
             "period_start",
             "period_end",
             "read_operations_today",
@@ -79,23 +90,45 @@ class DashboardContractTests(unittest.TestCase):
 
     def test_tracker_is_bounded_fail_open_and_covers_product_operations(self) -> None:
         for marker in (
-            "const CHANNEL_CAPACITY: usize = 4_096",
+            "const ENTRY_CHANNEL_CAPACITY: usize = 4_096",
+            "const ACTIVITY_CHANNEL_CAPACITY: usize = 4_096",
             "const MAX_PENDING_KEYS: usize = 5_000",
             "try_send(event)",
             '"product activity batch dropped"',
-            "ProductActivityOperation::Open",
-            "ProductActivityOperation::Search",
-            "ProductActivityOperation::Read",
-            "ProductActivityOperation::BinaryFetch",
-            "ProductActivityOperation::Write",
-            "ProductActivityOperation::Capture",
-            "ProductActivityOperation::Checkpoint",
-            "ProductActivityOperation::BinaryUpload",
-            "ProductActivityOperation::Delete",
+            "run_entry_usage",
+            "run_activity",
+            "ProductActivityTrackerStatus::Disabled",
+            "ProductActivityTrackerStatus::Degraded",
+            "record_credential_activity",
         ):
-            haystack = self.usage if marker.startswith("const ") or "try_send" in marker or "batch dropped" in marker else self.simple_core
+            haystack = self.usage
             self.assertIn(marker, haystack)
         self.assertNotIn("ProductActivityOperation", self.dashboard)
+
+    def test_briefings_and_successful_control_requests_are_instrumented(self) -> None:
+        for marker in (
+            "ProductActivityOperation::BriefingList",
+            "ProductActivityOperation::BriefingRead",
+            "ProductActivityOperation::BriefingTopics",
+            "ProductActivityOperation::BriefingPublish",
+            "ProductActivityOperation::BriefingAction",
+            "if !result.no_op",
+        ):
+            self.assertIn(marker, self.briefings)
+        self.assertIn("response.status().is_success()", self.auth)
+        self.assertIn("record_credential_activity", self.auth)
+
+    def test_physical_inventory_is_versioned_cached_and_never_false_zero(self) -> None:
+        for marker in (
+            "list_object_versions()",
+            "physical_object_versions",
+            "PhysicalUsageStatus::Stale",
+            "PhysicalUsageStatus::Unavailable",
+            "PHYSICAL_USAGE_CACHE_TTL",
+            "physical_object_versions: None",
+            "physical_size_bytes: None",
+        ):
+            self.assertIn(marker, self.object_store)
 
 
 if __name__ == "__main__":

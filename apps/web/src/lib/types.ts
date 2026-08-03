@@ -605,9 +605,11 @@ export interface WorkspaceUsageData {
 }
 
 export interface DashboardStorageMetric {
-  count: number;
-  size_bytes: number;
+  count: number | null;
+  size_bytes: number | null;
   semantics?: string;
+  status?: "fresh" | "stale" | "unavailable" | string;
+  observed_at?: string | null;
 }
 
 export interface DashboardActivityPoint {
@@ -621,7 +623,8 @@ export interface DashboardActivityPoint {
 export interface DashboardAccessClient {
   id: string;
   name: string;
-  kind: "api_credential" | "web_session" | string;
+  kind: "api_credential" | "web_ui" | string;
+  manageable: boolean;
   access: "read_only" | "read_write" | "owner";
   status: "active" | "revoked" | string;
   scope_ids: string[];
@@ -639,6 +642,14 @@ export interface WorkspaceDashboardData {
   timezone: string;
   workspace_generation: number;
   activity_tracking_started_at?: string | null;
+  tracking?: {
+    status: "enabled" | "degraded" | "disabled" | string;
+    tracking_started_at?: string | null;
+    data_through?: string | null;
+    last_flush_at?: string | null;
+    dropped_events: number;
+    flush_failures: number;
+  };
   storage: {
     text: DashboardStorageMetric;
     binary: DashboardStorageMetric;

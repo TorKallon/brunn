@@ -327,8 +327,7 @@ async fn dedupe_lookups_classify_url_story_key_and_unseen_candidates() {
         report
             .near
             .iter()
-            .any(|entry| entry["lane"] == "ledger_titles"
-                && entry["story_key"] == "story-beta"),
+            .any(|entry| entry["lane"] == "ledger_titles" && entry["story_key"] == "story-beta"),
         "an entity-only match must surface in the near lane",
     );
 
@@ -735,8 +734,7 @@ async fn topics_snapshot_lists_topics_requests_and_feedback_tail() {
     assert_eq!(pending.len(), 50, "the snapshot caps pending requests");
     assert_eq!(snapshot["pending_requests_truncated"], true);
     assert_eq!(
-        pending[0]["path"],
-        "Briefings/Requests/2026-08-01 - item-one.md",
+        pending[0]["path"], "Briefings/Requests/2026-08-01 - item-one.md",
         "newest path first",
     );
     assert_eq!(pending[0]["date"], "2026-08-01");

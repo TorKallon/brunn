@@ -161,7 +161,10 @@ async fn insert_edition_version(pool: &PgPool, user_id: Uuid, edition: &EditionF
     .execute(&mut *tx)
     .await
     .expect("insert edition entry");
-    let content = format!("# Morning briefing - {} v{}\n", edition.date, edition.version);
+    let content = format!(
+        "# Morning briefing - {} v{}\n",
+        edition.date, edition.version
+    );
     sqlx::query(
         r#"
         INSERT INTO straylight.entry_versions (

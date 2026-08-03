@@ -164,12 +164,15 @@ enum SampleData {
         timezone: "America/Los_Angeles",
         workspaceGeneration: 24_136,
         activityTrackingStartedAt: "2026-07-27T00:00:00Z",
+        tracking: DashboardTrackingHealth(status: "enabled"),
         storage: DashboardStorage(
             text: DashboardStorageMetric(count: 4_926, sizeBytes: 298_682_825),
             binary: DashboardStorageMetric(
                 count: 73,
                 sizeBytes: 797_775_263,
-                semantics: "current_referenced_objects"
+                semantics: "physical_object_versions",
+                status: "fresh",
+                observedAt: "2026-08-02T16:30:00-07:00"
             )
         ),
         today: DashboardTodayActivity(
@@ -188,6 +191,18 @@ enum SampleData {
             DashboardActivityPoint(date: "2026-08-02", readOperations: 146, readBytes: 8_724_480, writeOperations: 18, writeBytes: 486_400),
         ],
         access: [
+            DashboardAccessClient(
+                id: "credential:demo-web",
+                name: "Straylight Web",
+                kind: "web_ui",
+                manageable: false,
+                access: "owner",
+                status: "active",
+                scopeIDs: ["scope:root"],
+                lastUsedAt: "2026-08-02T16:30:00-07:00",
+                lastOperation: "control",
+                readOperationsToday: 20
+            ),
             DashboardAccessClient(
                 id: "credential:demo-iphone",
                 name: "Rourke’s iPhone",

@@ -2,10 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowRight,
-  Database,
   FileText,
   HardDrive,
   KeyRound,
+  Monitor,
   Search,
   ShieldCheck,
   Sunrise,
@@ -133,13 +133,21 @@ export function DashboardPage() {
                 count={dashboard.storage.text.count}
                 size={dashboard.storage.text.size_bytes}
                 detail="Current Markdown and text entries"
+                sizeLabel="Logical size"
               />
               <StorageCard
                 icon={<HardDrive size={19} aria-hidden="true" />}
-                label="Referenced binaries"
+                label="S3 object versions"
                 count={dashboard.storage.binary.count}
                 size={dashboard.storage.binary.size_bytes}
-                detail="Current S3-backed entries"
+                detail={
+                  dashboard.storage.binary.status === "stale"
+                    ? "Last observed physical inventory"
+                    : dashboard.storage.binary.status === "unavailable"
+                      ? "Physical inventory unavailable"
+                      : "Retained physical object versions"
+                }
+                sizeLabel="Physical size"
               />
             </div>
           </section>
@@ -155,14 +163,30 @@ export function DashboardPage() {
             <div className="today-metrics">
               <TodayMetric
                 label="Reads today"
-                value={dashboard.today.read_operations}
-                detail={`${formatBytes(dashboard.today.read_bytes)} returned`}
+                value={
+                  dashboard.tracking?.status === "disabled"
+                    ? null
+                    : dashboard.today.read_operations
+                }
+                detail={
+                  dashboard.tracking?.status === "disabled"
+                    ? "Tracking unavailable"
+                    : `${formatBytes(dashboard.today.read_bytes)} returned`
+                }
                 tone="read"
               />
               <TodayMetric
                 label="Writes today"
-                value={dashboard.today.write_operations}
-                detail={`${formatBytes(dashboard.today.write_bytes)} committed`}
+                value={
+                  dashboard.tracking?.status === "disabled"
+                    ? null
+                    : dashboard.today.write_operations
+                }
+                detail={
+                  dashboard.tracking?.status === "disabled"
+                    ? "Tracking unavailable"
+                    : `${formatBytes(dashboard.today.write_bytes)} committed`
+                }
                 tone="write"
               />
               <TodayMetric
@@ -172,6 +196,13 @@ export function DashboardPage() {
                 tone="neutral"
               />
             </div>
+            {dashboard.tracking && dashboard.tracking.status !== "enabled" ? (
+              <p className="dashboard-coverage-note is-warning" role="status">
+                {dashboard.tracking.status === "disabled"
+                  ? "Usage tracking is unavailable; today’s zeroes are not authoritative."
+                  : "Usage tracking is degraded; recent totals may be incomplete."}
+              </p>
+            ) : null}
             <div className="chart-grid">
               <UsageChart
                 title="Operations"
@@ -203,7 +234,7 @@ export function DashboardPage() {
             <div className="dashboard-section-heading">
               <div>
                 <span className="dashboard-eyebrow">Access</span>
-                <h2 id="access-heading">API credentials</h2>
+                <h2 id="access-heading">Connected clients</h2>
               </div>
               <Link className="button secondary" to="/control">
                 Manage access
@@ -221,7 +252,7 @@ export function DashboardPage() {
               {!dashboard.access.length ? (
                 <div className="dashboard-empty-row">
                   <ShieldCheck size={20} aria-hidden="true" />
-                  <span>No API credentials are visible to this account.</span>
+                  <span>No connected clients are visible to this account.</span>
                 </div>
               ) : null}
             </div>
@@ -301,24 +332,26 @@ function StorageCard({
   count,
   size,
   detail,
+  sizeLabel,
 }: {
   icon: ReactNode;
   label: string;
-  count: number;
-  size: number;
+  count: number | null;
+  size: number | null;
   detail: string;
+  sizeLabel: string;
 }) {
   return (
     <article className="storage-card">
       <div className="storage-card-icon">{icon}</div>
       <div className="storage-card-copy">
         <span>{label}</span>
-        <strong>{numberFormat.format(count)}</strong>
+        <strong>{count === null ? "Unavailable" : numberFormat.format(count)}</strong>
         <small>{detail}</small>
       </div>
       <div className="storage-card-size">
-        <span>Logical size</span>
-        <strong>{formatBytes(size)}</strong>
+        <span>{sizeLabel}</span>
+        <strong>{size === null ? "Unavailable" : formatBytes(size)}</strong>
       </div>
     </article>
   );
@@ -331,14 +364,14 @@ function TodayMetric({
   tone,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   detail: string;
   tone: "read" | "write" | "neutral";
 }) {
   return (
     <article className={`today-metric tone-${tone}`}>
       <span>{label}</span>
-      <strong>{numberFormat.format(value)}</strong>
+      <strong>{value === null ? "Unavailable" : numberFormat.format(value)}</strong>
       <small>{detail}</small>
     </article>
   );
@@ -436,8 +469,8 @@ function AccessRow({
   return (
     <article className={`access-row ${client.status !== "active" ? "is-revoked" : ""}`}>
       <div className="access-row-icon">
-        {client.kind === "web_session" ? (
-          <Database size={18} aria-hidden="true" />
+        {client.kind === "web_ui" ? (
+          <Monitor size={18} aria-hidden="true" />
         ) : (
           <KeyRound size={18} aria-hidden="true" />
         )}

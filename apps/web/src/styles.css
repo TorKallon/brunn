@@ -2916,6 +2916,10 @@ pre,
   line-height: 1.45;
 }
 
+.dashboard-coverage-note.is-warning {
+  color: var(--amber);
+}
+
 .access-list {
   display: grid;
   overflow: hidden;

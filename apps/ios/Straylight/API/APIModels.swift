@@ -79,6 +79,7 @@ public struct WorkspaceDashboardData: Codable, Sendable, Equatable {
     public let timezone: String
     public let workspaceGeneration: Int
     public let activityTrackingStartedAt: String?
+    public let tracking: DashboardTrackingHealth?
     public let storage: DashboardStorage
     public let today: DashboardTodayActivity
     public let activity: [DashboardActivityPoint]
@@ -90,6 +91,7 @@ public struct WorkspaceDashboardData: Codable, Sendable, Equatable {
         timezone: String,
         workspaceGeneration: Int,
         activityTrackingStartedAt: String? = nil,
+        tracking: DashboardTrackingHealth? = nil,
         storage: DashboardStorage,
         today: DashboardTodayActivity,
         activity: [DashboardActivityPoint],
@@ -100,6 +102,7 @@ public struct WorkspaceDashboardData: Codable, Sendable, Equatable {
         self.timezone = timezone
         self.workspaceGeneration = workspaceGeneration
         self.activityTrackingStartedAt = activityTrackingStartedAt
+        self.tracking = tracking
         self.storage = storage
         self.today = today
         self.activity = activity
@@ -112,6 +115,7 @@ public struct WorkspaceDashboardData: Codable, Sendable, Equatable {
         case timezone
         case workspaceGeneration = "workspace_generation"
         case activityTrackingStartedAt = "activity_tracking_started_at"
+        case tracking
         case storage
         case today
         case activity
@@ -131,20 +135,66 @@ public struct DashboardStorage: Codable, Sendable, Equatable {
 }
 
 public struct DashboardStorageMetric: Codable, Sendable, Equatable {
-    public let count: Int
-    public let sizeBytes: Int64
+    public let count: Int?
+    public let sizeBytes: Int64?
     public let semantics: String?
+    public let status: String?
+    public let observedAt: String?
 
-    public init(count: Int, sizeBytes: Int64, semantics: String? = nil) {
+    public init(
+        count: Int?,
+        sizeBytes: Int64?,
+        semantics: String? = nil,
+        status: String? = nil,
+        observedAt: String? = nil
+    ) {
         self.count = count
         self.sizeBytes = sizeBytes
         self.semantics = semantics
+        self.status = status
+        self.observedAt = observedAt
     }
 
     enum CodingKeys: String, CodingKey {
         case count
         case sizeBytes = "size_bytes"
         case semantics
+        case status
+        case observedAt = "observed_at"
+    }
+}
+
+public struct DashboardTrackingHealth: Codable, Sendable, Equatable {
+    public let status: String
+    public let trackingStartedAt: String?
+    public let dataThrough: String?
+    public let lastFlushAt: String?
+    public let droppedEvents: UInt64
+    public let flushFailures: UInt64
+
+    public init(
+        status: String,
+        trackingStartedAt: String? = nil,
+        dataThrough: String? = nil,
+        lastFlushAt: String? = nil,
+        droppedEvents: UInt64 = 0,
+        flushFailures: UInt64 = 0
+    ) {
+        self.status = status
+        self.trackingStartedAt = trackingStartedAt
+        self.dataThrough = dataThrough
+        self.lastFlushAt = lastFlushAt
+        self.droppedEvents = droppedEvents
+        self.flushFailures = flushFailures
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case trackingStartedAt = "tracking_started_at"
+        case dataThrough = "data_through"
+        case lastFlushAt = "last_flush_at"
+        case droppedEvents = "dropped_events"
+        case flushFailures = "flush_failures"
     }
 }
 
@@ -218,6 +268,7 @@ public struct DashboardAccessClient: Codable, Sendable, Equatable, Identifiable 
     public let id: String
     public let name: String
     public let kind: String
+    public let manageable: Bool
     public let access: String
     public let status: String
     public let scopeIDs: [String]
@@ -233,6 +284,7 @@ public struct DashboardAccessClient: Codable, Sendable, Equatable, Identifiable 
         id: String,
         name: String,
         kind: String = "api_credential",
+        manageable: Bool = true,
         access: String,
         status: String,
         scopeIDs: [String],
@@ -247,6 +299,7 @@ public struct DashboardAccessClient: Codable, Sendable, Equatable, Identifiable 
         self.id = id
         self.name = name
         self.kind = kind
+        self.manageable = manageable
         self.access = access
         self.status = status
         self.scopeIDs = scopeIDs
@@ -263,6 +316,7 @@ public struct DashboardAccessClient: Codable, Sendable, Equatable, Identifiable 
         case id
         case name
         case kind
+        case manageable
         case access
         case status
         case scopeIDs = "scope_ids"

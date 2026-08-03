@@ -1,16 +1,20 @@
 -- Product activity is an eventually consistent, content-free dashboard rollup.
 -- The API records successful artifact reads and committed artifact mutations in
--- UTC hour buckets through the bounded fail-open usage tracker. Ordinary API
--- roles may inspect their own account's rollups, but only the admin pool writes
--- them so telemetry can never alter a foreground response.
+-- UTC minute buckets through a dedicated bounded fail-open tracker. Canonical
+-- entry_usage events use a separate queue and worker, so dashboard load cannot
+-- consume their buffer. Ordinary API roles may inspect their own account's
+-- rollups, but only the admin pool writes them so telemetry can never alter a
+-- foreground response.
 
-CREATE TABLE straylight.product_activity_hourly (
+CREATE TABLE straylight.product_activity_minutely (
   user_id uuid NOT NULL,
   credential_id uuid NOT NULL,
   bucket_start timestamptz NOT NULL,
   operation text NOT NULL CHECK (operation IN (
     'open', 'search', 'read', 'binary_fetch',
-    'write', 'capture', 'checkpoint', 'binary_upload', 'delete'
+    'briefing_list', 'briefing_read', 'briefing_topics',
+    'write', 'capture', 'checkpoint', 'binary_upload', 'delete',
+    'briefing_publish', 'briefing_action'
   )),
   operation_count bigint NOT NULL DEFAULT 0 CHECK (operation_count >= 0),
   byte_count bigint NOT NULL DEFAULT 0 CHECK (byte_count >= 0),
@@ -20,29 +24,29 @@ CREATE TABLE straylight.product_activity_hourly (
   FOREIGN KEY (user_id, credential_id)
     REFERENCES straylight.api_credentials(user_id, id)
     ON DELETE CASCADE,
-  CHECK (bucket_start = date_trunc('hour', bucket_start, 'UTC')),
+  CHECK (bucket_start = date_trunc('minute', bucket_start, 'UTC')),
   CHECK (first_recorded_at <= last_recorded_at),
   CHECK (
     first_recorded_at >= bucket_start
-    AND last_recorded_at < bucket_start + interval '1 hour'
+    AND last_recorded_at < bucket_start + interval '1 minute'
   )
 );
 
-CREATE INDEX product_activity_hourly_user_time_idx
-  ON straylight.product_activity_hourly (
+CREATE INDEX product_activity_minutely_user_time_idx
+  ON straylight.product_activity_minutely (
     user_id, bucket_start, credential_id, operation
   );
 
-CREATE INDEX product_activity_hourly_credential_recent_idx
-  ON straylight.product_activity_hourly (
+CREATE INDEX product_activity_minutely_credential_recent_idx
+  ON straylight.product_activity_minutely (
     user_id, credential_id, last_recorded_at DESC, operation
   );
 
-ALTER TABLE straylight.product_activity_hourly ENABLE ROW LEVEL SECURITY;
-ALTER TABLE straylight.product_activity_hourly FORCE ROW LEVEL SECURITY;
+ALTER TABLE straylight.product_activity_minutely ENABLE ROW LEVEL SECURITY;
+ALTER TABLE straylight.product_activity_minutely FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY product_activity_hourly_select
-  ON straylight.product_activity_hourly
+CREATE POLICY product_activity_minutely_select
+  ON straylight.product_activity_minutely
   FOR SELECT TO app_rw, app_ro
   USING (
     straylight_auth.can_access_user(user_id)
@@ -50,14 +54,47 @@ CREATE POLICY product_activity_hourly_select
     AND straylight_auth.has_capability('status')
   );
 
-GRANT SELECT ON straylight.product_activity_hourly TO app_rw, app_ro;
+GRANT SELECT ON straylight.product_activity_minutely TO app_rw, app_ro;
 
--- Keep the permanent Web UI principal out of the API-token inventory, matching
--- list_credentials. No token hash or bearer value crosses this function.
+-- Successful protected requests also update a content-free principal touch.
+-- This is intentionally separate from product activity so control-plane reads
+-- can update access visibility without inflating dashboard read/write totals.
+CREATE TABLE straylight.credential_activity (
+  user_id uuid NOT NULL,
+  credential_id uuid NOT NULL,
+  last_operation text NOT NULL CHECK (last_operation IN (
+    'open', 'search', 'read', 'binary_fetch',
+    'briefing_list', 'briefing_read', 'briefing_topics',
+    'write', 'capture', 'checkpoint', 'binary_upload', 'delete',
+    'briefing_publish', 'briefing_action',
+    'dashboard', 'status', 'changes',
+    'credential_list', 'credential_create', 'credential_update',
+    'credential_delete', 'control'
+  )),
+  last_used_at timestamptz NOT NULL,
+  request_count bigint NOT NULL DEFAULT 0 CHECK (request_count >= 0),
+  PRIMARY KEY (user_id, credential_id),
+  FOREIGN KEY (user_id, credential_id)
+    REFERENCES straylight.api_credentials(user_id, id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX credential_activity_user_recent_idx
+  ON straylight.credential_activity (user_id, last_used_at DESC, credential_id);
+
+ALTER TABLE straylight.credential_activity ENABLE ROW LEVEL SECURITY;
+ALTER TABLE straylight.credential_activity FORCE ROW LEVEL SECURITY;
+
+-- Project the permanent Web UI principal as a synthetic, non-manageable row
+-- alongside manageable API credentials. The underlying principal UUID is used
+-- only for stable identity and activity joins; no token hash, password, browser
+-- session, reset secret, or bearer value crosses this function.
 CREATE FUNCTION straylight_auth.dashboard_credentials(p_user_id uuid)
 RETURNS TABLE (
   id uuid,
   label text,
+  kind text,
+  manageable boolean,
   capabilities text[],
   scope_refs text[],
   created_at timestamptz,
@@ -84,7 +121,15 @@ BEGIN
   WITH credential_scopes AS (
     SELECT credential.id,
            credential.user_id,
-           credential.label::text AS label,
+           CASE WHEN identity.web_credential_id IS NULL
+             THEN credential.label::text
+             ELSE 'Web UI'
+           END AS label,
+           CASE WHEN identity.web_credential_id IS NULL
+             THEN 'api_credential'
+             ELSE 'web_ui'
+           END AS kind,
+           identity.web_credential_id IS NULL AS manageable,
            credential.capabilities,
            credential.created_at,
            credential.disabled_at,
@@ -94,6 +139,9 @@ BEGIN
              '{}'::text[]
            ) AS scope_refs
     FROM straylight.api_credentials AS credential
+    LEFT JOIN straylight.web_identities AS identity
+      ON identity.user_id = credential.user_id
+     AND identity.web_credential_id = credential.id
     LEFT JOIN straylight.credential_scope_grants AS scope_grant
       ON scope_grant.user_id = credential.user_id
      AND scope_grant.credential_id = credential.id
@@ -101,37 +149,28 @@ BEGIN
       ON scope_row.user_id = scope_grant.user_id
      AND scope_row.id = scope_grant.scope_id
     WHERE credential.user_id = p_user_id
-      AND NOT EXISTS (
-        SELECT 1
-        FROM straylight.web_identities AS identity
-        WHERE identity.user_id = credential.user_id
-          AND identity.web_credential_id = credential.id
-      )
     GROUP BY credential.id, credential.user_id, credential.label,
+             identity.web_credential_id,
              credential.capabilities, credential.created_at,
              credential.disabled_at
   )
   SELECT credential.id,
          credential.label,
+         credential.kind,
+         credential.manageable,
          credential.capabilities,
          credential.scope_refs,
          credential.created_at,
          credential.disabled_at,
-         recent.last_recorded_at,
-         recent.operation
+         activity.last_used_at,
+         activity.last_operation
   FROM credential_scopes AS credential
-  LEFT JOIN LATERAL (
-    SELECT activity.last_recorded_at, activity.operation
-    FROM straylight.product_activity_hourly AS activity
-    WHERE activity.user_id = credential.user_id
-      AND activity.credential_id = credential.id
-    ORDER BY activity.last_recorded_at DESC,
-             activity.bucket_start DESC,
-             activity.operation
-    LIMIT 1
-  ) AS recent ON true
+  LEFT JOIN straylight.credential_activity AS activity
+    ON activity.user_id = credential.user_id
+   AND activity.credential_id = credential.id
   ORDER BY (credential.disabled_at IS NULL) DESC,
-           recent.last_recorded_at DESC NULLS LAST,
+           activity.last_used_at DESC NULLS LAST,
+           credential.manageable,
            credential.created_at DESC,
            credential.id;
 END;
