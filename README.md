@@ -66,6 +66,9 @@ tailnet-accessible human surface.
 - `apps/mcp`: typed local stdio adapter plus the OAuth-protected hosted MCP
   gateway used by account-level ChatGPT and Claude connectors
 - `infra`: Postgres role initialization and pinned MinIO build/policy
+- `docs/Brand.md`: the Night Signal design system — identity, color tokens,
+  typography, motifs, and platform mappings; every UI change on any surface
+  (web SPA, iOS app, future clients) must follow it
 - `docs/Architecture.md`: system design and trust boundaries
 - `docs/Specification.md`: alpha behavior and acceptance contract
 - `docs/Alpha Launch Runbook.md`: production candidate, deployment, recovery,

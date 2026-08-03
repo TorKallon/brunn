@@ -5,6 +5,21 @@ on Nyx. Read `README.md`, `docs/Architecture.md`, `docs/Specification.md`, and
 `docs/Operations.md` as needed; current code and tests are implementation
 truth.
 
+## Design system
+
+All user-facing visual work — the web SPA, the iOS app, and any future
+surface — must follow `docs/Brand.md` (the **Night Signal** design system).
+In practice:
+
+- Use the defined tokens (CSS custom properties in `apps/web/src/styles.css`,
+  `StraylightTheme` in `apps/ios`), never new color literals.
+- The web app is dark by default (`data-theme="light"` restores light); any
+  new foreground/background pairing must be WCAG-validated in both
+  appearances, and chart series colors must come from the validated data
+  palette.
+- Do not reintroduce retired forest-green-era colors, and never use the brand
+  blue to mean "success".
+
 ## Code retrieval
 
 Before adding a helper or duplicating an existing behavior:
