@@ -1,5 +1,10 @@
 use std::{env, net::SocketAddr, path::PathBuf, str::FromStr, time::Duration};
 
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
+
 use crate::error::{ApiError, ApiResult};
 
 #[derive(Clone)]
@@ -72,6 +77,12 @@ pub struct Config {
     pub resend_api_key: Option<String>,
     pub auth_email_from: Option<String>,
     pub auth_email_reply_to: Option<String>,
+    pub apns_team_id: Option<String>,
+    pub apns_key_id: Option<String>,
+    pub apns_private_key: Option<String>,
+    pub apns_app_id: Option<String>,
+    pub notification_token_encryption_key: Option<String>,
+    pub apns_delivery_enabled: bool,
     pub public_url: String,
     pub account_export_ttl: Duration,
     pub account_export_temp_dir: PathBuf,
@@ -280,6 +291,17 @@ impl Config {
             auth_email_from: first_env(&["AUTH_EMAIL_FROM"]).map(|value| value.trim().to_owned()),
             auth_email_reply_to: first_env(&["AUTH_EMAIL_REPLY_TO"])
                 .map(|value| value.trim().to_owned()),
+            apns_team_id: first_env(&["STRAYLIGHT_APNS_TEAM_ID"])
+                .map(|value| value.trim().to_owned()),
+            apns_key_id: first_env(&["STRAYLIGHT_APNS_KEY_ID"])
+                .map(|value| value.trim().to_owned()),
+            apns_private_key: first_env_or_file(&["STRAYLIGHT_APNS_PRIVATE_KEY"])?,
+            apns_app_id: first_env(&["STRAYLIGHT_APNS_APP_ID"])
+                .map(|value| value.trim().to_owned()),
+            notification_token_encryption_key: first_env_or_file(&[
+                "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+            ])?,
+            apns_delivery_enabled: env_parse("STRAYLIGHT_APNS_DELIVERY_ENABLED", "false")?,
             public_url: env_default("STRAYLIGHT_PUBLIC_URL", "https://straylight.rourkem.com")
                 .trim()
                 .trim_end_matches('/')
@@ -317,6 +339,63 @@ impl Config {
         if config.max_concurrent_transfers == 0 {
             return Err(ApiError::configuration(
                 "STRAYLIGHT_MAX_CONCURRENT_TRANSFERS must be greater than zero",
+            ));
+        }
+        let apns_provider_parts = [
+            config.apns_team_id.is_some(),
+            config.apns_key_id.is_some(),
+            config.apns_private_key.is_some(),
+        ];
+        if apns_provider_parts.iter().any(|configured| *configured)
+            && (!apns_provider_parts.iter().all(|configured| *configured)
+                || config.apns_app_id.is_none())
+        {
+            return Err(ApiError::configuration(
+                "APNs provider credentials require team ID, key ID, private key, and app ID",
+            ));
+        }
+        for (name, value) in [
+            ("STRAYLIGHT_APNS_TEAM_ID", config.apns_team_id.as_deref()),
+            ("STRAYLIGHT_APNS_KEY_ID", config.apns_key_id.as_deref()),
+        ] {
+            if value.is_some_and(|value| {
+                value.len() != 10 || !value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            }) {
+                return Err(ApiError::configuration(format!(
+                    "{name} must be a 10-character ASCII identifier"
+                )));
+            }
+        }
+        if config.apns_app_id.as_deref().is_some_and(|value| {
+            value.len() < 3
+                || value.len() > 255
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+        }) {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_APNS_APP_ID is not a valid app topic",
+            ));
+        }
+        if let Some(key) = config.notification_token_encryption_key.as_deref() {
+            decode_notification_token_key(key)?;
+        }
+        if config.apns_app_id.is_some() != config.notification_token_encryption_key.is_some() {
+            return Err(ApiError::configuration(
+                "STRAYLIGHT_APNS_APP_ID and STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY must be configured together",
+            ));
+        }
+        if config.apns_configured() && config.notification_token_encryption_key.is_none() {
+            return Err(ApiError::configuration(
+                "APNs delivery requires STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+            ));
+        }
+        if config.apns_delivery_enabled
+            && (config.apns_app_id.is_none()
+                || config.notification_token_encryption_key.is_none())
+        {
+            return Err(ApiError::configuration(
+                "enabled APNs delivery requires app ID and notification token encryption key",
             ));
         }
         if config.search_section_demotion_top_n == Some(0) {
@@ -462,6 +541,30 @@ impl Config {
     pub fn secure_web_cookies(&self) -> bool {
         self.deployment_environment == "production"
     }
+
+    pub fn apns_configured(&self) -> bool {
+        self.apns_team_id.is_some()
+            && self.apns_key_id.is_some()
+            && self.apns_private_key.is_some()
+            && self.apns_app_id.is_some()
+    }
+}
+
+pub fn decode_notification_token_key(value: &str) -> ApiResult<[u8; 32]> {
+    let value = value.trim();
+    let bytes = URL_SAFE_NO_PAD
+        .decode(value)
+        .or_else(|_| STANDARD.decode(value))
+        .map_err(|_| {
+            ApiError::configuration(
+                "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY must be base64 encoded",
+            )
+        })?;
+    bytes.try_into().map_err(|_| {
+        ApiError::configuration(
+            "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes",
+        )
+    })
 }
 
 fn env_default(name: &str, default: &str) -> String {
@@ -742,9 +845,27 @@ mod tests {
         run_config_env_probe("invalid_environment");
     }
 
+    #[test]
+    fn apns_api_and_worker_configuration_are_separated_and_fail_closed() {
+        run_config_env_probe("notification_api_config");
+        run_config_env_probe("notification_app_without_key");
+        run_config_env_probe("notification_full_worker");
+        run_config_env_probe("notification_partial_provider");
+        run_config_env_probe("notification_provider_missing_token_key");
+    }
+
+    #[test]
+    fn notification_token_key_requires_exactly_32_base64_bytes() {
+        let encoded = STANDARD.encode([7_u8; 32]);
+        assert_eq!(decode_notification_token_key(&encoded).unwrap(), [7_u8; 32]);
+        assert!(decode_notification_token_key("not-base64").is_err());
+        assert!(decode_notification_token_key(&STANDARD.encode([7_u8; 31])).is_err());
+    }
+
     fn run_config_env_probe(scenario: &str) {
         let mut command = Command::new(std::env::current_exe().unwrap());
         let mut resend_secret_file = None;
+        let mut notification_key_file = None;
         command
             .arg("--exact")
             .arg("config::tests::config_env_probe")
@@ -841,10 +962,47 @@ mod tests {
             "invalid_environment" => {
                 command.env("STRAYLIGHT_ENV", "Production");
             }
+            "notification_api_config" => {
+                command
+                    .env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight")
+                    .env(
+                        "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+                        STANDARD.encode([8_u8; 32]),
+                    );
+            }
+            "notification_app_without_key" => {
+                command.env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight");
+            }
+            "notification_full_worker" => {
+                let mut secret = tempfile::NamedTempFile::new().unwrap();
+                writeln!(secret, "{}", STANDARD.encode([9_u8; 32])).unwrap();
+                command
+                    .env("STRAYLIGHT_APNS_TEAM_ID", "TEAMID1234")
+                    .env("STRAYLIGHT_APNS_KEY_ID", "KEYID12345")
+                    .env("STRAYLIGHT_APNS_PRIVATE_KEY", "unit-private-key")
+                    .env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight")
+                    .env("STRAYLIGHT_APNS_DELIVERY_ENABLED", "true")
+                    .env(
+                        "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE",
+                        secret.path(),
+                    );
+                notification_key_file = Some(secret);
+            }
+            "notification_partial_provider" => {
+                command.env("STRAYLIGHT_APNS_TEAM_ID", "TEAMID1234");
+            }
+            "notification_provider_missing_token_key" => {
+                command
+                    .env("STRAYLIGHT_APNS_TEAM_ID", "TEAMID1234")
+                    .env("STRAYLIGHT_APNS_KEY_ID", "KEYID12345")
+                    .env("STRAYLIGHT_APNS_PRIVATE_KEY", "unit-private-key")
+                    .env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight");
+            }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
         let output = command.output().unwrap();
         drop(resend_secret_file);
+        drop(notification_key_file);
         assert!(
             output.status.success(),
             "config probe {scenario} failed\nstdout:\n{}\nstderr:\n{}",
@@ -989,6 +1147,49 @@ mod tests {
                     .err()
                     .expect("invalid environment must fail");
                 assert!(error.to_string().contains("STRAYLIGHT_ENV"));
+            }
+            "notification_api_config" => {
+                let config = Config::from_env().unwrap();
+                assert_eq!(
+                    config.apns_app_id.as_deref(),
+                    Some("com.example.Straylight")
+                );
+                assert!(!config.apns_configured());
+                assert!(!config.apns_delivery_enabled);
+            }
+            "notification_app_without_key" => {
+                let error = Config::from_env()
+                    .err()
+                    .expect("app ID without encryption key must fail");
+                assert!(error.to_string().contains("must be configured together"));
+            }
+            "notification_full_worker" => {
+                let config = Config::from_env().unwrap();
+                assert!(config.apns_configured());
+                assert!(config.apns_delivery_enabled);
+                assert_eq!(
+                    decode_notification_token_key(
+                        config.notification_token_encryption_key.as_deref().unwrap()
+                    )
+                    .unwrap(),
+                    [9_u8; 32]
+                );
+            }
+            "notification_partial_provider" => {
+                let error = Config::from_env()
+                    .err()
+                    .expect("partial APNs config must fail");
+                assert!(error.to_string().contains("APNs provider credentials"));
+            }
+            "notification_provider_missing_token_key" => {
+                let error = Config::from_env()
+                    .err()
+                    .expect("APNs provider without token encryption must fail");
+                assert!(
+                    error
+                        .to_string()
+                        .contains("STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY")
+                );
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }

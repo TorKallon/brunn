@@ -105,6 +105,86 @@ configured; authenticated `/v1/status` additionally reports semantic cache and
 deferral counters. The E03/E09 harnesses validate these values and the
 immutable build revision before their guarded backfill or reasoning work.
 
+## Notifications And APNs
+
+The durable notification inbox is independent of push. Publishing creates the
+authenticated inbox record first; APNs is a best-effort wake-up transport for
+enabled iOS installations. Denied permission, a missing device, or provider
+failure therefore cannot erase the alert.
+
+Notification configuration is deliberately split by process:
+
+| Process | Configuration |
+| --- | --- |
+| API | `STRAYLIGHT_APNS_APP_ID`, `STRAYLIGHT_APNS_DELIVERY_ENABLED`, plus `STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY` or its `_FILE` sibling, so authenticated installation upserts can validate the app topic, encrypt device tokens, and suppress transport work while the release gate is off. |
+| Worker | The API values plus `STRAYLIGHT_APNS_TEAM_ID`, `STRAYLIGHT_APNS_KEY_ID`, and `STRAYLIGHT_APNS_PRIVATE_KEY` or its `_FILE` sibling. The worker sends only when the release gate is on. |
+| Migrate, Web, MCP | No notification token or APNs provider secrets. |
+
+`STRAYLIGHT_APNS_DELIVERY_ENABLED` defaults to `false` and must have the same
+value on API and worker. While false, new notification deliveries are recorded
+as suppressed, previously queued/running transport work is also suppressed,
+and the worker never constructs an APNs provider or sends to Apple. When true,
+worker startup fails closed unless the complete provider
+configuration is usable. Turn it on only for an approved signed-device canary;
+turning it off again stops new transport attempts without affecting the durable
+inbox.
+
+`STRAYLIGHT_APNS_APP_ID` is the non-secret iOS bundle ID
+(`com.rourkem.straylight`). Apple team and key identifiers are non-secret but
+remain worker-only because no other process uses them. The notification token
+key must be base64 that decodes to exactly 32 bytes. Every supported secret
+accepts a sibling `_FILE` variable; never set the direct value and file form
+together. In self-hosted production, Compose mounts
+`notification_token_encryption_key` into API and worker and mounts
+`apns_private_key` only into worker. Railway stores the same values as service
+variables, with APNs team ID, key ID, and private key only on worker.
+
+`make production-secrets` generates the token-encryption key and imports an
+operator-supplied Apple `.p8` key without printing either value:
+
+```bash
+make production-secrets \
+  SECRETS_DIR=/approved/private/path \
+  OPENAI_KEY_FILE=/approved/openai-key \
+  RESEND_KEY_FILE=/approved/resend-key \
+  DATADOG_KEY_FILE=/approved/datadog-key \
+  APNS_PRIVATE_KEY_FILE=/approved/AuthKey_KEYID.p8
+```
+
+For another secret manager, generate 32 random bytes and base64-encode them
+without logging the result, then supply them through
+`STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE`. Rotating this key is a
+coordinated installation reset: existing encrypted device tokens cannot be
+decrypted with a new key and must be registered again.
+
+The signed app reports `development` or `production` from its
+`STRAYLIGHT_APNS_ENVIRONMENT` build setting. That value is stored with the
+installation and selects Apple's sandbox or production endpoint. It must match
+the provisioning profile and `aps-environment` entitlement that produced the
+device token; a token from one environment is invalid in the other. The
+checked-in Debug configuration uses `development` and Release uses
+`production`; verify the resolved entitlement against the provisioning profile
+for every signed archive.
+
+Push payloads are intentionally generic and opaque: a schema version, opaque
+notification and delivery references, and a strict
+`straylight://notification` route. They never contain briefing prose, topics,
+paths, source URLs, or other private content. Tapping a push opens the
+authenticated durable notification detail first; any briefing or entry target
+is a secondary explicit action from that screen. `accepted_by_apns` means
+Apple accepted the provider request. It does not prove the phone received,
+displayed, or sounded the alert. Opens and explicit acknowledgements are
+separate receipts.
+
+Installation lifecycle follows the account, not an individual Web session.
+Registrations survive normal 30-day session rotation and password reset.
+Explicit “Disconnect this iPhone” revokes the installation before clearing the
+local account session. Account deletion removes installations, deliveries, and
+receipts through the user-owned database cascade. No production APNs rollout
+is complete until signed-device development and production canaries cover a
+briefing, intraday alert, correction, cold launch, retry, token rotation,
+invalid token, denied permission, and authenticated detail opening.
+
 ## Health
 
 ```bash

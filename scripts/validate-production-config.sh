@@ -100,6 +100,33 @@ require_exact STRAYLIGHT_DREAM_SCHEDULER_ENABLED false
 require_exact STRAYLIGHT_METRICS_ENABLED true
 require_exact STRAYLIGHT_DOGSTATSD_ADDR datadog-agent:8125
 
+require_exact STRAYLIGHT_APNS_APP_ID com.rourkem.straylight
+
+apns_delivery_enabled=$(read_value STRAYLIGHT_APNS_DELIVERY_ENABLED)
+apns_delivery_enabled=${apns_delivery_enabled:-false}
+case "$apns_delivery_enabled" in
+  true|false)
+    ;;
+  *)
+    echo "STRAYLIGHT_APNS_DELIVERY_ENABLED must be true or false" >&2
+    exit 1
+    ;;
+esac
+
+for apns_id_name in STRAYLIGHT_APNS_TEAM_ID STRAYLIGHT_APNS_KEY_ID; do
+  apns_id=$(require_value "$apns_id_name")
+  case "$apns_id" in
+    *[!A-Za-z0-9]*|*replace*|*example*|*placeholder*)
+      echo "$apns_id_name must be a non-placeholder 10-character Apple identifier" >&2
+      exit 1
+      ;;
+  esac
+  [ "${#apns_id}" -eq 10 ] || {
+    echo "$apns_id_name must be a non-placeholder 10-character Apple identifier" >&2
+    exit 1
+  }
+done
+
 require_uint_between() {
   name=$1
   minimum=$2

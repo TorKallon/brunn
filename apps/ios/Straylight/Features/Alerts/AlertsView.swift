@@ -1,55 +1,61 @@
 import SwiftUI
 
-struct NewsView: View {
+struct AlertsView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var filter: NewsFilter = .all
+    @State private var filter: AlertFilter = .all
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Briefing activity")
+                    Text("Durable inbox")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(StraylightTheme.signal)
                         .textCase(.uppercase)
-                    Text("News")
+                    Text("Alerts")
                         .font(.largeTitle.bold())
-                    Text("New, changed, and corrected items from the current agent briefing.")
+                    Text("Briefings, material news, corrections, and operational items surfaced for you.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.bottom, 16)
 
-                Picker("News filter", selection: $filter) {
-                    ForEach(NewsFilter.allCases) { value in
+                Picker("Alert filter", selection: $filter) {
+                    ForEach(AlertFilter.allCases) { value in
                         Text(value.title).tag(value)
                     }
                 }
                 .pickerStyle(.segmented)
                 .padding(.bottom, 18)
 
+                if let message = model.notificationMessage {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(StraylightTheme.amber)
+                        .padding(.bottom, 12)
+                }
+
                 if visibleItems.isEmpty {
                     ContentUnavailableView {
-                        Label(emptyTitle, systemImage: "newspaper")
+                        Label(emptyTitle, systemImage: "bell")
                     } description: {
-                        Text("The current structured briefing has no items in this view.")
+                        Text("A push failure never removes a durable alert from this inbox.")
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 48)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(visibleItems) { item in
-                            NavigationLink {
-                                NewsDetailView(news: item)
+                            Button {
+                                Task {
+                                    await model.openNotification(reference: item.notificationRef)
+                                }
                             } label: {
-                                NewsRow(
-                                    news: item,
-                                    isRead: model.isNewsItemRead(item.id)
-                                )
+                                AlertRow(notification: item)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Open update")
-                            .accessibilityIdentifier("news-item-\(item.id)")
+                            .accessibilityLabel("Open alert")
+                            .accessibilityIdentifier("alert-item-\(rawID(item.notificationRef))")
 
                             if item.id != visibleItems.last?.id {
                                 Divider()
@@ -64,7 +70,19 @@ struct NewsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
 
-                Text("News reflects published briefing activity. It does not claim APNs delivery or a durable acknowledgement receipt.")
+                if model.isLoadingMoreNotifications {
+                    ProgressView("Loading older alerts…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 18)
+                } else if !model.isDemo, model.canLoadMoreNotifications {
+                    Button("Load older alerts") {
+                        Task { await model.loadMoreNotifications() }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.top, 10)
+                }
+
+                Text("Push is an attention signal. Private detail is loaded here only after authenticated open.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 14)
@@ -73,59 +91,86 @@ struct NewsView: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("news-list")
+            .accessibilityIdentifier("alerts-list")
         }
         .background(StraylightTheme.canvas)
-        .navigationTitle("News")
+        .navigationTitle("Alerts")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { BrandMark() }
+            if model.isRefreshingNotifications {
+                ToolbarItem(placement: .topBarTrailing) { ProgressView() }
+            }
+        }
+        .refreshable {
+            await model.refreshNotifications()
+        }
+        .task {
+            if model.notifications.isEmpty {
+                await model.refreshNotifications()
+            }
+        }
+        .navigationDestination(
+            isPresented: Binding(
+                get: { model.presentedNotification != nil },
+                set: { isPresented in
+                    if !isPresented { model.presentedNotification = nil }
+                }
+            )
+        ) {
+            if let notification = model.presentedNotification {
+                AlertDetailView(notification: notification)
+            }
         }
     }
 
-    private var visibleItems: [BriefingNewsItem] {
+    private var visibleItems: [StraylightNotification] {
         switch filter {
         case .all:
-            model.newsItems
-        case .priority:
-            model.newsItems.filter(\.isPriority)
+            model.notifications
+        case .important:
+            model.notifications.filter { $0.importance == .important }
         case .unread:
-            model.newsItems.filter { !model.isNewsItemRead($0.id) }
+            model.notifications.filter(\.isUnread)
         }
     }
 
     private var emptyTitle: String {
         switch filter {
-        case .all: "No news yet"
-        case .priority: "No priority updates"
+        case .all: "No alerts yet"
+        case .important: "No important alerts"
         case .unread: "You’re caught up"
         }
     }
+
+    private func rawID(_ reference: String) -> String {
+        PushReference.rawNotificationID(reference) ?? reference
+    }
 }
 
-private enum NewsFilter: String, CaseIterable, Identifiable {
+private enum AlertFilter: String, CaseIterable, Identifiable {
     case all
-    case priority
+    case important
     case unread
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
 }
 
-private struct NewsRow: View {
-    let news: BriefingNewsItem
-    let isRead: Bool
+private struct AlertRow: View {
+    let notification: StraylightNotification
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
-                Text(news.sectionTitle.uppercased())
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                NewsKindPill(kind: news.kind)
+                AlertKindPill(kind: notification.kind)
+                if notification.importance == .important {
+                    Text("IMPORTANT")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(StraylightTheme.amber)
+                }
                 Spacer(minLength: 4)
-                if !isRead {
+                if notification.isUnread {
                     Circle()
                         .fill(StraylightTheme.signal)
                         .frame(width: 7, height: 7)
@@ -133,29 +178,19 @@ private struct NewsRow: View {
                 }
             }
 
-            SafeMarkdownText(markdown: news.item.headlineMD)
+            Text(notification.title)
                 .font(.headline)
                 .foregroundStyle(StraylightTheme.ink)
                 .multilineTextAlignment(.leading)
 
-            if let body = news.item.bodyMD, !body.isEmpty {
-                SafeMarkdownText(markdown: body)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-            }
+            SafeMarkdownText(markdown: notification.body)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
 
-            HStack(spacing: 5) {
-                Text(DisplayDate.day(news.date))
-                Text("·")
-                Text(news.edition.capitalized)
-                if let time = DisplayDate.time(news.deliveredAt) {
-                    Text("·")
-                    Text(time)
-                }
-            }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
+            Text(AlertDate.metadata(notification.occurredAt))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -163,158 +198,216 @@ private struct NewsRow: View {
     }
 }
 
-private struct NewsDetailView: View {
+private struct AlertDetailView: View {
     @EnvironmentObject private var model: AppModel
-    let news: BriefingNewsItem
+    let notification: StraylightNotification
+
+    private var current: StraylightNotification {
+        model.presentedNotification?.notificationRef == notification.notificationRef
+            ? model.presentedNotification ?? notification
+            : notification
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        Text(news.sectionTitle.uppercased())
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.secondary)
-                        NewsKindPill(kind: news.kind)
+                        AlertKindPill(kind: current.kind)
+                        if current.importance == .important {
+                            Text("IMPORTANT")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(StraylightTheme.amber)
+                        }
                     }
-                    SafeMarkdownText(markdown: news.item.headlineMD)
+                    Text(current.title)
                         .font(.title2.bold())
                         .foregroundStyle(StraylightTheme.ink)
                         .textSelection(.enabled)
-                    Text("\(DisplayDate.day(news.date)) · \(news.edition.capitalized) · v\(news.version)")
+                    Text(AlertDate.metadata(current.occurredAt))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
-                if let body = nonempty(news.item.bodyMD) {
-                    SafeMarkdownText(markdown: body)
-                        .font(.body)
-                        .textSelection(.enabled)
+                SafeMarkdownText(markdown: current.body)
+                    .font(.body)
+                    .textSelection(.enabled)
+
+                targetAction
+
+                if let source = current.source {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("Pinned source")
+                            .font(.headline)
+                        Text(source.reference)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        if let versionRef = source.versionRef {
+                            Text(versionRef)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .detailCard()
                 }
 
-                if let why = nonempty(news.item.whyItMatters) {
-                    DetailBlock(title: "Why it matters", text: why, tint: StraylightTheme.signal)
+                if !current.deliveries.isEmpty {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("Delivery trace")
+                            .font(.headline)
+                        ForEach(current.deliveries) { delivery in
+                            DeliveryRow(delivery: delivery)
+                        }
+                        Text("APNs acceptance is not proof that iOS displayed the alert.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .detailCard()
                 }
-
-                if let changed = nonempty(news.item.whatChanged) {
-                    DetailBlock(title: "What changed", text: changed, tint: StraylightTheme.pulse)
-                }
-
-                if let detail = nonempty(news.item.detailMD) {
-                    DetailBlock(title: "Detail", text: detail, tint: Color.secondary)
-                }
-
-                SourcesView(item: news.item)
 
                 Button {
-                    model.markNewsItemRead(news.id)
+                    Task { await model.acknowledgeNotification(current.notificationRef) }
                 } label: {
                     Label(
-                        model.isNewsItemRead(news.id) ? "Read" : "Mark as read",
+                        current.acknowledgedAt == nil ? "Acknowledge" : "Acknowledged",
                         systemImage: "checkmark.circle"
                     )
                     .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                .disabled(model.isNewsItemRead(news.id))
+                .disabled(current.acknowledgedAt != nil)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("news-detail-\(news.id)")
+            .accessibilityIdentifier(
+                "alert-detail-\(PushReference.rawNotificationID(current.notificationRef) ?? current.notificationRef)"
+            )
         }
         .background(StraylightTheme.canvas)
-        .navigationTitle("News detail")
+        .navigationTitle("Alert detail")
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func nonempty(_ value: String?) -> String? {
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
+    @ViewBuilder
+    private var targetAction: some View {
+        switch current.target.type {
+        case .notification:
+            EmptyView()
+        case .today, .briefing:
+            Button {
+                Task { await model.openNotificationTarget(current) }
+            } label: {
+                Label(
+                    current.target.type == .briefing ? "Open exact briefing" : "Open Today",
+                    systemImage: current.target.type == .briefing ? "sunrise" : "calendar"
+                )
+                .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("alert-target-action")
+        case .entry:
+            NavigationLink {
+                AlertSourceView(notification: current)
+            } label: {
+                Label("Open exact source", systemImage: "doc.text.magnifyingglass")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("alert-target-action")
         }
-        return value
     }
 }
 
-private struct DetailBlock: View {
-    let title: String
-    let text: String
-    let tint: Color
+private struct AlertSourceView: View {
+    @EnvironmentObject private var model: AppModel
+    let notification: StraylightNotification
+    @State private var item: WorkspaceReadItem?
+    @State private var errorMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.caption.weight(.bold))
-                .foregroundStyle(tint)
-            SafeMarkdownText(markdown: text)
-                .font(.body)
-                .textSelection(.enabled)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
-    }
-}
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Exact source")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(StraylightTheme.signal)
+                    .textCase(.uppercase)
+                Text(notification.title)
+                    .font(.title.bold())
 
-private struct SourcesView: View {
-    let item: BriefingItem
-
-    var body: some View {
-        if !safeURLs.isEmpty || !times.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Sources")
-                    .font(.headline)
-
-                ForEach(safeURLs, id: \.absoluteString) { url in
-                    Link(destination: url) {
-                        Label(sourceLabel(url), systemImage: "arrow.up.right.square")
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                if let item, let text = item.text {
+                    if let version = item.version {
+                        Text("Pinned v\(version)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(StraylightTheme.signal)
                     }
-                }
-
-                ForEach(times, id: \.0) { label, value in
-                    LabeledContent(label, value: value)
-                        .font(.subheadline)
+                    Text(text)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let errorMessage {
+                    BoundaryNotice(
+                        symbol: "exclamationmark.icloud",
+                        title: "Source unavailable",
+                        detail: errorMessage
+                    )
+                } else {
+                    ProgressView("Reading exact source…")
+                        .frame(maxWidth: .infinity, minHeight: 160)
                 }
             }
-            .padding(12)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background, in: RoundedRectangle(cornerRadius: 8))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(StraylightTheme.line, lineWidth: 1)
+        }
+        .background(StraylightTheme.canvas)
+        .navigationTitle("Source")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            do {
+                item = try await model.readNotificationEntry(notification)
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
-    }
-
-    private var safeURLs: [URL] {
-        (item.story?.urls ?? []).compactMap { raw in
-            guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased()) else {
-                return nil
-            }
-            return url
-        }
-    }
-
-    private var times: [(String, String)] {
-        [
-            ("Published", item.times?.publishedAt),
-            ("Event", item.times?.eventAt),
-            ("First seen", item.times?.firstSeenAt),
-        ].compactMap { label, raw in
-            guard let raw else { return nil }
-            return (label, DisplayDate.metadata(raw))
-        }
-    }
-
-    private func sourceLabel(_ url: URL) -> String {
-        url.host?.replacingOccurrences(of: "www.", with: "") ?? url.absoluteString
     }
 }
 
-private struct NewsKindPill: View {
-    let kind: NewsDeliveryKind
+private struct DeliveryRow: View {
+    let delivery: StraylightNotificationDelivery
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(deliveryLabel)
+                .font(.subheadline.weight(.semibold))
+            if let timestamp = delivery.acceptedAt ?? delivery.failedAt {
+                Text(AlertDate.metadata(timestamp))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let error = delivery.lastErrorCode {
+                Text(error)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(StraylightTheme.red)
+            }
+        }
+    }
+
+    private var deliveryLabel: String {
+        switch delivery.state {
+        case .suppressed: "Push suppressed"
+        case .acceptedByAPNs: "Accepted by APNs"
+        case .failed: "Delivery failed"
+        case .queued: "Queued"
+        case .running: "Sending"
+        case .expired: "Expired"
+        }
+    }
+}
+
+private struct AlertKindPill: View {
+    let kind: StraylightNotificationKind
 
     var body: some View {
         Text(kind.label.uppercased())
@@ -327,10 +420,33 @@ private struct NewsKindPill: View {
 
     private var color: Color {
         switch kind {
-        case .new: StraylightTheme.signal
-        case .update: StraylightTheme.pulse
+        case .briefingReady, .newsAlert: StraylightTheme.signal
         case .correction: StraylightTheme.red
-        case .context: Color.secondary
+        case .operational: StraylightTheme.amber
         }
+    }
+}
+
+private enum AlertDate {
+    static func metadata(_ raw: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = formatter.date(from: raw) ?? {
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.date(from: raw)
+        }()
+        return date?.formatted(date: .abbreviated, time: .shortened) ?? raw
+    }
+}
+
+private extension View {
+    func detailCard() -> some View {
+        padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.background, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(StraylightTheme.line, lineWidth: 1)
+            }
     }
 }

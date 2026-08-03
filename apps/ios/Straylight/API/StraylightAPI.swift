@@ -175,18 +175,82 @@ public actor StraylightAPI {
         try await post(path: "workspace/briefings/items/action", body: action)
     }
 
-    public func search(_ text: String) async throws -> WorkspaceEnvelope<WorkspaceSearchData> {
-        let request = SearchRequest(queries: [SearchQuery(query: text)])
+    public func notifications(
+        limit: Int = 50,
+        cursor: String? = nil,
+        unread: Bool? = nil,
+        importance: StraylightNotificationImportance? = nil
+    ) async throws -> NotificationListResponse {
+        var queryItems = [
+            URLQueryItem(name: "limit", value: String(min(max(limit, 1), 100))),
+        ]
+        if let cursor, !cursor.isEmpty {
+            queryItems.append(URLQueryItem(name: "cursor", value: cursor))
+        }
+        if let unread {
+            queryItems.append(URLQueryItem(name: "unread", value: String(unread)))
+        }
+        if let importance {
+            queryItems.append(URLQueryItem(name: "importance", value: importance.rawValue))
+        }
+        return try await get(path: "workspace/notifications", queryItems: queryItems)
+    }
+
+    public func notification(reference: String) async throws -> StraylightNotification {
+        let response: NotificationDetailResponse = try await get(
+            path: Self.notificationPath(reference: reference)
+        )
+        return response.notification
+    }
+
+    public func recordNotificationReceipt(
+        notificationRef: String,
+        kind: NotificationReceiptKind,
+        deliveryRef: String? = nil
+    ) async throws -> NotificationReceiptResponse {
+        try await post(
+            path: "\(Self.notificationPath(reference: notificationRef))/receipts",
+            body: NotificationReceiptRequest(kind: kind, deliveryRef: deliveryRef)
+        )
+    }
+
+    public func upsertNotificationInstallation(
+        installationID: UUID,
+        request: NotificationInstallationRequest
+    ) async throws -> NotificationInstallationResponse {
+        try await put(
+            path: Self.notificationInstallationPath(installationID: installationID),
+            body: request
+        )
+    }
+
+    public func revokeNotificationInstallation(
+        installationID: UUID
+    ) async throws -> NotificationInstallationResponse {
+        try await delete(path: Self.notificationInstallationPath(installationID: installationID))
+    }
+
+    public func search(
+        _ text: String,
+        sort: WorkspaceSearchSort = .bestMatch
+    ) async throws -> WorkspaceEnvelope<WorkspaceSearchData> {
+        let request = SearchRequest(queries: [SearchQuery(query: text, sort: sort)])
         return try await post(path: "workspace/search", body: request)
     }
 
     public func read(
         reference: String?,
         path: String?,
+        linkTarget: String? = nil,
         version: Int? = nil
     ) async throws -> WorkspaceReadItem {
         let request = ReadRequest(
-            requests: [ReadRequestItem(reference: reference, path: path, version: version)]
+            requests: [ReadRequestItem(
+                reference: reference,
+                path: path,
+                linkTarget: linkTarget,
+                version: version
+            )]
         )
         let response: WorkspaceEnvelope<WorkspaceReadData> = try await post(
             path: "workspace/read",
@@ -209,6 +273,14 @@ public actor StraylightAPI {
         "workspace/briefings/\(date)/\(edition)"
     }
 
+    public nonisolated static func notificationPath(reference: String) -> String {
+        "workspace/notifications/\(reference)"
+    }
+
+    public nonisolated static func notificationInstallationPath(installationID: UUID) -> String {
+        "workspace/notification-installations/\(installationID.uuidString.lowercased())"
+    }
+
     private func get<Response: Decodable & Sendable>(
         path: String,
         queryItems: [URLQueryItem] = []
@@ -229,6 +301,25 @@ public actor StraylightAPI {
         )
     }
 
+    private func put<Response: Decodable & Sendable>(
+        path: String,
+        body: some Encodable & Sendable
+    ) async throws -> Response {
+        let encoder = JSONEncoder()
+        return try await request(
+            path: path,
+            queryItems: [],
+            method: "PUT",
+            body: encoder.encode(body)
+        )
+    }
+
+    private func delete<Response: Decodable & Sendable>(
+        path: String
+    ) async throws -> Response {
+        try await request(path: path, queryItems: [], method: "DELETE", body: nil)
+    }
+
     private func request<Response: Decodable & Sendable>(
         path: String,
         queryItems: [URLQueryItem],
@@ -240,6 +331,11 @@ public actor StraylightAPI {
         request.httpMethod = method
         request.httpBody = body
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let cookieHeader = HTTPCookie.requestHeaderFields(
+            with: cookiesForServer()
+        )["Cookie"] {
+            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        }
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }

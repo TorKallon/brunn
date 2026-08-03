@@ -6,7 +6,7 @@ import {
   MessageSquareText,
   ZoomIn,
 } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useApi } from "../lib/auth";
 import { formatDate } from "../lib/format";
 import type { BriefingItemActionInput, BriefingItemData } from "../lib/types";
@@ -69,17 +69,20 @@ export function BriefingItemRow({
   topicSlug,
   editionRef,
   readOnly,
+  targeted = false,
 }: {
   item: BriefingItemData;
   sectionTitle: string;
   topicSlug: string;
   editionRef: string;
   readOnly: boolean;
+  targeted?: boolean;
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
   const detailId = useId();
-  const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(targeted);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const actionMutation = useMutation({
     mutationFn: (input: BriefingItemActionInput) =>
@@ -106,13 +109,23 @@ export function BriefingItemRow({
     ] as const
   ).filter(([, value]) => Boolean(value));
 
+  useEffect(() => {
+    if (!targeted) return;
+    setOpen(true);
+    rowRef.current?.scrollIntoView?.({ block: "center" });
+  }, [targeted]);
+
   function act(input: BriefingItemActionInput) {
     setFeedbackOpen(false);
     actionMutation.mutate(input);
   }
 
   return (
-    <div className="briefing-item">
+    <div
+      ref={rowRef}
+      id={`briefing-item-${item.id}`}
+      className={`briefing-item${targeted ? " is-targeted" : ""}`}
+    >
       <button
         type="button"
         className="briefing-index-row"

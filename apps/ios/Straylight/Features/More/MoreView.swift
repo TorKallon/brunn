@@ -24,12 +24,12 @@ struct MoreView: View {
             }
 
             Section {
-                LabeledContent("News source", value: "Published briefing activity")
-                LabeledContent("Push service", value: "Not connected")
+                LabeledContent("Alerts source", value: "Durable Straylight inbox")
+                LabeledContent("Push service", value: notifications.registrationState.label)
             } header: {
                 Text("Briefing delivery")
             } footer: {
-                Text("The current server publishes briefings and topic activity, but it does not yet expose APNs device registration, a delivery inbox, or receipts. The app does not mislabel briefing inclusion as phone delivery.")
+                Text("Alerts remain in Straylight even when APNs is delayed, denied, or unavailable. Provider acceptance is never labeled as device delivery.")
             }
 
             Section("Connection") {
@@ -40,8 +40,14 @@ struct MoreView: View {
 
             Section("Notifications") {
                 LabeledContent("Permission", value: notifications.permissionState.label)
+                LabeledContent("Installation", value: notifications.registrationState.label)
                 if notifications.hasPendingDeviceToken {
-                    Label("Device token is held only in memory; no server registration endpoint exists.", systemImage: "server.rack")
+                    Label("The current APNs token is waiting for authenticated registration.", systemImage: "server.rack")
+                        .font(.footnote)
+                        .foregroundStyle(StraylightTheme.amber)
+                }
+                if !model.canManageNotifications, !model.isDemo {
+                    Label("This account can read Alerts but needs notification management access to register this iPhone.", systemImage: "key")
                         .font(.footnote)
                         .foregroundStyle(StraylightTheme.amber)
                 }
@@ -53,9 +59,20 @@ struct MoreView: View {
                 Button {
                     showingNotificationPrimer = true
                 } label: {
-                    Label("Notification readiness", systemImage: "bell.badge")
+                    Label("Set up notifications", systemImage: "bell.badge")
                 }
-                Text("The one-time iOS permission prompt stays disabled until Straylight can register this installation and complete a signed-device canary.")
+                .disabled(!model.canManageNotifications && !model.isDemo)
+                if model.canManageNotifications, !model.isDemo {
+                    Button("Disable push on this iPhone", role: .destructive) {
+                        Task {
+                            _ = await notifications.revokeInstallation(
+                                using: model.api,
+                                canManageNotifications: model.canManageNotifications
+                            )
+                        }
+                    }
+                }
+                Text("Permission is requested only after you choose setup. Push payloads contain generic prose and opaque references; private detail is fetched after authenticated open.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -78,7 +95,16 @@ struct MoreView: View {
 
             Section {
                 Button(model.isDemo ? "Leave demo" : "Disconnect this iPhone", role: .destructive) {
-                    Task { await model.disconnect() }
+                    Task {
+                        if !model.isDemo, model.canManageNotifications {
+                            let revoked = await notifications.revokeInstallation(
+                                using: model.api,
+                                canManageNotifications: model.canManageNotifications
+                            )
+                            guard revoked else { return }
+                        }
+                        await model.disconnect()
+                    }
                 }
             } footer: {
                 Text(model.isDemo
@@ -114,6 +140,8 @@ struct MoreView: View {
 
 private struct NotificationPrimerView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var notifications: NotificationCoordinator
 
     var body: some View {
         NavigationStack {
@@ -121,12 +149,12 @@ private struct NotificationPrimerView: View {
                 Image(systemName: "bell.badge")
                     .font(.system(size: 42, weight: .medium))
                     .foregroundStyle(StraylightTheme.signal)
-                Text("Push is waiting on the delivery service")
+                Text("Private alerts, resolved after open")
                     .font(.largeTitle.bold())
-                Text("The native reader is complete for published morning briefings, intraday activity, revisions, sources, and tracked topics. Remote notifications remain off because Straylight has no APNs device or delivery API yet.")
+                Text("Straylight can send a generic lock-screen signal for morning briefings, material news, corrections, and operational attention. The app then authenticates and opens the durable alert detail.")
                     .font(.body)
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Register each installation with an opaque identifier", systemImage: "iphone.gen3")
+                    Label("Register this installation with an opaque identifier", systemImage: "iphone.gen3")
                     Label("Keep default lock-screen text generic", systemImage: "lock")
                     Label("Resolve private content only after authenticated open", systemImage: "arrow.down.doc")
                     Label("Record APNs attempts, opens, and acknowledgements", systemImage: "checkmark.seal")
@@ -134,9 +162,21 @@ private struct NotificationPrimerView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 Spacer()
-                Button("Done") { dismiss() }
+                Button("Enable notifications") {
+                    Task {
+                        await notifications.requestPermission()
+                        await notifications.synchronizeInstallation(
+                            using: model.api,
+                            canManageNotifications: model.canManageNotifications
+                        )
+                        if notifications.permissionState != .unknown {
+                            dismiss()
+                        }
+                    }
+                }
                     .buttonStyle(.borderedProminent)
                     .frame(maxWidth: .infinity, minHeight: 44)
+                    .disabled(!model.canManageNotifications && !model.isDemo)
             }
             .padding(24)
             .toolbar {

@@ -69,6 +69,49 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
+    func testDemoSearchOpensPinnedEntryAndTogglesMarkdownFormatting() {
+        let app = launchDemo()
+
+        let search = element("dashboard-search", in: app)
+        scroll(search, intoViewIn: app)
+        search.tap()
+        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("search-sort", in: app).exists)
+
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 2))
+        field.tap()
+        field.typeText("Straylight")
+        app.keyboards.buttons["Search"].tap()
+
+        let result = element("search-result-entry:demo-ios-mvp", in: app)
+        XCTAssertTrue(result.waitForExistence(timeout: 3))
+        result.tap()
+
+        XCTAssertTrue(app.navigationBars["Entry"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("entry-formatted-content", in: app).waitForExistence(timeout: 2))
+        XCTAssertTrue(caseInsensitiveText("Pinned v1", in: app).exists)
+
+        let toggle = element("entry-markdown-toggle", in: app)
+        scroll(toggle, intoViewIn: app)
+        toggle.tap()
+        XCTAssertTrue(element("entry-raw-content", in: app).waitForExistence(timeout: 2))
+        XCTAssertTrue(caseInsensitiveText("Raw Markdown", in: app).exists)
+
+        toggle.tap()
+        XCTAssertTrue(element("entry-formatted-content", in: app).waitForExistence(timeout: 2))
+
+        let linkedEntry = app.links["Straylight Briefings: Platform Design"]
+        XCTAssertTrue(linkedEntry.waitForExistence(timeout: 2))
+        scroll(linkedEntry, intoViewIn: app)
+        linkedEntry.tap()
+        XCTAssertTrue(
+            caseInsensitiveText("Straylight Briefings: Platform Design", in: app)
+                .waitForExistence(timeout: 3)
+        )
+    }
+
+    @MainActor
     func testDashboardUsesSingleColumnMetricsAtAccessibilityTextSize() {
         let app = launchDemo(contentSizeCategory: "UICTContentSizeCategoryAccessibilityL")
         let text = element("dashboard-storage-text", in: app)
@@ -184,42 +227,43 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
-    func testNewsFiltersOpenTheSourceBackedDetailAndTrackSessionReadState() {
+    func testAlertsOpenDurableDetailBeforeExactBriefingTarget() {
         let app = launchDemo()
-        app.tabBars.buttons["News"].tap()
+        app.tabBars.buttons["Alerts"].tap()
 
-        XCTAssertTrue(app.navigationBars["News"].waitForExistence(timeout: 3))
-        XCTAssertTrue(element("news-list", in: app).exists)
+        XCTAssertTrue(app.navigationBars["Alerts"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("alerts-list", in: app).exists)
         XCTAssertTrue(app.buttons["All"].exists)
-        XCTAssertTrue(app.buttons["Priority"].exists)
+        XCTAssertTrue(app.buttons["Important"].exists)
         XCTAssertTrue(app.buttons["Unread"].exists)
 
-        app.buttons["Priority"].tap()
-        let update = element("news-item-ios-direction", in: app)
-        XCTAssertTrue(update.waitForExistence(timeout: 2))
-        XCTAssertEqual(update.label, "Open update")
-        scroll(update, intoViewIn: app)
-        update.tap()
+        app.buttons["Important"].tap()
+        let briefingAlert = element("alert-item-11111111111111111111111111111111", in: app)
+        XCTAssertTrue(briefingAlert.waitForExistence(timeout: 2))
+        XCTAssertEqual(briefingAlert.label, "Open alert")
+        scroll(briefingAlert, intoViewIn: app)
+        briefingAlert.tap()
 
-        XCTAssertTrue(app.navigationBars["News detail"].waitForExistence(timeout: 3))
-        XCTAssertTrue(element("news-detail-ios-direction", in: app).exists)
-        XCTAssertTrue(caseInsensitiveText("Why it matters", in: app).exists)
-        XCTAssertTrue(caseInsensitiveText("What changed", in: app).exists)
-        XCTAssertTrue(app.staticTexts["Sources"].exists)
+        XCTAssertTrue(app.navigationBars["Alert detail"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("alert-detail-11111111111111111111111111111111", in: app).exists)
+        XCTAssertTrue(caseInsensitiveText("Your morning briefing is ready", in: app).exists)
+        XCTAssertTrue(caseInsensitiveText("Delivery trace", in: app).exists)
+        XCTAssertTrue(caseInsensitiveText("Accepted by APNs", in: app).exists)
+        XCTAssertTrue(element("alert-target-action", in: app).exists)
 
-        let markRead = app.buttons["Mark as read"]
-        scroll(markRead, intoViewIn: app)
-        markRead.tap()
-        XCTAssertTrue(app.buttons["Read"].waitForExistence(timeout: 2))
-        XCTAssertFalse(app.buttons["Read"].isEnabled)
+        let acknowledge = app.buttons["Acknowledge"]
+        scroll(acknowledge, intoViewIn: app)
+        acknowledge.tap()
+        XCTAssertTrue(app.buttons["Acknowledged"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.buttons["Acknowledged"].isEnabled)
 
-        app.navigationBars["News detail"].buttons.firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["News"].waitForExistence(timeout: 2))
-        app.buttons["Unread"].tap()
-        XCTAssertTrue(update.waitForNonExistence(timeout: 2))
-        XCTAssertTrue(element("news-item-delivery-correction", in: app).exists)
+        let target = element("alert-target-action", in: app)
+        scroll(target, intoViewIn: app)
+        target.tap()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("briefing-item-ios-direction", in: app).exists)
 
-        keepScreenshot(named: "news-unread-after-session-read", from: app)
+        keepScreenshot(named: "alert-to-exact-briefing-item", from: app)
     }
 
     @MainActor

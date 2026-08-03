@@ -98,6 +98,10 @@ services:
       AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:?set AUTH_EMAIL_FROM}
       AUTH_EMAIL_REPLY_TO: ${AUTH_EMAIL_REPLY_TO:-}
       STRAYLIGHT_PUBLIC_URL: ${STRAYLIGHT_PUBLIC_URL:?set STRAYLIGHT_PUBLIC_URL}
+      STRAYLIGHT_APNS_APP_ID: ${STRAYLIGHT_APNS_APP_ID:?set STRAYLIGHT_APNS_APP_ID}
+      STRAYLIGHT_APNS_DELIVERY_ENABLED: ${STRAYLIGHT_APNS_DELIVERY_ENABLED:-false}
+      STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: ""
+      STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
     labels:
       com.datadoghq.tags.env: production
       com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
@@ -113,12 +117,31 @@ services:
       - continuation_signing_key
       - openai_api_key
       - resend_api_key
+      - notification_token_encryption_key
 
   worker:
     build: !reset null
     image: ${STRAYLIGHT_API_IMAGE:-straylight-api:release-blocked}
-    environment: *production-app-environment
-    secrets: *production-app-secrets
+    environment:
+      <<: *production-app-environment
+      STRAYLIGHT_APNS_APP_ID: ${STRAYLIGHT_APNS_APP_ID:?set STRAYLIGHT_APNS_APP_ID}
+      STRAYLIGHT_APNS_DELIVERY_ENABLED: ${STRAYLIGHT_APNS_DELIVERY_ENABLED:-false}
+      STRAYLIGHT_APNS_TEAM_ID: ${STRAYLIGHT_APNS_TEAM_ID:?set STRAYLIGHT_APNS_TEAM_ID}
+      STRAYLIGHT_APNS_KEY_ID: ${STRAYLIGHT_APNS_KEY_ID:?set STRAYLIGHT_APNS_KEY_ID}
+      STRAYLIGHT_APNS_PRIVATE_KEY: ""
+      STRAYLIGHT_APNS_PRIVATE_KEY_FILE: /run/secrets/apns_private_key
+      STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: ""
+      STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
+    secrets:
+      - database_url_rw
+      - database_url_ro
+      - database_url_admin
+      - minio_app_access_key
+      - minio_app_secret_key
+      - continuation_signing_key
+      - openai_api_key
+      - notification_token_encryption_key
+      - apns_private_key
     labels:
       com.datadoghq.tags.env: production
       com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
@@ -245,6 +268,10 @@ secrets:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/minio_app_secret_key
   continuation_signing_key:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/continuation_signing_key
+  notification_token_encryption_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/notification_token_encryption_key
+  apns_private_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/apns_private_key
   openai_api_key:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/openai_api_key
   resend_api_key:

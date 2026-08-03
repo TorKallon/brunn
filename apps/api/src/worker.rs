@@ -1,10 +1,13 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use crate::{
     account_worker,
     db::AppState,
     error::{ApiError, ApiResult},
-    simple_worker, telemetry, upload_service,
+    notification_service, simple_worker, telemetry, upload_service,
 };
 
 const ACCOUNT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
@@ -17,6 +20,19 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             "DATABASE_URL_ADMIN is required by the background worker",
         ));
     }
+    let notification_provider = if state.config.apns_delivery_enabled {
+        let provider =
+            notification_service::configured_apns_provider(&state)?.ok_or_else(|| {
+                ApiError::configuration(
+                    "STRAYLIGHT_APNS_DELIVERY_ENABLED requires complete APNs provider credentials",
+                )
+            })?;
+        tracing::info!("APNs notification delivery enabled");
+        Some(provider)
+    } else {
+        tracing::info!("APNs notification delivery disabled");
+        None
+    };
     tracing::info!("Straylight background worker started");
     let worker_id = format!("worker:{}", std::process::id());
     let mut next_account_maintenance = Instant::now();
@@ -25,7 +41,10 @@ pub async fn run(state: AppState) -> ApiResult<()> {
     loop {
         let cycle_started = Instant::now();
         let mut cycle_failed = false;
-        let mut did_work = run_simple_workspace_job(&state, &mut cycle_failed).await;
+        let mut did_work =
+            run_notification_delivery(&state, notification_provider.as_ref(), &mut cycle_failed)
+                .await;
+        did_work |= run_simple_workspace_job(&state, &mut cycle_failed).await;
         let now = Instant::now();
 
         if state.config.legacy_api_enabled && next_account_maintenance <= now {
@@ -48,6 +67,27 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(BACKGROUND_WORK_PAUSE).await;
         } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+async fn run_notification_delivery(
+    state: &AppState,
+    provider: Option<&Arc<dyn notification_service::ApnsProvider>>,
+    cycle_failed: &mut bool,
+) -> bool {
+    let result = match provider {
+        Some(provider) => {
+            notification_service::process_next_with_provider(state, Arc::clone(provider)).await
+        }
+        None => notification_service::suppress_queued_deliveries(state).await,
+    };
+    match result {
+        Ok(did_work) => did_work,
+        Err(error) => {
+            *cycle_failed = true;
+            tracing::error!(error = ?error, "notification delivery failed");
+            false
         }
     }
 }

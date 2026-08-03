@@ -25,6 +25,8 @@ const OWNER_CAPABILITIES: &[&str] = &[
     "delete",
     "dream",
     "credential:manage",
+    "notification:publish",
+    "notification:manage",
     "admin",
 ];
 

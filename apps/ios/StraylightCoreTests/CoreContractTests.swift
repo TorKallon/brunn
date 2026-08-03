@@ -261,11 +261,124 @@ final class CoreContractTests: XCTestCase {
           "path": "sources/One.md",
           "title": "One",
           "representation": "selected_source_section",
-          "text": "Bounded hydrated text"
+          "text": "Bounded hydrated text",
+          "score": 9.75,
+          "updated_at": "2026-08-03T10:15:00Z"
         }
         """#.data(using: .utf8)!
         let candidate = try JSONDecoder().decode(WorkspaceSearchCandidate.self, from: json)
         XCTAssertEqual(candidate.previewText, "Bounded hydrated text")
+        XCTAssertEqual(candidate.score, 9.75)
+        XCTAssertEqual(candidate.updatedAt, "2026-08-03T10:15:00Z")
+    }
+
+    func testSearchRequestEncodesSelectedServerSort() throws {
+        let request = SearchRequest(
+            queries: [SearchQuery(query: "project state", sort: .lastModified)]
+        )
+        let data = try JSONEncoder().encode(request)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let queries = try XCTUnwrap(object["queries"] as? [[String: Any]])
+
+        XCTAssertEqual(queries.first?["sort"] as? String, "last_modified")
+    }
+
+    func testLegacySearchOrderingUsesModifiedDateForEqualRelevance() {
+        let older = WorkspaceSearchCandidate(
+            path: "sources/Older.md",
+            title: "Older",
+            score: 8,
+            updatedAt: "2026-08-01T12:00:00Z"
+        )
+        let newer = WorkspaceSearchCandidate(
+            path: "sources/Newer.md",
+            title: "Newer",
+            score: 8,
+            updatedAt: "2026-08-02T12:00:00Z"
+        )
+        let strongest = WorkspaceSearchCandidate(
+            path: "sources/Strongest.md",
+            title: "Strongest",
+            score: 12,
+            updatedAt: "2026-07-01T12:00:00Z"
+        )
+
+        XCTAssertEqual(
+            WorkspaceSearchOrdering.sorted([older, newer, strongest], by: .bestMatch).map(\.title),
+            ["Strongest", "Newer", "Older"]
+        )
+        XCTAssertEqual(
+            WorkspaceSearchOrdering.sorted([older, strongest, newer], by: .lastModified).map(\.title),
+            ["Newer", "Older", "Strongest"]
+        )
+    }
+
+    func testWikiEntryLinkResolvesHostedVaultRootAndRelativeMarkdownPaths() throws {
+        let wiki = try XCTUnwrap(WorkspaceEntryLink(
+            target: "Topics/Gaming/Gaming#Current|Ignored alias",
+            label: "Gaming",
+            isWikiLink: true
+        ))
+        XCTAssertTrue(
+            wiki.pathCandidates(relativeTo: "sources/General Space/Current note.md")
+                .contains("sources/Topics/Gaming/Gaming.md")
+        )
+        XCTAssertEqual(wiki.lookupTerm, "Gaming")
+
+        let sibling = try XCTUnwrap(WorkspaceEntryLink(
+            target: "Sibling",
+            isWikiLink: true
+        ))
+        XCTAssertEqual(
+            sibling.pathCandidates(relativeTo: "sources/General Space/Current note.md").first,
+            "sources/General Space/Sibling.md"
+        )
+        XCTAssertEqual(
+            WorkspaceEntryRequest(
+                link: sibling,
+                sourcePath: "sources/General Space/Current note.md"
+            ).lookupTerm,
+            "Sibling"
+        )
+
+        let vaultRoot = try XCTUnwrap(WorkspaceEntryLink(
+            target: "Projects/Plan",
+            isWikiLink: true
+        ))
+        XCTAssertEqual(
+            vaultRoot.pathCandidates(relativeTo: "sources/General Space/Current note.md").first,
+            "Projects/Plan.md"
+        )
+        XCTAssertNil(WorkspaceEntryRequest(
+            link: vaultRoot,
+            sourcePath: "sources/General Space/Current note.md"
+        ).lookupTerm)
+
+        let canonical = try XCTUnwrap(WorkspaceEntryLink(
+            target: "sources/Projects/Plan.md",
+            isWikiLink: true
+        ))
+        XCTAssertEqual(
+            canonical.pathCandidates(relativeTo: "sources/General Space/Current note.md").first,
+            "sources/Projects/Plan.md"
+        )
+
+        let relative = try XCTUnwrap(WorkspaceEntryLink(target: "../Other note.md"))
+        XCTAssertEqual(
+            relative.pathCandidates(relativeTo: "sources/General Space/Current note.md").first,
+            "sources/Other note.md"
+        )
+
+        let reference = try XCTUnwrap(WorkspaceEntryLink(
+            target: "entry:11111111-1111-1111-1111-111111111111#Details"
+        ))
+        XCTAssertEqual(reference.reference, "entry:11111111-1111-1111-1111-111111111111")
+
+        let queried = try XCTUnwrap(WorkspaceEntryLink(target: "Sibling.md?view=compact#Details"))
+        XCTAssertEqual(
+            queried.pathCandidates(relativeTo: "sources/General Space/Current note.md").first,
+            "sources/General Space/Sibling.md"
+        )
     }
 
     func testExactReadDecodesDeployedItemWithoutPerItemStatus() throws {
@@ -337,12 +450,129 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(requests.first?["version"] as? Int, 7)
     }
 
+    func testEntryLinkReadRequestEncodesServerConfirmedUniqueTarget() throws {
+        let request = ReadRequest(
+            requests: [ReadRequestItem(linkTarget: "Roadmap")]
+        )
+        let data = try JSONEncoder().encode(request)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let requests = try XCTUnwrap(object["requests"] as? [[String: Any]])
+
+        XCTAssertEqual(requests.first?["link_target"] as? String, "Roadmap")
+        XCTAssertNil(requests.first?["path"])
+        XCTAssertNil(requests.first?["ref"])
+    }
+
     func testTypedDeepLinkAcceptsKnownBriefingRoute() throws {
         let url = try XCTUnwrap(URL(string: "straylight://briefing/2026-08-02/morning?item=native-ios"))
         XCTAssertEqual(
             AppRoute(url: url),
             .briefing(date: "2026-08-02", edition: "morning", itemID: "native-ios")
         )
+    }
+
+    func testTypedNotificationRouteRequiresLowercaseOpaqueIdentifiers() throws {
+        let notificationID = "abcdefabcdefabcdefabcdefabcdefab"
+        let deliveryID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let url = try XCTUnwrap(URL(
+            string: "straylight://notification/\(notificationID)?delivery=\(deliveryID)"
+        ))
+
+        XCTAssertEqual(
+            AppRoute(url: url),
+            .notification(
+                notificationRef: "notification:\(notificationID)",
+                deliveryRef: "delivery:\(deliveryID)"
+            )
+        )
+        XCTAssertNil(AppRoute(url: try XCTUnwrap(URL(
+            string: "straylight://notification/\(notificationID.uppercased())?delivery=\(deliveryID)"
+        ))))
+        XCTAssertNil(AppRoute(url: try XCTUnwrap(URL(
+            string: "straylight://notification/short?delivery=\(deliveryID)"
+        ))))
+    }
+
+    func testNotificationListDecodesExactSourceTargetAndDeliveryContract() throws {
+        let json = #"""
+        {
+          "items": [{
+            "notification_ref": "notification:11111111111111111111111111111111",
+            "kind": "briefing_ready",
+            "importance": "important",
+            "title": "Morning briefing ready",
+            "body": "Private durable detail.",
+            "source": {
+              "type": "entry",
+              "ref": "entry:morning",
+              "version_ref": "version:morning-v3"
+            },
+            "target": {
+              "type": "briefing",
+              "date": "2026-08-02",
+              "edition": "morning",
+              "item_id": "native-ios"
+            },
+            "occurred_at": "2026-08-02T06:30:00-07:00",
+            "opened_at": null,
+            "acknowledged_at": null,
+            "deliveries": [{
+              "delivery_ref": "delivery:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "state": "accepted_by_apns",
+              "accepted_at": "2026-08-02T06:30:02-07:00"
+            }, {
+              "delivery_ref": "delivery:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "state": "suppressed",
+              "last_error_code": "transport_disabled"
+            }]
+          }],
+          "next_cursor": "cursor:opaque",
+          "unread_count": 4
+        }
+        """#.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(NotificationListResponse.self, from: json)
+        let notification = try XCTUnwrap(response.items.first)
+
+        XCTAssertEqual(response.unreadCount, 4)
+        XCTAssertEqual(response.nextCursor, "cursor:opaque")
+        XCTAssertEqual(notification.source?.reference, "entry:morning")
+        XCTAssertEqual(notification.source?.versionRef, "version:morning-v3")
+        XCTAssertEqual(notification.target.type, .briefing)
+        XCTAssertEqual(notification.target.itemID, "native-ios")
+        XCTAssertEqual(notification.deliveries.map(\.state), [.acceptedByAPNs, .suppressed])
+        XCTAssertEqual(notification.deliveries.last?.lastErrorCode, "transport_disabled")
+        XCTAssertTrue(notification.isUnread)
+    }
+
+    func testNotificationMutationRequestsEncodeExactWireKeys() throws {
+        let receipt = NotificationReceiptRequest(
+            kind: .opened,
+            deliveryRef: "delivery:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        let receiptObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(receipt)) as? [String: Any]
+        )
+        XCTAssertEqual(receiptObject["kind"] as? String, "opened")
+        XCTAssertEqual(
+            receiptObject["delivery_ref"] as? String,
+            "delivery:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        XCTAssertNil(receiptObject["receipt_type"])
+
+        let installation = NotificationInstallationRequest(
+            environment: "development",
+            appID: "com.rourkem.straylight",
+            deviceToken: "00ff"
+        )
+        let installationObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(installation)) as? [String: Any]
+        )
+        XCTAssertEqual(installationObject["platform"] as? String, "ios")
+        XCTAssertEqual(installationObject["app_id"] as? String, "com.rourkem.straylight")
+        XCTAssertEqual(installationObject["preview"] as? String, "generic")
+        XCTAssertEqual(installationObject["enabled"] as? Bool, true)
+        XCTAssertNil(installationObject["app_topic"])
     }
 
     func testTypedDeepLinkRejectsArbitraryWebURL() throws {

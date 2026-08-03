@@ -1,6 +1,8 @@
-# Straylight iOS briefing and news MVP
+# Straylight iOS briefing and notifications MVP
 
-Status: implemented and simulator-tested, 2026-08-02
+Status: briefing/account-session baseline installed as build 4; notifications
+implemented locally with production rollout and signed-device canaries pending,
+2026-08-02
 
 ## Product outcome
 
@@ -19,14 +21,15 @@ Type, VoiceOver, selection, Reduce Motion, and safe web links are preserved.
 | Surface | Responsibility |
 | --- | --- |
 | Today | Current structured edition, complete summary, every section and item, legacy Markdown fallback, sources, timestamps, change context, and revision disclosure. |
-| News | Version-derived briefing activity across recent editions, including new, updated, removed/correction, priority, and device-session unread views. |
+| Search | Source-backed workspace entry matches with selectable Best match, Last modified, and Title order; exact version-pinned reads; formatted/raw Markdown; and safe internal entry links. |
+| Alerts | Durable notification events across briefings, material news, corrections, and operational attention, with server-backed unread/acknowledged state and exact detail. |
 | Archive | Newest-first cursor-paginated editions, date/edition navigation, exact current or pinned historical versions, and the complete reader. |
-| Settings | Appearance, connection/cache/privacy state, and notification-readiness controls. |
+| Settings | Appearance, connection/cache/privacy state, contextual notification permission, and installation controls. |
 
 The connected app uses hosted Straylight as the source of truth. Only the
 latest edition is cached as a disposable, data-protected offline snapshot.
-News read state is deliberately session-local because the server does not have
-a delivery or acknowledgement ledger.
+Alert state remains server-backed and independent of APNs success. The push is
+only an attention signal; authenticated detail is the durable record.
 
 ## Current client contract
 
@@ -39,6 +42,11 @@ The production API base is `https://straylight.rourkem.com/api/v1`.
 | Read an edition or pinned version | `GET /workspace/briefings/{date}/{edition}?version=` |
 | Read topics and pending deep-dives | `GET /workspace/briefings/topics` |
 | Model briefing actions | `POST /workspace/briefings/items/action` |
+| Search workspace entries | `POST /workspace/search` with per-query `sort=best_match|last_modified|title` |
+| Read an exact current or pinned entry | `POST /workspace/read` with exact `ref`/`path` and optional `version` |
+| List/read durable alerts | `GET /workspace/notifications`, `GET /workspace/notifications/{notification_ref}` |
+| Record open/acknowledgement | `POST /workspace/notifications/{notification_ref}/receipts` |
+| Register/revoke this installation | `PUT /workspace/notification-installations/{installation_id}`, `DELETE /workspace/notification-installations/{installation_id}` |
 
 The client decodes the complete deployed `briefing.v1` payload: summary,
 sections, headlines, bodies, detailed prose, why-it-matters, what-changed,
@@ -46,10 +54,21 @@ delta state, sources, published/event/first-seen timestamps, and version
 history. Date-only event values are formatted as calendar dates without a
 timezone shift. Only HTTP(S) sources become tappable links.
 
-Recent News activity is reconstructed from recent editions and up to five
-versions per edition. Removed items become visible correction events instead
-of disappearing silently. It is labeled briefing activity, never phone
-delivery.
+Alerts decode typed notification/source/target records. A push tap resolves an
+opaque notification reference through the authenticated API, records a
+delivery-attributed open when available, and displays durable detail before it
+offers a secondary action to Today, an exact briefing item, or a pinned entry.
+
+Entry search defaults to server-ranked Best match and can be rerun in
+newest-modified or title order. Every result carries the exact entry reference,
+version, and modification time used by the reader; relevance scores remain a
+server-side ranking detail. Opening a result pins that version. The reader
+defaults to formatted Markdown and can reveal the raw source without another
+network read. HTTP(S) links open externally; relative
+Markdown links and `[[wiki links]]` resolve inside Straylight through canonical
+paths, hosted `sources/` vault-root expansion, and a server-confirmed unique
+basename lookup for bare wiki links. Ambiguous links and other URL schemes fail
+closed.
 
 ## Authentication and mutations
 
@@ -58,7 +77,11 @@ is sent only to `POST /auth/login` and is never stored by the app. Hosted
 Straylight returns the same revocable, 30-day `HttpOnly` session used by the
 web app; iOS persists that cookie across launches and sends the readable CSRF
 cookie as `X-CSRF-Token` on unsafe methods. Logout clears both server and local
-session state. Requests use HTTPS with response caching disabled.
+session state. “Disconnect this iPhone” first revokes its notification
+installation, then logs out and clears local state. Registrations survive
+normal session rotation and password reset; account deletion cascades through
+the user's installations, deliveries, and receipts. Requests use HTTPS with
+response caching disabled.
 
 The deployed item-action endpoint requires the broad `save` capability and has
 no idempotency key. The iOS client includes the typed request/response contract
@@ -68,24 +91,27 @@ or Mute topic server writes.
 
 ## Push boundary
 
-Native remote delivery is not part of the currently deployable server
-contract. Straylight has no device-registration, notification preference,
-APNs outbox/attempt, inbox, open-receipt, or acknowledgement endpoint or table.
-The app therefore does not consume the one-time notification prompt or claim
-that briefing inclusion means an iPhone alert was delivered.
+Straylight now has a durable inbox, installation registration, APNs outbox and
+attempt state, and open/acknowledgement receipts. iOS asks permission only from
+the contextual setup flow, obtains the current APNs token each launch, keeps it
+in memory, and upserts it through the account session with CSRF protection.
 
-The required follow-on remains:
+The strict `straylight-push@v1` payload contains only generic APS prose, opaque
+notification/delivery references, and a matching typed route. It contains no
+briefing prose, path, semantic item identifier, source URL, or personal value.
+APNs `accepted_by_apns` is displayed honestly and never called device delivery.
 
-1. authenticated installation upsert/revoke with protected APNs token material;
-2. private notification preferences and quiet hours;
-3. an idempotent outbox and APNs attempt ledger;
-4. an authenticated inbox resolved from opaque delivery identifiers;
-5. open and explicit acknowledgement receipts;
-6. signed-device canaries for morning, intraday, correction, retry, invalid-token, and quiet-hours cases;
-7. dual delivery until those canaries prove the iMessage path can be retired.
+The `STRAYLIGHT_APNS_ENVIRONMENT` build setting expands into the
+`aps-environment` entitlement and the installation request. Debug builds use
+Apple's sandbox and Release builds resolve to `production`; every signed
+archive must still be checked against its provisioning profile. Device tokens
+cannot cross those environments. The server's
+configured app topic must remain `com.rourkem.straylight` for this target.
 
-Default lock-screen payloads must remain generic and contain no briefing prose,
-paths, semantic identifiers, source URLs, or personal values.
+Production remote delivery remains gated on provider credentials and
+signed-device canaries for morning, intraday, correction, retry, invalid token,
+denied permission, cold/warm launch, and open attribution. Keep dual iMessage
+delivery until those canaries pass.
 
 ## Verification gates
 
@@ -111,8 +137,10 @@ xcodebuild \
 
 UI coverage verifies the reader occupies at least 90% of the phone width,
 seven-line summary collapse/restore, every section and source-backed detail,
-revision history, News filters and session read state, and Archive version
-selection.
+revision history, Alerts filters/detail/acknowledgement/target routing, and
+Archive version selection. Push contract coverage rejects malformed or
+mismatched opaque references and verifies that a valid tap presents durable
+detail before its target.
 
 ## MVP exclusions
 
@@ -120,5 +148,5 @@ selection.
 - arbitrary workspace editing
 - task lists or task mutation
 - a whole-corpus local mirror or local embeddings
-- push claims without a server delivery ledger
+- notification preferences and quiet hours
 - widgets, Watch, Live Activities, Siri, Spotlight, or Critical Alerts

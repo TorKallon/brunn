@@ -3,22 +3,24 @@ set -eu
 umask 077
 
 usage() {
-  echo "usage: $0 SECRETS_DIR OPENAI_KEY_FILE RESEND_KEY_FILE DATADOG_KEY_FILE" >&2
+  echo "usage: $0 SECRETS_DIR OPENAI_KEY_FILE RESEND_KEY_FILE DATADOG_KEY_FILE APNS_PRIVATE_KEY_FILE" >&2
   exit 64
 }
 
-[ "$#" -eq 4 ] || usage
+[ "$#" -eq 5 ] || usage
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 secrets_dir=$1
 openai_source=$2
 resend_source=$3
 datadog_source=$4
+apns_private_key_source=$5
 
 [ ! -e "$secrets_dir" ] || {
   echo "refusing to replace an existing secrets path: $secrets_dir" >&2
   exit 1
 }
-for source in "$openai_source" "$resend_source" "$datadog_source"; do
+for source in "$openai_source" "$resend_source" "$datadog_source" \
+  "$apns_private_key_source"; do
   [ -f "$source" ] && [ ! -L "$source" ] && [ -s "$source" ] || {
     echo "account key source must be a nonempty regular file: $source" >&2
     exit 1
@@ -43,6 +45,11 @@ trap cleanup EXIT INT TERM
 random_hex() {
   bytes=$1
   od -An -N "$bytes" -tx1 /dev/urandom | tr -d '[:space:]'
+}
+
+random_base64() {
+  bytes=$1
+  dd if=/dev/urandom bs="$bytes" count=1 2>/dev/null | base64 | tr -d '\r\n'
 }
 
 write_secret() {
@@ -84,6 +91,8 @@ write_secret minio_root_password "$minio_root_password"
 write_secret minio_app_access_key "$minio_app_access_key"
 write_secret minio_app_secret_key "$minio_app_secret_key"
 write_secret continuation_signing_key "$(random_hex 32)"
+write_secret notification_token_encryption_key "$(random_base64 32)"
+write_secret apns_private_key "$(read_account_key "$apns_private_key_source")"
 write_secret openai_api_key "$(read_account_key "$openai_source")"
 write_secret resend_api_key "$(read_account_key "$resend_source")"
 write_secret dd_api_key "$(read_account_key "$datadog_source")"

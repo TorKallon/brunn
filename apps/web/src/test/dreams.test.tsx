@@ -147,7 +147,7 @@ describe("visible background maintenance", () => {
     expect(
       await screen.findByLabelText("People index refresh content"),
     ).toHaveTextContent(
-      "# Proposal Refresh the people index from three changed source notes.",
+      "Proposal Refresh the people index from three changed source notes.",
     );
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
     expect(

@@ -81,10 +81,11 @@ private struct MainTabView: View {
             .tag(AppTab.today)
 
             NavigationStack {
-                NewsView()
+                AlertsView()
             }
-            .tabItem { Label("News", systemImage: "newspaper") }
-            .tag(AppTab.news)
+            .tabItem { Label("Alerts", systemImage: "bell") }
+            .badge(model.notificationUnreadCount)
+            .tag(AppTab.alerts)
 
             NavigationStack {
                 ArchiveView()

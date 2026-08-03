@@ -384,6 +384,73 @@ enum SampleData {
         ),
     ]
 
+    static let notifications: [StraylightNotification] = [
+        StraylightNotification(
+            notificationRef: "notification:11111111111111111111111111111111",
+            kind: .briefingReady,
+            importance: .important,
+            title: "Your morning briefing is ready",
+            body: "Open the durable alert first, then continue to the exact briefing and highlighted item.",
+            source: StraylightNotificationSource(
+                type: "entry",
+                reference: briefing.entryRef,
+                versionRef: "version:demo-morning-v2"
+            ),
+            target: StraylightNotificationTarget(
+                type: .briefing,
+                date: briefing.date,
+                edition: briefing.edition,
+                itemID: "ios-direction"
+            ),
+            occurredAt: "2026-08-02T06:30:00-07:00",
+            deliveries: [
+                StraylightNotificationDelivery(
+                    deliveryRef: "delivery:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    state: .acceptedByAPNs,
+                    acceptedAt: "2026-08-02T06:30:02-07:00"
+                ),
+            ]
+        ),
+        StraylightNotification(
+            notificationRef: "notification:22222222222222222222222222222222",
+            kind: .newsAlert,
+            importance: .normal,
+            title: "Notification delivery contract is now source-backed",
+            body: "The inbox remains durable even when APNs is unavailable, denied, or delayed.",
+            source: StraylightNotificationSource(
+                type: "entry",
+                reference: "entry:demo-ios-mvp",
+                versionRef: "version:demo-ios-mvp-v1"
+            ),
+            target: StraylightNotificationTarget(
+                type: .entry,
+                entryRef: "entry:demo-ios-mvp"
+            ),
+            occurredAt: "2026-08-02T10:00:00-07:00"
+        ),
+        StraylightNotification(
+            notificationRef: "notification:33333333333333333333333333333333",
+            kind: .correction,
+            importance: .important,
+            title: "Delivery wording was corrected",
+            body: "Accepted by APNs is transport evidence, not proof that iOS displayed an alert.",
+            source: StraylightNotificationSource(
+                type: "entry",
+                reference: briefing.entryRef,
+                versionRef: "version:demo-morning-v2"
+            ),
+            target: StraylightNotificationTarget(
+                type: .briefing,
+                date: briefing.date,
+                edition: briefing.edition,
+                itemID: "delivery-correction"
+            ),
+            occurredAt: "2026-08-02T10:05:00-07:00",
+            openedAt: "2026-08-02T10:07:00-07:00",
+            acknowledgedAt: "2026-08-02T10:08:00-07:00"
+        ),
+    ]
+
     static let searchResults: [WorkspaceSearchCandidate] = [
         WorkspaceSearchCandidate(
             reference: "entry:demo-ios-mvp",
@@ -392,7 +459,9 @@ enum SampleData {
             version: 1,
             heading: "First vertical slice",
             excerpt: "Connection, latest structured briefing, protected cache, typed notification route, and exact source navigation.",
-            lanes: ["exact"]
+            lanes: ["exact"],
+            score: 12.5,
+            updatedAt: "2026-08-02T18:30:00Z"
         ),
         WorkspaceSearchCandidate(
             reference: "entry:demo-briefing-design",
@@ -401,7 +470,9 @@ enum SampleData {
             version: 1,
             heading: "Architecture",
             excerpt: "Agents research and generate; Straylight stores Markdown editions, dedupe state, topics, and the Daily Thread projection.",
-            lanes: ["lexical"]
+            lanes: ["lexical"],
+            score: 8.25,
+            updatedAt: "2026-08-01T22:15:00Z"
         ),
     ]
 }

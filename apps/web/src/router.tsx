@@ -10,6 +10,7 @@ import {
 import { AuthBoundary } from "./components/AuthBoundary";
 import { EmptyState } from "./components/StateViews";
 import { AssetsPage } from "./pages/AssetsPage";
+import { AlertDetailPage, AlertsPage } from "./pages/AlertsPage";
 import { BriefingEditionPage } from "./pages/BriefingEditionPage";
 import { BriefingsPage } from "./pages/BriefingsPage";
 import { CapturePage } from "./pages/CapturePage";
@@ -41,6 +42,13 @@ function NotFound() {
 const rootRoute = createRootRoute({ component: RootLayout, notFoundComponent: NotFound });
 export interface LoginSearch {
   redirect?: string;
+}
+export interface ExploreSearch {
+  entryRef?: string;
+  entryPath?: string;
+  alternatePaths?: string;
+  linkTarget?: string;
+  fallbackQuery?: string;
 }
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -83,8 +91,19 @@ const briefingsRoute = createRoute({
   path: "/briefings",
   component: BriefingsPage,
 });
+const alertsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/alerts",
+  component: AlertsPage,
+});
+const alertDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/alerts/$notificationRef",
+  component: AlertDetailPage,
+});
 export interface BriefingEditionSearch {
   edition: string;
+  item?: string;
 }
 const briefingEditionRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -95,6 +114,10 @@ const briefingEditionRoute = createRoute({
       typeof search.edition === "string" && search.edition.trim()
         ? search.edition
         : "morning",
+    item:
+      typeof search.item === "string" && search.item.trim()
+        ? search.item
+        : undefined,
   }),
 });
 const topicsRoute = createRoute({
@@ -117,7 +140,18 @@ const sessionAssetsRoute = createRoute({
     throw redirect({ to: "/assets" });
   },
 });
-const exploreRoute = createRoute({ getParentRoute: () => protectedRoute, path: "/explore", component: ExplorePage });
+const exploreRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/explore",
+  component: ExplorePage,
+  validateSearch: (search: Record<string, unknown>): ExploreSearch => ({
+    entryRef: boundedSearchString(search.entryRef),
+    entryPath: boundedSearchString(search.entryPath),
+    alternatePaths: boundedSearchString(search.alternatePaths, 16_000),
+    linkTarget: boundedSearchString(search.linkTarget),
+    fallbackQuery: boundedSearchString(search.fallbackQuery),
+  }),
+});
 const objectRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/objects/$objectId",
@@ -155,6 +189,8 @@ const routeTree = rootRoute.addChildren([
   protectedRoute.addChildren([
     indexRoute,
     dashboardRoute,
+    alertsRoute,
+    alertDetailRoute,
     briefingsRoute,
     briefingEditionRoute,
     topicsRoute,
@@ -187,6 +223,12 @@ function safeInternalRedirect(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function boundedSearchString(value: unknown, maxLength = 4_096): string | undefined {
+  return typeof value === "string" && value.length > 0 && value.length <= maxLength
+    ? value
+    : undefined;
 }
 
 export function createAppRouter(history?: RouterHistory) {

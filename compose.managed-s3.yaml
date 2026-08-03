@@ -56,6 +56,7 @@ services:
       - continuation_signing_key
       - openai_api_key
       - resend_api_key
+      - notification_token_encryption_key
     depends_on: !override
       migrate:
         condition: service_completed_successfully
@@ -69,6 +70,8 @@ services:
       - database_url_admin
       - continuation_signing_key
       - openai_api_key
+      - notification_token_encryption_key
+      - apns_private_key
     depends_on: !override
       migrate:
         condition: service_completed_successfully

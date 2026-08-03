@@ -463,7 +463,13 @@ export interface WorkspaceSearchCandidate {
   excerpt: string;
   score?: number;
   lanes?: string[];
+  updated_at?: string;
 }
+
+export type WorkspaceSearchSort =
+  | "best_match"
+  | "last_modified"
+  | "title";
 
 export interface WorkspaceSearchResultSet {
   id: string;
@@ -716,6 +722,82 @@ export interface BriefingListData {
   truncated: boolean;
   next?: { after_path: string } | null;
   workspace_generation: number;
+}
+
+export type NotificationKind =
+  | "briefing_ready"
+  | "news_alert"
+  | "correction"
+  | "operational";
+
+export type NotificationImportance = "normal" | "important";
+
+export interface NotificationSource {
+  type: string;
+  ref: string;
+  version_ref?: string | null;
+}
+
+export type NotificationTarget =
+  | { type: "notification" }
+  | { type: "today" }
+  | {
+      type: "briefing";
+      date: string;
+      edition: string;
+      item_id?: string | null;
+    }
+  | { type: "entry"; entry_ref: string };
+
+export type NotificationDeliveryState =
+  | "suppressed"
+  | "queued"
+  | "running"
+  | "accepted_by_apns"
+  | "failed"
+  | "expired";
+
+export interface NotificationDelivery {
+  delivery_ref: string;
+  state: NotificationDeliveryState;
+  accepted_at?: string | null;
+  failed_at?: string | null;
+  last_error_code?: string | null;
+}
+
+export interface NotificationItem {
+  notification_ref: string;
+  kind: NotificationKind;
+  importance: NotificationImportance;
+  title: string;
+  body: string;
+  source?: NotificationSource | null;
+  target: NotificationTarget;
+  occurred_at: string;
+  expires_at?: string | null;
+  opened_at?: string | null;
+  acknowledged_at?: string | null;
+  deliveries: NotificationDelivery[];
+}
+
+export interface NotificationListData {
+  items: NotificationItem[];
+  next_cursor?: string | null;
+  unread_count: number;
+}
+
+export interface NotificationDetailData {
+  notification: NotificationItem;
+}
+
+export interface NotificationReceiptData {
+  notification_ref: string;
+  kind: "opened" | "acknowledged";
+  delivery_ref?: string | null;
+  recorded_at: string;
+  replayed: boolean;
+  opened_at?: string | null;
+  acknowledged_at?: string | null;
 }
 
 export interface BriefingStoryRef {

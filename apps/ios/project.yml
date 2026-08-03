@@ -28,11 +28,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rourkem.straylight
         PRODUCT_NAME: Straylight
+        DEVELOPMENT_TEAM: 8WW8JUE95L
         INFOPLIST_FILE: Straylight/Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: Straylight/Resources/Straylight.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Debug:
+          STRAYLIGHT_APNS_ENVIRONMENT: development
+        Release:
+          STRAYLIGHT_APNS_ENVIRONMENT: production
 
   StraylightTests:
     type: bundle.unit-test

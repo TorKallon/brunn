@@ -22,6 +22,10 @@ import type {
   JsonValue,
   ListData,
   MeData,
+  NotificationDetailData,
+  NotificationImportance,
+  NotificationListData,
+  NotificationReceiptData,
   ObjectRecord,
   PolicySummary,
   QueryResultData,
@@ -160,6 +164,20 @@ export interface StraylightApi {
   briefingItemAction(
     input: BriefingItemActionInput,
   ): Promise<ApiEnvelope<BriefingItemActionData>>;
+  notificationsList(
+    limit?: number,
+    cursor?: string,
+    unread?: boolean,
+    importance?: NotificationImportance,
+  ): Promise<ApiEnvelope<NotificationListData>>;
+  notificationGet(
+    notificationRef: string,
+  ): Promise<ApiEnvelope<NotificationDetailData>>;
+  notificationReceipt(
+    notificationRef: string,
+    kind: "opened" | "acknowledged",
+    deliveryRef?: string,
+  ): Promise<ApiEnvelope<NotificationReceiptData>>;
   sessions(cursor?: string): Promise<ApiEnvelope<ListData<SessionSummary> | SessionSummary[]>>;
   session(id: string): Promise<ApiEnvelope<SessionDetail>>;
   refreshSession(id: string): Promise<ApiEnvelope<SessionDetail>>;
@@ -475,6 +493,27 @@ export function createApiClient(): StraylightApi {
       if (input.note !== undefined) payload.note = input.note;
       return post<BriefingItemActionData>(
         "/workspace/briefings/items/action",
+        payload,
+      );
+    },
+    notificationsList: (limit = 50, cursor, unread, importance) => {
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (cursor) query.set("cursor", cursor);
+      if (unread !== undefined) query.set("unread", String(unread));
+      if (importance) query.set("importance", importance);
+      return get<NotificationListData>(
+        `/workspace/notifications?${query.toString()}`,
+      );
+    },
+    notificationGet: (notificationRef) =>
+      get<NotificationDetailData>(
+        `/workspace/notifications/${encodeURIComponent(notificationRef)}`,
+      ),
+    notificationReceipt: (notificationRef, kind, deliveryRef) => {
+      const payload: JsonObject = { kind };
+      if (deliveryRef) payload.delivery_ref = deliveryRef;
+      return post<NotificationReceiptData>(
+        `/workspace/notifications/${encodeURIComponent(notificationRef)}/receipts`,
         payload,
       );
     },

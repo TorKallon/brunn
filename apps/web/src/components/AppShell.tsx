@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
+  Bell,
   ChevronDown,
   CircleUserRound,
   LogOut,
@@ -21,6 +22,7 @@ import { ReadOnlyNotice, StatusBadge } from "./StateViews";
 
 const navItems = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
+  { to: "/alerts", label: "Alerts", icon: Bell },
   { to: "/briefings", label: "Briefings", icon: Sunrise },
   { to: "/explore", label: "Search", icon: Search },
   { to: "/control", label: "Detailed Activity", icon: Activity },

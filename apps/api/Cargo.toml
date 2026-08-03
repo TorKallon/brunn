@@ -20,6 +20,7 @@ path = "src/bin/carrystate.rs"
 
 [dependencies]
 anyhow = "1"
+aes-gcm = "0.10"
 argon2 = "0.5"
 async-trait = "0.1"
 aws-config = { version = "1", default-features = false, features = ["behavior-version-latest", "default-https-client", "rt-tokio"] }
@@ -41,6 +42,7 @@ http = "1"
 infer = "0.19"
 mime_guess = "2"
 json-patch = "4"
+jsonwebtoken = "9"
 libc = "0.2"
 mime = "0.3"
 metrics = "0.24.5"
@@ -50,7 +52,7 @@ percent-encoding = "2"
 pgvector = { version = "0.4", features = ["sqlx"] }
 rand = "0.9"
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["http2", "json", "multipart", "rustls-tls", "stream"] }
 rrule = "0.14"
 schemars = { version = "1", features = ["chrono04", "uuid1"] }
 serde = { version = "1", features = ["derive"] }

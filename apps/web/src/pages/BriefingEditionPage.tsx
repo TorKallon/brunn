@@ -20,7 +20,7 @@ const SUMMARY_PREVIEW_COUNT = 3;
 
 export function BriefingEditionPage() {
   const { date } = useParams({ from: "/authenticated/briefings/$date" });
-  const { edition } = useSearch({ from: "/authenticated/briefings/$date" });
+  const { edition, item: targetItem } = useSearch({ from: "/authenticated/briefings/$date" });
   const api = useApi();
   const readOnly = useReadOnly();
   const navigate = useNavigate();
@@ -165,6 +165,7 @@ export function BriefingEditionPage() {
                     topicSlug={section.topic}
                     editionRef={data.entry_ref}
                     readOnly={readOnly}
+                    targeted={item.id === targetItem}
                   />
                 ))}
               </div>

@@ -12,6 +12,14 @@ typealias BootstrapIdentityLoader = @Sendable (StraylightAPI) async throws -> Me
 typealias StoredSessionChecker = @Sendable (StraylightAPI) async -> Bool
 typealias LoginLoader = @Sendable (StraylightAPI, String, String) async throws -> MeData
 typealias DashboardLoader = @Sendable (StraylightAPI, String) async throws -> WorkspaceDashboardData
+typealias NotificationListLoader = @Sendable (StraylightAPI, String?) async throws -> NotificationListResponse
+typealias NotificationDetailLoader = @Sendable (StraylightAPI, String) async throws -> StraylightNotification
+typealias NotificationReceiptWriter = @Sendable (
+    StraylightAPI,
+    String,
+    NotificationReceiptKind,
+    String?
+) async throws -> NotificationReceiptResponse
 
 enum AppPhase: Equatable {
     case launching
@@ -23,7 +31,7 @@ enum AppPhase: Equatable {
 enum AppTab: Hashable {
     case dashboard
     case today
-    case news
+    case alerts
     case archive
     case more
 }
@@ -34,6 +42,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var user: UserSummary?
     @Published private(set) var currentCredentialID: String?
     @Published private(set) var readOnlyCredential = false
+    @Published private(set) var canManageNotifications = false
     @Published private(set) var isDemo = false
     @Published private(set) var latestBriefing: BriefingEditionData?
     @Published private(set) var cachedAt: Date?
@@ -49,6 +58,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var deliveryMessage: String?
     @Published private(set) var readNewsItemIDs: Set<String> = []
     @Published private(set) var briefingActivity: [BriefingNewsItem] = []
+    @Published private(set) var notifications: [StraylightNotification] = []
+    @Published private(set) var notificationUnreadCount = 0
+    @Published private(set) var notificationMessage: String?
+    @Published private(set) var isRefreshingNotifications = false
+    @Published private(set) var isLoadingMoreNotifications = false
+    @Published private(set) var canLoadMoreNotifications = false
+    @Published var presentedNotification: StraylightNotification?
     @Published private(set) var dashboard: WorkspaceDashboardData?
     @Published private(set) var dashboardMessage: String?
     @Published private(set) var isRefreshingDashboard = false
@@ -75,9 +91,14 @@ final class AppModel: ObservableObject {
     private let bootstrapIdentityLoader: BootstrapIdentityLoader
     private let loginLoader: LoginLoader
     private let dashboardLoader: DashboardLoader
+    private let notificationListLoader: NotificationListLoader
+    private let notificationDetailLoader: NotificationDetailLoader
+    private let notificationReceiptWriter: NotificationReceiptWriter
     private var pendingRoute: AppRoute?
     private var nextBriefingHistoryPath: String?
+    private var nextNotificationCursor: String?
     private var dashboardContextGeneration: UInt64 = 0
+    private var searchContextGeneration: UInt64 = 0
 
     init(
         api: StraylightAPI = StraylightAPI(),
@@ -97,6 +118,20 @@ final class AppModel: ObservableObject {
         },
         dashboardLoader: @escaping DashboardLoader = { api, timezone in
             try await api.dashboard(timezone: timezone).data
+        },
+        notificationListLoader: @escaping NotificationListLoader = { api, cursor in
+            try await api.notifications(cursor: cursor)
+        },
+        notificationDetailLoader: @escaping NotificationDetailLoader = { api, reference in
+            try await api.notification(reference: reference)
+        },
+        notificationReceiptWriter: @escaping NotificationReceiptWriter = {
+            api, notificationRef, kind, deliveryRef in
+            try await api.recordNotificationReceipt(
+                notificationRef: notificationRef,
+                kind: kind,
+                deliveryRef: deliveryRef
+            )
         }
     ) {
         self.api = api
@@ -107,6 +142,9 @@ final class AppModel: ObservableObject {
         self.bootstrapIdentityLoader = bootstrapIdentityLoader
         self.loginLoader = loginLoader
         self.dashboardLoader = dashboardLoader
+        self.notificationListLoader = notificationListLoader
+        self.notificationDetailLoader = notificationDetailLoader
+        self.notificationReceiptWriter = notificationReceiptWriter
     }
 
     func bootstrap() async {
@@ -140,6 +178,7 @@ final class AppModel: ObservableObject {
             let identity = try await loadBootstrapIdentity()
             accept(identity)
             Task { await refreshDashboard() }
+            Task { await refreshNotifications() }
             await refreshBriefing()
             await resumePendingRoute()
         } catch is BootstrapValidationError {
@@ -187,6 +226,7 @@ final class AppModel: ObservableObject {
             let identity = try await loginLoader(api, email, password)
             accept(identity)
             Task { await refreshDashboard() }
+            Task { await refreshNotifications() }
             await loadCachedBriefing()
             await refreshBriefing()
             await resumePendingRoute()
@@ -206,6 +246,7 @@ final class AppModel: ObservableObject {
         isDemo = true
         user = UserSummary(id: "user:demo", displayName: "Rourke")
         currentCredentialID = "credential:demo-iphone"
+        canManageNotifications = true
         dashboard = SampleData.dashboard
         latestBriefing = SampleData.briefing
         tasks = SampleData.tasks
@@ -214,6 +255,10 @@ final class AppModel: ObservableObject {
         canLoadMoreBriefings = false
         nextBriefingHistoryPath = nil
         topicsSnapshot = SampleData.topicsSnapshot
+        notifications = SampleData.notifications
+        notificationUnreadCount = notifications.filter(\.isUnread).count
+        nextNotificationCursor = nil
+        canLoadMoreNotifications = false
         readNewsItemIDs = SampleData.initiallyReadNewsItemIDs
         briefingActivity = Self.projectNews(from: SampleData.briefing, uniqueIDs: false)
         cachedAt = nil
@@ -241,6 +286,7 @@ final class AppModel: ObservableObject {
         invalidateDashboardContext()
         user = nil
         currentCredentialID = nil
+        canManageNotifications = false
         latestBriefing = nil
         briefingHistory = []
         canLoadMoreBriefings = false
@@ -248,9 +294,19 @@ final class AppModel: ObservableObject {
         topicsSnapshot = nil
         readNewsItemIDs = []
         briefingActivity = []
+        notifications = []
+        notificationUnreadCount = 0
+        nextNotificationCursor = nil
+        canLoadMoreNotifications = false
+        notificationMessage = nil
+        presentedNotification = nil
         tasks = []
         alerts = []
         searchResults = []
+        searchContextGeneration &+= 1
+        searchEnvelopeStatus = nil
+        searchMessage = nil
+        isSearching = false
         cachedAt = nil
         cacheSavedAt = nil
         connectionValidated = false
@@ -421,6 +477,210 @@ final class AppModel: ObservableObject {
         readNewsItemIDs.contains(id)
     }
 
+    func refreshNotifications() async {
+        guard !isDemo,
+              phase == .ready,
+              connectionValidated,
+              !isRefreshingNotifications
+        else { return }
+
+        isRefreshingNotifications = true
+        defer { isRefreshingNotifications = false }
+        do {
+            let response = try await notificationListLoader(api, nil)
+            notifications = response.items
+            notificationUnreadCount = response.unreadCount
+            nextNotificationCursor = response.nextCursor
+            canLoadMoreNotifications = response.nextCursor != nil
+            notificationMessage = nil
+        } catch {
+            notificationMessage = "Alerts could not be refreshed."
+        }
+    }
+
+    func loadMoreNotifications() async {
+        guard !isDemo,
+              phase == .ready,
+              connectionValidated,
+              canLoadMoreNotifications,
+              !isLoadingMoreNotifications,
+              let nextNotificationCursor
+        else { return }
+
+        isLoadingMoreNotifications = true
+        defer { isLoadingMoreNotifications = false }
+        do {
+            let response = try await notificationListLoader(api, nextNotificationCursor)
+            let existing = Set(notifications.map(\.notificationRef))
+            notifications.append(contentsOf: response.items.filter {
+                !existing.contains($0.notificationRef)
+            })
+            notificationUnreadCount = response.unreadCount
+            self.nextNotificationCursor = response.nextCursor
+            canLoadMoreNotifications = response.nextCursor != nil
+            notificationMessage = nil
+        } catch {
+            notificationMessage = "Older alerts could not be loaded."
+        }
+    }
+
+    func openNotification(
+        reference: String,
+        deliveryRef: String? = nil
+    ) async {
+        selectedTab = .alerts
+        notificationMessage = nil
+        guard PushReference.isNotification(reference),
+              deliveryRef.map(PushReference.isDelivery) ?? true
+        else {
+            notificationMessage = "The alert link was invalid."
+            return
+        }
+
+        do {
+            let notification: StraylightNotification
+            if isDemo {
+                guard let demo = SampleData.notifications.first(where: {
+                    $0.notificationRef == reference
+                }) else {
+                    notificationMessage = "This alert is not available in the demo."
+                    return
+                }
+                notification = demo
+            } else {
+                guard connectionValidated else {
+                    pendingRoute = .notification(
+                        notificationRef: reference,
+                        deliveryRef: deliveryRef
+                    )
+                    return
+                }
+                notification = try await notificationDetailLoader(api, reference)
+            }
+
+            upsertNotification(notification)
+            presentedNotification = notification
+
+            // A push tap carries delivery-specific evidence even when the
+            // user-level inbox item was opened earlier. Only list/detail opens
+            // without a delivery reference may skip the idempotent receipt.
+            guard notification.openedAt == nil || deliveryRef != nil else { return }
+            if isDemo {
+                applyLocalReceipt(
+                    notificationRef: reference,
+                    openedAt: ISO8601DateFormatter().string(from: .now),
+                    acknowledgedAt: notification.acknowledgedAt
+                )
+                return
+            }
+
+            do {
+                let receipt = try await notificationReceiptWriter(
+                    api,
+                    reference,
+                    .opened,
+                    deliveryRef
+                )
+                applyLocalReceipt(
+                    notificationRef: reference,
+                    openedAt: receipt.openedAt,
+                    acknowledgedAt: receipt.acknowledgedAt
+                )
+            } catch {
+                notificationMessage = "The alert opened, but its read receipt could not be saved."
+            }
+        } catch {
+            notificationMessage = "The linked alert could not be loaded. \(error.localizedDescription)"
+        }
+    }
+
+    func acknowledgeNotification(_ notificationRef: String) async {
+        guard let notification = notifications.first(where: {
+            $0.notificationRef == notificationRef
+        }) ?? (presentedNotification?.notificationRef == notificationRef
+            ? presentedNotification
+            : nil)
+        else { return }
+
+        if isDemo {
+            applyLocalReceipt(
+                notificationRef: notificationRef,
+                openedAt: notification.openedAt ?? ISO8601DateFormatter().string(from: .now),
+                acknowledgedAt: ISO8601DateFormatter().string(from: .now)
+            )
+            return
+        }
+
+        do {
+            let receipt = try await notificationReceiptWriter(
+                api,
+                notificationRef,
+                .acknowledged,
+                nil
+            )
+            applyLocalReceipt(
+                notificationRef: notificationRef,
+                openedAt: receipt.openedAt,
+                acknowledgedAt: receipt.acknowledgedAt
+            )
+            notificationMessage = nil
+        } catch {
+            notificationMessage = "This alert could not be acknowledged."
+        }
+    }
+
+    func openNotificationTarget(_ notification: StraylightNotification) async {
+        switch notification.target.type {
+        case .notification:
+            return
+        case .today:
+            presentedNotification = nil
+            selectedTab = .today
+        case .briefing:
+            guard let date = notification.target.date,
+                  let edition = notification.target.edition
+            else {
+                notificationMessage = "This alert has an incomplete briefing target."
+                return
+            }
+            do {
+                latestBriefing = try await loadBriefing(
+                    date: date,
+                    edition: edition
+                )
+                focusedBriefingItemID = notification.target.itemID
+                presentedNotification = nil
+                selectedTab = .today
+            } catch {
+                notificationMessage = "The linked briefing could not be loaded."
+            }
+        case .entry:
+            return
+        }
+    }
+
+    func readNotificationEntry(_ notification: StraylightNotification) async throws -> WorkspaceReadItem {
+        guard notification.target.type == .entry,
+              let entryRef = notification.target.entryRef ?? notification.source?.reference
+        else {
+            throw StraylightAPIError.invalidResponse
+        }
+        let exactReference = notification.source?.versionRef ?? entryRef
+        if isDemo {
+            return WorkspaceReadItem(
+                reference: exactReference,
+                path: "Notification source",
+                title: notification.title,
+                text: notification.body
+            )
+        }
+        return try await api.read(
+            reference: exactReference,
+            path: nil,
+            version: nil
+        )
+    }
+
     func refreshBriefingIndexAndTopics() async {
         guard !isDemo, phase == .ready else { return }
         deliveryMessage = nil
@@ -472,32 +732,49 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func performSearch(_ query: String) async {
+    func performSearch(
+        _ query: String,
+        sort: WorkspaceSearchSort = .bestMatch
+    ) async {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchContextGeneration &+= 1
+        let context = searchContextGeneration
+        searchResults = []
+        searchEnvelopeStatus = nil
         guard query.count >= 2 else {
+            isSearching = false
             searchMessage = "Enter at least two characters."
             return
         }
         isSearching = true
         searchMessage = nil
-        defer { isSearching = false }
+        defer {
+            if searchContextGeneration == context {
+                isSearching = false
+            }
+        }
 
         if isDemo {
-            searchResults = SampleData.searchResults.filter {
+            let matches = SampleData.searchResults.filter {
                 $0.title.localizedCaseInsensitiveContains(query)
                     || $0.previewText.localizedCaseInsensitiveContains(query)
                     || query.localizedCaseInsensitiveContains("straylight")
             }
-            if searchResults.isEmpty {
-                searchResults = SampleData.searchResults
-            }
+            searchResults = WorkspaceSearchOrdering.sorted(
+                matches.isEmpty ? SampleData.searchResults : matches,
+                by: sort
+            )
             searchEnvelopeStatus = "complete"
             return
         }
 
         do {
-            let response = try await api.search(query)
+            let response = try await api.search(query, sort: sort)
+            guard searchContextGeneration == context else { return }
             searchEnvelopeStatus = response.status
+            // The server owns the wire-order contract, including its exact
+            // scalar title ordering and relevance tie-breakers. Local sorting
+            // is reserved for deterministic demo/legacy fixtures.
             searchResults = response.data.results.flatMap(\.candidates)
             let incomplete = response.status != "complete"
                 || response.data.responseTruncated == true
@@ -510,27 +787,122 @@ final class AppModel: ObservableObject {
                 searchMessage = "Retrieval was partial or budget-truncated; these source matches are useful but incomplete."
             }
         } catch {
+            guard searchContextGeneration == context else { return }
             searchResults = []
             searchEnvelopeStatus = nil
             searchMessage = error.localizedDescription
         }
     }
 
+    func clearSearch() {
+        searchContextGeneration &+= 1
+        searchResults = []
+        searchEnvelopeStatus = nil
+        searchMessage = nil
+        isSearching = false
+    }
+
     func read(_ candidate: WorkspaceSearchCandidate) async throws -> WorkspaceReadItem {
+        try await read(WorkspaceEntryRequest(candidate: candidate))
+    }
+
+    func read(_ request: WorkspaceEntryRequest) async throws -> WorkspaceReadItem {
         if isDemo {
-            return WorkspaceReadItem(
-                reference: candidate.reference,
-                path: candidate.path,
-                title: candidate.title,
-                version: candidate.version,
-                text: "# \(candidate.title)\n\n\(candidate.previewText)\n\nThis is deterministic demo content. A connected app requests the exact current source from hosted Straylight."
+            return try demoRead(request)
+        }
+
+        if let reference = request.reference {
+            return try await api.read(
+                reference: reference,
+                path: nil,
+                version: request.version
             )
         }
-        return try await api.read(
+
+        var lastNotFound: Error?
+        for path in request.pathCandidates {
+            do {
+                return try await api.read(
+                    reference: nil,
+                    path: path,
+                    version: request.version
+                )
+            } catch let error as StraylightAPIError {
+                guard case let .server(status, _, _) = error, status == 404 else {
+                    throw error
+                }
+                lastNotFound = error
+            }
+        }
+
+        if let lookupTerm = request.lookupTerm {
+            return try await api.read(
+                reference: nil,
+                path: nil,
+                linkTarget: lookupTerm
+            )
+        }
+
+        throw lastNotFound ?? StraylightAPIError.server(
+            status: 404,
+            code: "entry_link_not_found",
+            message: "The linked entry could not be found exactly. Use its full path to avoid an ambiguous link."
+        )
+    }
+
+    private func demoRead(_ request: WorkspaceEntryRequest) throws -> WorkspaceReadItem {
+        let candidates = SampleData.searchResults.filter { candidate in
+            candidate.reference == request.reference
+                || request.pathCandidates.contains(candidate.path)
+                || request.lookupTerm.map {
+                    Self.linkLookupKey(candidate.path) == Self.linkLookupKey($0)
+                } == true
+        }
+        guard candidates.count <= 1 else {
+            throw StraylightAPIError.server(
+                status: 409,
+                code: "entry_link_ambiguous",
+                message: "More than one entry matches this link. Search for its full path instead."
+            )
+        }
+        let candidate = candidates.first ?? WorkspaceSearchCandidate(
+            reference: request.reference,
+            path: request.pathCandidates.first ?? "Demo linked entry.md",
+            title: request.title,
+            version: request.version,
+            excerpt: "Deterministic demo entry."
+        )
+        let related = SampleData.searchResults.first(where: { $0.id != candidate.id })
+        let relatedMarkdown = related.map {
+            "\n\n## Related\n\n[[\($0.path)|\($0.title)]]"
+        } ?? ""
+        return WorkspaceReadItem(
             reference: candidate.reference,
             path: candidate.path,
-            version: candidate.version
+            title: candidate.title,
+            version: candidate.version,
+            text: """
+            # \(candidate.title)
+
+            **Source-backed entry.** \(candidate.previewText)
+
+            - Search results open this exact entry version.
+            - Markdown formatting can be turned off at any time.
+
+            This is deterministic demo content. A connected app reads the exact source from hosted Straylight.\(relatedMarkdown)
+            """,
+            updatedAt: candidate.updatedAt
         )
+    }
+
+    private static func linkLookupKey(_ value: String) -> String {
+        var name = value.split(separator: "/").last.map(String.init) ?? value
+        if name.lowercased().hasSuffix(".markdown") {
+            name.removeLast(9)
+        } else if name.lowercased().hasSuffix(".md") {
+            name.removeLast(3)
+        }
+        return name.precomposedStringWithCanonicalMapping.lowercased()
     }
 
     func handle(_ route: AppRoute) async {
@@ -541,8 +913,10 @@ final class AppModel: ObservableObject {
 
         applyLocalRoute(route)
         switch route {
-        case .today, .alert, .task:
+        case .today, .task:
             return
+        case let .notification(notificationRef, deliveryRef):
+            await openNotification(reference: notificationRef, deliveryRef: deliveryRef)
         case let .briefing(date, edition, _):
             guard !isDemo else { return }
             guard connectionValidated else {
@@ -564,6 +938,8 @@ final class AppModel: ObservableObject {
         user = identity.user
         currentCredentialID = identity.credentialID
         readOnlyCredential = identity.readOnly
+        canManageNotifications = identity.capabilities.contains("notification:manage")
+            || identity.capabilities.contains("admin")
         connectionValidated = true
         phase = .ready
         tasks = []
@@ -613,10 +989,57 @@ final class AppModel: ObservableObject {
         case let .briefing(_, _, itemID):
             selectedTab = .today
             focusedBriefingItemID = itemID
-        case .alert:
-            selectedTab = .news
+        case .notification:
+            selectedTab = .alerts
         case .task:
             selectedTab = .today
+        }
+    }
+
+    private func upsertNotification(_ notification: StraylightNotification) {
+        if let index = notifications.firstIndex(where: {
+            $0.notificationRef == notification.notificationRef
+        }) {
+            notifications[index] = notification
+        } else {
+            notifications.insert(notification, at: 0)
+        }
+    }
+
+    private func applyLocalReceipt(
+        notificationRef: String,
+        openedAt: String?,
+        acknowledgedAt: String?
+    ) {
+        guard let current = notifications.first(where: {
+            $0.notificationRef == notificationRef
+        }) ?? (presentedNotification?.notificationRef == notificationRef
+            ? presentedNotification
+            : nil)
+        else { return }
+
+        let transitionsToOpened = current.openedAt == nil && openedAt != nil
+
+        let updated = StraylightNotification(
+            notificationRef: current.notificationRef,
+            kind: current.kind,
+            importance: current.importance,
+            title: current.title,
+            body: current.body,
+            source: current.source,
+            target: current.target,
+            occurredAt: current.occurredAt,
+            expiresAt: current.expiresAt,
+            openedAt: openedAt ?? current.openedAt,
+            acknowledgedAt: acknowledgedAt ?? current.acknowledgedAt,
+            deliveries: current.deliveries
+        )
+        upsertNotification(updated)
+        if transitionsToOpened {
+            notificationUnreadCount = max(0, notificationUnreadCount - 1)
+        }
+        if presentedNotification?.notificationRef == notificationRef {
+            presentedNotification = updated
         }
     }
 

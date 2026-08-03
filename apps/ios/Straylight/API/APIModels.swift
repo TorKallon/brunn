@@ -932,6 +932,14 @@ public struct WorkspaceSearchData: Codable, Sendable, Equatable {
     }
 }
 
+public enum WorkspaceSearchSort: String, Codable, Sendable, CaseIterable, Identifiable {
+    case bestMatch = "best_match"
+    case lastModified = "last_modified"
+    case title
+
+    public var id: String { rawValue }
+}
+
 public struct WorkspaceSearchResultSet: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let goal: String?
@@ -972,6 +980,8 @@ public struct WorkspaceSearchCandidate: Codable, Sendable, Equatable, Identifiab
     public let text: String?
     public let representation: String?
     public let lanes: [String]?
+    public let score: Double?
+    public let updatedAt: String?
 
     public var id: String {
         reference ?? "\(path)#\(heading ?? "")"
@@ -990,7 +1000,9 @@ public struct WorkspaceSearchCandidate: Codable, Sendable, Equatable, Identifiab
         excerpt: String? = nil,
         text: String? = nil,
         representation: String? = nil,
-        lanes: [String]? = nil
+        lanes: [String]? = nil,
+        score: Double? = nil,
+        updatedAt: String? = nil
     ) {
         self.reference = reference
         self.path = path
@@ -1001,6 +1013,114 @@ public struct WorkspaceSearchCandidate: Codable, Sendable, Equatable, Identifiab
         self.text = text
         self.representation = representation
         self.lanes = lanes
+        self.score = score
+        self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case reference
+        case path
+        case title
+        case version
+        case heading
+        case excerpt
+        case text
+        case representation
+        case lanes
+        case score
+        case updatedAt = "updated_at"
+    }
+}
+
+public enum WorkspaceSearchOrdering {
+    public static func sorted(
+        _ candidates: [WorkspaceSearchCandidate],
+        by sort: WorkspaceSearchSort
+    ) -> [WorkspaceSearchCandidate] {
+        let positioned = candidates.enumerated().map { index, candidate in
+            PositionedCandidate(
+                candidate: candidate,
+                originalIndex: index,
+                updatedAt: parseDate(candidate.updatedAt),
+                foldedTitle: candidate.title.folding(
+                    options: [.caseInsensitive, .diacriticInsensitive],
+                    locale: Locale(identifier: "en_US_POSIX")
+                )
+            )
+        }
+
+        return positioned.sorted { left, right in
+            switch sort {
+            case .bestMatch:
+                if let leftScore = left.candidate.score,
+                   let rightScore = right.candidate.score
+                {
+                    if leftScore != rightScore { return leftScore > rightScore }
+                    if let newer = newestFirst(left.updatedAt, right.updatedAt) {
+                        return newer
+                    }
+                }
+                // Older servers already return relevance order but do not
+                // expose the score. Preserve that order instead of treating
+                // every result as a relevance tie.
+                return left.originalIndex < right.originalIndex
+            case .lastModified:
+                if let newer = newestFirst(left.updatedAt, right.updatedAt) {
+                    return newer
+                }
+                return titleThenPath(left, right)
+            case .title:
+                if left.foldedTitle != right.foldedTitle {
+                    return left.foldedTitle < right.foldedTitle
+                }
+                if let newer = newestFirst(left.updatedAt, right.updatedAt) {
+                    return newer
+                }
+                return left.candidate.path < right.candidate.path
+            }
+        }.map(\.candidate)
+    }
+
+    private struct PositionedCandidate {
+        let candidate: WorkspaceSearchCandidate
+        let originalIndex: Int
+        let updatedAt: Date?
+        let foldedTitle: String
+    }
+
+    private static func newestFirst(_ left: Date?, _ right: Date?) -> Bool? {
+        switch (left, right) {
+        case let (left?, right?) where left != right:
+            left > right
+        case (_?, nil):
+            true
+        case (nil, _?):
+            false
+        default:
+            nil
+        }
+    }
+
+    private static func titleThenPath(
+        _ left: PositionedCandidate,
+        _ right: PositionedCandidate
+    ) -> Bool {
+        if left.foldedTitle != right.foldedTitle {
+            return left.foldedTitle < right.foldedTitle
+        }
+        if left.candidate.path != right.candidate.path {
+            return left.candidate.path < right.candidate.path
+        }
+        return left.originalIndex < right.originalIndex
+    }
+
+    private static func parseDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 }
 
@@ -1112,19 +1232,22 @@ public struct SearchQuery: Encodable, Sendable {
     public let goal: String
     public let limit: Int
     public let modes: [String]
+    public let sort: WorkspaceSearchSort
 
     public init(
         id: String = "mobile",
         query: String,
         goal: String = "Find source-backed durable context for the owner",
         limit: Int = 12,
-        modes: [String] = ["exact", "lexical"]
+        modes: [String] = ["exact", "lexical"],
+        sort: WorkspaceSearchSort = .bestMatch
     ) {
         self.id = id
         self.query = query
         self.goal = goal
         self.limit = limit
         self.modes = modes
+        self.sort = sort
     }
 }
 
@@ -1139,6 +1262,7 @@ public struct ReadRequest: Encodable, Sendable {
 public struct ReadRequestItem: Encodable, Sendable {
     public let reference: String?
     public let path: String?
+    public let linkTarget: String?
     public let view: String
     public let maxChars: Int
     public let version: Int?
@@ -1146,6 +1270,7 @@ public struct ReadRequestItem: Encodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case reference = "ref"
         case path
+        case linkTarget = "link_target"
         case view
         case maxChars = "max_chars"
         case version
@@ -1154,12 +1279,14 @@ public struct ReadRequestItem: Encodable, Sendable {
     public init(
         reference: String? = nil,
         path: String? = nil,
+        linkTarget: String? = nil,
         view: String = "full",
         maxChars: Int = 80000,
         version: Int? = nil
     ) {
         self.reference = reference
         self.path = path
+        self.linkTarget = linkTarget
         self.view = view
         self.maxChars = maxChars
         self.version = version

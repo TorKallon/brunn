@@ -3342,7 +3342,7 @@ LIMIT 1;
             regprocedure,
         ):
             raise ValueError(f"unsafe retrieval regprocedure for {lane}")
-        if invocation_sql != f"SELECT * FROM {function_name}($1)":
+        if invocation_sql != f"SELECT * FROM {function_name}($1,$2)":
             raise ValueError(f"retrieval invocation drift for {lane}")
         migration = (PROJECT_ROOT / lane_contract["migration"]).resolve()
         if not migration.is_relative_to(PROJECT_ROOT.resolve()):
@@ -3398,10 +3398,17 @@ LIMIT 1;
         else:
             raise ValueError(f"unsupported retrieval plan lane {lane}")
 
+        sort_argument = sql_literal("best_match")
+        body_statement = re.sub(
+            r"\bp_sort\b",
+            sort_argument,
+            body_statement,
+        )
+
         invocation = invocation_sql.replace(
             "$1",
             argument,
-        )
+        ).replace("$2", sort_argument)
         invocation_plan = explain_json(
             container,
             role_prelude,

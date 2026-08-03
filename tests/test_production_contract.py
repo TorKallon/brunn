@@ -10,6 +10,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+TEST_NOTIFICATION_TOKEN_KEY = "A" * 43 + "="
+TEST_APNS_PRIVATE_KEY = (
+    "-----BEGIN PRIVATE KEY-----\n"
+    + ("A" * 128)
+    + "\n-----END PRIVATE KEY-----"
+)
 
 
 class ProductionContractTests(unittest.TestCase):
@@ -24,6 +30,9 @@ class ProductionContractTests(unittest.TestCase):
             "STRAYLIGHT_MINIO_SECRET_KEY": "",
             "AUTH_EMAIL_FROM": "Straylight <login@example.com>",
             "STRAYLIGHT_PUBLIC_URL": "https://straylight.example.com",
+            "STRAYLIGHT_APNS_APP_ID": "com.rourkem.straylight",
+            "STRAYLIGHT_APNS_TEAM_ID": "ABCDEFGHIJ",
+            "STRAYLIGHT_APNS_KEY_ID": "KLMNOPQRST",
         }
         result = subprocess.run(
             [
@@ -115,6 +124,8 @@ class ProductionContractTests(unittest.TestCase):
             "STRAYLIGHT_CONTINUATION_SECRET",
             "STRAYLIGHT_CONTINUATION_SIGNING_KEY",
             "OPENAI_API_KEY",
+            "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+            "STRAYLIGHT_APNS_PRIVATE_KEY",
             "RESEND_API_KEY",
             "STRAYLIGHT_DEV_READ_WRITE_TOKEN",
             "STRAYLIGHT_DEV_READ_ONLY_TOKEN",
@@ -128,6 +139,35 @@ class ProductionContractTests(unittest.TestCase):
                 self.assertEqual(path, environment[name], f"{service}:{name}")
             for name in direct_secrets:
                 self.assertEqual("", environment.get(name, ""), f"{service}:{name}")
+        for service in ["api", "worker"]:
+            environment = self.compose["services"][service]["environment"]
+            self.assertEqual(
+                "/run/secrets/notification_token_encryption_key",
+                environment["STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE"],
+            )
+            self.assertEqual(
+                "com.rourkem.straylight",
+                environment["STRAYLIGHT_APNS_APP_ID"],
+            )
+        self.assertNotIn(
+            "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE",
+            self.compose["services"]["migrate"]["environment"],
+        )
+        worker_environment = self.compose["services"]["worker"]["environment"]
+        self.assertEqual("ABCDEFGHIJ", worker_environment["STRAYLIGHT_APNS_TEAM_ID"])
+        self.assertEqual("KLMNOPQRST", worker_environment["STRAYLIGHT_APNS_KEY_ID"])
+        self.assertEqual(
+            "/run/secrets/apns_private_key",
+            worker_environment["STRAYLIGHT_APNS_PRIVATE_KEY_FILE"],
+        )
+        for service in ["migrate", "api"]:
+            environment = self.compose["services"][service]["environment"]
+            for name in [
+                "STRAYLIGHT_APNS_TEAM_ID",
+                "STRAYLIGHT_APNS_KEY_ID",
+                "STRAYLIGHT_APNS_PRIVATE_KEY_FILE",
+            ]:
+                self.assertNotIn(name, environment, f"{service}:{name}")
         for service in ["migrate", "worker"]:
             self.assertEqual(
                 "/run/secrets/database_url_admin",
@@ -306,6 +346,22 @@ class ProductionContractTests(unittest.TestCase):
                 }
                 & secret_targets
             )
+        api_secret_targets = {
+            item["target"] for item in services["api"]["secrets"]
+        }
+        worker_secret_targets = {
+            item["target"] for item in services["worker"]["secrets"]
+        }
+        self.assertIn(
+            "/run/secrets/notification_token_encryption_key",
+            api_secret_targets,
+        )
+        self.assertIn(
+            "/run/secrets/notification_token_encryption_key",
+            worker_secret_targets,
+        )
+        self.assertNotIn("/run/secrets/apns_private_key", api_secret_targets)
+        self.assertIn("/run/secrets/apns_private_key", worker_secret_targets)
 
     def test_managed_s3_backup_restore_and_deploy_are_first_class(self):
         paths = [
@@ -519,6 +575,8 @@ class ProductionContractTests(unittest.TestCase):
                 "minio_app_access_key": "app-access",
                 "minio_app_secret_key": "s" * 24,
                 "continuation_signing_key": "c" * 32,
+                "notification_token_encryption_key": TEST_NOTIFICATION_TOKEN_KEY,
+                "apns_private_key": TEST_APNS_PRIVATE_KEY,
                 "openai_api_key": "sk-unit-" + ("o" * 32),
                 "resend_api_key": "re-unit-" + ("r" * 32),
                 "dd_api_key": "d" * 32,
@@ -547,6 +605,9 @@ class ProductionContractTests(unittest.TestCase):
                         "AUTH_EMAIL_FROM=Straylight <login@solark.io>",
                         "AUTH_EMAIL_REPLY_TO=owner@straylight.dev",
                         "STRAYLIGHT_PUBLIC_URL=https://alpha.straylight.dev",
+                        "STRAYLIGHT_APNS_APP_ID=com.rourkem.straylight",
+                        "STRAYLIGHT_APNS_TEAM_ID=ABCDEFGHIJ",
+                        "STRAYLIGHT_APNS_KEY_ID=KLMNOPQRST",
                         "STRAYLIGHT_DREAM_SCHEDULER_ENABLED=false",
                         "STRAYLIGHT_METRICS_ENABLED=true",
                         "STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125",
@@ -694,6 +755,8 @@ class ProductionContractTests(unittest.TestCase):
                     f"postgres://admin:{admin_password}@db:5432/straylight"
                 ),
                 "continuation_signing_key": "c" * 32,
+                "notification_token_encryption_key": TEST_NOTIFICATION_TOKEN_KEY,
+                "apns_private_key": TEST_APNS_PRIVATE_KEY,
                 "openai_api_key": "sk-unit-" + ("o" * 32),
                 "resend_api_key": "re-unit-" + ("r" * 32),
                 "dd_api_key": "d" * 32,
@@ -724,6 +787,9 @@ class ProductionContractTests(unittest.TestCase):
                         "AUTH_EMAIL_FROM=Straylight <login@solark.io>",
                         "AUTH_EMAIL_REPLY_TO=owner@carrystate.dev",
                         "STRAYLIGHT_PUBLIC_URL=https://alpha.carrystate.dev",
+                        "STRAYLIGHT_APNS_APP_ID=com.rourkem.straylight",
+                        "STRAYLIGHT_APNS_TEAM_ID=ABCDEFGHIJ",
+                        "STRAYLIGHT_APNS_KEY_ID=KLMNOPQRST",
                         "STRAYLIGHT_DREAM_SCHEDULER_ENABLED=false",
                         "STRAYLIGHT_METRICS_ENABLED=true",
                         "STRAYLIGHT_DOGSTATSD_ADDR=datadog-agent:8125",
@@ -1146,9 +1212,11 @@ fi
             openai_key = directory / "openai.key"
             resend_key = directory / "resend.key"
             datadog_key = directory / "datadog.key"
+            apns_private_key = directory / "AuthKey.p8"
             openai_key.write_text("sk-unit-" + ("o" * 32))
             resend_key.write_text("re-unit-" + ("r" * 32))
             datadog_key.write_text("d" * 32)
+            apns_private_key.write_text(TEST_APNS_PRIVATE_KEY)
             destination = directory / "generated"
             result = subprocess.run(
                 [
@@ -1157,6 +1225,7 @@ fi
                     str(openai_key),
                     str(resend_key),
                     str(datadog_key),
+                    str(apns_private_key),
                 ],
                 cwd=ROOT,
                 text=True,
@@ -1169,9 +1238,12 @@ fi
             self.assertNotIn(openai_key.read_text(), result.stdout + result.stderr)
             self.assertNotIn(resend_key.read_text(), result.stdout + result.stderr)
             self.assertNotIn(datadog_key.read_text(), result.stdout + result.stderr)
+            self.assertNotIn(apns_private_key.read_text(), result.stdout + result.stderr)
             self.assertEqual(
                 {
                     "continuation_signing_key",
+                    "notification_token_encryption_key",
+                    "apns_private_key",
                     "database_url_admin",
                     "database_url_ro",
                     "database_url_rw",

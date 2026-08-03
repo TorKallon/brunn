@@ -1056,6 +1056,7 @@ pub async fn dedupe_candidate_in_tx(
         );
         let lexical = sqlx::query(crate::retrieval_sql::SIMPLE_LEXICAL_CANDIDATES_SQL)
             .bind(title)
+            .bind("best_match")
             .fetch_all(&mut **tx)
             .await?;
         let mut seen_paths = HashSet::new();

@@ -107,6 +107,29 @@ const dedupeCandidate = z.object({
   ),
 });
 
+const notificationSource = z.object({
+  type: z.string().min(1).max(64),
+  ref: z.string().min(1).max(500),
+  version_ref: z.string().min(1).max(500).optional(),
+});
+
+const notificationTarget = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("notification") }),
+  z.object({ type: z.literal("today") }),
+  z.object({
+    type: z.literal("briefing"),
+    date: editionDate,
+    edition: z.string().min(1).max(64),
+    item_id: z.string().min(1).max(200).optional(),
+  }),
+  z.object({
+    type: z.literal("entry"),
+    entry_ref: z.string().min(1).max(500).describe(
+      "Exact entry:... reference returned by Straylight; never infer one from a title or path.",
+    ),
+  }),
+]);
+
 function createReadItem(maxChars: number) {
   return z.object({
     ref: reference.optional().describe(
@@ -424,6 +447,35 @@ registerJsonTool(
   () => client.request("/v1/workspace/briefings/topics"),
 );
 
+registerJsonTool(
+  "notification.publish",
+  "Publish one durable user alert for the authenticated owner. Straylight deduplicates by " +
+  "event_key, records the private inbox detail, and independently queues eligible device deliveries.",
+  {
+    event_key: z.string().min(1).max(200).describe(
+      "Stable semantic identity shared by Codex and Aether. Reuse it only for the same alert content.",
+    ),
+    correlation_id: z.string().min(1).max(200).describe(
+      "Stable correlation identity for the producing run, briefing, incident, or decision chain.",
+    ),
+    kind: z.enum(["briefing_ready", "news_alert", "correction", "operational"]),
+    importance: z.enum(["normal", "important"]),
+    title: z.string().min(1).max(240),
+    body: z.string().min(1).max(20_000),
+    source: notificationSource.optional().describe(
+      "Exact durable source and optional pinned version supporting this attention decision.",
+    ),
+    target: notificationTarget.describe(
+      "Typed in-app destination. Use briefing or entry when an exact durable target exists.",
+    ),
+    occurred_at: z.string().min(1).max(64).optional(),
+    expires_at: z.string().min(1).max(64).optional().describe(
+      "Optional RFC3339 expiry, no more than seven days after occurred_at. Omit for the 24-hour default.",
+    ),
+  },
+  (input) => client.request("/v1/workspace/notifications/publish", input),
+);
+
   return server;
 }
 
@@ -470,14 +522,16 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
     "memory.checkpoint",
     "memory.stage",
     "briefing.publish",
+    "notification.publish",
   ]).has(name);
+  const idempotent = readOnly || name === "notification.publish";
   server.registerTool(name, {
     description,
     inputSchema,
     annotations: {
       readOnlyHint: readOnly,
       destructiveHint: false,
-      idempotentHint: readOnly,
+      idempotentHint: idempotent,
       openWorldHint: false,
     },
   }, callback as never);

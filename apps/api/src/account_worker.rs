@@ -912,11 +912,7 @@ async fn build_export_inner(
         ) {
             continue;
         }
-        let projection = match table.as_str() {
-            "api_credentials" => "to_jsonb(table_row) - 'token_hash'",
-            "web_identities" => "to_jsonb(table_row) - 'password_hash'",
-            _ => "to_jsonb(table_row)",
-        };
+        let projection = account_export_projection(table);
         let query = format!(
             "SELECT {projection} FROM straylight.\"{table}\" AS table_row \
              WHERE user_id=$1 ORDER BY ctid"
@@ -1444,6 +1440,17 @@ fn safe_identifier(value: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || character == '_')
 }
 
+fn account_export_projection(table: &str) -> &'static str {
+    match table {
+        "api_credentials" => "to_jsonb(table_row) - 'token_hash'",
+        "notification_installations" => {
+            "to_jsonb(table_row) - 'token_ciphertext' - 'token_nonce' - 'token_hash'"
+        }
+        "web_identities" => "to_jsonb(table_row) - 'password_hash'",
+        _ => "to_jsonb(table_row)",
+    }
+}
+
 fn export_failure_code(error: &ApiError) -> &'static str {
     match error {
         ApiError::Database(_) => "database_error",
@@ -1469,6 +1476,18 @@ mod tests {
         assert!(safe_identifier("asset_versions"));
         assert!(!safe_identifier("asset_versions;DROP TABLE"));
         assert!(!safe_identifier(""));
+    }
+
+    #[test]
+    fn notification_installation_export_excludes_push_token_material() {
+        assert_eq!(
+            account_export_projection("notification_installations"),
+            "to_jsonb(table_row) - 'token_ciphertext' - 'token_nonce' - 'token_hash'"
+        );
+        assert_eq!(
+            account_export_projection("notification_deliveries"),
+            "to_jsonb(table_row)"
+        );
     }
 
     #[test]

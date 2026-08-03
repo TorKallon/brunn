@@ -15,15 +15,49 @@ enum PushPermissionState: Equatable {
         case .provisional: "Delivering quietly"
         }
     }
+
+}
+
+enum PushRegistrationState: Equatable {
+    case unknown
+    case notRegistered
+    case registering
+    case registered
+    case revoking
+
+    var label: String {
+        switch self {
+        case .unknown: "Not confirmed this launch"
+        case .notRegistered: "Not registered"
+        case .registering: "Registering…"
+        case .registered: "Connected"
+        case .revoking: "Disconnecting…"
+        }
+    }
 }
 
 @MainActor
 final class NotificationCoordinator: ObservableObject {
     @Published private(set) var permissionState: PushPermissionState = .unknown
     @Published private(set) var hasPendingDeviceToken = false
+    @Published private(set) var registrationState: PushRegistrationState = .unknown
+    @Published private(set) var lastRegisteredAt: Date?
     @Published private(set) var lastError: String?
 
-    init() {
+    let installationID: UUID
+
+    private var pendingDeviceToken: Data?
+    private let appID: String
+    private let environment: String
+
+    init(
+        installationID: UUID? = nil,
+        appID: String? = nil,
+        environment: String? = nil
+    ) {
+        self.installationID = installationID ?? NotificationInstallationIdentity.loadOrCreate()
+        self.appID = appID ?? Bundle.main.bundleIdentifier ?? "com.rourkem.straylight"
+        self.environment = environment ?? Self.defaultEnvironment
         Task { await registerForRemoteNotificationsIfAuthorized() }
     }
 
@@ -42,13 +76,71 @@ final class NotificationCoordinator: ObservableObject {
     }
 
     func receiveDeviceToken(_ token: Data) {
-        // The token remains in memory until Straylight exposes an authenticated
-        // device-registration contract. Never print or persist it locally.
-        hasPendingDeviceToken = !token.isEmpty
+        guard !token.isEmpty else { return }
+        // Apple device tokens are forwarded from memory and are never logged or
+        // persisted by the app. APNs may rotate them between registrations.
+        pendingDeviceToken = token
+        hasPendingDeviceToken = true
+        lastError = nil
     }
 
     func receiveRegistrationFailure(_ error: Error) {
         lastError = error.localizedDescription
+    }
+
+    func synchronizeInstallation(
+        using api: StraylightAPI,
+        canManageNotifications: Bool
+    ) async {
+        guard canManageNotifications else { return }
+        guard registrationState != .registering, let pendingDeviceToken else { return }
+        await refreshAuthorizationStatus()
+        guard permissionState == .enabled || permissionState == .provisional else { return }
+
+        registrationState = .registering
+        defer {
+            if registrationState == .registering {
+                registrationState = .notRegistered
+            }
+        }
+        do {
+            _ = try await api.upsertNotificationInstallation(
+                installationID: installationID,
+                request: NotificationInstallationRequest(
+                    environment: environment,
+                    appID: appID,
+                    deviceToken: pendingDeviceToken.map { String(format: "%02x", $0) }.joined()
+                )
+            )
+            self.pendingDeviceToken = nil
+            hasPendingDeviceToken = false
+            registrationState = .registered
+            lastRegisteredAt = .now
+            lastError = nil
+        } catch {
+            registrationState = .notRegistered
+            lastError = "This iPhone could not be registered for notifications. \(error.localizedDescription)"
+        }
+    }
+
+    func revokeInstallation(
+        using api: StraylightAPI,
+        canManageNotifications: Bool
+    ) async -> Bool {
+        guard canManageNotifications, registrationState != .revoking else { return false }
+        let previousState = registrationState
+        registrationState = .revoking
+        do {
+            _ = try await api.revokeNotificationInstallation(installationID: installationID)
+            registrationState = .notRegistered
+            lastRegisteredAt = nil
+            lastError = nil
+            return true
+        } catch {
+            registrationState = previousState
+            lastError = "The notification installation could not be revoked. \(error.localizedDescription)"
+            return false
+        }
     }
 
     func refreshAuthorizationStatus() async {
@@ -73,17 +165,30 @@ final class NotificationCoordinator: ObservableObject {
             UIApplication.shared.registerForRemoteNotifications()
         }
     }
+
+    static var defaultEnvironment: String {
+        (Bundle.main.object(forInfoDictionaryKey: "StraylightAPNSEnvironment") as? String)
+            ?? "development"
+    }
 }
 
 enum NotificationRouteParser {
     static func route(from userInfo: [AnyHashable: Any]) -> AppRoute? {
         guard
+            userInfo["schema"] as? String == "straylight-push@v1",
+            let notificationRef = userInfo["notification_ref"] as? String,
+            PushReference.isNotification(notificationRef),
+            let deliveryRef = userInfo["delivery_ref"] as? String,
+            PushReference.isDelivery(deliveryRef),
             let rawRoute = userInfo["straylight_route"] as? String,
-            let url = URL(string: rawRoute)
+            let url = URL(string: rawRoute),
+            case let .notification(routeNotificationRef, routeDeliveryRef) = AppRoute(url: url),
+            routeNotificationRef == notificationRef,
+            routeDeliveryRef == deliveryRef
         else {
             return nil
         }
-        return AppRoute(url: url)
+        return .notification(notificationRef: notificationRef, deliveryRef: deliveryRef)
     }
 }
 
@@ -116,6 +221,42 @@ final class PushRouteBuffer: @unchecked Sendable {
     }
 }
 
+final class PushTokenBuffer: @unchecked Sendable {
+    static let shared = PushTokenBuffer()
+
+    private let lock = NSLock()
+    private var pendingToken: Data?
+
+    private init() {}
+
+    func store(_ token: Data) {
+        lock.lock()
+        pendingToken = token
+        lock.unlock()
+    }
+
+    func take() -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        let token = pendingToken
+        pendingToken = nil
+        return token
+    }
+}
+
+private enum NotificationInstallationIdentity {
+    private static let key = "straylight.notification-installation-id"
+
+    static func loadOrCreate(defaults: UserDefaults = .standard) -> UUID {
+        if let value = defaults.string(forKey: key), let identifier = UUID(uuidString: value) {
+            return identifier
+        }
+        let identifier = UUID()
+        defaults.set(identifier.uuidString.lowercased(), forKey: key)
+        return identifier
+    }
+}
+
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(
         _: UIApplication,
@@ -129,6 +270,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         _: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
+        PushTokenBuffer.shared.store(deviceToken)
         NotificationCenter.default.post(name: .straylightPushToken, object: deviceToken)
     }
 

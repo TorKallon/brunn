@@ -14,11 +14,19 @@ struct StraylightApp: App {
                 .environmentObject(notifications)
                 .tint(StraylightTheme.signal)
                 .task {
+                    if let token = PushTokenBuffer.shared.take() {
+                        notifications.receiveDeviceToken(token)
+                    }
                     if let route = PushRouteBuffer.shared.take() {
                         await model.handle(route)
                     }
-                    guard model.phase == .launching else { return }
-                    await model.bootstrap()
+                    if model.phase == .launching {
+                        await model.bootstrap()
+                    }
+                    await notifications.synchronizeInstallation(
+                        using: model.api,
+                        canManageNotifications: model.canManageNotifications
+                    )
                 }
                 .onOpenURL { url in
                     guard let route = AppRoute(url: url) else { return }
@@ -31,15 +39,31 @@ struct StraylightApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
                     Task {
+                        await notifications.refreshAuthorizationStatus()
+                        if let token = PushTokenBuffer.shared.take() {
+                            notifications.receiveDeviceToken(token)
+                        }
                         if let route = PushRouteBuffer.shared.take() {
                             await model.handle(route)
                         }
+                        await notifications.synchronizeInstallation(
+                            using: model.api,
+                            canManageNotifications: model.canManageNotifications
+                        )
                         await model.refreshDashboardIfNeeded()
+                        await model.refreshNotifications()
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .straylightPushToken)) { event in
                     guard let token = event.object as? Data else { return }
                     notifications.receiveDeviceToken(token)
+                    _ = PushTokenBuffer.shared.take()
+                    Task {
+                        await notifications.synchronizeInstallation(
+                            using: model.api,
+                            canManageNotifications: model.canManageNotifications
+                        )
+                    }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .straylightPushRegistrationFailed)) { event in
                     guard let error = event.object as? Error else { return }

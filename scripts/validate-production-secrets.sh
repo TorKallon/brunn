@@ -44,6 +44,8 @@ database_url_rw
 database_url_ro
 database_url_admin
 continuation_signing_key
+notification_token_encryption_key
+apns_private_key
 openai_api_key
 resend_api_key
 dd_api_key
@@ -94,6 +96,8 @@ require_minimum_bytes postgres_admin_password 16
 require_minimum_bytes postgres_app_rw_password 16
 require_minimum_bytes postgres_app_ro_password 16
 require_minimum_bytes continuation_signing_key 32
+require_minimum_bytes notification_token_encryption_key 43
+require_minimum_bytes apns_private_key 100
 require_minimum_bytes openai_api_key 20
 require_minimum_bytes resend_api_key 20
 require_minimum_bytes dd_api_key 20
@@ -103,13 +107,43 @@ if [ "$object_store_mode" = "self-hosted-minio" ]; then
 fi
 
 for name in postgres_admin_password postgres_app_rw_password \
-  postgres_app_ro_password continuation_signing_key openai_api_key resend_api_key dd_api_key; do
+  postgres_app_ro_password continuation_signing_key \
+  notification_token_encryption_key apns_private_key openai_api_key \
+  resend_api_key dd_api_key; do
   if grep -Eiq '(^|[_-])(replace|change-?me|placeholder|example)([_-]|$)' \
     "$secrets_dir/$name"; then
     echo "$name contains a placeholder value" >&2
     exit 1
   fi
 done
+
+notification_key=$(tr -d '\r\n' <"$secrets_dir/notification_token_encryption_key")
+case "$notification_key" in
+  ???????????????????????????????????????????=)
+    printf '%s' "$notification_key" | grep -Eq '^[A-Za-z0-9+/]{43}=$' || {
+      echo "notification_token_encryption_key must be standard base64 for exactly 32 bytes" >&2
+      exit 1
+    }
+    ;;
+  ???????????????????????????????????????????)
+    printf '%s' "$notification_key" | grep -Eq '^[A-Za-z0-9_-]{43}$' || {
+      echo "notification_token_encryption_key must be unpadded URL-safe base64 for exactly 32 bytes" >&2
+      exit 1
+    }
+    ;;
+  *)
+    echo "notification_token_encryption_key must decode to exactly 32 bytes" >&2
+    exit 1
+    ;;
+esac
+
+first_apns_line=$(sed -n '1p' "$secrets_dir/apns_private_key" | tr -d '\r')
+last_apns_line=$(sed -n '$p' "$secrets_dir/apns_private_key" | tr -d '\r')
+[ "$first_apns_line" = "-----BEGIN PRIVATE KEY-----" ] && \
+  [ "$last_apns_line" = "-----END PRIVATE KEY-----" ] || {
+  echo "apns_private_key must be an Apple PKCS#8 .p8 private key" >&2
+  exit 1
+}
 if [ "$object_store_mode" = "self-hosted-minio" ]; then
   for name in minio_root_password minio_app_secret_key; do
     if grep -Eiq '(^|[_-])(replace|change-?me|placeholder|example)([_-]|$)' \

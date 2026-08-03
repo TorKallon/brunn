@@ -34,8 +34,8 @@ use crate::{
     ingest::{DocumentChunk, normalize_document},
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId},
     retrieval_sql::{
-        SIMPLE_LEXICAL_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL,
-        SIMPLE_SEMANTIC_CANDIDATES_SQL,
+        SIMPLE_ENTRY_LINK_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_SQL,
+        SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL, SIMPLE_SEMANTIC_CANDIDATES_SQL,
     },
     usage::{ProductActivityOperation, UsageOperation},
     workspace_features::{
@@ -174,6 +174,7 @@ pub struct SearchQuery {
     pub query: String,
     pub goal: Option<String>,
     pub limit: Option<usize>,
+    pub sort: Option<String>,
     #[serde(default)]
     pub modes: Vec<String>,
 }
@@ -193,6 +194,7 @@ pub struct ReadItem {
     #[serde(rename = "ref")]
     pub reference: Option<String>,
     pub path: Option<String>,
+    pub link_target: Option<String>,
     pub view: Option<String>,
     pub start: Option<usize>,
     pub end: Option<usize>,
@@ -327,6 +329,7 @@ struct Candidate {
     path: String,
     title: String,
     version: i64,
+    updated_at: DateTime<Utc>,
     content_sha256: String,
     heading: String,
     excerpt: String,
@@ -583,6 +586,7 @@ pub async fn open(
                 &request.task,
                 OPEN_CANDIDATE_LIMIT,
                 &request.modes,
+                None,
                 features.as_deref(),
             ),
             open_hint_candidates(&state, &auth, &request.hints)
@@ -666,7 +670,7 @@ pub async fn open(
         features.as_deref(),
         state.config.supersession_demotion,
     );
-    sort_candidates(&mut candidates);
+    sort_candidates(&mut candidates, SearchSort::BestMatch);
     candidates.truncate(OPEN_CANDIDATE_LIMIT);
     let continuation_evidence = candidates
         .iter()
@@ -820,6 +824,7 @@ pub async fn search(
                 .ok_or_else(|| ApiError::invalid("query is required"))?,
             goal: None,
             limit: request.limit,
+            sort: None,
             modes: vec![],
         }]
     } else {
@@ -842,6 +847,7 @@ pub async fn search(
                     &query.query,
                     limit,
                     &query.modes,
+                    query.sort.as_deref(),
                     features.as_deref(),
                 )
                 .await?;
@@ -1038,14 +1044,24 @@ pub async fn read(
             let auth = auth.clone();
             let features = features.clone();
             async move {
-                let mut entry = resolve_entry_version(
-                    &state,
-                    &auth,
-                    item.path.as_deref(),
-                    item.reference.as_deref(),
-                    item.version,
-                )
-                .await;
+                let mut entry = if let Some(link_target) = item.link_target.as_deref() {
+                    if item.path.is_some() || item.reference.is_some() || item.version.is_some() {
+                        Err(ApiError::invalid(
+                            "a link-target read cannot also specify a path, reference, or version",
+                        ))
+                    } else {
+                        resolve_entry_link_version(&state, &auth, link_target).await
+                    }
+                } else {
+                    resolve_entry_version(
+                        &state,
+                        &auth,
+                        item.path.as_deref(),
+                        item.reference.as_deref(),
+                        item.version,
+                    )
+                    .await
+                };
                 let mut current_truth = None;
                 let mut disabled_notice = false;
                 if item.view.as_deref() == Some("current_truth") {
@@ -1094,8 +1110,9 @@ pub async fn read(
                 missing_requests += 1;
                 items.push(json!({
                     "status": "not_found",
-                    "path": item.path,
+                    "path": item.path.clone().or_else(|| item.link_target.clone()),
                     "reference": item.reference,
+                    "link_target": item.link_target,
                     "error": {
                         "code": code,
                         "message": message,
@@ -3533,6 +3550,7 @@ async fn search_one(
     query: &str,
     limit: usize,
     requested_modes: &[String],
+    requested_sort: Option<&str>,
     features: Option<&WorkspaceFeatureSnapshot>,
 ) -> ApiResult<(
     Vec<Candidate>,
@@ -3545,6 +3563,7 @@ async fn search_one(
     if query.trim().is_empty() {
         return Err(ApiError::invalid("search query is required"));
     }
+    let sort = SearchSort::parse(requested_sort)?;
     let lanes = retrieval_lane_selection(requested_modes)?;
     let lexical_enabled = lanes.lexical;
     let exact_enabled = lanes.exact;
@@ -3573,15 +3592,17 @@ async fn search_one(
         let started = Instant::now();
         if lexical_enabled {
             (
-                bounded_lexical_retrieval_lane(lexical_candidates(state, auth, query, features))
-                    .await,
+                bounded_lexical_retrieval_lane(lexical_candidates(
+                    state, auth, query, sort, features,
+                ))
+                .await,
                 elapsed_ms(started),
             )
         } else {
             (Ok((vec![], None)), elapsed_ms(started))
         }
     };
-    let semantic_future = semantic_lane(state, auth, query, features, lanes);
+    let semantic_future = semantic_lane(state, auth, query, sort, features, lanes);
     let ((exact, exact_ms), (lexical, lexical_ms), semantic_report) =
         join_retrieval_lanes(exact_future, lexical_future, semantic_future).await;
     timings.exact = exact_ms;
@@ -3612,7 +3633,7 @@ async fn search_one(
         features,
         state.config.supersession_demotion,
     );
-    sort_candidates(&mut candidates);
+    sort_candidates(&mut candidates, sort);
     candidates.truncate(limit);
     timings.total = elapsed_ms(total_started);
     Ok((candidates, failures, timings, workspace_generation))
@@ -3689,6 +3710,7 @@ async fn semantic_lane(
     state: &AppState,
     auth: &AuthContext,
     query: &str,
+    sort: SearchSort,
     features: Option<&WorkspaceFeatureSnapshot>,
     lanes: RetrievalLaneSelection,
 ) -> SemanticLaneReport {
@@ -3722,7 +3744,9 @@ async fn semantic_lane(
     } else {
         let probed = tokio::time::timeout(deadline, semantic_search_allowed(state, auth)).await;
         if let Ok(Ok(ready)) = &probed {
-            state.semantic_runtime.store_readiness(auth.user_id.0, *ready);
+            state
+                .semantic_runtime
+                .store_readiness(auth.user_id.0, *ready);
         }
         probed
     };
@@ -3769,7 +3793,7 @@ async fn semantic_lane(
             match bounded_semantic_lane(
                 state,
                 remaining,
-                semantic_candidates(state, auth, query, features),
+                semantic_candidates(state, auth, query, sort, features),
             )
             .await
             {
@@ -3874,13 +3898,61 @@ fn retrieval_lane_gap(lane: &'static str) -> Value {
     }
 }
 
-fn sort_candidates(candidates: &mut [Candidate]) {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SearchSort {
+    BestMatch,
+    LastModified,
+    Title,
+}
+
+impl SearchSort {
+    fn parse(value: Option<&str>) -> ApiResult<Self> {
+        match value.unwrap_or("best_match") {
+            "best_match" => Ok(Self::BestMatch),
+            "last_modified" => Ok(Self::LastModified),
+            "title" => Ok(Self::Title),
+            _ => Err(ApiError::invalid(
+                "search sort must be best_match, last_modified, or title",
+            )),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::BestMatch => "best_match",
+            Self::LastModified => "last_modified",
+            Self::Title => "title",
+        }
+    }
+}
+
+fn compare_score(left: &Candidate, right: &Candidate) -> std::cmp::Ordering {
+    right
+        .score
+        .partial_cmp(&left.score)
+        .unwrap_or(std::cmp::Ordering::Equal)
+}
+
+fn compare_modified(left: &Candidate, right: &Candidate) -> std::cmp::Ordering {
+    right.updated_at.cmp(&left.updated_at)
+}
+
+fn sort_candidates(candidates: &mut [Candidate], sort: SearchSort) {
     candidates.sort_by(|left, right| {
-        right
-            .score
-            .partial_cmp(&left.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.path.cmp(&right.path))
+        let ordering = match sort {
+            SearchSort::BestMatch => {
+                compare_score(left, right).then_with(|| compare_modified(left, right))
+            }
+            SearchSort::LastModified => {
+                compare_modified(left, right).then_with(|| compare_score(left, right))
+            }
+            SearchSort::Title => left
+                .title
+                .to_lowercase()
+                .cmp(&right.title.to_lowercase())
+                .then_with(|| compare_modified(left, right)),
+        };
+        ordering.then_with(|| left.path.cmp(&right.path))
     });
 }
 
@@ -4080,7 +4152,7 @@ async fn exact_candidates(
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.title,entry.current_version,
-               version.content_sha256,
+               entry.updated_at,version.content_sha256,
                CASE
                  WHEN $3 THEN coalesce(version.content,'')
                  ELSE left(coalesce(version.content,''),2400)
@@ -4117,6 +4189,7 @@ async fn exact_candidates(
                 path: row.get("path"),
                 title: row.get("title"),
                 version,
+                updated_at: row.get("updated_at"),
                 content_sha256,
                 heading: String::new(),
                 excerpt: excerpt.clone(),
@@ -4138,6 +4211,7 @@ async fn lexical_candidates(
     state: &AppState,
     auth: &AuthContext,
     query: &str,
+    sort: SearchSort,
     features: Option<&WorkspaceFeatureSnapshot>,
 ) -> ApiResult<(Vec<Candidate>, Option<i64>)> {
     let mut tx = state.begin_read(auth).await?;
@@ -4149,6 +4223,7 @@ async fn lexical_candidates(
             &mut tx,
             &consolidated,
             query,
+            sort,
             features,
             state.config.supersession_demotion,
             state.config.supersession_demotion_weight,
@@ -4166,6 +4241,7 @@ async fn lexical_candidates(
                 &mut tx,
                 anchor,
                 query,
+                sort,
                 features,
                 state.config.supersession_demotion,
                 state.config.supersession_demotion_weight,
@@ -4183,6 +4259,7 @@ async fn lexical_candidates(
                 &mut tx,
                 &focused,
                 query,
+                sort,
                 features,
                 state.config.supersession_demotion,
                 state.config.supersession_demotion_weight,
@@ -4206,6 +4283,7 @@ async fn fetch_lexical_candidates(
     tx: &mut Transaction<'_, Postgres>,
     retrieval_query: &str,
     scoring_query: &str,
+    sort: SearchSort,
     features: Option<&WorkspaceFeatureSnapshot>,
     supersession_enabled: bool,
     supersession_weight: f64,
@@ -4216,11 +4294,13 @@ async fn fetch_lexical_candidates(
         sqlx::query(SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL)
             .bind(user_id)
             .bind(retrieval_query)
+            .bind(sort.as_str())
             .fetch_all(&mut **tx)
             .await?
     } else {
         sqlx::query(SIMPLE_LEXICAL_CANDIDATES_SQL)
             .bind(retrieval_query)
+            .bind(sort.as_str())
             .fetch_all(&mut **tx)
             .await?
     };
@@ -4249,6 +4329,7 @@ async fn fetch_lexical_candidates(
                 path,
                 title,
                 version: row.get("current_version"),
+                updated_at: row.get("updated_at"),
                 content_sha256: row.get("content_sha256"),
                 heading: heading.clone(),
                 excerpt: excerpt.clone(),
@@ -4270,6 +4351,7 @@ async fn semantic_candidates(
     state: &AppState,
     auth: &AuthContext,
     query: &str,
+    sort: SearchSort,
     features: Option<&WorkspaceFeatureSnapshot>,
 ) -> ApiResult<SemanticCandidates> {
     let embed_started = Instant::now();
@@ -4287,6 +4369,7 @@ async fn semantic_candidates(
     let mut tx = state.begin_read(auth).await?;
     let rows = sqlx::query(SIMPLE_SEMANTIC_CANDIDATES_SQL)
         .bind(Vector::from(vector))
+        .bind(sort.as_str())
         .fetch_all(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -4315,6 +4398,7 @@ async fn semantic_candidates(
                 path,
                 title,
                 version: row.get("current_version"),
+                updated_at: row.get("updated_at"),
                 content_sha256: row.get("content_sha256"),
                 heading: heading.clone(),
                 excerpt: excerpt.clone(),
@@ -4703,6 +4787,7 @@ fn render_budgeted_search_candidate(
         ("path".to_owned(), Value::String(candidate.path.clone())),
         ("title".to_owned(), Value::String(candidate.title.clone())),
         ("version".to_owned(), json!(candidate.version)),
+        ("updated_at".to_owned(), json!(candidate.updated_at)),
         (
             "representation".to_owned(),
             Value::String(representation.to_owned()),
@@ -4864,6 +4949,7 @@ fn render_search_candidate(candidate: &Candidate, remaining_verbatim_chars: &mut
         ("path".to_owned(), Value::String(candidate.path.clone())),
         ("title".to_owned(), Value::String(candidate.title.clone())),
         ("version".to_owned(), json!(candidate.version)),
+        ("updated_at".to_owned(), json!(candidate.updated_at)),
         (
             "excerpt".to_owned(),
             Value::String(candidate.excerpt.clone()),
@@ -4918,6 +5004,7 @@ fn render_evidence_lead(candidate: &Candidate) -> Value {
         ("path".to_owned(), Value::String(candidate.path.clone())),
         ("title".to_owned(), Value::String(candidate.title.clone())),
         ("version".to_owned(), json!(candidate.version)),
+        ("updated_at".to_owned(), json!(candidate.updated_at)),
     ]);
     if !candidate.heading.is_empty() {
         rendered.insert(
@@ -5000,6 +5087,7 @@ async fn open_hint_candidates(
                 path: entry.path,
                 title: entry.title,
                 version: entry.version,
+                updated_at: entry.updated_at,
                 content_sha256: entry.content_sha256,
                 heading: String::new(),
                 excerpt: String::new(),
@@ -5398,7 +5486,11 @@ async fn resolve_entry_version(
         ApiError::not_found("entry_not_found", path.or(reference).unwrap_or("entry"))
     })?;
     tx.commit().await?;
-    Ok(EntryRow {
+    Ok(entry_row_from_lookup(&row, requested_version))
+}
+
+fn entry_row_from_lookup(row: &PgRow, requested_version: Option<i64>) -> EntryRow {
+    EntryRow {
         id: row.get("id"),
         path: row.get("path"),
         title: row.get("title"),
@@ -5414,7 +5506,64 @@ async fn resolve_entry_version(
         metadata: row.get("metadata"),
         updated_at: row.get("updated_at"),
         workspace_generation: row.get("workspace_generation"),
-    })
+    }
+}
+
+fn entry_link_lookup_keys(raw_target: &str) -> ApiResult<Vec<String>> {
+    let target = raw_target.trim();
+    if target.is_empty() || target.len() > 1_024 || target.chars().any(char::is_control) {
+        return Err(ApiError::invalid(
+            "link_target must contain 1 to 1024 printable characters",
+        ));
+    }
+    let target = target
+        .split(['#', '?', '^', '|'])
+        .next()
+        .unwrap_or_default()
+        .trim();
+    let name = target.rsplit('/').next().unwrap_or_default().trim();
+    let lowered = name.to_lowercase();
+    let stem = if lowered.ends_with(".markdown") {
+        &name[..name.len() - ".markdown".len()]
+    } else if lowered.ends_with(".md") {
+        &name[..name.len() - ".md".len()]
+    } else {
+        name
+    }
+    .trim();
+    if stem.is_empty() || matches!(stem, "." | "..") {
+        return Err(ApiError::invalid("link_target must name an entry"));
+    }
+    let key = portable_path_key(stem);
+    Ok(vec![
+        key.clone(),
+        format!("{key}.md"),
+        format!("{key}.markdown"),
+    ])
+}
+
+async fn resolve_entry_link_version(
+    state: &AppState,
+    auth: &AuthContext,
+    target: &str,
+) -> ApiResult<EntryRow> {
+    let filename_keys = entry_link_lookup_keys(target)?;
+    let mut tx = state.begin_read(auth).await?;
+    let rows = sqlx::query(SIMPLE_ENTRY_LINK_CANDIDATES_SQL)
+        .bind(auth.user_id.0)
+        .bind(filename_keys)
+        .fetch_all(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    match rows.as_slice() {
+        [] => Err(ApiError::not_found("entry_link_not_found", target)),
+        [row] => Ok(entry_row_from_lookup(row, None)),
+        _ => Err(ApiError::public(
+            StatusCode::CONFLICT,
+            "entry_link_ambiguous",
+            "More than one entry matches this link. Use its full path instead.",
+        )),
+    }
 }
 
 async fn resolve_entry_summary(
@@ -8320,6 +8469,7 @@ mod tests {
             path: format!("Sources/{id}.md"),
             title: format!("Source {id}"),
             version: 1,
+            updated_at: "2026-08-01T00:00:00Z".parse().expect("test timestamp"),
             content_sha256: format!("{id:064x}"),
             heading: sections
                 .first()
@@ -8335,6 +8485,86 @@ mod tests {
             verbatim_matches: vec![],
             superseded_by: None,
         }
+    }
+
+    #[test]
+    fn search_sort_defaults_to_best_match_and_validates_public_values() {
+        assert_eq!(SearchSort::parse(None).unwrap(), SearchSort::BestMatch);
+        assert_eq!(
+            SearchSort::parse(Some("last_modified")).unwrap(),
+            SearchSort::LastModified
+        );
+        assert_eq!(SearchSort::parse(Some("title")).unwrap(), SearchSort::Title);
+        assert!(SearchSort::parse(Some("newest-ish")).is_err());
+
+        let request: SearchRequest = serde_json::from_value(json!({
+            "queries": [{"query": "signal", "sort": "last_modified"}]
+        }))
+        .expect("search request with sort");
+        assert_eq!(request.queries[0].sort.as_deref(), Some("last_modified"));
+    }
+
+    #[test]
+    fn search_sorts_by_relevance_recency_or_title_before_path() {
+        let mut older_best = candidate_with_sections(1, &[8]);
+        older_best.title = "Zulu".to_owned();
+        older_best.score = 10.0;
+        older_best.updated_at = "2026-08-01T00:00:00Z".parse().unwrap();
+
+        let mut newer_best = candidate_with_sections(2, &[8]);
+        newer_best.title = "alpha".to_owned();
+        newer_best.score = 10.0;
+        newer_best.updated_at = "2026-08-02T00:00:00Z".parse().unwrap();
+
+        let mut newest_lower_score = candidate_with_sections(3, &[8]);
+        newest_lower_score.title = "Middle".to_owned();
+        newest_lower_score.score = 9.0;
+        newest_lower_score.updated_at = "2026-08-03T00:00:00Z".parse().unwrap();
+
+        let candidates = vec![
+            older_best.clone(),
+            newest_lower_score.clone(),
+            newer_best.clone(),
+        ];
+
+        let mut best_match = candidates.clone();
+        sort_candidates(&mut best_match, SearchSort::BestMatch);
+        assert_eq!(
+            best_match
+                .iter()
+                .map(|item| item.entry_id)
+                .collect::<Vec<_>>(),
+            vec![
+                newer_best.entry_id,
+                older_best.entry_id,
+                newest_lower_score.entry_id
+            ]
+        );
+
+        let mut last_modified = candidates.clone();
+        sort_candidates(&mut last_modified, SearchSort::LastModified);
+        assert_eq!(
+            last_modified
+                .iter()
+                .map(|item| item.entry_id)
+                .collect::<Vec<_>>(),
+            vec![
+                newest_lower_score.entry_id,
+                newer_best.entry_id,
+                older_best.entry_id
+            ]
+        );
+
+        let mut title = candidates;
+        sort_candidates(&mut title, SearchSort::Title);
+        assert_eq!(
+            title.iter().map(|item| item.entry_id).collect::<Vec<_>>(),
+            vec![
+                newer_best.entry_id,
+                newest_lower_score.entry_id,
+                older_best.entry_id
+            ]
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -8492,6 +8722,20 @@ mod tests {
             ["Trips/Europe 2026/Plan.md"]
         );
         assert!(path_hints("Find the current trip plan").is_empty());
+    }
+
+    #[test]
+    fn entry_link_lookup_is_exact_normalized_and_bounded() {
+        assert_eq!(
+            entry_link_lookup_keys("Projects/Other/Roádmap.MD#Next").unwrap(),
+            vec![
+                "roádmap".to_owned(),
+                "roádmap.md".to_owned(),
+                "roádmap.markdown".to_owned(),
+            ]
+        );
+        assert!(entry_link_lookup_keys("#Heading").is_err());
+        assert!(entry_link_lookup_keys(&"x".repeat(1_025)).is_err());
     }
 
     #[test]
@@ -8938,6 +9182,7 @@ mod tests {
             path: "Synthetic/record.md".to_owned(),
             title: "Record".to_owned(),
             version: 1,
+            updated_at: "2026-08-01T00:00:00Z".parse().expect("test timestamp"),
             content_sha256: "a".repeat(64),
             heading: String::new(),
             excerpt: "prefix".to_owned(),
@@ -8990,6 +9235,7 @@ mod tests {
             path: "Trips/Plan.md".to_owned(),
             title: "Trip plan".to_owned(),
             version: 4,
+            updated_at: "2026-08-02T12:30:00Z".parse().expect("test timestamp"),
             content_sha256: "a".repeat(64),
             heading: "Rail".to_owned(),
             excerpt: "Take the train.".to_owned(),
@@ -9019,6 +9265,10 @@ mod tests {
         assert_eq!(
             rendered.get("excerpt").and_then(Value::as_str),
             Some("Take the train.")
+        );
+        assert_eq!(
+            rendered.get("updated_at").and_then(Value::as_str),
+            Some("2026-08-02T12:30:00Z")
         );
         assert_eq!(
             rendered
@@ -9055,6 +9305,7 @@ mod tests {
             path: "Trips/Plan.md".to_owned(),
             title: "Trip plan".to_owned(),
             version: 1,
+            updated_at: "2026-08-01T00:00:00Z".parse().expect("test timestamp"),
             content_sha256: "a".repeat(64),
             heading: "Primary".to_owned(),
             excerpt: "1234".to_owned(),

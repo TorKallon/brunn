@@ -163,6 +163,11 @@ pub fn spawn_runtime_metrics(state: AppState) {
                         .increment(1);
                     tracing::warn!(?error, "could not collect worker queue metrics");
                 }
+                if let Err(error) = record_notification_queue_snapshot(pool).await {
+                    counter!("telemetry.snapshot.errors", "snapshot" => "notification_queue")
+                        .increment(1);
+                    tracing::warn!(?error, "could not collect notification queue metrics");
+                }
                 if let Err(error) = record_asset_snapshot(pool).await {
                     counter!("telemetry.snapshot.errors", "snapshot" => "asset_storage")
                         .increment(1);
@@ -878,6 +883,46 @@ async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+async fn record_notification_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+          count(*) FILTER (
+            WHERE delivery.state='queued'
+              AND delivery.available_at <= clock_timestamp()
+              AND notification.expires_at > clock_timestamp()
+          )::bigint AS due,
+          coalesce(max(
+            extract(epoch FROM clock_timestamp()-delivery.available_at)
+          ) FILTER (
+            WHERE delivery.state='queued'
+              AND delivery.available_at <= clock_timestamp()
+              AND notification.expires_at > clock_timestamp()
+          ),0)::float8 AS oldest_due_age_seconds,
+          count(*) FILTER (WHERE delivery.state='running')::bigint AS running,
+          count(*) FILTER (
+            WHERE delivery.state='running'
+              AND delivery.lease_expires_at <= clock_timestamp()
+          )::bigint AS stale_lease,
+          count(*) FILTER (WHERE delivery.state='failed')::bigint AS failed,
+          count(*) FILTER (WHERE delivery.state='suppressed')::bigint AS suppressed
+        FROM straylight.notification_deliveries AS delivery
+        JOIN straylight.notifications AS notification
+          ON notification.user_id=delivery.user_id
+         AND notification.id=delivery.notification_id
+        "#,
+    )
+    .fetch_one(pool)
+    .await?;
+    for state in ["due", "running", "stale_lease", "failed", "suppressed"] {
+        gauge!("notifications.queue.depth", "state" => state)
+            .set(row.try_get::<i64, _>(state)? as f64);
+    }
+    gauge!("notifications.queue.oldest_due_age_seconds")
+        .set(row.try_get::<f64, _>("oldest_due_age_seconds")?.max(0.0));
+    Ok(())
+}
+
 async fn record_asset_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     let row = sqlx::query(
         r#"
@@ -999,6 +1044,15 @@ fn describe_metrics() {
         "worker.queue.oldest_age_seconds",
         metrics::Unit::Seconds,
         "Age of the oldest pending durable job."
+    );
+    metrics::describe_gauge!(
+        "notifications.queue.depth",
+        "Notification delivery rows by bounded transport state."
+    );
+    metrics::describe_gauge!(
+        "notifications.queue.oldest_due_age_seconds",
+        metrics::Unit::Seconds,
+        "Age of the oldest due notification delivery."
     );
     metrics::describe_gauge!(
         "asset.transfer.permits",

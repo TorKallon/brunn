@@ -3,19 +3,19 @@
   "app_role": "app_ro",
   "lanes": {
     "lexical": {
-      "function_name": "straylight.workspace_lexical_candidates",
-      "regprocedure": "straylight.workspace_lexical_candidates(text)",
-      "migration": "apps/api/migrations/0055_sparse_lexical_fallback.sql",
-      "invocation_sql": "SELECT * FROM straylight.workspace_lexical_candidates($1)",
-      "body_sha256": "4b35dff2f9ffa8ca0e01be77f53c8cbce8dc47c35ff73235934af61552d837e4",
+      "function_name": "straylight.workspace_lexical_candidates_v2",
+      "regprocedure": "straylight.workspace_lexical_candidates_v2(text,text)",
+      "migration": "apps/api/migrations/0067_search_candidate_updated_at.sql",
+      "invocation_sql": "SELECT * FROM straylight.workspace_lexical_candidates_v2($1,$2)",
+      "body_sha256": "abacc41613cf52a96a7c75f99f833c279e1325147fc129aedf52e4a8de25b2b7",
       "expected_index": "search_chunks_fts_idx"
     },
     "semantic": {
-      "function_name": "straylight.workspace_semantic_candidates",
-      "regprocedure": "straylight.workspace_semantic_candidates(vector)",
-      "migration": "apps/api/migrations/0051_simple_workspace_core.sql",
-      "invocation_sql": "SELECT * FROM straylight.workspace_semantic_candidates($1)",
-      "body_sha256": "a505d087cf19eb5a4970a0c162ae454e365dd6ddb1397bb13a551a4a778db8ec",
+      "function_name": "straylight.workspace_semantic_candidates_v2",
+      "regprocedure": "straylight.workspace_semantic_candidates_v2(vector,text)",
+      "migration": "apps/api/migrations/0067_search_candidate_updated_at.sql",
+      "invocation_sql": "SELECT * FROM straylight.workspace_semantic_candidates_v2($1,$2)",
+      "body_sha256": "6818d476c0e9649a789e22dcbe99d4557481f89ca2820818a8eca48dc942333a",
       "expected_index": "search_chunks_embedding_hnsw_idx"
     }
   }

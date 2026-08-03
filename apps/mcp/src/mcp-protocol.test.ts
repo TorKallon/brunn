@@ -48,6 +48,7 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     "memory.stage",
     "memory.status",
     "memory.write",
+    "notification.publish",
   ]);
   assert.equal(response.tools.every((tool) => tool.inputSchema.type === "object"), true);
   const open = response.tools.find((tool) => tool.name === "memory.open");
@@ -206,6 +207,42 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     [...(briefingTopics.inputSchema.required ?? [])].sort(),
     ["session_id"],
   );
+  const notificationPublish = response.tools.find(
+    (tool) => tool.name === "notification.publish",
+  );
+  assert.ok(notificationPublish);
+  assert.deepEqual(
+    [...(notificationPublish.inputSchema.required ?? [])].sort(),
+    ["body", "correlation_id", "event_key", "importance", "kind", "target", "title"],
+  );
+  const notificationTarget = notificationPublish.inputSchema.properties?.target as {
+    description?: string;
+    oneOf?: Array<{
+      properties?: Record<string, { const?: string; maxLength?: number }>;
+    }>;
+  } | undefined;
+  assert.match(notificationTarget?.description ?? "", /Typed in-app destination/);
+  const notificationProperties = notificationPublish.inputSchema.properties as Record<
+    string,
+    { maxLength?: number; properties?: Record<string, { maxLength?: number }> }
+  >;
+  assert.equal(notificationProperties.event_key?.maxLength, 200);
+  assert.equal(notificationProperties.correlation_id?.maxLength, 200);
+  assert.equal(notificationProperties.title?.maxLength, 240);
+  assert.equal(notificationProperties.body?.maxLength, 20_000);
+  assert.equal(notificationProperties.source?.properties?.type?.maxLength, 64);
+  assert.equal(notificationProperties.source?.properties?.ref?.maxLength, 500);
+  assert.equal(notificationProperties.source?.properties?.version_ref?.maxLength, 500);
+  const targetVariants = notificationTarget?.oneOf ?? [];
+  const briefingTarget = targetVariants.find(
+    (variant) => variant.properties?.type?.const === "briefing",
+  );
+  const entryTarget = targetVariants.find(
+    (variant) => variant.properties?.type?.const === "entry",
+  );
+  assert.equal(briefingTarget?.properties?.edition?.maxLength, 64);
+  assert.equal(briefingTarget?.properties?.item_id?.maxLength, 200);
+  assert.equal(entryTarget?.properties?.entry_ref?.maxLength, 500);
 
   const call = await client.callTool({ name: "memory.status", arguments: {} });
   assert.equal(call.isError, true);

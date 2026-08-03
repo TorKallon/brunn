@@ -120,6 +120,8 @@ pub enum Capability {
     Delete,
     Dream,
     CredentialManage,
+    NotificationPublish,
+    NotificationManage,
     Admin,
 }
 
@@ -139,6 +141,8 @@ impl Capability {
             Self::Delete => "delete",
             Self::Dream => "dream",
             Self::CredentialManage => "credential:manage",
+            Self::NotificationPublish => "notification:publish",
+            Self::NotificationManage => "notification:manage",
             Self::Admin => "admin",
         }
     }
@@ -162,6 +166,8 @@ impl FromStr for Capability {
             "delete" => Ok(Self::Delete),
             "dream" => Ok(Self::Dream),
             "credential:manage" => Ok(Self::CredentialManage),
+            "notification:publish" => Ok(Self::NotificationPublish),
+            "notification:manage" => Ok(Self::NotificationManage),
             "admin" => Ok(Self::Admin),
             _ => Err(()),
         }
