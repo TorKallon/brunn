@@ -7,6 +7,9 @@ Object.defineProperty(window, "scrollTo", { value: vi.fn(), writable: true });
 afterEach(() => {
   cleanup();
   window.sessionStorage.clear();
+  window.localStorage.clear();
+  delete document.documentElement.dataset.theme;
+  document.documentElement.style.colorScheme = "";
   document.cookie = "straylight_csrf=; Max-Age=0; Path=/";
   document.cookie = "__Host-straylight_csrf=; Max-Age=0; Path=/; Secure";
   window.history.replaceState({}, "", "/");

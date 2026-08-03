@@ -1,5 +1,29 @@
 import SwiftUI
 
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case dark
+    case light
+
+    static let storageKey = "straylight.appearance.v1"
+    static let defaultValue = AppAppearance.dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .dark: "Dark"
+        case .light: "Light"
+        }
+    }
+
+    var colorScheme: ColorScheme {
+        switch self {
+        case .dark: .dark
+        case .light: .light
+        }
+    }
+}
+
 enum StraylightTheme {
     /// Cobalt beam accent — the single brand hue (docs/Brand.md).
     static let signal = dynamic(light: 0x3158D9, dark: 0x8FA9FF)

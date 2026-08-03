@@ -38,7 +38,7 @@ function AuthLayout({
           <img className="brand-mark" src="/straylight-mark.png" alt="" aria-hidden="true" />
           <div>
             <strong>Straylight</strong>
-            <span>Workspace &amp; memory</span>
+            <span>Memory &amp; briefings</span>
           </div>
         </div>
         <header className="auth-heading">

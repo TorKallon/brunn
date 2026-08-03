@@ -2,17 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
-  Binary,
   ChevronDown,
   CircleUserRound,
-  FilePenLine,
-  FolderOpen,
-  Layers3,
   LogOut,
   LayoutDashboard,
   Menu,
   Search,
-  Sparkles,
+  Settings,
   Sunrise,
   X,
 } from "lucide-react";
@@ -26,13 +22,8 @@ import { ReadOnlyNotice, StatusBadge } from "./StateViews";
 const navItems = [
   { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { to: "/briefings", label: "Briefings", icon: Sunrise },
-  { to: "/topics", label: "Topics", icon: Layers3 },
-  { to: "/work", label: "Workspace", icon: FolderOpen },
   { to: "/explore", label: "Search", icon: Search },
-  { to: "/capture", label: "Write", icon: FilePenLine },
-  { to: "/assets", label: "Binaries", icon: Binary },
-  { to: "/dreams", label: "Background", icon: Sparkles },
-  { to: "/control", label: "Activity", icon: Activity },
+  { to: "/control", label: "Detailed Activity", icon: Activity },
 ] as const;
 
 export function AppShell({ children }: PropsWithChildren) {
@@ -84,7 +75,7 @@ export function AppShell({ children }: PropsWithChildren) {
           <img className="brand-mark" src="/straylight-mark.png" alt="" aria-hidden="true" />
           <div>
             <strong>Straylight</strong>
-            <span>Workspace &amp; memory</span>
+            <span>Memory &amp; briefings</span>
           </div>
         </Link>
         <nav className="primary-nav" aria-label="Primary navigation">
@@ -122,7 +113,7 @@ export function AppShell({ children }: PropsWithChildren) {
         <header className="topbar">
           <div className="context-strip">
             <div>
-              <span>Workspace</span>
+              <span>Scope</span>
               <strong>{me.active_scope?.name ?? "All authorized"}</strong>
             </div>
             <div>
@@ -155,6 +146,15 @@ export function AppShell({ children }: PropsWithChildren) {
                   <strong>{me.user.display_name}</strong>
                   {me.user.email ? <span>{me.user.email}</span> : null}
                 </div>
+                <Link
+                  className="user-menu-link"
+                  to="/settings"
+                  role="menuitem"
+                  onClick={() => setUserOpen(false)}
+                >
+                  <Settings size={16} aria-hidden="true" />
+                  Settings
+                </Link>
                 <button
                   type="button"
                   role="menuitem"

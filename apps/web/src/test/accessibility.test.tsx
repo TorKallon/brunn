@@ -69,6 +69,15 @@ describe("accessibility contracts", () => {
     await expectNoAutomatedViolations(container);
   });
 
+  it("has no automated violations on settings", async () => {
+    installApiMock();
+    const { container } = renderApp("/settings", "read-write-token");
+    expect(
+      await screen.findByRole("heading", { name: "Settings" }),
+    ).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
   it("has no automated violations on the briefings index", async () => {
     installApiMock({
       "GET /api/v1/workspace/briefings": briefingListFixture,

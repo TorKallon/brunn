@@ -136,7 +136,7 @@ export function DashboardPage() {
           <section className="dashboard-section" aria-labelledby="activity-heading">
             <div className="dashboard-section-heading">
               <div>
-                <span className="dashboard-eyebrow">Activity</span>
+                <span className="dashboard-eyebrow">Detailed Activity</span>
                 <h2 id="activity-heading">A rough pulse of daily usage</h2>
               </div>
               <span>{dashboard.timezone}</span>

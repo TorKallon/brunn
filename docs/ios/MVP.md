@@ -21,7 +21,7 @@ Type, VoiceOver, selection, Reduce Motion, and safe web links are preserved.
 | Today | Current structured edition, complete summary, every section and item, legacy Markdown fallback, sources, timestamps, change context, and revision disclosure. |
 | News | Version-derived briefing activity across recent editions, including new, updated, removed/correction, priority, and device-session unread views. |
 | Archive | Newest-first cursor-paginated editions, date/edition navigation, exact current or pinned historical versions, and the complete reader. |
-| More | Tracked-topic snapshot, pending deep-dives, connection/cache/privacy state, and an explicit push-readiness boundary. |
+| Settings | Appearance, connection/cache/privacy state, and notification-readiness controls. |
 
 The connected app uses hosted Straylight as the source of truth. Only the
 latest edition is cached as a disposable, data-protected offline snapshot.

@@ -327,7 +327,7 @@ private struct DashboardActivitySection: View {
 
     var body: some View {
         DashboardSectionHeader(
-            eyebrow: "Activity",
+            eyebrow: "Detailed Activity",
             title: "A rough pulse of daily usage",
             detail: dashboard.timezone
         )

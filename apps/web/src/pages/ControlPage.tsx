@@ -246,7 +246,7 @@ export function ControlPage() {
   return (
     <Page>
       <PageHeader
-        title="Activity"
+        title="Detailed Activity"
         description="Changes, usage, checkpoints, access, and service state"
       />
       {readOnly ? <ReadOnlyNotice /> : null}

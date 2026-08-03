@@ -1,0 +1,92 @@
+.user-menu .user-menu-link {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  padding: 8px;
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.user-menu .user-menu-link:hover {
+  background: var(--surface-subtle);
+  color: var(--ink);
+}
+
+.appearance-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.appearance-fieldset legend {
+  margin-bottom: 9px;
+  color: var(--ink-3);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.appearance-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.appearance-option {
+  display: grid;
+  min-width: 0;
+  min-height: 76px;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.appearance-option:hover {
+  background: var(--surface-hover);
+}
+
+.appearance-option.active {
+  border-color: var(--signal-line);
+  background: var(--brand-soft);
+  color: var(--signal-ink);
+}
+
+.appearance-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent-fill);
+}
+
+.appearance-option > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.appearance-option small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.settings-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .appearance-options {
+    grid-template-columns: 1fr;
+  }
+}

@@ -17,6 +17,7 @@ import { ControlPage } from "./pages/ControlPage";
 import { DreamsPage } from "./pages/DreamsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ExplorePage } from "./pages/ExplorePage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { TopicsPage } from "./pages/TopicsPage";
 import { WorkPage } from "./pages/WorkPage";
 import { ForgotPasswordPage, LoginPage, ResetPasswordPage } from "./pages/AuthPages";
@@ -141,6 +142,11 @@ const dreamDetailRoute = createRoute({
   },
 });
 const controlRoute = createRoute({ getParentRoute: () => protectedRoute, path: "/control", component: ControlPage });
+const settingsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/settings",
+  component: SettingsPage,
+});
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -163,6 +169,7 @@ const routeTree = rootRoute.addChildren([
     dreamsRoute,
     dreamDetailRoute,
     controlRoute,
+    settingsRoute,
   ]),
 ]);
 

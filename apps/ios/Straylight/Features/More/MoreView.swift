@@ -3,22 +3,27 @@ import SwiftUI
 struct MoreView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var notifications: NotificationCoordinator
+    @AppStorage(AppAppearance.storageKey) private var appearanceRawValue =
+        AppAppearance.defaultValue.rawValue
     @State private var showingNotificationPrimer = false
 
     var body: some View {
         List {
             Section {
-                NavigationLink {
-                    TopicsView()
-                } label: {
-                    LabeledContent(
-                        "Tracked topics",
-                        value: String(model.topicsSnapshot?.topics.count ?? 0)
-                    )
+                Picker("Color mode", selection: $appearanceRawValue) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.label).tag(appearance.rawValue)
+                    }
                 }
-                if let pending = model.topicsSnapshot?.pendingRequests, !pending.isEmpty {
-                    LabeledContent("Pending deep-dives", value: String(pending.count))
-                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("appearance-mode")
+            } header: {
+                Text("Appearance")
+            } footer: {
+                Text("Saved on this iPhone and applied to every Straylight screen.")
+            }
+
+            Section {
                 LabeledContent("News source", value: "Published briefing activity")
                 LabeledContent("Push service", value: "Not connected")
             } header: {
@@ -66,7 +71,7 @@ struct MoreView: View {
                         .font(.footnote)
                         .foregroundStyle(StraylightTheme.red)
                 }
-                Text("Search strings are not persisted. The app never creates a whole-workspace cache, local embeddings, or a second task database.")
+                Text("Search strings are not persisted. The app never creates a full-corpus cache, local embeddings, or a second task database.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -86,7 +91,7 @@ struct MoreView: View {
                 LabeledContent("Platform", value: "Native SwiftUI")
             }
         }
-        .navigationTitle("More")
+        .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { BrandMark() }

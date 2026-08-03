@@ -10,7 +10,7 @@ Native SwiftUI home dashboard, briefing, and news reader for hosted Straylight.
 - complete `briefing.v1` summary, sections, detail, sources, timestamps, and revisions
 - recent version-derived News activity with All, Priority, and Unread filters
 - cursor-paginated briefing Archive with exact historical-version selection
-- read-only tracked topics and pending deep-dive requests
+- persisted dark/light appearance settings
 - bounded protected latest-edition cache and persistent 30-day account session
 - safe typed routes, Dynamic Type, VoiceOver identifiers, and Reduce Motion support
 - deterministic demo fixtures plus Swift Package, app-unit, and UI tests
@@ -28,7 +28,7 @@ open /Users/Shared/projects/straylight/apps/ios/Straylight.xcodeproj
 ```
 
 Launch with `--demo` to bypass the account sign-in screen and use the
-deterministic briefing, news, archive, and topic fixtures.
+deterministic briefing, news, archive, and dashboard fixtures.
 
 ## Verify
 

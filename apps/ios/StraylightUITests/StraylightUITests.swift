@@ -33,6 +33,7 @@ final class StraylightUITests: XCTestCase {
         XCTAssertTrue(element("dashboard-home", in: app).exists)
         XCTAssertTrue(element("dashboard-storage-text", in: app).exists)
         XCTAssertTrue(element("dashboard-storage-binary", in: app).exists)
+        XCTAssertTrue(caseInsensitiveText("Detailed Activity", in: app).exists)
         keepScreenshot(named: "home-dashboard", from: app)
 
         let operations = element("dashboard-chart-operations", in: app)
@@ -219,6 +220,31 @@ final class StraylightUITests: XCTestCase {
         XCTAssertTrue(element("news-item-delivery-correction", in: app).exists)
 
         keepScreenshot(named: "news-unread-after-session-read", from: app)
+    }
+
+    @MainActor
+    func testSettingsHidesLegacyTopicsAndPersistsAppearance() {
+        let app = launchDemo()
+        app.tabBars.buttons["Settings"].tap()
+
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Tracked topics"].exists)
+        XCTAssertFalse(app.staticTexts["Pending deep-dives"].exists)
+
+        let appearance = app.segmentedControls["appearance-mode"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 2))
+        let light = appearance.buttons["Light"]
+        light.tap()
+        XCTAssertTrue(light.isSelected)
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Settings"].tap()
+
+        let restoredAppearance = app.segmentedControls["appearance-mode"]
+        XCTAssertTrue(restoredAppearance.waitForExistence(timeout: 2))
+        XCTAssertTrue(restoredAppearance.buttons["Light"].isSelected)
     }
 
     @MainActor

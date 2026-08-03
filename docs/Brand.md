@@ -92,7 +92,8 @@ night). The dark workroom is deliberately **low-glare**: no pure white text, no
 pure black grounds; body text sits near 12–13:1, never 15+. Night chrome
 (sidebar, hero) keeps its `night-900` identity in both appearances, so dark
 mode reads as the workroom dimming to meet the chrome. Light remains available
-behind `data-theme="light"` on the root element (no toggle UI yet); the OS
+behind `data-theme="light"` on the root element. Web and iOS expose an explicit
+Dark/Light choice in Settings and save it locally; the OS
 `prefers-color-scheme` is deliberately not consulted.
 
 | Token | Dark value | Light value | Note |

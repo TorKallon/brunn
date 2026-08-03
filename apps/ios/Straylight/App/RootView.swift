@@ -2,6 +2,8 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var model: AppModel
+    @AppStorage(AppAppearance.storageKey) private var appearanceRawValue =
+        AppAppearance.defaultValue.rawValue
 
     var body: some View {
         Group {
@@ -27,6 +29,11 @@ struct RootView: View {
                 }
             }
         }
+        .preferredColorScheme(appearance.colorScheme)
+    }
+
+    private var appearance: AppAppearance {
+        AppAppearance(rawValue: appearanceRawValue) ?? .defaultValue
     }
 }
 
@@ -88,7 +95,7 @@ private struct MainTabView: View {
             NavigationStack {
                 MoreView()
             }
-            .tabItem { Label("More", systemImage: "ellipsis") }
+            .tabItem { Label("Settings", systemImage: "gearshape") }
             .tag(AppTab.more)
         }
         .tint(StraylightTheme.signalBlue)
