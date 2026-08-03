@@ -43,6 +43,13 @@ const releaseRuntime = {
   STRAYLIGHT_SEMANTIC_LANE: preserve(),
   STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS: "5000",
   STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY: "8",
+  // Requalified 2026-08-03 from the post-GIN-fix gate battery: thresholds sit
+  // at the documented user gates (open 500 ms) and above the semantic
+  // deadline bound (search 350 ms > 300 ms), so backfill pauses on real
+  // foreground degradation instead of on the accelerator's designed deferrals.
+  // Pre-fix values 120/107 predated semantic-on and paused continuously.
+  STRAYLIGHT_EMBEDDING_BACKFILL_OPEN_P95_LIMIT_MS: "500",
+  STRAYLIGHT_EMBEDDING_BACKFILL_SEARCH_P95_LIMIT_MS: "350",
   STRAYLIGHT_SUPERSESSION_DEMOTION: preserve(),
   STRAYLIGHT_VERBATIM_SPANS: preserve(),
   STRAYLIGHT_ACCOUNT_EXPORT_TTL_HOURS: "24",
