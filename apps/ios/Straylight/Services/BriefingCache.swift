@@ -9,12 +9,16 @@ actor BriefingCache {
     private let fileManager: FileManager
     private let fileURL: URL
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, fileURL: URL? = nil) {
         self.fileManager = fileManager
-        let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        fileURL = root
-            .appendingPathComponent("Straylight", isDirectory: true)
-            .appendingPathComponent("latest-briefing.json", isDirectory: false)
+        if let fileURL {
+            self.fileURL = fileURL
+        } else {
+            let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            self.fileURL = root
+                .appendingPathComponent("Straylight", isDirectory: true)
+                .appendingPathComponent("latest-briefing.json", isDirectory: false)
+        }
     }
 
     func load() throws -> CachedBriefing? {

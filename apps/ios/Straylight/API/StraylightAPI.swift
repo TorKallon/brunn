@@ -73,6 +73,15 @@ public actor StraylightAPI {
         try await get(path: "me")
     }
 
+    public func dashboard(
+        timezone: String = TimeZone.current.identifier
+    ) async throws -> WorkspaceEnvelope<WorkspaceDashboardData> {
+        try await get(
+            path: "workspace/dashboard",
+            queryItems: [URLQueryItem(name: "timezone", value: timezone)]
+        )
+    }
+
     public func latestBriefing() async throws -> BriefingEditionData? {
         let list = try await briefings(limit: 1)
         guard let edition = list.data.editions.first else { return nil }

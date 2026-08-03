@@ -2,6 +2,69 @@
 import XCTest
 
 final class CoreContractTests: XCTestCase {
+    func testDashboardDecodesStorageActivityAndAccessWithoutSecrets() throws {
+        let json = #"""
+        {
+          "status": "complete",
+          "data": {
+            "generated_at": "2026-08-02T23:00:00Z",
+            "timezone": "America/Los_Angeles",
+            "workspace_generation": 84,
+            "activity_tracking_started_at": "2026-08-02T20:00:00Z",
+            "storage": {
+              "text": {"count": 12482, "size_bytes": 19428821},
+              "binary": {
+                "count": 418,
+                "size_bytes": 2874102394,
+                "semantics": "current_referenced_objects"
+              }
+            },
+            "today": {
+              "read_operations": 187,
+              "read_bytes": 9412201,
+              "write_operations": 23,
+              "write_bytes": 1084002
+            },
+            "activity": [{
+              "date": "2026-08-02",
+              "period_start": "2026-08-02T07:00:00Z",
+              "period_end": "2026-08-03T07:00:00Z",
+              "read_operations": 187,
+              "read_bytes": 9412201,
+              "write_operations": 23,
+              "write_bytes": 1084002
+            }],
+            "access": [{
+              "id": "credential:ios",
+              "name": "iPhone",
+              "kind": "api_credential",
+              "access": "read_only",
+              "status": "active",
+              "scope_ids": ["scope:root"],
+              "capabilities": ["query", "read", "status"],
+              "last_used_at": "2026-08-02T22:58:00Z",
+              "last_operation": "workspace.read",
+              "read_operations_today": 12,
+              "write_operations_today": 0
+            }],
+            "coverage": {"days": 7, "activity": "tracked_operations_only"}
+          }
+        }
+        """#.data(using: .utf8)!
+
+        let envelope = try JSONDecoder().decode(
+            WorkspaceEnvelope<WorkspaceDashboardData>.self,
+            from: json
+        )
+
+        XCTAssertEqual(envelope.data.storage.text.count, 12_482)
+        XCTAssertEqual(envelope.data.storage.binary.sizeBytes, 2_874_102_394)
+        XCTAssertEqual(envelope.data.activity.first?.readOperations, 187)
+        XCTAssertEqual(envelope.data.access.first?.name, "iPhone")
+        XCTAssertEqual(envelope.data.access.first?.lastOperation, "workspace.read")
+        XCTAssertEqual(envelope.data.coverage?.days, 7)
+    }
+
     func testStructuredBriefingDecodesCurrentWorkspaceEnvelope() throws {
         let json = #"""
         {

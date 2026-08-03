@@ -29,8 +29,13 @@ struct StraylightApp: App {
                     Task { await model.handle(route) }
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    guard phase == .active, let route = PushRouteBuffer.shared.take() else { return }
-                    Task { await model.handle(route) }
+                    guard phase == .active else { return }
+                    Task {
+                        if let route = PushRouteBuffer.shared.take() {
+                            await model.handle(route)
+                        }
+                        await model.refreshDashboardIfNeeded()
+                    }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .straylightPushToken)) { event in
                     guard let token = event.object as? Data else { return }

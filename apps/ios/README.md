@@ -1,10 +1,12 @@
 # Straylight for iOS
 
-Native SwiftUI briefing and news reader for hosted Straylight.
+Native SwiftUI home dashboard, briefing, and news reader for hosted Straylight.
 
 ## Implemented MVP
 
 - full-width Today reader modeled on the mobile web view
+- Home dashboard with direct briefing/search access, storage totals, seven-day
+  usage charts, and a credential access inventory
 - complete `briefing.v1` summary, sections, detail, sources, timestamps, and revisions
 - recent version-derived News activity with All, Priority, and Unread filters
 - cursor-paginated briefing Archive with exact historical-version selection
@@ -13,8 +15,9 @@ Native SwiftUI briefing and news reader for hosted Straylight.
 - safe typed routes, Dynamic Type, VoiceOver identifiers, and Reduce Motion support
 - deterministic demo fixtures plus Swift Package, app-unit, and UI tests
 
-The app intentionally omits Search and Tasks from navigation. They are outside
-this briefing/news MVP. Remote push is also not presented as live: the server
+Search is reachable from Home; its entry reader remains intentionally basic
+until the corpus search-and-view phase. Tasks remain outside this MVP. Remote
+push is also not presented as live: the server
 does not yet expose APNs device, outbox, inbox, or receipt contracts. See
 `docs/ios/MVP.md` for that boundary and rollout plan.
 

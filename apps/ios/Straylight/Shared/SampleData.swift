@@ -159,6 +159,71 @@ enum SampleData {
         ),
     ]
 
+    static let dashboard = WorkspaceDashboardData(
+        generatedAt: "2026-08-02T16:30:00-07:00",
+        timezone: "America/Los_Angeles",
+        workspaceGeneration: 24_136,
+        activityTrackingStartedAt: "2026-07-27T00:00:00Z",
+        storage: DashboardStorage(
+            text: DashboardStorageMetric(count: 4_926, sizeBytes: 298_682_825),
+            binary: DashboardStorageMetric(
+                count: 73,
+                sizeBytes: 797_775_263,
+                semantics: "current_referenced_objects"
+            )
+        ),
+        today: DashboardTodayActivity(
+            readOperations: 146,
+            readBytes: 8_724_480,
+            writeOperations: 18,
+            writeBytes: 486_400
+        ),
+        activity: [
+            DashboardActivityPoint(date: "2026-07-27", readOperations: 82, readBytes: 4_820_000, writeOperations: 12, writeBytes: 310_000),
+            DashboardActivityPoint(date: "2026-07-28", readOperations: 104, readBytes: 6_140_000, writeOperations: 9, writeBytes: 205_000),
+            DashboardActivityPoint(date: "2026-07-29", readOperations: 71, readBytes: 3_900_000, writeOperations: 16, writeBytes: 390_000),
+            DashboardActivityPoint(date: "2026-07-30", readOperations: 128, readBytes: 7_480_000, writeOperations: 14, writeBytes: 418_000),
+            DashboardActivityPoint(date: "2026-07-31", readOperations: 116, readBytes: 6_920_000, writeOperations: 21, writeBytes: 602_000),
+            DashboardActivityPoint(date: "2026-08-01", readOperations: 93, readBytes: 5_440_000, writeOperations: 11, writeBytes: 274_000),
+            DashboardActivityPoint(date: "2026-08-02", readOperations: 146, readBytes: 8_724_480, writeOperations: 18, writeBytes: 486_400),
+        ],
+        access: [
+            DashboardAccessClient(
+                id: "credential:demo-iphone",
+                name: "Rourke’s iPhone",
+                access: "read_only",
+                status: "active",
+                scopeIDs: ["scope:root"],
+                capabilities: ["open", "query", "read", "compute", "verify", "status"],
+                createdAt: "2026-08-02T12:00:00-07:00",
+                lastUsedAt: "2026-08-02T16:28:00-07:00",
+                lastOperation: "read",
+                readOperationsToday: 14
+            ),
+            DashboardAccessClient(
+                id: "credential:demo-codex",
+                name: "Codex on Nyx",
+                access: "read_write",
+                status: "active",
+                scopeIDs: ["scope:root"],
+                lastUsedAt: "2026-08-02T16:29:00-07:00",
+                lastOperation: "write",
+                readOperationsToday: 96,
+                writeOperationsToday: 18
+            ),
+            DashboardAccessClient(
+                id: "credential:demo-retired",
+                name: "Retired test token",
+                access: "read_only",
+                status: "revoked",
+                scopeIDs: ["scope:root"],
+                revokedAt: "2026-08-01T20:00:00-07:00",
+                lastUsedAt: "2026-08-01T19:42:00-07:00"
+            ),
+        ],
+        coverage: DashboardCoverage(days: 7, activity: "tracked_operations_only")
+    )
+
     static let topicsSnapshot = BriefingTopicsSnapshot(
         topics: [
             BriefingTopic(

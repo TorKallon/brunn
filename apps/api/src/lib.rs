@@ -17,6 +17,7 @@ pub mod carrystate_import;
 pub mod config;
 pub mod continuation;
 pub mod control_service;
+pub mod dashboard_service;
 pub mod db;
 pub mod dream_service;
 pub mod dreams;

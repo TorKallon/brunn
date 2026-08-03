@@ -12,8 +12,8 @@ use tower_http::{
 };
 
 use crate::{
-    auth, briefing_service, db::AppState, dreams, eval_service, request_context, service,
-    simple_core, telemetry, web_auth,
+    auth, briefing_service, dashboard_service, db::AppState, dreams, eval_service, request_context,
+    service, simple_core, telemetry, web_auth,
 };
 
 pub fn router(state: AppState) -> Router {
@@ -60,6 +60,7 @@ pub fn router(state: AppState) -> Router {
             get(briefing_service::get_edition),
         )
         .route("/workspace/changes", get(simple_core::changes))
+        .route("/workspace/dashboard", get(dashboard_service::dashboard))
         .route("/workspace/checkpoint", post(simple_core::checkpoint))
         .route("/workspace/binaries", get(simple_core::list_binaries))
         .route("/workspace/manifest", get(simple_core::manifest))

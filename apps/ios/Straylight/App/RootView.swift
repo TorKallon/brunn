@@ -62,9 +62,15 @@ private struct MainTabView: View {
     var body: some View {
         TabView(selection: $model.selectedTab) {
             NavigationStack {
+                DashboardView()
+            }
+            .tabItem { Label("Home", systemImage: "square.grid.2x2") }
+            .tag(AppTab.dashboard)
+
+            NavigationStack {
                 TodayView()
             }
-            .tabItem { Label("Today", systemImage: "house") }
+            .tabItem { Label("Today", systemImage: "sunrise") }
             .tag(AppTab.today)
 
             NavigationStack {
@@ -85,5 +91,6 @@ private struct MainTabView: View {
             .tabItem { Label("More", systemImage: "ellipsis") }
             .tag(AppTab.more)
         }
+        .tint(StraylightTheme.signalBlue)
     }
 }

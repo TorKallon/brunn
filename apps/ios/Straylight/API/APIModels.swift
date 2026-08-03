@@ -74,6 +74,218 @@ public struct MeData: Codable, Sendable, Equatable {
     }
 }
 
+public struct WorkspaceDashboardData: Codable, Sendable, Equatable {
+    public let generatedAt: String
+    public let timezone: String
+    public let workspaceGeneration: Int
+    public let activityTrackingStartedAt: String?
+    public let storage: DashboardStorage
+    public let today: DashboardTodayActivity
+    public let activity: [DashboardActivityPoint]
+    public let access: [DashboardAccessClient]
+    public let coverage: DashboardCoverage?
+
+    public init(
+        generatedAt: String,
+        timezone: String,
+        workspaceGeneration: Int,
+        activityTrackingStartedAt: String? = nil,
+        storage: DashboardStorage,
+        today: DashboardTodayActivity,
+        activity: [DashboardActivityPoint],
+        access: [DashboardAccessClient],
+        coverage: DashboardCoverage? = nil
+    ) {
+        self.generatedAt = generatedAt
+        self.timezone = timezone
+        self.workspaceGeneration = workspaceGeneration
+        self.activityTrackingStartedAt = activityTrackingStartedAt
+        self.storage = storage
+        self.today = today
+        self.activity = activity
+        self.access = access
+        self.coverage = coverage
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case generatedAt = "generated_at"
+        case timezone
+        case workspaceGeneration = "workspace_generation"
+        case activityTrackingStartedAt = "activity_tracking_started_at"
+        case storage
+        case today
+        case activity
+        case access
+        case coverage
+    }
+}
+
+public struct DashboardStorage: Codable, Sendable, Equatable {
+    public let text: DashboardStorageMetric
+    public let binary: DashboardStorageMetric
+
+    public init(text: DashboardStorageMetric, binary: DashboardStorageMetric) {
+        self.text = text
+        self.binary = binary
+    }
+}
+
+public struct DashboardStorageMetric: Codable, Sendable, Equatable {
+    public let count: Int
+    public let sizeBytes: Int64
+    public let semantics: String?
+
+    public init(count: Int, sizeBytes: Int64, semantics: String? = nil) {
+        self.count = count
+        self.sizeBytes = sizeBytes
+        self.semantics = semantics
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case count
+        case sizeBytes = "size_bytes"
+        case semantics
+    }
+}
+
+public struct DashboardTodayActivity: Codable, Sendable, Equatable {
+    public let readOperations: Int64
+    public let readBytes: Int64
+    public let writeOperations: Int64
+    public let writeBytes: Int64
+
+    public init(
+        readOperations: Int64,
+        readBytes: Int64,
+        writeOperations: Int64,
+        writeBytes: Int64
+    ) {
+        self.readOperations = readOperations
+        self.readBytes = readBytes
+        self.writeOperations = writeOperations
+        self.writeBytes = writeBytes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case readOperations = "read_operations"
+        case readBytes = "read_bytes"
+        case writeOperations = "write_operations"
+        case writeBytes = "write_bytes"
+    }
+}
+
+public struct DashboardActivityPoint: Codable, Sendable, Equatable, Identifiable {
+    public let date: String
+    public let periodStart: String?
+    public let periodEnd: String?
+    public let readOperations: Int64
+    public let readBytes: Int64
+    public let writeOperations: Int64
+    public let writeBytes: Int64
+
+    public var id: String { date }
+
+    public init(
+        date: String,
+        periodStart: String? = nil,
+        periodEnd: String? = nil,
+        readOperations: Int64,
+        readBytes: Int64,
+        writeOperations: Int64,
+        writeBytes: Int64
+    ) {
+        self.date = date
+        self.periodStart = periodStart
+        self.periodEnd = periodEnd
+        self.readOperations = readOperations
+        self.readBytes = readBytes
+        self.writeOperations = writeOperations
+        self.writeBytes = writeBytes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case periodStart = "period_start"
+        case periodEnd = "period_end"
+        case readOperations = "read_operations"
+        case readBytes = "read_bytes"
+        case writeOperations = "write_operations"
+        case writeBytes = "write_bytes"
+    }
+}
+
+public struct DashboardAccessClient: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let name: String
+    public let kind: String
+    public let access: String
+    public let status: String
+    public let scopeIDs: [String]
+    public let capabilities: [String]
+    public let createdAt: String?
+    public let revokedAt: String?
+    public let lastUsedAt: String?
+    public let lastOperation: String?
+    public let readOperationsToday: Int64
+    public let writeOperationsToday: Int64
+
+    public init(
+        id: String,
+        name: String,
+        kind: String = "api_credential",
+        access: String,
+        status: String,
+        scopeIDs: [String],
+        capabilities: [String] = [],
+        createdAt: String? = nil,
+        revokedAt: String? = nil,
+        lastUsedAt: String? = nil,
+        lastOperation: String? = nil,
+        readOperationsToday: Int64 = 0,
+        writeOperationsToday: Int64 = 0
+    ) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.access = access
+        self.status = status
+        self.scopeIDs = scopeIDs
+        self.capabilities = capabilities
+        self.createdAt = createdAt
+        self.revokedAt = revokedAt
+        self.lastUsedAt = lastUsedAt
+        self.lastOperation = lastOperation
+        self.readOperationsToday = readOperationsToday
+        self.writeOperationsToday = writeOperationsToday
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case kind
+        case access
+        case status
+        case scopeIDs = "scope_ids"
+        case capabilities
+        case createdAt = "created_at"
+        case revokedAt = "revoked_at"
+        case lastUsedAt = "last_used_at"
+        case lastOperation = "last_operation"
+        case readOperationsToday = "read_operations_today"
+        case writeOperationsToday = "write_operations_today"
+    }
+}
+
+public struct DashboardCoverage: Codable, Sendable, Equatable {
+    public let days: Int?
+    public let activity: String?
+
+    public init(days: Int? = nil, activity: String? = nil) {
+        self.days = days
+        self.activity = activity
+    }
+}
+
 public struct BriefingListData: Codable, Sendable, Equatable {
     public let editions: [BriefingListRow]
     public let limit: Int

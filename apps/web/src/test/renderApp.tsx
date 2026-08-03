@@ -38,6 +38,7 @@ export const defaultMe = {
       username: "aether",
       email: "aether@example.com",
     },
+    credential_id: "credential:current",
     active_scope: { id: "scope_1", name: "Primary", access: "read_write" },
     scopes: [{ id: "scope_1", name: "Primary", access: "read_write" }],
     corpus_revision: "rev_001",
@@ -71,6 +72,68 @@ const defaultStatus = {
   },
 };
 
+export const defaultDashboard = {
+  status: "complete",
+  data: {
+    generated_at: now,
+    timezone: "UTC",
+    workspace_generation: 12,
+    activity_tracking_started_at: "2026-07-05T00:00:00Z",
+    storage: {
+      text: { count: 128, size_bytes: 2_621_440 },
+      binary: {
+        count: 14,
+        size_bytes: 18_874_368,
+        semantics: "current_referenced_objects",
+      },
+    },
+    today: {
+      read_operations: 37,
+      read_bytes: 483_328,
+      write_operations: 6,
+      write_bytes: 32_768,
+    },
+    activity: [
+      { date: "2026-07-05", read_operations: 12, read_bytes: 110_000, write_operations: 2, write_bytes: 8_000 },
+      { date: "2026-07-06", read_operations: 19, read_bytes: 180_000, write_operations: 1, write_bytes: 4_000 },
+      { date: "2026-07-07", read_operations: 8, read_bytes: 72_000, write_operations: 4, write_bytes: 22_000 },
+      { date: "2026-07-08", read_operations: 24, read_bytes: 260_000, write_operations: 3, write_bytes: 16_000 },
+      { date: "2026-07-09", read_operations: 30, read_bytes: 390_000, write_operations: 7, write_bytes: 44_000 },
+      { date: "2026-07-10", read_operations: 21, read_bytes: 240_000, write_operations: 2, write_bytes: 9_000 },
+      { date: "2026-07-11", read_operations: 37, read_bytes: 483_328, write_operations: 6, write_bytes: 32_768 },
+    ],
+    access: [
+      {
+        id: "credential:current",
+        name: "Straylight Web",
+        kind: "api_credential",
+        access: "owner",
+        status: "active",
+        scope_ids: ["scope:root"],
+        created_at: "2026-07-01T00:00:00Z",
+        last_used_at: now,
+        last_operation: "read",
+        read_operations_today: 12,
+        write_operations_today: 2,
+      },
+      {
+        id: "credential:ios",
+        name: "iPhone",
+        kind: "api_credential",
+        access: "read_only",
+        status: "active",
+        scope_ids: ["scope:root"],
+        created_at: "2026-07-02T00:00:00Z",
+        last_used_at: "2026-07-11T17:30:00Z",
+        last_operation: "read",
+        read_operations_today: 5,
+        write_operations_today: 0,
+      },
+    ],
+    coverage: { days: 7, activity: "tracked_operations_only" },
+  },
+};
+
 function isMockResponse(value: unknown): value is MockResponse {
   return Boolean(value && typeof value === "object" && "body" in value);
 }
@@ -91,6 +154,17 @@ export function installApiMock(routes: Record<string, MockRoute> = {}) {
     },
     "GET /api/v1/me": defaultMe,
     "GET /api/v1/status": defaultStatus,
+    "GET /api/v1/workspace/dashboard": defaultDashboard,
+    "GET /api/v1/workspace/briefings": {
+      status: "complete",
+      data: {
+        editions: [],
+        limit: 7,
+        truncated: false,
+        next: null,
+        workspace_generation: 12,
+      },
+    },
     "GET /api/v1/sessions": { status: "complete", data: { items: [] } },
     "GET /api/v1/workspace/manifest": {
       status: "complete",

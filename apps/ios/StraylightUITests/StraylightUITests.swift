@@ -24,8 +24,71 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
+    func testDemoOpensOnDashboardWithBriefingStorageActivityAndAccess() {
+        let app = launchDemo()
+
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("dashboard-home", in: app).exists)
+        XCTAssertTrue(element("dashboard-storage-text", in: app).exists)
+        XCTAssertTrue(element("dashboard-storage-binary", in: app).exists)
+        keepScreenshot(named: "home-dashboard", from: app)
+
+        let operations = element("dashboard-chart-operations", in: app)
+        scroll(operations, intoViewIn: app)
+        XCTAssertTrue(operations.exists)
+
+        let access = element("dashboard-access-list", in: app)
+        scroll(access, intoViewIn: app)
+        XCTAssertTrue(access.exists)
+        XCTAssertTrue(caseInsensitiveText("This client", in: app).exists)
+
+        app.tabBars.buttons["Home"].tap()
+        let briefing = element("dashboard-briefing-action", in: app)
+        scroll(briefing, intoViewIn: app)
+        briefing.tap()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testDemoDashboardLinksReachSearchAndAllBriefings() {
+        let app = launchDemo()
+
+        let search = element("dashboard-search", in: app)
+        scroll(search, intoViewIn: app)
+        search.tap()
+        XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 3))
+        app.navigationBars["Search"].buttons.firstMatch.tap()
+
+        let archive = element("dashboard-archive-action", in: app)
+        scroll(archive, intoViewIn: app)
+        archive.tap()
+        XCTAssertTrue(app.navigationBars["Archive"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testDashboardUsesSingleColumnMetricsAtAccessibilityTextSize() {
+        let app = launchDemo(contentSizeCategory: "UICTContentSizeCategoryAccessibilityL")
+        let text = element("dashboard-storage-text", in: app)
+        let binary = element("dashboard-storage-binary", in: app)
+
+        scroll(text, intoViewIn: app)
+        XCTAssertGreaterThan(
+            text.frame.width / app.frame.width,
+            0.8,
+            "Accessibility text sizes should give the text metric a full-width row."
+        )
+        scroll(binary, intoViewIn: app)
+        XCTAssertGreaterThan(
+            binary.frame.width / app.frame.width,
+            0.8,
+            "Accessibility text sizes should give the binary metric a full-width row."
+        )
+    }
+
+    @MainActor
     func testDemoReaderUsesThePhoneWidthAndShowsTheCompleteSummary() {
         let app = launchDemo()
+        openToday(in: app)
 
         XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 5))
 
@@ -61,6 +124,7 @@ final class StraylightUITests: XCTestCase {
     @MainActor
     func testSummaryCanCollapseAndRestoreWithoutLosingPriorityItems() {
         let app = launchDemo()
+        openToday(in: app)
         let toggle = element("briefing-summary-toggle", in: app)
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
 
@@ -84,6 +148,7 @@ final class StraylightUITests: XCTestCase {
     @MainActor
     func testEveryDemoSectionAndItemDetailIsReachableWithSourcesAndHistory() {
         let app = launchDemo()
+        openToday(in: app)
         XCTAssertTrue(element("briefing-reader", in: app).waitForExistence(timeout: 5))
 
         XCTAssertTrue(element("briefing-section-straylight", in: app).exists)
@@ -185,18 +250,27 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchDemo() -> XCUIApplication {
+    private func launchDemo(
+        contentSizeCategory: String = "UICTContentSizeCategoryL"
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "--demo",
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
-            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL",
+            "-UIPreferredContentSizeCategoryName", contentSizeCategory,
         ]
         app.launchEnvironment["TZ"] = "America/Los_Angeles"
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
         return app
+    }
+
+    @MainActor
+    private func openToday(in app: XCUIApplication) {
+        let today = app.tabBars.buttons["Today"]
+        XCTAssertTrue(today.waitForExistence(timeout: 3))
+        today.tap()
     }
 
     @MainActor

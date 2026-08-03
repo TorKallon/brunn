@@ -60,6 +60,15 @@ describe("accessibility contracts", () => {
     await expectNoAutomatedViolations(container);
   });
 
+  it("has no automated violations on the landing dashboard", async () => {
+    installApiMock();
+    const { container } = renderApp("/dashboard", "read-write-token");
+    expect(
+      await screen.findByRole("heading", { name: "Aether’s Straylight" }),
+    ).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
   it("has no automated violations on the briefings index", async () => {
     installApiMock({
       "GET /api/v1/workspace/briefings": briefingListFixture,

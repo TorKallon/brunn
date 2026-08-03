@@ -37,7 +37,7 @@ use crate::{
         SIMPLE_LEXICAL_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL,
         SIMPLE_SEMANTIC_CANDIDATES_SQL,
     },
-    usage::UsageOperation,
+    usage::{ProductActivityOperation, UsageOperation},
     workspace_features::{
         DerivedFrontmatter, SupersessionAnnotation, WorkspaceFeatureDocument,
         WorkspaceFeatureSnapshot, parse_frontmatter, supersession_warnings,
@@ -783,6 +783,7 @@ pub async fn open(
         .record(ForegroundOperation::Open, total_ms);
     metrics::histogram!("simple.open.evidence_sources").record(evidence.len() as f64);
     metrics::histogram!("simple.open.evidence_leads").record(evidence_leads.len() as f64);
+    record_serialized_product_read(&state, &auth, ProductActivityOperation::Open, &envelope);
     Ok(Json(envelope))
 }
 
@@ -996,6 +997,7 @@ pub async fn search(
         .foreground_latency
         .record(ForegroundOperation::Search, total_ms);
     metrics::histogram!("simple.search.candidates").record(all_candidates.len() as f64);
+    record_serialized_product_read(&state, &auth, ProductActivityOperation::Search, &envelope);
     Ok(Json(envelope))
 }
 
@@ -1175,6 +1177,7 @@ pub async fn read(
     metrics::histogram!("simple.read.duration_ms")
         .record(started.elapsed().as_secs_f64() * 1_000.0);
     metrics::histogram!("simple.read.entries").record(returned_entries as f64);
+    record_serialized_product_read(&state, &auth, ProductActivityOperation::Read, &envelope);
     Ok(Json(envelope))
 }
 
@@ -1186,6 +1189,7 @@ pub async fn write(
     require_write_capabilities(&auth, &request.path)?;
     validate_write_path(&request)?;
     let prepared = prepare_markdown(&state, request).await?;
+    let committed_bytes = u64::try_from(prepared.content.len()).unwrap_or(u64::MAX);
     let receipt = commit_markdown(&state, &auth, prepared).await?;
     let mut envelope = WorkspaceEnvelope::complete(receipt.clone());
     envelope.status = if receipt.get("no_op") == Some(&Value::Bool(true)) {
@@ -1197,6 +1201,14 @@ pub async fn write(
         .get("workspace_generation")
         .and_then(Value::as_i64)
         .map(|generation| format!("generation:{generation}"));
+    if receipt.get("no_op") != Some(&Value::Bool(true)) {
+        record_product_activity(
+            &state,
+            &auth,
+            ProductActivityOperation::Write,
+            committed_bytes,
+        );
+    }
     Ok(Json(envelope))
 }
 
@@ -1244,6 +1256,7 @@ pub async fn capture(
         },
     )
     .await?;
+    let committed_bytes = u64::try_from(prepared.content.len()).unwrap_or(u64::MAX);
     let receipt = commit_markdown(&state, &auth, prepared).await?;
     let mut envelope = WorkspaceEnvelope::complete(receipt.clone());
     envelope.status = if receipt.get("no_op") == Some(&Value::Bool(true)) {
@@ -1255,6 +1268,14 @@ pub async fn capture(
         .get("workspace_generation")
         .and_then(Value::as_i64)
         .map(|generation| format!("generation:{generation}"));
+    if receipt.get("no_op") != Some(&Value::Bool(true)) {
+        record_product_activity(
+            &state,
+            &auth,
+            ProductActivityOperation::Capture,
+            committed_bytes,
+        );
+    }
     Ok(Json(envelope))
 }
 
@@ -1343,6 +1364,7 @@ pub async fn checkpoint(
         },
     )
     .await?;
+    let committed_bytes = u64::try_from(prepared.content.len()).unwrap_or(u64::MAX);
     prepared.entry_id_hint = Some(checkpoint_uuid);
     let receipt = commit_markdown(&state, &auth, prepared).await?;
     let resulting_generation = receipt
@@ -1360,6 +1382,12 @@ pub async fn checkpoint(
     envelope.status = ResponseStatus::Committed;
     envelope.session_id = Some(request.session_id);
     envelope.corpus_revision = Some(format!("generation:{resulting_generation}"));
+    record_product_activity(
+        &state,
+        &auth,
+        ProductActivityOperation::Checkpoint,
+        committed_bytes,
+    );
     Ok(Json(envelope))
 }
 
@@ -1548,6 +1576,7 @@ pub async fn delete_entry(
     }));
     envelope.status = ResponseStatus::Committed;
     envelope.corpus_revision = Some(format!("generation:{generation}"));
+    record_product_activity(&state, &auth, ProductActivityOperation::Delete, 0);
     Ok(Json(envelope))
 }
 
@@ -2228,6 +2257,14 @@ pub async fn upload_binary(
         .get("workspace_generation")
         .and_then(Value::as_i64)
         .map(|generation| format!("generation:{generation}"));
+    if receipt.get("no_op") != Some(&Value::Bool(true)) {
+        record_product_activity(
+            &state,
+            &auth,
+            ProductActivityOperation::BinaryUpload,
+            u64::try_from(stored.size_bytes).unwrap_or(u64::MAX),
+        );
+    }
     Ok(Json(envelope))
 }
 
@@ -2338,6 +2375,14 @@ pub async fn upload_binary_stream(
         .get("workspace_generation")
         .and_then(Value::as_i64)
         .map(|generation| format!("generation:{generation}"));
+    if receipt.get("no_op") != Some(&Value::Bool(true)) {
+        record_product_activity(
+            &state,
+            &auth,
+            ProductActivityOperation::BinaryUpload,
+            stored.size_bytes,
+        );
+    }
     Ok(Json(envelope))
 }
 
@@ -2409,6 +2454,12 @@ pub async fn fetch_binary(
         HeaderValue::from_static("nosniff"),
     );
     record_entry_usage(&state, &auth, &[entry.id], UsageOperation::Read);
+    record_product_activity(
+        &state,
+        &auth,
+        ProductActivityOperation::BinaryFetch,
+        u64::try_from(entry.size_bytes).unwrap_or(0),
+    );
     Ok(response)
 }
 
@@ -7773,6 +7824,41 @@ fn record_entry_usage(
     state
         .usage_tracker
         .record(auth.user_id.0, entry_ids.iter().copied(), operation);
+}
+
+fn record_serialized_product_read<T: Serialize>(
+    state: &AppState,
+    auth: &AuthContext,
+    operation: ProductActivityOperation,
+    response: &T,
+) {
+    match serde_json::to_vec(response) {
+        Ok(bytes) => record_product_activity(
+            state,
+            auth,
+            operation,
+            u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        ),
+        Err(error) => tracing::warn!(
+            ?error,
+            operation = operation.as_str(),
+            "product activity response sizing failed"
+        ),
+    }
+}
+
+fn record_product_activity(
+    state: &AppState,
+    auth: &AuthContext,
+    operation: ProductActivityOperation,
+    bytes: u64,
+) {
+    state.usage_tracker.record_product_activity(
+        auth.user_id.0,
+        auth.credential_id.0,
+        operation,
+        bytes,
+    );
 }
 
 fn validate_eval_import(request: &EvalImportRequest) -> ApiResult<()> {

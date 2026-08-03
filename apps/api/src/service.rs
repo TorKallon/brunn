@@ -126,6 +126,7 @@ pub async fn openapi() -> Json<Value> {
             },
             "/v1/stages/{stage_ref}": {"get": {"operationId": "getStage"}},
             "/v1/usage": {"get": {"operationId": "getDataUsage"}},
+            "/v1/workspace/dashboard": {"get": {"operationId": "getWorkspaceDashboard"}},
             "/v1/deletions/{deletion_ref}": {"get": {"operationId": "getDeletion"}}
         },
         "components": {"securitySchemes": {"bearer": {"type": "http", "scheme": "bearer"}}},

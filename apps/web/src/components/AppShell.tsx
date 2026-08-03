@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Layers3,
   LogOut,
+  LayoutDashboard,
   Menu,
   Search,
   Sparkles,
@@ -23,6 +24,7 @@ import { formatRelative } from "../lib/format";
 import { ReadOnlyNotice, StatusBadge } from "./StateViews";
 
 const navItems = [
+  { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { to: "/briefings", label: "Briefings", icon: Sunrise },
   { to: "/topics", label: "Topics", icon: Layers3 },
   { to: "/work", label: "Workspace", icon: FolderOpen },
@@ -78,7 +80,7 @@ export function AppShell({ children }: PropsWithChildren) {
       </button>
       {navOpen ? <button className="nav-backdrop" onClick={() => setNavOpen(false)} aria-label="Close navigation" /> : null}
       <aside className={`sidebar ${navOpen ? "open" : ""}`}>
-        <Link to="/work" className="brand" onClick={() => setNavOpen(false)}>
+        <Link to="/dashboard" className="brand" onClick={() => setNavOpen(false)}>
           <img className="brand-mark" src="/straylight-mark.png" alt="" aria-hidden="true" />
           <div>
             <strong>Straylight</strong>

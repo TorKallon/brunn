@@ -9,6 +9,7 @@ private enum BootstrapValidationError: LocalizedError {
 }
 
 typealias BootstrapIdentityLoader = @Sendable (StraylightAPI) async throws -> MeData
+typealias DashboardLoader = @Sendable (StraylightAPI, String) async throws -> WorkspaceDashboardData
 
 enum AppPhase: Equatable {
     case launching
@@ -18,6 +19,7 @@ enum AppPhase: Equatable {
 }
 
 enum AppTab: Hashable {
+    case dashboard
     case today
     case news
     case archive
@@ -28,6 +30,7 @@ enum AppTab: Hashable {
 final class AppModel: ObservableObject {
     @Published private(set) var phase: AppPhase = .launching
     @Published private(set) var user: UserSummary?
+    @Published private(set) var currentCredentialID: String?
     @Published private(set) var readOnlyCredential = false
     @Published private(set) var isDemo = false
     @Published private(set) var latestBriefing: BriefingEditionData?
@@ -44,13 +47,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var deliveryMessage: String?
     @Published private(set) var readNewsItemIDs: Set<String> = []
     @Published private(set) var briefingActivity: [BriefingNewsItem] = []
+    @Published private(set) var dashboard: WorkspaceDashboardData?
+    @Published private(set) var dashboardMessage: String?
+    @Published private(set) var isRefreshingDashboard = false
     @Published private(set) var searchResults: [WorkspaceSearchCandidate] = []
     @Published private(set) var searchEnvelopeStatus: String?
     @Published private(set) var searchMessage: String?
     @Published private(set) var isSearching = false
     @Published private(set) var tasks: [TaskItem] = []
     @Published private(set) var alerts: [AlertItem] = []
-    @Published var selectedTab: AppTab = .today
+    @Published var selectedTab: AppTab = .dashboard
     @Published var focusedBriefingItemID: String?
 
     var newsItems: [BriefingNewsItem] {
@@ -64,8 +70,10 @@ final class AppModel: ObservableObject {
     private let briefingCache: BriefingCache
     private let bootstrapValidationTimeout: Duration
     private let bootstrapIdentityLoader: BootstrapIdentityLoader
+    private let dashboardLoader: DashboardLoader
     private var pendingRoute: AppRoute?
     private var nextBriefingHistoryPath: String?
+    private var dashboardContextGeneration: UInt64 = 0
 
     init(
         api: StraylightAPI = StraylightAPI(),
@@ -74,6 +82,9 @@ final class AppModel: ObservableObject {
         bootstrapValidationTimeout: Duration = .seconds(6),
         bootstrapIdentityLoader: @escaping BootstrapIdentityLoader = { api in
             try await api.me()
+        },
+        dashboardLoader: @escaping DashboardLoader = { api, timezone in
+            try await api.dashboard(timezone: timezone).data
         }
     ) {
         self.api = api
@@ -81,6 +92,7 @@ final class AppModel: ObservableObject {
         self.briefingCache = briefingCache
         self.bootstrapValidationTimeout = bootstrapValidationTimeout
         self.bootstrapIdentityLoader = bootstrapIdentityLoader
+        self.dashboardLoader = dashboardLoader
     }
 
     func bootstrap() async {
@@ -93,6 +105,8 @@ final class AppModel: ObservableObject {
             phase = .connectionRequired
             return
         }
+
+        invalidateDashboardContext()
 
         do {
             guard let token = try credentialStore.load() else {
@@ -129,6 +143,7 @@ final class AppModel: ObservableObject {
                     return
                 }
                 accept(identity)
+                Task { await refreshDashboard() }
                 await refreshBriefing()
                 await resumePendingRoute()
             } catch is BootstrapValidationError {
@@ -175,6 +190,7 @@ final class AppModel: ObservableObject {
             connectionMessage = "Paste the dedicated device credential."
             return
         }
+        invalidateDashboardContext()
         phase = .launching
         connectionMessage = nil
         await api.setBearerToken(token)
@@ -188,6 +204,7 @@ final class AppModel: ObservableObject {
             }
             try credentialStore.save(token)
             accept(identity)
+            Task { await refreshDashboard() }
             await loadCachedBriefing()
             await refreshBriefing()
             await resumePendingRoute()
@@ -199,8 +216,11 @@ final class AppModel: ObservableObject {
     }
 
     func enterDemo() {
+        invalidateDashboardContext()
         isDemo = true
         user = UserSummary(id: "user:demo", displayName: "Rourke")
+        currentCredentialID = "credential:demo-iphone"
+        dashboard = SampleData.dashboard
         latestBriefing = SampleData.briefing
         tasks = SampleData.tasks
         alerts = SampleData.alerts
@@ -231,7 +251,9 @@ final class AppModel: ObservableObject {
             return
         }
         await api.setBearerToken(nil)
+        invalidateDashboardContext()
         user = nil
+        currentCredentialID = nil
         latestBriefing = nil
         briefingHistory = []
         canLoadMoreBriefings = false
@@ -248,6 +270,7 @@ final class AppModel: ObservableObject {
         connectionMessage = nil
         privacyMessage = nil
         isDemo = false
+        selectedTab = .dashboard
         phase = .connectionRequired
     }
 
@@ -290,7 +313,11 @@ final class AppModel: ObservableObject {
     }
 
     func refreshBriefing() async {
-        guard !isDemo, phase == .ready, !isRefreshingBriefing else { return }
+        guard !isDemo,
+              phase == .ready,
+              connectionValidated,
+              !isRefreshingBriefing
+        else { return }
         isRefreshingBriefing = true
         defer { isRefreshingBriefing = false }
         do {
@@ -322,6 +349,70 @@ final class AppModel: ObservableObject {
         } catch {
             connectionMessage = "Refresh failed. The last available briefing remains visible."
         }
+    }
+
+    func refreshDashboard(timezone: TimeZone = .current) async {
+        guard !isDemo,
+              phase == .ready,
+              connectionValidated,
+              !isRefreshingDashboard
+        else { return }
+        let contextGeneration = dashboardContextGeneration
+        isRefreshingDashboard = true
+        defer {
+            if contextGeneration == dashboardContextGeneration {
+                isRefreshingDashboard = false
+            }
+        }
+        do {
+            let value = try await dashboardLoader(api, timezone.identifier)
+            guard contextGeneration == dashboardContextGeneration,
+                  connectionValidated,
+                  phase == .ready
+            else { return }
+            dashboard = value
+            dashboardMessage = nil
+        } catch {
+            guard contextGeneration == dashboardContextGeneration,
+                  connectionValidated,
+                  phase == .ready
+            else { return }
+            dashboardMessage = "Usage and access details could not be refreshed."
+        }
+    }
+
+    func refreshDashboardIfNeeded(
+        now: Date = .now,
+        timezone: TimeZone = .current
+    ) async {
+        guard dashboard.map({
+            Self.dashboardNeedsRefresh($0, now: now, timezone: timezone)
+        }) ?? true else { return }
+        await refreshDashboard(timezone: timezone)
+    }
+
+    nonisolated static func dashboardNeedsRefresh(
+        _ dashboard: WorkspaceDashboardData,
+        now: Date,
+        timezone: TimeZone,
+        maximumAge: TimeInterval = 5 * 60
+    ) -> Bool {
+        guard let generatedAt = parseDashboardTimestamp(dashboard.generatedAt) else {
+            return true
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timezone
+        guard calendar.isDate(generatedAt, inSameDayAs: now) else { return true }
+        let age = now.timeIntervalSince(generatedAt)
+        return age < -60 || age >= maximumAge
+    }
+
+    private nonisolated static func parseDashboardTimestamp(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     func loadBriefing(
@@ -499,14 +590,24 @@ final class AppModel: ObservableObject {
     }
 
     private func accept(_ identity: MeData) {
+        invalidateDashboardContext()
         isDemo = false
         user = identity.user
+        currentCredentialID = identity.credentialID
         readOnlyCredential = identity.readOnly
         connectionValidated = true
         phase = .ready
         tasks = []
         alerts = []
         connectionMessage = nil
+    }
+
+    private func invalidateDashboardContext() {
+        dashboardContextGeneration &+= 1
+        dashboard = nil
+        dashboardMessage = nil
+        isRefreshingDashboard = false
+        connectionValidated = false
     }
 
     private func loadCachedBriefing() async {

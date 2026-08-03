@@ -26,6 +26,7 @@
 		AB0000000000000000000001 /* ArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000001 /* ArchiveView.swift */; };
 		AB0000000000000000000002 /* TopicsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000002 /* TopicsView.swift */; };
 		C42851C5C72BE3D0FAEB1BA0 /* BriefingCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CCBE164B7105EAFBE4A0A2 /* BriefingCache.swift */; };
+		D0A000000000000000000001 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A000000000000000000002 /* DashboardView.swift */; };
 		E6FA24E200F1F4AC4ED295FE /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33BE7827FD2E675EB470FA86 /* APIModels.swift */; };
 		F4D230D5BDD5DC46EC51B851 /* NotificationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4F7F7B3D4287554F757813D /* NotificationCoordinator.swift */; };
 		F93A3FCEC8DFAF2FF05F8382 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = E608E9D9F28F1A2131B22363 /* SampleData.swift */; };
@@ -73,6 +74,7 @@
 		AA0000000000000000000001 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000002 /* TopicsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicsView.swift; sourceTree = "<group>"; };
 		BCDD3D6460634214BB3886FE /* AlertsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsView.swift; sourceTree = "<group>"; };
+		D0A000000000000000000002 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		BF071930B32E2B9F81D910A4 /* Straylight.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Straylight.entitlements; sourceTree = "<group>"; };
 		D499A98FF4F465E97899481D /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		E608E9D9F28F1A2131B22363 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
@@ -173,6 +175,14 @@
 			path = Alerts;
 			sourceTree = "<group>";
 		};
+		D0A000000000000000000003 /* Dashboard */ = {
+			isa = PBXGroup;
+			children = (
+				D0A000000000000000000002 /* DashboardView.swift */,
+			);
+			path = Dashboard;
+			sourceTree = "<group>";
+		};
 		89ECE2B1C744DF9EC7B0D8C1 /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -250,6 +260,7 @@
 				878039BEC24B6C3483DAD8E9 /* Alerts */,
 				AC0000000000000000000001 /* Archive */,
 				746DA09DCEC1193FBED795C4 /* Connection */,
+				D0A000000000000000000003 /* Dashboard */,
 				A4AEDD3DA4029414B80F194A /* More */,
 				2220E1BA532E7AF91658CBE3 /* Search */,
 				E1ED6FF43DC0F3939425131A /* Tasks */,
@@ -404,6 +415,7 @@
 				75BD83F5AF79F57F8F9300F8 /* AppModel.swift in Sources */,
 				FCCEDF412E468552BD511DB4 /* AppRoute.swift in Sources */,
 				C42851C5C72BE3D0FAEB1BA0 /* BriefingCache.swift in Sources */,
+				D0A000000000000000000001 /* DashboardView.swift in Sources */,
 				6A1DA9B5935DCE1E2A8AE924 /* ConnectionView.swift in Sources */,
 				6904E5DB6F6A7A9DF56E1F92 /* KeychainCredentialStore.swift in Sources */,
 				7FD10F2CC38520027E0E2502 /* MoreView.swift in Sources */,

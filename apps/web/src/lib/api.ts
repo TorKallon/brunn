@@ -37,6 +37,7 @@ import type {
   WorkspaceBinaryReceipt,
   WorkspaceChangesData,
   WorkspaceCheckpointReceipt,
+  WorkspaceDashboardData,
   WorkspaceDreamReceipt,
   WorkspaceJobsData,
   WorkspaceManifestData,
@@ -135,6 +136,9 @@ export interface StraylightApi {
     offset?: number,
     limit?: number,
   ): Promise<ApiEnvelope<WorkspaceUsageData>>;
+  workspaceDashboard(
+    timezone?: string,
+  ): Promise<ApiEnvelope<WorkspaceDashboardData>>;
   workspaceJobs(
     status?: string,
     offset?: number,
@@ -430,6 +434,12 @@ export function createApiClient(): StraylightApi {
       return get<WorkspaceUsageData>(
         `/workspace/usage?${query.toString()}`,
       );
+    },
+    workspaceDashboard: (timezone) => {
+      const query = new URLSearchParams();
+      if (timezone) query.set("timezone", timezone);
+      const suffix = query.size ? `?${query.toString()}` : "";
+      return get<WorkspaceDashboardData>(`/workspace/dashboard${suffix}`);
     },
     workspaceJobs: (status, offset = 0, limit = 100) => {
       const query = new URLSearchParams({

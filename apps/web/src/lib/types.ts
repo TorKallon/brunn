@@ -87,6 +87,7 @@ export interface ScopeSummary {
 
 export interface MeData {
   user: UserSummary;
+  credential_id?: string;
   active_scope?: ScopeSummary;
   scopes?: ScopeSummary[];
   corpus_revision?: string;
@@ -601,6 +602,59 @@ export interface WorkspaceUsageData {
   entries: WorkspaceUsageEntry[];
   offset: number;
   limit: number;
+}
+
+export interface DashboardStorageMetric {
+  count: number;
+  size_bytes: number;
+  semantics?: string;
+}
+
+export interface DashboardActivityPoint {
+  date: string;
+  read_operations: number;
+  read_bytes: number;
+  write_operations: number;
+  write_bytes: number;
+}
+
+export interface DashboardAccessClient {
+  id: string;
+  name: string;
+  kind: "api_credential" | "web_session" | string;
+  access: "read_only" | "read_write" | "owner";
+  status: "active" | "revoked" | string;
+  scope_ids: string[];
+  capabilities?: string[];
+  created_at?: string | null;
+  revoked_at?: string | null;
+  last_used_at?: string | null;
+  last_operation?: string | null;
+  read_operations_today: number;
+  write_operations_today: number;
+}
+
+export interface WorkspaceDashboardData {
+  generated_at: string;
+  timezone: string;
+  workspace_generation: number;
+  activity_tracking_started_at?: string | null;
+  storage: {
+    text: DashboardStorageMetric;
+    binary: DashboardStorageMetric;
+  };
+  today: {
+    read_operations: number;
+    read_bytes: number;
+    write_operations: number;
+    write_bytes: number;
+  };
+  activity: DashboardActivityPoint[];
+  access: DashboardAccessClient[];
+  coverage?: {
+    days?: number;
+    activity?: string;
+  };
 }
 
 export interface WorkspaceJob {

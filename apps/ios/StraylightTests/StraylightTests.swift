@@ -47,9 +47,130 @@ final class StraylightTests: XCTestCase {
 
         XCTAssertEqual(model.phase, .ready)
         XCTAssertTrue(model.isDemo)
+        XCTAssertEqual(model.selectedTab, .dashboard)
+        XCTAssertEqual(model.currentCredentialID, "credential:demo-iphone")
+        XCTAssertEqual(model.dashboard?.storage.text.count, 4_926)
+        XCTAssertEqual(model.dashboard?.access.count, 3)
         XCTAssertEqual(model.latestBriefing?.briefing?.schema, "briefing.v1")
         XCTAssertFalse(model.tasks.isEmpty)
         XCTAssertFalse(model.alerts.isEmpty)
+    }
+
+    @MainActor
+    func testCachedBriefingDoesNotLoadDashboardBeforeCredentialValidation() async throws {
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("latest-briefing.json")
+        defer {
+            try? FileManager.default.removeItem(
+                at: cacheURL.deletingLastPathComponent()
+            )
+        }
+        let cache = BriefingCache(fileURL: cacheURL)
+        try await cache.save(SampleData.briefing)
+        let identityGate = IdentityGate()
+        let dashboardCalls = CallCounter()
+        let model = AppModel(
+            api: Self.offlineAPI(),
+            credentialStore: TestCredentialStore(token: "sl_cached"),
+            briefingCache: cache,
+            bootstrapValidationTimeout: .seconds(2),
+            bootstrapIdentityLoader: { _ in
+                await identityGate.load()
+            },
+            dashboardLoader: { _, _ in
+                await dashboardCalls.increment()
+                return SampleData.dashboard
+            }
+        )
+
+        let bootstrap = Task { await model.bootstrap() }
+        for _ in 0 ..< 100 where !(model.phase == .ready && !model.connectionValidated) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertFalse(model.connectionValidated)
+
+        await model.refreshDashboard()
+        let callCountBeforeValidation = await dashboardCalls.value
+        XCTAssertEqual(callCountBeforeValidation, 0)
+
+        await identityGate.resolve(with: Self.readOnlyIdentity)
+        await bootstrap.value
+    }
+
+    @MainActor
+    func testLateDashboardResponseCannotRepopulateAfterDisconnect() async throws {
+        let dashboardGate = DashboardGate()
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("latest-briefing.json")
+        defer {
+            try? FileManager.default.removeItem(
+                at: cacheURL.deletingLastPathComponent()
+            )
+        }
+        let model = AppModel(
+            api: Self.offlineAPI(),
+            credentialStore: TestCredentialStore(token: "sl_valid"),
+            briefingCache: BriefingCache(fileURL: cacheURL),
+            bootstrapIdentityLoader: { _ in Self.readOnlyIdentity },
+            dashboardLoader: { _, _ in try await dashboardGate.load() }
+        )
+
+        await model.bootstrap()
+        for _ in 0 ..< 100 where !(await dashboardGate.hasStarted) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let dashboardRequestStarted = await dashboardGate.hasStarted
+        XCTAssertTrue(dashboardRequestStarted)
+
+        await model.disconnect()
+        await dashboardGate.resolve(with: SampleData.dashboard)
+        try await Task.sleep(for: .milliseconds(30))
+
+        XCTAssertNil(model.dashboard)
+        XCTAssertNil(model.dashboardMessage)
+        XCTAssertFalse(model.isRefreshingDashboard)
+        XCTAssertEqual(model.phase, .connectionRequired)
+    }
+
+    func testDashboardFreshnessUsesLocalDayAndFallsBackOnInvalidTimestamp() throws {
+        let timezone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-02T12:00:00Z"))
+
+        XCTAssertFalse(AppModel.dashboardNeedsRefresh(
+            Self.dashboard(generatedAt: "2026-08-02T11:59:00Z"),
+            now: now,
+            timezone: timezone
+        ))
+        XCTAssertTrue(AppModel.dashboardNeedsRefresh(
+            Self.dashboard(generatedAt: "2026-08-02T11:50:00Z"),
+            now: now,
+            timezone: timezone
+        ))
+        XCTAssertTrue(AppModel.dashboardNeedsRefresh(
+            Self.dashboard(generatedAt: "not-a-timestamp"),
+            now: now,
+            timezone: timezone
+        ))
+
+        let afterLocalMidnight = try XCTUnwrap(
+            ISO8601DateFormatter().date(from: "2026-08-02T07:01:00Z")
+        )
+        XCTAssertTrue(AppModel.dashboardNeedsRefresh(
+            Self.dashboard(generatedAt: "2026-08-02T06:59:00Z"),
+            now: afterLocalMidnight,
+            timezone: timezone
+        ))
+    }
+
+    func testDashboardWeekdayKeepsCivilDateAcrossTimeZones() throws {
+        let losAngeles = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let tokyo = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+
+        XCTAssertEqual(DashboardDate.shortDay("2026-08-02", timezone: losAngeles), "Sun")
+        XCTAssertEqual(DashboardDate.shortDay("2026-08-02", timezone: tokyo), "Sun")
     }
 
     @MainActor
@@ -84,6 +205,34 @@ final class StraylightTests: XCTestCase {
         capabilities: ["open", "query", "read", "compute", "verify", "status"],
         readOnly: true
     )
+
+    private static func offlineAPI() -> StraylightAPI {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 0.1
+        configuration.timeoutIntervalForResource = 0.1
+        return StraylightAPI(
+            configuration: .init(
+                baseURL: URL(string: "http://127.0.0.1:9/api/v1")!
+            ),
+            session: URLSession(configuration: configuration)
+        )
+    }
+
+    private static func dashboard(generatedAt: String) -> WorkspaceDashboardData {
+        let dashboard = SampleData.dashboard
+        return WorkspaceDashboardData(
+            generatedAt: generatedAt,
+            timezone: dashboard.timezone,
+            workspaceGeneration: dashboard.workspaceGeneration,
+            activityTrackingStartedAt: dashboard.activityTrackingStartedAt,
+            storage: dashboard.storage,
+            today: dashboard.today,
+            activity: dashboard.activity,
+            access: dashboard.access,
+            coverage: dashboard.coverage
+        )
+    }
 
     func testNotificationParserRejectsArbitraryPayload() {
         XCTAssertNil(NotificationRouteParser.route(from: ["url": "https://example.com"]))
@@ -189,5 +338,37 @@ private actor CallCounter {
 
     func increment() {
         value += 1
+    }
+}
+
+private actor IdentityGate {
+    private var continuation: CheckedContinuation<MeData, Never>?
+
+    func load() async -> MeData {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resolve(with identity: MeData) {
+        continuation?.resume(returning: identity)
+        continuation = nil
+    }
+}
+
+private actor DashboardGate {
+    private var continuation: CheckedContinuation<WorkspaceDashboardData, any Error>?
+    private(set) var hasStarted = false
+
+    func load() async throws -> WorkspaceDashboardData {
+        hasStarted = true
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resolve(with dashboard: WorkspaceDashboardData) {
+        continuation?.resume(returning: dashboard)
+        continuation = nil
     }
 }

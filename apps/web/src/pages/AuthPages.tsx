@@ -115,8 +115,8 @@ export function LoginPage() {
     onSuccess: async (session) => {
       queryClient.clear();
       queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, session);
-      const destination = search.redirect ?? "/work";
-      await navigate({ to: destination as "/work", replace: true });
+      const destination = search.redirect ?? "/dashboard";
+      await navigate({ to: destination as "/dashboard", replace: true });
     },
   });
   const error = loginMutation.isError ? loginErrorMessage(loginMutation.error) : null;

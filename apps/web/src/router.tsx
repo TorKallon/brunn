@@ -15,6 +15,7 @@ import { BriefingsPage } from "./pages/BriefingsPage";
 import { CapturePage } from "./pages/CapturePage";
 import { ControlPage } from "./pages/ControlPage";
 import { DreamsPage } from "./pages/DreamsPage";
+import { DashboardPage } from "./pages/DashboardPage";
 import { ExplorePage } from "./pages/ExplorePage";
 import { TopicsPage } from "./pages/TopicsPage";
 import { WorkPage } from "./pages/WorkPage";
@@ -67,8 +68,13 @@ const indexRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/work" });
+    throw redirect({ to: "/dashboard" });
   },
+});
+const dashboardRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/dashboard",
+  component: DashboardPage,
 });
 const workRoute = createRoute({ getParentRoute: () => protectedRoute, path: "/work", component: WorkPage });
 const briefingsRoute = createRoute({
@@ -142,6 +148,7 @@ const routeTree = rootRoute.addChildren([
   resetPasswordRoute,
   protectedRoute.addChildren([
     indexRoute,
+    dashboardRoute,
     briefingsRoute,
     briefingEditionRoute,
     topicsRoute,

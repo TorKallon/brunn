@@ -48,7 +48,7 @@ describe("web authentication", () => {
       },
     });
     const user = userEvent.setup();
-    const { queryClient } = renderApp("/work");
+    const { queryClient } = renderApp("/login");
 
     expect(
       await screen.findByRole("heading", { name: "Sign in" }),
@@ -62,7 +62,7 @@ describe("web authentication", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Workspace" }),
+      await screen.findByRole("heading", { name: "Aether’s Straylight" }),
     ).toBeInTheDocument();
     expect(window.sessionStorage).toHaveLength(0);
     expect(queryClient.getQueryData(["previous-user", "private"])).toBeUndefined();
