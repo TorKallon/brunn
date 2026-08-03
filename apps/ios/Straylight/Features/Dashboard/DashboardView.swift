@@ -7,12 +7,6 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
-                DashboardHero(
-                    briefing: model.latestBriefing,
-                    readBriefing: { model.selectedTab = .today },
-                    openArchive: { model.selectedTab = .archive }
-                )
-
                 NavigationLink {
                     SearchView()
                 } label: {
@@ -45,7 +39,7 @@ struct DashboardView: View {
                     BoundaryNotice(
                         symbol: "chart.bar.xaxis",
                         title: "Usage overview unavailable",
-                        detail: "Your briefing remains available. Pull to retry storage, activity, and access details."
+                        detail: "Pull to retry storage, activity, and access details."
                     )
                 }
             }
@@ -68,134 +62,12 @@ struct DashboardView: View {
             }
         }
         .refreshable {
-            async let dashboardRefresh: Void = model.refreshDashboard()
-            async let briefingRefresh: Void = model.refreshBriefing()
-            _ = await (dashboardRefresh, briefingRefresh)
+            await model.refreshDashboard()
         }
         .task {
             await model.refreshDashboardIfNeeded()
         }
         .accessibilityIdentifier("dashboard-home")
-    }
-}
-
-private struct DashboardHero: View {
-    let briefing: BriefingEditionData?
-    let readBriefing: () -> Void
-    let openArchive: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(DisplayDate.day(todayKey))
-                        .font(.caption.weight(.bold))
-                        .tracking(0.6)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color.white.opacity(0.68))
-                    Text("Your Straylight")
-                        .font(.system(.largeTitle, design: .serif, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 10)
-                Image("LaunchSignal")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 54, height: 54)
-                    .clipShape(RoundedRectangle(cornerRadius: 13))
-                    .accessibilityHidden(true)
-            }
-
-            Text("See what your memory is holding, how it is being used, and which clients can reach it.")
-                .font(.subheadline)
-                .foregroundStyle(Color.white.opacity(0.76))
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let briefing {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(isToday(briefing) ? "TODAY’S BRIEFING" : "LATEST BRIEFING")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.7)
-                        .foregroundStyle(Color.white.opacity(0.62))
-                    Text(briefingTitle(briefing))
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    if let summary = briefing.briefing?.summaryMD?.first {
-                        SafeMarkdownText(markdown: summary)
-                            .font(.subheadline)
-                            .foregroundStyle(Color.white.opacity(0.78))
-                            .lineLimit(3)
-                    }
-                }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.075), in: RoundedRectangle(cornerRadius: 12))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                }
-            }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { briefingButtons }
-                VStack(spacing: 10) { briefingButtons }
-            }
-        }
-        .padding(20)
-        .background(
-            LinearGradient(
-                colors: [StraylightTheme.night, StraylightTheme.signal.opacity(0.34)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 18)
-        )
-        .overlay(alignment: .topTrailing) {
-            Circle()
-                .stroke(Color.white.opacity(0.08), lineWidth: 30)
-                .frame(width: 180, height: 180)
-                .offset(x: 72, y: -78)
-                .accessibilityHidden(true)
-        }
-        .clipped()
-    }
-
-    @ViewBuilder
-    private var briefingButtons: some View {
-        Button(action: readBriefing) {
-            Label(
-                briefing.map { isToday($0) ? "Read today’s briefing" : "Read latest briefing" }
-                    ?? "Open briefings",
-                systemImage: "sunrise"
-            )
-            .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .buttonStyle(.borderedProminent)
-        .tint(.white)
-        .foregroundStyle(StraylightTheme.navy)
-        .accessibilityIdentifier("dashboard-briefing-action")
-
-        Button(action: openArchive) {
-            Label("All briefings", systemImage: "calendar")
-                .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .buttonStyle(.bordered)
-        .tint(.white)
-        .accessibilityIdentifier("dashboard-archive-action")
-    }
-
-    private var todayKey: String {
-        DashboardDate.dayKey(Date(), timezone: TimeZone.current)
-    }
-
-    private func isToday(_ briefing: BriefingEditionData) -> Bool {
-        let timezone = briefing.briefing?.timezone.flatMap(TimeZone.init(identifier:)) ?? .current
-        return briefing.date == DashboardDate.dayKey(Date(), timezone: timezone)
-    }
-
-    private func briefingTitle(_ briefing: BriefingEditionData) -> String {
-        "\(briefing.edition.replacingOccurrences(of: "_", with: " ").localizedCapitalized) · \(DisplayDate.metadata(briefing.date))"
     }
 }
 

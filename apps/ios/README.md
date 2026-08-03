@@ -6,7 +6,7 @@ hosted Straylight.
 ## Implemented MVP
 
 - full-width Today reader modeled on the mobile web view
-- Home dashboard with direct briefing/search access, storage totals, seven-day
+- Home dashboard with direct memory-search access, storage totals, seven-day
   usage charts, and a credential access inventory
 - workspace entry search with Best match, Last modified, and Title ordering,
   exact version-pinned reads, formatted/raw Markdown modes, and safe in-app

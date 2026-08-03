@@ -26,11 +26,15 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
-    func testDemoOpensOnDashboardWithBriefingStorageActivityAndAccess() {
+    func testDemoOpensOnDashboardWithSearchStorageActivityAndAccess() {
         let app = launchDemo()
 
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(element("dashboard-home", in: app).exists)
+        XCTAssertTrue(element("dashboard-search", in: app).exists)
+        XCTAssertFalse(app.staticTexts["Your Straylight"].exists)
+        XCTAssertFalse(element("dashboard-briefing-action", in: app).exists)
+        XCTAssertFalse(element("dashboard-archive-action", in: app).exists)
         XCTAssertTrue(element("dashboard-storage-text", in: app).exists)
         XCTAssertTrue(element("dashboard-storage-binary", in: app).exists)
         XCTAssertTrue(caseInsensitiveText("Detailed Activity", in: app).exists)
@@ -44,28 +48,16 @@ final class StraylightUITests: XCTestCase {
         scroll(access, intoViewIn: app)
         XCTAssertTrue(access.exists)
         XCTAssertTrue(caseInsensitiveText("This client", in: app).exists)
-
-        app.tabBars.buttons["Home"].tap()
-        let briefing = element("dashboard-briefing-action", in: app)
-        scroll(briefing, intoViewIn: app)
-        briefing.tap()
-        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
     }
 
     @MainActor
-    func testDemoDashboardLinksReachSearchAndAllBriefings() {
+    func testDemoDashboardLinkReachesSearch() {
         let app = launchDemo()
 
         let search = element("dashboard-search", in: app)
         scroll(search, intoViewIn: app)
         search.tap()
         XCTAssertTrue(app.navigationBars["Search"].waitForExistence(timeout: 3))
-        app.navigationBars["Search"].buttons.firstMatch.tap()
-
-        let archive = element("dashboard-archive-action", in: app)
-        scroll(archive, intoViewIn: app)
-        archive.tap()
-        XCTAssertTrue(app.navigationBars["Archive"].waitForExistence(timeout: 3))
     }
 
     @MainActor
