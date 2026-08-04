@@ -12,6 +12,7 @@ import {
   ReadOnlyNotice,
 } from "../components/StateViews";
 import { useApi } from "../lib/auth";
+import { groupBriefingSections } from "../lib/briefingSections";
 import { useReadOnly } from "../lib/current";
 import { formatDate, humanize } from "../lib/format";
 import { editionTitle, useBriefingsIndex } from "./BriefingsPage";
@@ -148,26 +149,28 @@ export function BriefingEditionPage() {
               ) : null}
             </section>
           ) : null}
-          {(briefing.sections ?? []).map((section) => (
+          {groupBriefingSections(briefing.sections ?? []).map((section) => (
             <Section
-              key={section.topic}
+              key={section.id}
               title={section.title}
-              meta={`${section.items.length} item${
-                section.items.length === 1 ? "" : "s"
+              meta={`${section.itemCount} item${
+                section.itemCount === 1 ? "" : "s"
               }`}
             >
               <div className="briefing-section-items">
-                {section.items.map((item) => (
-                  <BriefingItemRow
-                    key={item.id}
-                    item={item}
-                    sectionTitle={section.title}
-                    topicSlug={section.topic}
-                    editionRef={data.entry_ref}
-                    readOnly={readOnly}
-                    targeted={item.id === targetItem}
-                  />
-                ))}
+                {section.parts.flatMap((part) =>
+                  part.section.items.map((item) => (
+                    <BriefingItemRow
+                      key={item.id}
+                      item={item}
+                      sectionTitle={part.itemLabel}
+                      topicSlug={part.section.topic}
+                      editionRef={data.entry_ref}
+                      readOnly={readOnly}
+                      targeted={item.id === targetItem}
+                    />
+                  )),
+                )}
               </div>
             </Section>
           ))}

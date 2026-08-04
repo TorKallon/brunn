@@ -121,7 +121,7 @@ struct BriefingReader: View {
                     )
                 }
 
-                ForEach(payload.sections ?? []) { section in
+                ForEach(BriefingDisplaySection.grouped(payload.sections ?? [])) { section in
                     BriefingSectionView(
                         section: section,
                         expandedItems: $expandedItems,
@@ -309,7 +309,7 @@ private struct BriefingSummary: View {
 }
 
 private struct BriefingSectionView: View {
-    let section: BriefingSection
+    let section: BriefingDisplaySection
     @Binding var expandedItems: Set<String>
     let toggle: (String) -> Void
 
@@ -319,7 +319,7 @@ private struct BriefingSectionView: View {
                 Text(section.title)
                     .font(.headline)
                     .foregroundStyle(StraylightTheme.ink)
-                Text("\(section.items.count) \(section.items.count == 1 ? "item" : "items")")
+                Text("\(section.itemCount) \(section.itemCount == 1 ? "item" : "items")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
@@ -329,14 +329,16 @@ private struct BriefingSectionView: View {
 
             Divider()
 
-            ForEach(section.items) { item in
-                BriefingItemDisclosure(
-                    item: item,
-                    sectionTitle: section.title,
-                    isExpanded: expandedItems.contains(item.id),
-                    onToggle: { toggle(item.id) }
-                )
-                .id(item.id)
+            ForEach(section.parts) { part in
+                ForEach(part.section.items) { item in
+                    BriefingItemDisclosure(
+                        item: item,
+                        sectionTitle: part.itemLabel,
+                        isExpanded: expandedItems.contains(item.id),
+                        onToggle: { toggle(item.id) }
+                    )
+                    .id(item.id)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -347,7 +349,9 @@ private struct BriefingSectionView: View {
                 .frame(height: 1)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("briefing-section-\(section.topic)")
+        .accessibilityIdentifier(
+            "briefing-section-\(section.parts.map(\.section.topic).joined(separator: "-"))"
+        )
     }
 }
 

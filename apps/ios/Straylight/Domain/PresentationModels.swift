@@ -138,6 +138,86 @@ public struct BriefingNewsItem: Identifiable, Sendable, Equatable {
     }
 }
 
+public struct BriefingDisplaySectionPart: Identifiable, Sendable, Equatable {
+    public let section: BriefingSection
+    public let itemLabel: String
+
+    public var id: String {
+        section.topic
+    }
+
+    public init(section: BriefingSection, itemLabel: String) {
+        self.section = section
+        self.itemLabel = itemLabel
+    }
+}
+
+public struct BriefingDisplaySection: Identifiable, Sendable, Equatable {
+    public let id: String
+    public let title: String
+    public let parts: [BriefingDisplaySectionPart]
+
+    public var itemCount: Int {
+        parts.reduce(0) { $0 + $1.section.items.count }
+    }
+
+    public init(id: String, title: String, parts: [BriefingDisplaySectionPart]) {
+        self.id = id
+        self.title = title
+        self.parts = parts
+    }
+
+    public static func grouped(_ sections: [BriefingSection]) -> [BriefingDisplaySection] {
+        var groups: [BriefingDisplaySection] = []
+        var groupIndexes: [String: Int] = [:]
+
+        for section in sections {
+            let title = displayTitle(for: section.title)
+            let groupID = title.parent == nil ? "topic:\(section.topic)" : "parent:\(title.header)"
+            let part = BriefingDisplaySectionPart(
+                section: section,
+                itemLabel: title.itemLabel
+            )
+
+            if let index = groupIndexes[groupID] {
+                let group = groups[index]
+                groups[index] = BriefingDisplaySection(
+                    id: group.id,
+                    title: group.title,
+                    parts: group.parts + [part]
+                )
+            } else {
+                groupIndexes[groupID] = groups.count
+                groups.append(BriefingDisplaySection(
+                    id: groupID,
+                    title: title.header,
+                    parts: [part]
+                ))
+            }
+        }
+
+        return groups
+    }
+
+    private static let groupedParentTitles = ["RTS LLC", "Hobby Projects"]
+
+    private static func displayTitle(for title: String) -> (
+        header: String,
+        itemLabel: String,
+        parent: String?
+    ) {
+        for parent in groupedParentTitles {
+            let prefix = "\(parent) — "
+            guard title.hasPrefix(prefix) else { continue }
+            let child = String(title.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !child.isEmpty else { continue }
+            return (parent, child, parent)
+        }
+        return (title, title, nil)
+    }
+}
+
 public struct WorkspaceEntryLink: Hashable, Sendable {
     public let target: String
     public let label: String?

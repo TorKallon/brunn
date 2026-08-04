@@ -254,6 +254,58 @@ final class CoreContractTests: XCTestCase {
         XCTAssertEqual(envelope.data.versions.map(\.version), [1, 2, 3])
     }
 
+    func testBriefingDisplaySectionsGroupProjectParentsWithoutLosingTopics() {
+        let sections = [
+            BriefingSection(
+                topic: "calendar",
+                title: "Today's calendar",
+                items: [briefingItem(id: "calendar")]
+            ),
+            BriefingSection(
+                topic: "charlemagne",
+                title: "RTS LLC — Charlemagne",
+                items: [briefingItem(id: "charlemagne")]
+            ),
+            BriefingSection(
+                topic: "joyeuse",
+                title: "RTS LLC — Joyeuse",
+                items: [briefingItem(id: "joyeuse")]
+            ),
+            BriefingSection(
+                topic: "railway",
+                title: "Hobby Projects — Railway",
+                items: [briefingItem(id: "railway")]
+            ),
+            BriefingSection(
+                topic: "ai",
+                title: "AI — material updates",
+                items: [briefingItem(id: "ai")]
+            ),
+        ]
+
+        let groups = BriefingDisplaySection.grouped(sections)
+
+        XCTAssertEqual(groups.map(\.title), [
+            "Today's calendar",
+            "RTS LLC",
+            "Hobby Projects",
+            "AI — material updates",
+        ])
+        XCTAssertEqual(groups.map(\.itemCount), [1, 2, 1, 1])
+        XCTAssertEqual(groups[1].parts.map(\.itemLabel), ["Charlemagne", "Joyeuse"])
+        XCTAssertEqual(groups[1].parts.map(\.section.topic), ["charlemagne", "joyeuse"])
+        XCTAssertEqual(groups[1].parts.flatMap(\.section.items).map(\.id), [
+            "charlemagne",
+            "joyeuse",
+        ])
+        XCTAssertEqual(groups[2].parts.map(\.itemLabel), ["Railway"])
+        XCTAssertEqual(groups[3].parts.map(\.itemLabel), ["AI — material updates"])
+    }
+
+    private func briefingItem(id: String) -> BriefingItem {
+        BriefingItem(id: id, kind: "metric", headlineMD: id)
+    }
+
     func testSearchCandidateAcceptsBudgetedTextWithoutExcerpt() throws {
         let json = #"""
         {
