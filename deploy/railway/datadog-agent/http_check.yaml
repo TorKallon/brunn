@@ -1,0 +1,42 @@
+init_config:
+  # This probe must traverse public DNS and Railway's public edge. Do not let
+  # Agent-level proxy configuration turn it into a different network path.
+  skip_proxy: true
+
+instances:
+  - name: straylight-public-edge
+    url: https://straylight.rourkem.com/healthz
+    method: get
+    http_response_status_code: 200
+    content_match: '^ok\s*$'
+    allow_redirects: false
+    tls_verify: true
+    collect_response_time: true
+    timeout: 3
+    connect_timeout: 3
+    read_timeout: 3
+    min_collection_interval: 15
+    service: straylight
+    tags:
+      - component:public-edge
+      - probe:public-edge
+      - platform:railway
+      - vantage:railway-agent
+  - name: straylight-public-api-ready
+    url: https://straylight.rourkem.com/api/ready
+    method: get
+    http_response_status_code: 200
+    content_match: '"status"\s*:\s*"ready"'
+    allow_redirects: false
+    tls_verify: true
+    collect_response_time: true
+    timeout: 3
+    connect_timeout: 3
+    read_timeout: 3
+    min_collection_interval: 15
+    service: straylight
+    tags:
+      - component:public-edge
+      - probe:public-edge
+      - platform:railway
+      - vantage:railway-agent

@@ -10,6 +10,8 @@ REPO = Path(__file__).resolve().parents[1]
 DASHBOARD = REPO / "infra/datadog/straylight-production-dashboard.json"
 PERCENTILES = REPO / "infra/datadog/distribution-percentiles.json"
 MONITORS = REPO / "infra/datadog/straylight-production-monitors.json"
+HTTP_CHECK = REPO / "deploy/railway/datadog-agent/http_check.yaml"
+DATADOG_DOCKERFILE = REPO / "deploy/railway/datadog-agent/Dockerfile"
 RUST_SOURCE = REPO / "apps/api/src"
 
 
@@ -43,6 +45,8 @@ class ObservabilityContractTests(unittest.TestCase):
         self.dashboard = json.loads(DASHBOARD.read_text())
         self.percentiles = json.loads(PERCENTILES.read_text())
         self.monitors = json.loads(MONITORS.read_text())
+        self.http_check = HTTP_CHECK.read_text()
+        self.datadog_dockerfile = DATADOG_DOCKERFILE.read_text()
         self.rust = "\n".join(
             path.read_text() for path in sorted(RUST_SOURCE.glob("*.rs"))
         )
@@ -185,13 +189,78 @@ class ObservabilityContractTests(unittest.TestCase):
             self.assertIn("__NOTIFY__", monitor["message"])
             self.assertTrue(monitor["options"]["notify_audit"])
             metric = re.search(
-                r"((?:straylight|datadog\.dogstatsd\.client)\.[a-z0-9_.]+)",
+                r"((?:straylight|datadog\.dogstatsd\.client|network\.http)\.[a-z0-9_.]+)",
                 monitor["query"],
             )
+            service_check = re.search(r'\"(http\.can_connect)\"', monitor["query"])
+            self.assertTrue(metric or service_check, monitor["name"])
+            if service_check:
+                self.assertEqual("service check", monitor["type"])
+                continue
             self.assertIsNotNone(metric, monitor["name"])
             if metric.group(1).startswith("straylight."):
                 emitter_name = metric.group(1).removeprefix("straylight.")
                 self.assertIn(f'"{emitter_name}"', self.rust, monitor["name"])
+
+    def test_public_edge_http_check_is_bounded_and_outside_in(self):
+        self.assertIn("gcr.io/datadoghq/agent:7.81.2@sha256:", self.datadog_dockerfile)
+        self.assertIn(
+            "COPY deploy/railway/datadog-agent/http_check.yaml "
+            "/etc/datadog-agent/conf.d/http_check.d/conf.yaml",
+            self.datadog_dockerfile,
+        )
+        required = [
+            "url: https://straylight.rourkem.com/healthz",
+            "url: https://straylight.rourkem.com/api/ready",
+            "http_response_status_code: 200",
+            "content_match: '^ok\\s*$'",
+            "content_match: '\"status\"\\s*:\\s*\"ready\"'",
+            "allow_redirects: false",
+            "tls_verify: true",
+            "collect_response_time: true",
+            "timeout: 3",
+            "connect_timeout: 3",
+            "read_timeout: 3",
+            "min_collection_interval: 15",
+            "service: straylight",
+            "component:public-edge",
+            "probe:public-edge",
+            "platform:railway",
+            "vantage:railway-agent",
+        ]
+        for setting in required:
+            self.assertIn(setting, self.http_check)
+        self.assertEqual(2, self.http_check.count("  - name: straylight-public-"))
+
+    def test_public_edge_monitors_use_agent_7812_http_check_signals(self):
+        by_name = {monitor["name"]: monitor for monitor in self.monitors}
+        connectivity = by_name["[Straylight] Public edge connectivity"]
+        self.assertEqual("service check", connectivity["type"])
+        self.assertIn('"http.can_connect"', connectivity["query"])
+        self.assertIn("probe:public-edge", connectivity["query"])
+        self.assertIn("platform:railway", connectivity["query"])
+        self.assertIn('.last(3).by("host", "instance", "url")', connectivity["query"])
+        self.assertEqual(
+            {"ok": 2, "warning": 1, "critical": 2},
+            connectivity["options"]["thresholds"],
+        )
+        self.assertTrue(connectivity["options"]["notify_no_data"])
+
+        latency = by_name["[Straylight] Public edge response is slow"]
+        self.assertEqual("metric alert", latency["type"])
+        self.assertIn("network.http.response_time", latency["query"])
+        self.assertEqual(1, latency["options"]["thresholds"]["critical"])
+
+    def test_open_and_search_critical_alerts_match_performance_gates(self):
+        by_name = {monitor["name"]: monitor for monitor in self.monitors}
+        gates = {
+            "[Straylight] Simplified workspace open is slow": 5000,
+            "[Straylight] Simplified workspace search is slow": 3000,
+        }
+        for name, gate_ms in gates.items():
+            monitor = by_name[name]
+            self.assertEqual(gate_ms, monitor["options"]["thresholds"]["critical"])
+            self.assertTrue(monitor["query"].endswith(f"> {gate_ms}"))
 
 
 if __name__ == "__main__":

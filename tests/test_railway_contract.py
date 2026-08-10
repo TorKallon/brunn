@@ -86,6 +86,51 @@ class RailwayContractTests(unittest.TestCase):
             WEB_PROXY,
             r"location ~ \^/\(\?:mcp\|authorize\|token\|register\|oauth/consent",
         )
+        mcp_proxy = WEB_PROXY.split(
+            "location ~ ^/(?:mcp|authorize|token|register|oauth/consent", 1
+        )[1]
+        self.assertIn("client_max_body_size 5m;", mcp_proxy)
+
+    def test_public_web_has_redundant_ingress_and_zero_downtime_rollouts(self):
+        web_block = RAILWAY.split('const web = service("web"', 1)[1].split(
+            'const datadog = service("datadog-agent"', 1
+        )[0]
+        self.assertIn('replicas: { "us-west2": 2 }', web_block)
+        self.assertIn('restartPolicyType: "ALWAYS"', web_block)
+        self.assertIn("restartPolicyMaxRetries: null", web_block)
+        self.assertIn("overlapSeconds: 30", web_block)
+        self.assertIn("drainingSeconds: 30", web_block)
+
+    def test_foreground_api_has_redundant_replicas(self):
+        api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
+            'const worker = service("worker"', 1
+        )[0]
+        self.assertIn('replicas: { "us-west2": 2 }', api_block)
+        self.assertIn('restartPolicyType: "ALWAYS"', api_block)
+        self.assertIn("restartPolicyMaxRetries: null", api_block)
+        self.assertIn("overlapSeconds: 30", api_block)
+
+    def test_single_replica_runtime_services_restart_without_exhaustion(self):
+        worker_block = RAILWAY.split('const worker = service("worker"', 1)[1].split(
+            'const mcp = service("mcp"', 1
+        )[0]
+        mcp_block = RAILWAY.split('const mcp = service("mcp"', 1)[1].split(
+            'const web = service("web"', 1
+        )[0]
+        datadog_block = RAILWAY.split(
+            'const datadog = service("datadog-agent"', 1
+        )[1].split("export default", 1)[0]
+        for block in (worker_block, mcp_block, datadog_block):
+            self.assertIn('replicas: { "us-west2": 1 }', block)
+            self.assertIn('restartPolicyType: "ALWAYS"', block)
+            self.assertIn("restartPolicyMaxRetries: null", block)
+
+    def test_semantic_only_has_a_realistic_bound_but_hybrid_stays_optional(self):
+        self.assertIn('STRAYLIGHT_SEMANTIC_DEADLINE_MS: "2500"', RAILWAY)
+        self.assertIn(
+            "hybrid requests take semantic evidence only when it is ready",
+            (ROOT / "docs" / "Architecture.md").read_text(),
+        )
 
     def test_large_workspace_binary_uploads_stream_without_proxy_buffering(self):
         self.assertRegex(

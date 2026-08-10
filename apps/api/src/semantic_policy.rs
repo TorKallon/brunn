@@ -194,6 +194,7 @@ struct SemanticCounters {
     successes: AtomicU64,
     failures: AtomicU64,
     deferrals: AtomicU64,
+    opportunistic_misses: AtomicU64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -214,6 +215,7 @@ pub struct SemanticRuntimeSnapshot {
     pub successes: u64,
     pub failures: u64,
     pub deferrals: u64,
+    pub opportunistic_misses: u64,
 }
 
 type InflightReceiver = watch::Receiver<Option<CachedQueryEmbedding>>;
@@ -339,6 +341,7 @@ impl SemanticRuntime {
             successes: load(&self.counters.successes),
             failures: load(&self.counters.failures),
             deferrals: load(&self.counters.deferrals),
+            opportunistic_misses: load(&self.counters.opportunistic_misses),
         }
     }
 
@@ -382,6 +385,13 @@ impl SemanticRuntime {
     pub fn record_deferral(&self) {
         self.counters.deferrals.fetch_add(1, Ordering::Relaxed);
         metrics::counter!("simple.semantic.outcome", "result" => "deferred").increment(1);
+    }
+
+    pub fn record_opportunistic_miss(&self) {
+        self.counters
+            .opportunistic_misses
+            .fetch_add(1, Ordering::Relaxed);
+        metrics::counter!("simple.semantic.outcome", "result" => "opportunistic_miss").increment(1);
     }
 
     fn record_dedupe_join(&self) {
@@ -1009,5 +1019,15 @@ mod tests {
         let snapshot = runtime.snapshot();
         assert_eq!(snapshot.cache_bypasses, 1);
         assert_eq!(snapshot.provider_timeouts, 1);
+    }
+
+    #[test]
+    fn opportunistic_misses_have_a_distinct_nonfailure_counter() {
+        let runtime = SemanticRuntime::default();
+        runtime.record_opportunistic_miss();
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.opportunistic_misses, 1);
+        assert_eq!(snapshot.failures, 0);
+        assert_eq!(snapshot.deferrals, 0);
     }
 }

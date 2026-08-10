@@ -1,5 +1,36 @@
 [
   {
+    "name": "[Straylight] Public edge connectivity",
+    "type": "service check",
+    "query": "\"http.can_connect\".over(\"env:__DD_ENV__\", \"service:__DD_SERVICE__\", \"probe:public-edge\", \"platform:railway\").last(3).by(\"host\", \"instance\", \"url\").count_by_status()",
+    "message": "A public Straylight health or API-readiness endpoint failed from the Railway Datadog Agent. These probes resolve the public domain and traverse Railway's public edge; use the instance and URL tags to distinguish edge-to-web from edge-to-API failure before retrying writes.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight", "probe:public-edge"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "notify_no_data": true,
+      "no_data_timeframe": 2,
+      "renotify_interval": 15,
+      "new_group_delay": 60,
+      "thresholds": {"ok": 2, "warning": 1, "critical": 2}
+    }
+  },
+  {
+    "name": "[Straylight] Public edge response is slow",
+    "type": "metric alert",
+    "query": "avg(last_5m):max:network.http.response_time{env:__DD_ENV__,service:__DD_SERVICE__,probe:public-edge,platform:railway} > 1",
+    "message": "A public Straylight health or API-readiness endpoint exceeded the one-second response-time gate from the Railway Datadog Agent. Correlate the instance and URL tags with web, API, database, and Railway edge telemetry.__NOTIFY__",
+    "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight", "probe:public-edge"],
+    "options": {
+      "include_tags": true,
+      "notify_audit": true,
+      "notify_no_data": false,
+      "require_full_window": false,
+      "renotify_interval": 30,
+      "thresholds": {"warning": 0.5, "critical": 1}
+    }
+  },
+  {
     "name": "[Straylight] API heartbeat missing",
     "type": "metric alert",
     "query": "avg(last_5m):avg:straylight.runtime.alive{env:__DD_ENV__,service:__DD_SERVICE__,component:api} < 1",
@@ -182,15 +213,15 @@
   {
     "name": "[Straylight] Simplified workspace open is slow",
     "type": "query alert",
-    "query": "percentile(last_10m):p95:straylight.simple.open.duration_ms{env:__DD_ENV__,service:__DD_SERVICE__,component:api} > 15000",
-    "message": "Simplified workspace opens are taking long enough to damage interactive agent use. Inspect workspace route latency, retrieval lane timeouts, database pool pressure, and deployment version. The warning threshold is 5 seconds; the critical threshold is 15 seconds.__NOTIFY__",
+    "query": "percentile(last_10m):p95:straylight.simple.open.duration_ms{env:__DD_ENV__,service:__DD_SERVICE__,component:api} > 5000",
+    "message": "Simplified workspace open p95 exceeded the documented five-second performance gate. Inspect workspace route latency, retrieval lane timeouts, database pool pressure, and deployment version.__NOTIFY__",
     "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
     "options": {
       "include_tags": true,
       "notify_audit": true,
       "require_full_window": false,
       "renotify_interval": 30,
-      "thresholds": {"warning": 5000, "critical": 15000}
+      "thresholds": {"warning": 3000, "critical": 5000}
     }
   },
   {
@@ -211,15 +242,15 @@
   {
     "name": "[Straylight] Simplified workspace search is slow",
     "type": "query alert",
-    "query": "percentile(last_10m):p95:straylight.http.request.duration_ms{env:__DD_ENV__,service:__DD_SERVICE__,component:api,route:/v1/workspace/search} > 10000",
-    "message": "Workspace search latency is no longer interactive. This catches broad-query regressions even when individual retrieval lanes eventually return. The warning threshold matches the 3-second performance-harness gate; ten seconds is critical.__NOTIFY__",
+    "query": "percentile(last_10m):p95:straylight.http.request.duration_ms{env:__DD_ENV__,service:__DD_SERVICE__,component:api,route:/v1/workspace/search} > 3000",
+    "message": "Workspace search p95 exceeded the documented three-second performance gate. This catches broad-query regressions even when individual retrieval lanes eventually return.__NOTIFY__",
     "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
     "options": {
       "include_tags": true,
       "notify_audit": true,
       "require_full_window": false,
       "renotify_interval": 30,
-      "thresholds": {"warning": 3000, "critical": 10000}
+      "thresholds": {"warning": 1500, "critical": 3000}
     }
   },
   {

@@ -14,8 +14,48 @@ const assetReference = z.string()
   .regex(/^entry:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   .describe("Exact entry:... binary reference copied from a Straylight response.");
 const jsonObject = z.record(z.string(), z.unknown());
-const checkpointSourceReference = reference.describe(
+const MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024;
+const MAX_CHECKPOINT_ITEMS = 4_096;
+const checkpointIdentityReference = printableUtf8String(256);
+const checkpointStateReference = printableUtf8String(4_096);
+const checkpointSourceReference = printableUtf8String(4_096).describe(
   "An exact entry:... reference or relative Markdown path returned by search/read.",
+);
+const checkpointIdempotencyKey = z.string().min(1).max(256).refine(
+  (value) => Buffer.byteLength(value, "utf8") <= 256
+    && !/[\u0000-\u001f\u007f-\u009f]/u.test(value),
+  "idempotency_key must contain at most 256 UTF-8 bytes and no control characters",
+).describe(
+  "Stable replay identity. Reuse this exact key with an identical checkpoint payload after an ambiguous outcome.",
+);
+const checkpointText = z.string().max(MAX_CHECKPOINT_BYTES).refine(
+  (value) => Buffer.byteLength(value, "utf8") <= MAX_CHECKPOINT_BYTES,
+  "checkpoint strings are limited to 4 MiB of UTF-8 text",
+);
+const checkpointStructuredItem = jsonObject.refine(
+  (value) => serializedUtf8Length(value) <= MAX_CHECKPOINT_BYTES,
+  "structured checkpoint items are limited to 4 MiB of serialized UTF-8 JSON",
+);
+const checkpointState = z.object({
+  objective: checkpointText.min(1),
+  current_state: z.union([
+    checkpointText,
+    z.array(checkpointText).max(MAX_CHECKPOINT_ITEMS),
+  ]).optional(),
+  decisions: z.array(checkpointText).max(MAX_CHECKPOINT_ITEMS).optional(),
+  open_questions: z.array(checkpointText).max(MAX_CHECKPOINT_ITEMS).optional(),
+  next_actions: z.array(checkpointText).max(MAX_CHECKPOINT_ITEMS).optional(),
+  artifacts: z.array(checkpointText).max(MAX_CHECKPOINT_ITEMS).optional(),
+  ordered_goals: z.array(
+    z.union([checkpointText, checkpointStructuredItem]),
+  ).max(MAX_CHECKPOINT_ITEMS).optional(),
+  state_refs: z.array(checkpointStateReference).max(MAX_CHECKPOINT_ITEMS).optional(),
+  acceptance_gates: z.array(
+    z.union([checkpointText, checkpointStructuredItem]),
+  ).max(MAX_CHECKPOINT_ITEMS).optional(),
+}).refine(
+  (value) => serializedUtf8Length(value) <= MAX_CHECKPOINT_BYTES,
+  "checkpoint state is limited to 4 MiB of serialized UTF-8 JSON",
 );
 
 const queryItem = z.object({
@@ -293,21 +333,11 @@ registerJsonTool(
   "memory.checkpoint",
   "Write a deterministic checkpoint Markdown file with exact file/version/hash references and a workspace generation.",
   {
-    session_id: reference,
-    parent_checkpoint_id: reference.optional(),
-    idempotency_key: z.string().min(1),
-    state: z.object({
-      objective: z.string().min(1),
-      current_state: z.union([z.string(), z.array(z.string())]).optional(),
-      decisions: z.array(z.string()).optional(),
-      open_questions: z.array(z.string()).optional(),
-      next_actions: z.array(z.string()).optional(),
-      artifacts: z.array(z.string()).optional(),
-      ordered_goals: z.array(z.union([z.string(), jsonObject])).optional(),
-      state_refs: z.array(reference).optional(),
-      acceptance_gates: z.array(z.union([z.string(), jsonObject])).optional(),
-    }),
-    source_refs: z.array(checkpointSourceReference).optional(),
+    session_id: checkpointIdentityReference,
+    parent_checkpoint_id: checkpointIdentityReference.optional(),
+    idempotency_key: checkpointIdempotencyKey,
+    state: checkpointState,
+    source_refs: z.array(checkpointSourceReference).max(64).optional(),
   },
   (input) => client.request("/v1/workspace/checkpoint", input),
 );
@@ -524,7 +554,9 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
     "briefing.publish",
     "notification.publish",
   ]).has(name);
-  const idempotent = readOnly || name === "notification.publish";
+  const idempotent = readOnly
+    || name === "memory.checkpoint"
+    || name === "notification.publish";
   server.registerTool(name, {
     description,
     inputSchema,
@@ -565,6 +597,22 @@ function requiredEnvironment(name: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function printableUtf8String(maxBytes: number) {
+  return z.string().min(1).max(maxBytes).refine(
+    (value) => Buffer.byteLength(value, "utf8") <= maxBytes
+      && !/[\u0000-\u001f\u007f-\u009f]/u.test(value),
+    `value must contain at most ${maxBytes} UTF-8 bytes and no control characters`,
+  );
+}
+
+function serializedUtf8Length(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }
 
 function evaluationHeaders(): Record<string, string> {

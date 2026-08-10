@@ -1019,6 +1019,18 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn('if [ -n "$compose_override_file" ]', compatibility)
         self.assertIn("/ready", compatibility)
 
+        public_health = scripts["check-public-health.sh"].read_text()
+        self.assertIn("STRAYLIGHT_PUBLIC_HEALTH_PROBES:-24", public_health)
+        self.assertIn('"https://$host/healthz"', public_health)
+        repeated_probes = public_health.split(
+            'while [ "$probe" -le "$probe_count" ]; do', 1
+        )[1].split("\ndone", 1)[0]
+        self.assertIn('"https://$host/api/ready"', repeated_probes)
+        self.assertIn('elapsed <= 2.0', public_health)
+        self.assertIn('.dependencies.database == "ready"', public_health)
+        self.assertIn('.dependencies.object_store == "ready"', public_health)
+        self.assertIn('.dependencies.embeddings == "degraded"', public_health)
+
     def test_deploy_steps_propagate_injected_and_real_failures(self):
         deploy = (ROOT / "scripts/deploy-production.sh").read_text()
         step_helper = ROOT / "scripts/deploy-steps.sh"

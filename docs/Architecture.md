@@ -183,10 +183,14 @@ The exact lane uses paths and exact titles. The lexical lane first checks the
 it also takes a bounded candidate set from the full PostgreSQL FTS GIN index so
 one plausible recent note cannot hide older authoritative material. Dense
 broad queries remain recent-bounded. The semantic lane embeds the query and
-uses pgvector HNSW. Each lane has a 2.5-second budget so a slow optional
-dependency cannot delay successful evidence from another lane. Candidate
-ranking is bounded before content hydration. No read computes a corpus map,
-exact corpus count, global manifest, or full materialization.
+uses pgvector HNSW. Exact and lexical lanes form the required core barrier:
+hybrid requests take semantic evidence only when it is ready by that barrier
+and never wait for it afterward. An explicit semantic-only request waits for
+the semantic lane under the shared 2.5-second bound. A launched cold embedding
+continues through the bounded single-flight task and warms the cache even when
+the hybrid response has already returned. Candidate ranking is bounded before
+content hydration. No read computes a corpus map, exact corpus count, global
+manifest, or full materialization.
 
 `search` runs at most four bounded queries concurrently and returns compact
 candidates with path, entry reference, current version, heading, and excerpt.

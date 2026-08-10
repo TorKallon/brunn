@@ -110,7 +110,9 @@ server {
     # The public web service is the only edge. Keep the remote MCP gateway on
     # Railway's private network and expose only its protocol and OAuth routes.
     location ~ ^/(?:mcp|authorize|token|register|oauth/consent|\.well-known/oauth-authorization-server|\.well-known/oauth-protected-resource(?:/mcp)?)$ {
-        client_max_body_size 1m;
+        # MCP checkpoint/write schemas allow 4 MiB fields; reserve bounded
+        # JSON-RPC envelope overhead and match the remote parser/API limit.
+        client_max_body_size 5m;
         limit_req zone=straylight_mcp_limit burst=30 nodelay;
         limit_req_status 429;
         proxy_pass http://straylight_mcp;

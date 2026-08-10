@@ -104,6 +104,18 @@ The dashboard can exist before metrics arrive. A new deployment is considered
 observable only after the runtime, HTTP, and worker series appear with the
 expected unified service tags.
 
+The Railway Datadog Agent also performs outside-in HTTP checks against the
+public `/healthz` and `/api/ready` URLs every 15 seconds. Unlike application
+heartbeats and private-network readiness checks, these canaries exercise public
+DNS, TLS, the Railway edge-to-Web connection, and the proxied API/durable-
+dependency boundary. Readiness accepts an explicitly degraded optional
+embedding provider but still requires the database and object store. Their
+`http.can_connect` service checks are the availability signals;
+`network.http.response_time` is the successful-response latency signal. The
+instance and URL tags distinguish ingress from API or durable-dependency
+failure. The checked-in Agent configuration uses a three-second timeout, so it
+does not inherit Railway's repeated five-second edge dial delay.
+
 ## Alert Starting Points
 
 Alert thresholds require production baselines. Begin with monitors for:

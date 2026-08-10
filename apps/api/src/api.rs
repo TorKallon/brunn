@@ -79,7 +79,10 @@ pub fn router(state: AppState) -> Router {
             put(notification_service::upsert_installation)
                 .delete(notification_service::revoke_installation),
         )
-        .route("/workspace/checkpoint", post(simple_core::checkpoint))
+        .route(
+            "/workspace/checkpoint",
+            post(simple_core::checkpoint).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
         .route("/workspace/binaries", get(simple_core::list_binaries))
         .route("/workspace/manifest", get(simple_core::manifest))
         .route("/workspace/usage", get(simple_core::usage))

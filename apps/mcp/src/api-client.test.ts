@@ -7,6 +7,28 @@ import test from "node:test";
 
 import { StraylightApiClient, StraylightApiError } from "./api-client.js";
 
+const ONE_FAST_RETRY = { retryBackoffMs: [0] as const };
+const EXHAUST_FAST_RETRIES = { retryBackoffMs: [0, 0, 0, 0, 0, 0] as const };
+
+test("retry schedule configuration fails closed on malformed or excessive overrides", () => {
+  const original = process.env.STRAYLIGHT_MCP_RETRY_BACKOFF_MS;
+  try {
+    for (const value of ["1,,2", "1,2,3,4,5,6,7", "-1,2"]) {
+      process.env.STRAYLIGHT_MCP_RETRY_BACKOFF_MS = value;
+      assert.throws(
+        () => new StraylightApiClient("http://straylight.test", "read-token"),
+        /STRAYLIGHT_MCP_RETRY_BACKOFF_MS/,
+      );
+    }
+  } finally {
+    if (original === undefined) {
+      delete process.env.STRAYLIGHT_MCP_RETRY_BACKOFF_MS;
+    } else {
+      process.env.STRAYLIGHT_MCP_RETRY_BACKOFF_MS = original;
+    }
+  }
+});
+
 test("API client binds credentials and optional evaluation headers", async () => {
   const calls: Array<{
     url: string;
@@ -92,6 +114,580 @@ test("API client preserves structured service failures", async () => {
       && error.status === 403
       && (error.body.error as { code: string }).code === "capability_denied",
   );
+});
+
+test("idempotent checkpoint recovers a commit followed by lost 502 response", async () => {
+  const payload = {
+    session_id: "session:1",
+    idempotency_key: "checkpoint:stable-1",
+    state: { objective: "finish the durable handoff" },
+    source_refs: ["sources/Work.md"],
+  };
+  const bodies: string[] = [];
+  let durableCommits = 0;
+  const committedKeys = new Set<string>();
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "write-token",
+    async (_input, init) => {
+      const serialized = String(init?.body);
+      bodies.push(serialized);
+      const request = JSON.parse(serialized) as { idempotency_key: string };
+      if (!committedKeys.has(request.idempotency_key)) {
+        committedKeys.add(request.idempotency_key);
+        durableCommits += 1;
+        return new Response(JSON.stringify({
+          request_id: "request:lost-response",
+          upstream_detail: "must not escape",
+        }), { status: 502 });
+      }
+      return new Response(JSON.stringify({
+        request_id: "request:recovered-receipt",
+        status: "no_op",
+        data: { checkpoint_id: "checkpoint:stable", no_op: true },
+      }), { status: 200 });
+    },
+    {},
+    undefined,
+    ONE_FAST_RETRY,
+  );
+
+  const response = await client.request("/v1/workspace/checkpoint", payload);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.request_id, "request:recovered-receipt");
+  assert.equal(durableCommits, 1);
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0], bodies[1]);
+  assert.deepEqual(JSON.parse(bodies[1] ?? "{}"), payload);
+});
+
+test("read requests recover from connection resets", async () => {
+  let calls = 0;
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw Object.assign(new Error("socket reset after headers"), { code: "ECONNRESET" });
+      }
+      return new Response(JSON.stringify({
+        request_id: "request:after-reset",
+        status: "complete",
+      }), { status: 200 });
+    },
+    {},
+    undefined,
+    ONE_FAST_RETRY,
+  );
+
+  const response = await client.request("/v1/status");
+
+  assert.equal(calls, 2);
+  assert.equal(response.body.request_id, "request:after-reset");
+});
+
+test("plain Railway Application not found responses are transient", async () => {
+  let calls = 0;
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response("Application not found\n", { status: 404 });
+      }
+      return new Response(JSON.stringify({ status: "complete", request_id: "request:ready" }), {
+        status: 200,
+      });
+    },
+    {},
+    undefined,
+    ONE_FAST_RETRY,
+  );
+
+  const response = await client.request("/v1/workspace/open", { task: "continue" });
+
+  assert.equal(calls, 2);
+  assert.equal(response.body.request_id, "request:ready");
+});
+
+test("Railway Application not found recovers beyond the legacy three-attempt window", async () => {
+  let calls = 0;
+  const bodies: string[] = [];
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    async (_input, init) => {
+      calls += 1;
+      bodies.push(String(init?.body));
+      if (calls <= 4) {
+        return new Response("Application not found\n", { status: 404 });
+      }
+      return new Response(JSON.stringify({ status: "complete", request_id: "request:ready" }), {
+        status: 200,
+      });
+    },
+    {},
+    undefined,
+    EXHAUST_FAST_RETRIES,
+  );
+
+  const response = await client.request("/v1/workspace/open", { task: "continue" });
+
+  assert.equal(calls, 5);
+  assert.equal(response.body.request_id, "request:ready");
+  assert.equal(new Set(bodies).size, 1);
+});
+
+test("capture and write retry only with an idempotency key", async () => {
+  for (const fixture of [
+    {
+      path: "/v1/workspace/capture",
+      body: { content: "evidence", source: { title: "Evidence" } },
+    },
+    {
+      path: "/v1/workspace/write",
+      body: { path: "Work.md", content: "state" },
+    },
+  ]) {
+    let keyedCalls = 0;
+    const keyed = new StraylightApiClient(
+      "http://straylight.test",
+      "write-token",
+      async () => {
+        keyedCalls += 1;
+        return keyedCalls === 1
+          ? new Response("gateway unavailable", { status: 503 })
+          : new Response(JSON.stringify({ status: "complete" }), { status: 200 });
+      },
+      {},
+      undefined,
+      ONE_FAST_RETRY,
+    );
+    await keyed.request(fixture.path, {
+      ...fixture.body,
+      idempotency_key: `stable:${fixture.path}`,
+    });
+    assert.equal(keyedCalls, 2);
+
+    let unkeyedCalls = 0;
+    const unkeyed = new StraylightApiClient(
+      "http://straylight.test",
+      "write-token",
+      async () => {
+        unkeyedCalls += 1;
+        return new Response(JSON.stringify({
+          request_id: `request:unkeyed-${unkeyedCalls}`,
+          private_upstream_payload: "do not reveal",
+        }), { status: 502 });
+      },
+    );
+    await assert.rejects(
+      unkeyed.request(fixture.path, fixture.body),
+      (error: unknown) => {
+        if (!(error instanceof StraylightApiError)) {
+          return false;
+        }
+        const detail = error.body.error as Record<string, unknown>;
+        assert.equal(detail.code, "ambiguous_outcome");
+        assert.equal(detail.retryable, false);
+        assert.equal(detail.attempts, 1);
+        assert.equal(error.body.request_id, "request:unkeyed-1");
+        assert.equal(JSON.stringify(error.body).includes("do not reveal"), false);
+        return true;
+      },
+    );
+    assert.equal(unkeyedCalls, 1);
+  }
+});
+
+test("notification event identity makes transient publication retry-safe", async () => {
+  let calls = 0;
+  const bodies: string[] = [];
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "write-token",
+    async (_input, init) => {
+      calls += 1;
+      bodies.push(String(init?.body));
+      return calls === 1
+        ? new Response("temporary gateway", { status: 504 })
+        : new Response(JSON.stringify({ status: "complete", request_id: "request:notified" }), {
+            status: 200,
+        });
+    },
+    {},
+    undefined,
+    ONE_FAST_RETRY,
+  );
+  const payload = {
+    event_key: "incident:stable-event",
+    correlation_id: "incident:1",
+    kind: "operational",
+    importance: "important",
+    title: "Recovered",
+    body: "The service recovered.",
+    target: { type: "notification" },
+  };
+
+  const response = await client.request("/v1/workspace/notifications/publish", payload);
+
+  assert.equal(calls, 2);
+  assert.equal(response.body.request_id, "request:notified");
+  assert.equal(bodies[0], bodies[1]);
+});
+
+test("exhausted idempotent mutation returns sanitized ambiguous outcome", async () => {
+  let calls = 0;
+  const secret = "private Railway response payload";
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "write-token",
+    async () => {
+      calls += 1;
+      return new Response(JSON.stringify({
+        request_id: `request:attempt-${calls}`,
+        error: { message: secret },
+      }), { status: 503 });
+    },
+    {},
+    undefined,
+    EXHAUST_FAST_RETRIES,
+  );
+
+  await assert.rejects(
+    client.request("/v1/workspace/checkpoint", {
+      session_id: "session:1",
+      idempotency_key: "checkpoint:exhausted",
+      state: { objective: "persist state" },
+    }),
+    (error: unknown) => {
+      if (!(error instanceof StraylightApiError)) {
+        return false;
+      }
+      const detail = error.body.error as Record<string, unknown>;
+      assert.equal(detail.code, "ambiguous_outcome");
+      assert.equal(detail.outcome, "unknown");
+      assert.equal(detail.retryable, true);
+      assert.equal(detail.attempts, 7);
+      assert.match(String(detail.message), /identical request/);
+      assert.match(String(detail.message), /identical idempotency key or event identity/);
+      assert.equal(error.body.request_id, "request:attempt-7");
+      assert.equal(JSON.stringify(error.body).includes(secret), false);
+      return true;
+    },
+  );
+  assert.equal(calls, 7);
+});
+
+test("exhausted reads return sanitized upstream unavailable errors", async () => {
+  let calls = 0;
+  const secret = "private upstream diagnostic payload";
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    async () => {
+      calls += 1;
+      return new Response(JSON.stringify({
+        diagnostic: secret,
+      }), {
+        status: 504,
+        headers: { "x-request-id": `request:read-${calls}` },
+      });
+    },
+    {},
+    undefined,
+    EXHAUST_FAST_RETRIES,
+  );
+
+  await assert.rejects(
+    client.request("/v1/workspace/search", {
+      session_id: "session:1",
+      queries: [{ query: "stable service" }],
+    }),
+    (error: unknown) => {
+      if (!(error instanceof StraylightApiError)) {
+        return false;
+      }
+      const detail = error.body.error as Record<string, unknown>;
+      assert.equal(detail.code, "upstream_unavailable");
+      assert.equal(detail.retryable, true);
+      assert.equal(detail.attempts, 7);
+      assert.equal(error.body.request_id, "request:read-7");
+      assert.equal(JSON.stringify(error.body).includes(secret), false);
+      return true;
+    },
+  );
+  assert.equal(calls, 7);
+});
+
+test("oversized declared JSON responses are rejected before their body is read", async () => {
+  let calls = 0;
+  const secret = "declared oversized private response";
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "write-token",
+    async () => {
+      calls += 1;
+      return new Response(secret, {
+        status: 200,
+        headers: { "content-length": String(32 * 1024 * 1024 + 1) },
+      });
+    },
+  );
+
+  await assert.rejects(
+    client.request("/v1/workspace/unknown-mutation", { value: "unsafe" }),
+    (error: unknown) => {
+      if (!(error instanceof StraylightApiError)) {
+        return false;
+      }
+      assert.equal((error.body.error as Record<string, unknown>).code, "ambiguous_outcome");
+      assert.equal(JSON.stringify(error.body).includes(secret), false);
+      return true;
+    },
+  );
+  assert.equal(calls, 1);
+});
+
+test("oversized chunked JSON responses are cancelled at the byte boundary", async () => {
+  let calls = 0;
+  let cancelled = false;
+  const chunk = new Uint8Array(1024 * 1024);
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "write-token",
+    async () => {
+      calls += 1;
+      return new Response(new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(chunk);
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }), { status: 200 });
+    },
+  );
+
+  await assert.rejects(
+    client.request("/v1/workspace/unknown-mutation", { value: "unsafe" }),
+    (error: unknown) => error instanceof StraylightApiError
+      && (error.body.error as Record<string, unknown>).code === "ambiguous_outcome",
+  );
+  assert.equal(calls, 1);
+  assert.equal(cancelled, true);
+});
+
+test("malformed successful and nontransient responses never expose upstream text", async () => {
+  for (const status of [200, 400, 500]) {
+    let calls = 0;
+    const secret = `private malformed response ${status}`;
+    const client = new StraylightApiClient(
+      "http://straylight.test",
+      "read-token",
+      async () => {
+        calls += 1;
+        return new Response(secret, {
+          status,
+          headers: { "x-request-id": `request:malformed-${status}-${calls}` },
+        });
+      },
+      {},
+      undefined,
+      EXHAUST_FAST_RETRIES,
+    );
+
+    await assert.rejects(
+      client.request("/v1/status"),
+      (error: unknown) => {
+        if (!(error instanceof StraylightApiError)) {
+          return false;
+        }
+        const detail = error.body.error as Record<string, unknown>;
+        assert.equal(
+          detail.code,
+          status === 200 ? "upstream_unavailable" : "invalid_upstream_response",
+        );
+        assert.equal(detail.attempts, status === 200 ? 7 : undefined);
+        assert.equal(
+          error.body.request_id,
+          `request:malformed-${status}-${status === 200 ? 7 : 1}`,
+        );
+        assert.equal(JSON.stringify(error.body).includes(secret), false);
+        return true;
+      },
+    );
+    assert.equal(calls, status === 200 ? 7 : 1);
+  }
+});
+
+test("an empty successful response cannot masquerade as a JSON envelope", async () => {
+  let calls = 0;
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    async () => {
+      calls += 1;
+      return new Response(null, {
+        status: 200,
+        headers: { "x-request-id": `request:empty-${calls}` },
+      });
+    },
+    {},
+    undefined,
+    EXHAUST_FAST_RETRIES,
+  );
+
+  await assert.rejects(
+    client.request("/v1/status"),
+    (error: unknown) => error instanceof StraylightApiError
+      && (error.body.error as Record<string, unknown>).code === "upstream_unavailable"
+      && error.body.request_id === "request:empty-7",
+  );
+  assert.equal(calls, 7);
+});
+
+test("mixed transient attempts retain the last observed request ID", async () => {
+  let calls = 0;
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response("temporary", {
+          status: 503,
+          headers: { "x-request-id": "request:first-observed" },
+        });
+      }
+      throw Object.assign(new Error("connection reset"), { code: "ECONNRESET" });
+    },
+    {},
+    undefined,
+    EXHAUST_FAST_RETRIES,
+  );
+
+  await assert.rejects(
+    client.request("/v1/status"),
+    (error: unknown) => error instanceof StraylightApiError
+      && error.body.request_id === "request:first-observed",
+  );
+  assert.equal(calls, 7);
+});
+
+test("a stalled response body is deadline-bounded, aborts fetch, and retains header identity", async () => {
+  let requestSignal: AbortSignal | undefined;
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    async (_input, init) => {
+      requestSignal = init?.signal ?? undefined;
+      return new Response(new ReadableStream<Uint8Array>({
+        pull() {
+          return new Promise<void>(() => undefined);
+        },
+      }), {
+        status: 200,
+        headers: { "x-request-id": "request:headers-before-stall" },
+      });
+    },
+    {},
+    undefined,
+    { requestMs: 15 },
+  );
+
+  const started = performance.now();
+  await assert.rejects(
+    client.request("/v1/status"),
+    (error: unknown) => error instanceof StraylightApiError
+      && error.body.request_id === "request:headers-before-stall",
+  );
+  assert.equal(performance.now() - started < 200, true);
+  assert.equal(requestSignal?.aborted, true);
+});
+
+test("the absolute deadline includes retry backoff and aborts the final attempt", async () => {
+  let calls = 0;
+  const signals: AbortSignal[] = [];
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "read-token",
+    async (_input, init) => {
+      calls += 1;
+      if (init?.signal !== null && init?.signal !== undefined) {
+        signals.push(init.signal);
+      }
+      return calls === 1
+        ? new Response("temporary", { status: 503 })
+        : new Promise<Response>(() => undefined);
+    },
+    {},
+    undefined,
+    { requestMs: 80, retryBackoffMs: [1] },
+  );
+
+  const started = performance.now();
+  await assert.rejects(client.request("/v1/status"), StraylightApiError);
+  assert.equal(calls, 2);
+  assert.equal(performance.now() - started < 200, true);
+  assert.equal(signals.at(-1)?.aborted, true);
+});
+
+test("unknown mutations are never retried even when their body resembles an idempotency key", async () => {
+  let calls = 0;
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "write-token",
+    async () => {
+      calls += 1;
+      return new Response("temporary", { status: 503 });
+    },
+  );
+
+  await assert.rejects(
+    client.request("/v1/workspace/unknown-mutation", { idempotency_key: "looks-safe" }),
+    (error: unknown) => error instanceof StraylightApiError
+      && (error.body.error as Record<string, unknown>).retryable === false,
+  );
+  assert.equal(calls, 1);
+});
+
+test("briefing publication retries only when carrying its stable idempotency key", async () => {
+  for (const keyed of [true, false]) {
+    let calls = 0;
+    const client = new StraylightApiClient(
+      "http://straylight.test",
+      "write-token",
+      async () => {
+        calls += 1;
+        return calls === 1
+          ? new Response("temporary", { status: 503 })
+          : new Response(JSON.stringify({ status: "complete" }), { status: 200 });
+      },
+      {},
+      undefined,
+      ONE_FAST_RETRY,
+    );
+    const request = {
+      date: "2026-08-09",
+      edition: "morning",
+      ...(keyed ? { idempotency_key: "briefing:2026-08-09:morning" } : {}),
+    };
+
+    if (keyed) {
+      await client.request("/v1/workspace/briefings/publish", request);
+      assert.equal(calls, 2);
+    } else {
+      await assert.rejects(
+        client.request("/v1/workspace/briefings/publish", request),
+        StraylightApiError,
+      );
+      assert.equal(calls, 1);
+    }
+  }
 });
 
 test("API client fetches one exact historical version without returning bytes", async () => {
@@ -204,25 +800,7 @@ test("API client rejects metadata that does not match the requested version", as
 });
 
 test("ordinary API requests have a bounded deadline", async () => {
-  const fakeFetch: typeof fetch = async (_input, init) => new Promise<Response>(
-    (_resolve, reject) => {
-      const signal = init?.signal;
-      assert.ok(signal);
-      const watchdog = setTimeout(
-        () => reject(new Error("request deadline did not fire")),
-        250,
-      );
-      const rejectWithReason = () => {
-        clearTimeout(watchdog);
-        reject(signal.reason);
-      };
-      if (signal.aborted) {
-        rejectWithReason();
-      } else {
-        signal.addEventListener("abort", rejectWithReason, { once: true });
-      }
-    },
-  );
+  const fakeFetch: typeof fetch = async () => new Promise<Response>(() => undefined);
   const client = new StraylightApiClient(
     "http://straylight.test",
     "read-token",
@@ -232,11 +810,21 @@ test("ordinary API requests have a bounded deadline", async () => {
     { requestMs: 10 },
   );
 
+  const started = performance.now();
   await assert.rejects(
     client.request("/v1/status"),
-    (error: unknown) => error instanceof DOMException
-      && (error.name === "TimeoutError" || error.name === "AbortError"),
+    (error: unknown) => {
+      if (!(error instanceof StraylightApiError)) {
+        return false;
+      }
+      const detail = error.body.error as Record<string, unknown>;
+      assert.equal(detail.code, "upstream_unavailable");
+      assert.equal(detail.retryable, true);
+      assert.equal(detail.attempts, 1);
+      return true;
+    },
   );
+  assert.equal(performance.now() - started < 200, true);
 });
 
 test("asset fetch failures never echo upstream payloads", async () => {

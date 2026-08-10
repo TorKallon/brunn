@@ -205,10 +205,27 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       const text = (status.content as Array<{ type: string; text?: string }>)[0]?.text;
       assert.ok(text);
       assert.equal((JSON.parse(text) as { status?: string }).status, "ok");
+      const largeCheckpoint = await client.callTool({
+        name: "memory.checkpoint",
+        arguments: {
+          session_id: "session:remote-large-checkpoint",
+          idempotency_key: "remote-large-checkpoint",
+          state: { objective: "x".repeat(128 * 1024) },
+          source_refs: [],
+        },
+      });
+      assert.equal(
+        largeCheckpoint.isError,
+        undefined,
+        "remote MCP must accept valid tool payloads above Express's 100 KiB default",
+      );
     } finally {
       await client.close().catch(() => undefined);
     }
-    assert.deepEqual(upstreamAuthorizations, ["Bearer dedicated-upstream-token"]);
+    assert.deepEqual(upstreamAuthorizations, [
+      "Bearer dedicated-upstream-token",
+      "Bearer dedicated-upstream-token",
+    ]);
 
     const replay = await fetch(`${baseUrl}/token`, {
       method: "POST",

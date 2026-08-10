@@ -66,7 +66,7 @@ Semantic retrieval remains an experimental, default-off accelerator:
 ```bash
 STRAYLIGHT_SEMANTIC_LANE=false
 STRAYLIGHT_EMBED_CACHE=true
-STRAYLIGHT_SEMANTIC_DEADLINE_MS=300
+STRAYLIGHT_SEMANTIC_DEADLINE_MS=2500
 STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS=5000
 STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY=8
 STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=true
@@ -74,13 +74,18 @@ STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=true
 
 `STRAYLIGHT_SEMANTIC_DEADLINE_MS=0` removes the semantic-specific deadline but
 does not remove the outer 2.5-second retrieval-lane timeout. The semantic lane
-runs concurrently with exact+lexical and can only defer at its deadline;
-exact+lexical results are always retained. Online query embeddings are
-deduplicated per normalized query (single flight), capped globally at
+runs concurrently with exact+lexical. For a hybrid request, exact+lexical form
+the response barrier: semantic candidates are included only when ready by that
+point, and a pending or failed optional semantic lane neither delays nor marks
+the response partial. Semantic-only requests wait for the lane under its
+2.5-second bound, which gives normal cold provider requests time to complete.
+Online query embeddings are deduplicated per normalized query (single flight), capped globally at
 `STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY` concurrent provider calls (1–64), and
 hard-bounded by `STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS` (1–60000)
 independent of the 60-second provider client used by backfill; a timed-out or
-failed call is negative-cached for 60 seconds. Turning
+failed call is negative-cached for 60 seconds. A provider task already launched
+by a hybrid request remains bounded and may warm the cache after that response
+returns. Turning
 `STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=false` stops the worker from claiming
 embedding jobs. With the guard on, each publication is capped at 64 chunks and
 full batches are separated by at least 250ms. In Compose the worker also reads
@@ -101,8 +106,10 @@ backfill-guard gate. Keep this route on the private service network in hosted
 deployments.
 
 `/ready` reports the active flags and whether a foreground status URL is
-configured; authenticated `/v1/status` additionally reports semantic cache and
-deferral counters. The E03/E09 harnesses validate these values and the
+configured; embedding degradation remains visible there but cannot remove an
+otherwise healthy database/object-store-backed API replica. Authenticated
+`/v1/status` additionally reports semantic cache, explicit-lane deferral, and
+hybrid opportunistic-miss counters. The E03/E09 harnesses validate these values and the
 immutable build revision before their guarded backfill or reasoning work.
 
 ## Notifications And APNs
@@ -452,7 +459,12 @@ python3 eval/openai_embedding_fault_proxy.py configure \
   --mode forward
 ```
 
-Use `--mode slow --delay-ms 800` for the HTTP deadline probe. Configure
+The historical E09 deadline arms use `--mode slow --delay-ms 800` together with
+their explicitly pinned 300/600ms configurations; keep those values when
+reproducing the experiment. They are not the current hybrid-response contract.
+Current fault qualification must verify both behaviors: a hybrid request
+returns complete exact+lexical evidence without a semantic failure gap, and a
+semantic-only request reports its bounded outcome at 2.5 seconds. Configure
 commands emit only a fixed attestation schema. Definitive performance runs use
 `--require-semantic-failure-hook-attestation`; the HTTP deadline probe requires
 attestation unless explicitly run in non-definitive local mode with

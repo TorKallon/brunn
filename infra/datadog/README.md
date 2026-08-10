@@ -51,3 +51,27 @@ The command skips metrics that have not reported yet so it is safe during a
 rolling deployment. Run it again after each new distribution first appears.
 Use `python3 infra/datadog/configure_percentiles.py --strict` as a release gate
 after representative production traffic.
+
+## Public-edge canary
+
+The Railway Datadog Agent image includes HTTP integration checks for
+`https://straylight.rourkem.com/healthz` and
+`https://straylight.rourkem.com/api/ready`. They deliberately resolve the
+public domain and traverse Railway's public edge instead of calling a private
+service address. Every 15 seconds both require HTTP 200; the Web check requires
+exact `ok` content and the API check requires a ready JSON status. Both use
+three-second connection and response timeouts and disallow redirects.
+
+Agent 7.81.2 emits the service check `http.can_connect` and the response-time
+gauge `network.http.response_time` (seconds). Both carry the bounded tags
+`service:straylight`, `component:public-edge`, `probe:public-edge`,
+`platform:railway`, and `vantage:railway-agent`, plus Agent global tags such as
+`env`. The source-controlled monitors alert on two failed checks in the last
+three samples, missing check data, and public response time above one second.
+The service-check alert is the authoritative signal for connection failures;
+the Agent does not emit a response-time sample when no HTTP response arrives.
+
+Building the Agent image is not enough to activate this check. Deploy the
+`datadog-agent` Railway service, verify `http_check` under `agent status`, then
+run `make datadog-configure` with `DD_ENV` matching the Agent's deployment tag.
+This repository change does not deploy or create monitors by itself.

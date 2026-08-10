@@ -3,12 +3,11 @@
 import { getOAuthProtectedResourceMetadataUrl, mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import type { OAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/provider.js";
-import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import {
   StreamableHTTPServerTransport,
   type StreamableHTTPServerTransportOptions,
 } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { Express, NextFunction, Request, Response } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { pathToFileURL } from "node:url";
 
 import { StraylightApiClient } from "./api-client.js";
@@ -19,6 +18,9 @@ import {
 } from "./oauth-provider.js";
 
 const REMOTE_SCOPE = "mcp:tools";
+// Tool schemas permit a 4 MiB checkpoint/write field. Leave bounded room for
+// the JSON-RPC envelope while matching the public proxy and API body limits.
+const REMOTE_JSON_BODY_LIMIT_BYTES = 5 * 1024 * 1024;
 const REQUIRED_CAPABILITIES = [
   "open",
   "query",
@@ -40,7 +42,8 @@ export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
   const resourceUrl = new URL("/mcp", publicUrl);
   const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
-  const app = createMcpExpressApp({ host: "::" });
+  const app = express();
+  app.use(express.json({ limit: REMOTE_JSON_BODY_LIMIT_BYTES, strict: true }));
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
   app.use(securityHeaders);

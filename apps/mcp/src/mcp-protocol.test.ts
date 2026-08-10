@@ -21,6 +21,7 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
       ...environment,
       STRAYLIGHT_API_TOKEN: "protocol-test-token",
       STRAYLIGHT_API_URL: "http://127.0.0.1:1",
+      STRAYLIGHT_MCP_RETRY_BACKOFF_MS: "1,1,1,1,1,1",
     },
   });
   const client = new Client({ name: "straylight-adapter-test", version: "0.1.0" });
@@ -98,10 +99,55 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   assert.match(requests?.items?.properties?.path?.description ?? "", /Never synthesize/);
   const checkpoint = response.tools.find((tool) => tool.name === "memory.checkpoint");
   assert.ok(checkpoint);
-  const sourceRefs = checkpoint.inputSchema.properties?.source_refs as {
-    items?: { description?: string };
+  assert.equal(checkpoint.annotations?.idempotentHint, true);
+  assert.equal(
+    checkpoint.inputSchema.required?.includes("idempotency_key"),
+    true,
+    "MCP checkpoints must opt into explicit durable cross-session replay",
+  );
+  const checkpointIdempotencyKey = checkpoint.inputSchema.properties?.idempotency_key as {
+    maxLength?: number;
   } | undefined;
+  assert.equal(checkpointIdempotencyKey?.maxLength, 256);
+  assert.equal(
+    (checkpoint.inputSchema.properties?.session_id as { maxLength?: number } | undefined)
+      ?.maxLength,
+    256,
+  );
+  assert.equal(
+    (checkpoint.inputSchema.properties?.parent_checkpoint_id as {
+      maxLength?: number;
+    } | undefined)?.maxLength,
+    256,
+  );
+  const sourceRefs = checkpoint.inputSchema.properties?.source_refs as {
+    maxItems?: number;
+    items?: { description?: string; maxLength?: number };
+  } | undefined;
+  assert.equal(sourceRefs?.maxItems, 64);
+  assert.equal(sourceRefs?.items?.maxLength, 4_096);
   assert.match(sourceRefs?.items?.description ?? "", /Markdown path/);
+  const checkpointState = checkpoint.inputSchema.properties?.state as {
+    properties?: {
+      objective?: { maxLength?: number };
+      decisions?: { maxItems?: number; items?: { maxLength?: number } };
+      artifacts?: { maxItems?: number; items?: { maxLength?: number } };
+      state_refs?: { maxItems?: number; items?: { maxLength?: number } };
+    };
+  } | undefined;
+  assert.equal(checkpointState?.properties?.objective?.maxLength, 4 * 1024 * 1024);
+  assert.equal(checkpointState?.properties?.decisions?.maxItems, 4_096);
+  assert.equal(
+    checkpointState?.properties?.decisions?.items?.maxLength,
+    4 * 1024 * 1024,
+  );
+  assert.equal(checkpointState?.properties?.artifacts?.maxItems, 4_096);
+  assert.equal(
+    checkpointState?.properties?.artifacts?.items?.maxLength,
+    4 * 1024 * 1024,
+  );
+  assert.equal(checkpointState?.properties?.state_refs?.maxItems, 4_096);
+  assert.equal(checkpointState?.properties?.state_refs?.items?.maxLength, 4_096);
   const changes = response.tools.find((tool) => tool.name === "memory.changes");
   assert.ok(changes);
   assert.equal(
@@ -251,7 +297,12 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   const text = (call.content as Array<{ type: string; text?: string }>)[0];
   assert.equal(text?.type, "text");
   if (text?.type === "text" && text.text) {
-    assert.equal(JSON.parse(text.text).error.code, "adapter_error");
+    const failure = JSON.parse(text.text) as {
+      error: { code: string; attempts: number; retryable: boolean };
+    };
+    assert.equal(failure.error.code, "upstream_unavailable");
+    assert.equal(failure.error.attempts, 7);
+    assert.equal(failure.error.retryable, true);
   }
 });
 

@@ -50,13 +50,11 @@ pub async fn ready(State(state): State<AppState>) -> Response {
     let database_ready = matches!(database, Ok(Ok(1)));
     let object_store_ready = matches!(object_store, Ok(Ok(())));
     let embeddings_ready = !state.embedder.is_degraded();
-    let embeddings_required = state.config.embedding_provider == "openai";
-    let ready = readiness_is_available(
-        database_ready,
-        object_store_ready,
-        embeddings_ready,
-        embeddings_required,
-    );
+    // Embeddings accelerate retrieval and all foreground read/write paths have
+    // exact+lexical fallbacks. Keep their state visible, but never make an
+    // optional provider outage remove an otherwise healthy API replica from
+    // service or block a deployment.
+    let ready = readiness_is_available(database_ready, object_store_ready);
     let status = if ready {
         StatusCode::OK
     } else {
@@ -80,13 +78,8 @@ pub async fn ready(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
-fn readiness_is_available(
-    database_ready: bool,
-    object_store_ready: bool,
-    embeddings_ready: bool,
-    embeddings_required: bool,
-) -> bool {
-    database_ready && object_store_ready && (embeddings_ready || !embeddings_required)
+fn readiness_is_available(database_ready: bool, object_store_ready: bool) -> bool {
+    database_ready && object_store_ready
 }
 
 pub async fn openapi() -> Json<Value> {
@@ -1121,11 +1114,9 @@ mod tests {
     }
 
     #[test]
-    fn readiness_fails_closed_for_canonical_dependencies() {
-        assert!(readiness_is_available(true, true, true, true));
-        assert!(!readiness_is_available(false, true, true, true));
-        assert!(!readiness_is_available(true, false, true, true));
-        assert!(!readiness_is_available(true, true, false, true));
-        assert!(readiness_is_available(true, true, false, false));
+    fn readiness_requires_durable_dependencies_but_not_optional_embeddings() {
+        assert!(readiness_is_available(true, true));
+        assert!(!readiness_is_available(false, true));
+        assert!(!readiness_is_available(true, false));
     }
 }

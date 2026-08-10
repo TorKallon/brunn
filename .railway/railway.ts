@@ -41,12 +41,13 @@ const releaseRuntime = {
   STRAYLIGHT_SEARCH_FAIR_SHARE: preserve(),
   STRAYLIGHT_SEARCH_TOP1_HYDRATION: preserve(),
   STRAYLIGHT_SEMANTIC_LANE: preserve(),
+  STRAYLIGHT_SEMANTIC_DEADLINE_MS: "2500",
   STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS: "5000",
   STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY: "8",
-  // Requalified 2026-08-03 from the post-GIN-fix gate battery: thresholds sit
-  // at the documented user gates (open 500 ms) and above the semantic
-  // deadline bound (search 350 ms > 300 ms), so backfill pauses on real
-  // foreground degradation instead of on the accelerator's designed deferrals.
+  // Requalified 2026-08-03 from the post-GIN-fix gate battery. Semantic work
+  // is now opportunistic for hybrid retrieval, so it cannot inflate these
+  // foreground measurements; the thresholds continue to pause backfill on
+  // real exact+lexical degradation.
   // Pre-fix values 120/107 predated semantic-on and paused continuously.
   STRAYLIGHT_EMBEDDING_BACKFILL_OPEN_P95_LIMIT_MS: "500",
   STRAYLIGHT_EMBEDDING_BACKFILL_SEARCH_P95_LIMIT_MS: "350",
@@ -132,8 +133,11 @@ const api = service("api", {
   start: "/usr/local/bin/straylight serve",
   healthcheck: "/ready",
   healthcheckTimeout: 300,
-  replicas: { "us-west2": 1 },
+  replicas: { "us-west2": 2 },
   deploy: {
+    restartPolicyType: "ALWAYS",
+    restartPolicyMaxRetries: null,
+    overlapSeconds: 30,
     drainingSeconds: 30,
     limitOverride: {
       containers: {
@@ -167,6 +171,8 @@ const worker = service("worker", {
   preDeploy: "/usr/local/bin/straylight migrate",
   replicas: { "us-west2": 1 },
   deploy: {
+    restartPolicyType: "ALWAYS",
+    restartPolicyMaxRetries: null,
     drainingSeconds: 60,
     limitOverride: {
       containers: {
@@ -207,6 +213,11 @@ const mcp = service("mcp", {
   healthcheckTimeout: 300,
   replicas: { "us-west2": 1 },
   deploy: {
+    // OAuth authorization and replay state are process-local, so this service
+    // intentionally remains single-replica. Restart it without an exhaustion
+    // limit if that sole process exits for any reason.
+    restartPolicyType: "ALWAYS",
+    restartPolicyMaxRetries: null,
     drainingSeconds: 30,
     limitOverride: {
       containers: {
@@ -232,8 +243,14 @@ const web = service("web", {
   },
   healthcheck: "/api/ready",
   healthcheckTimeout: 300,
-  replicas: { "us-west2": 1 },
+  // The Railway edge retries failed dials only when another replica exists.
+  // Keep two independent ingress targets so one unreachable container cannot
+  // take down static assets, OAuth discovery, MCP, and the workspace API.
+  replicas: { "us-west2": 2 },
   deploy: {
+    restartPolicyType: "ALWAYS",
+    restartPolicyMaxRetries: null,
+    overlapSeconds: 30,
     drainingSeconds: 30,
     limitOverride: {
       containers: {
@@ -259,6 +276,8 @@ const datadog = service("datadog-agent", {
   },
   replicas: { "us-west2": 1 },
   deploy: {
+    restartPolicyType: "ALWAYS",
+    restartPolicyMaxRetries: null,
     limitOverride: {
       containers: {
         cpu: 1,

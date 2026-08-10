@@ -231,7 +231,7 @@ impl Config {
             verbatim_spans: env_parse("STRAYLIGHT_VERBATIM_SPANS", "false")?,
             semantic_lane: env_parse("STRAYLIGHT_SEMANTIC_LANE", "false")?,
             embed_cache: env_parse("STRAYLIGHT_EMBED_CACHE", "true")?,
-            semantic_deadline: match env_parse::<u64>("STRAYLIGHT_SEMANTIC_DEADLINE_MS", "300")? {
+            semantic_deadline: match env_parse::<u64>("STRAYLIGHT_SEMANTIC_DEADLINE_MS", "2500")? {
                 0 => None,
                 milliseconds => Some(Duration::from_millis(milliseconds)),
             },
@@ -1034,6 +1034,7 @@ mod tests {
                 assert!(!config.intention_ledger);
                 assert_eq!(config.supersession_demotion_weight, 1.5);
                 assert!(!config.resume_deltas);
+                assert_eq!(config.semantic_deadline, Some(Duration::from_millis(2500)));
                 assert_eq!(
                     config.semantic_query_provider_timeout,
                     Duration::from_millis(5000)

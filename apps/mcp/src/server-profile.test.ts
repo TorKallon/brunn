@@ -57,8 +57,11 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
 
     const write = response.tools.find((tool) => tool.name === "memory.write");
     const query = response.tools.find((tool) => tool.name === "memory.query");
+    const checkpoint = response.tools.find((tool) => tool.name === "memory.checkpoint");
     assert.equal(write?.annotations?.readOnlyHint, false);
     assert.equal(write?.annotations?.destructiveHint, false);
+    assert.equal(checkpoint?.annotations?.readOnlyHint, false);
+    assert.equal(checkpoint?.annotations?.idempotentHint, true);
     assert.equal(query?.annotations?.readOnlyHint, true);
     assert.equal(query?.annotations?.openWorldHint, false);
   } finally {

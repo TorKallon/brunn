@@ -32,7 +32,7 @@ use crate::{
     eval_service::EvalImportRequest,
     foreground_latency::ForegroundOperation,
     ingest::{DocumentChunk, normalize_document},
-    models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId},
+    models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId, canonical_json},
     retrieval_sql::{
         SIMPLE_ENTRY_LINK_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_SQL,
         SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL, SIMPLE_SEMANTIC_CANDIDATES_SQL,
@@ -410,7 +410,6 @@ struct EntryRow {
     kind: String,
     media_type: String,
     version: i64,
-    version_id: Uuid,
     content_sha256: String,
     content: Option<String>,
     object_key: Option<String>,
@@ -500,6 +499,13 @@ pub(crate) struct MarkdownUpsertResult {
     pub(crate) generation: Option<i64>,
     pub(crate) no_op: bool,
     metadata_only: bool,
+}
+
+#[derive(Clone, Debug)]
+struct CheckpointWriteResult {
+    receipt: Value,
+    committed_bytes: u64,
+    created: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1302,65 +1308,59 @@ pub async fn checkpoint(
     Json(request): Json<CheckpointRequest>,
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
     auth.require(Capability::Checkpoint)?;
-    if let Some(parent_checkpoint_ref) = request.parent_checkpoint_id.as_deref() {
-        read_checkpoint(&state, &auth, parent_checkpoint_ref).await?;
-    }
-    let checkpoint_uuid = deterministic_checkpoint_id(&request);
+    let (idempotency_key, request_hash) = validate_checkpoint_request(&request)?;
+    let checkpoint_uuid = checkpoint_entry_id_for_new_write(&request);
     let checkpoint_ref = format!("checkpoint:{checkpoint_uuid}");
     let path = format!(".straylight/checkpoints/{checkpoint_uuid}.md");
-    match resolve_entry(&state, &auth, Some(&path), None).await {
-        Ok(existing) => {
-            let metadata = existing
-                .metadata
-                .get("client")
-                .filter(|value| value.is_object())
-                .unwrap_or(&existing.metadata);
-            if metadata.get("kind").and_then(Value::as_str) != Some("checkpoint") {
-                return Err(ApiError::conflict(
-                    "checkpoint_path_conflict",
-                    "the deterministic checkpoint path is occupied by another entry",
-                    json!({"path": path}),
-                ));
-            }
-            let generation = metadata
-                .get("workspace_generation")
-                .and_then(Value::as_i64)
-                .unwrap_or(0);
-            let mut envelope = WorkspaceEnvelope::complete(json!({
-                "checkpoint_id": checkpoint_ref,
-                "checkpoint_ref": checkpoint_ref,
-                "path": existing.path,
-                "workspace_generation": generation,
-                "source_entries": metadata
-                    .get("source_entries")
-                    .cloned()
-                    .unwrap_or_else(|| json!([])),
-                "write": {
-                    "entry_ref": format!("entry:{}", existing.id),
-                    "version_ref": format!("entry-version:{}", existing.version_id),
-                    "path": existing.path,
-                    "version": existing.version,
-                    "content_hash": format!("sha256:{}", existing.content_sha256),
-                    "workspace_generation": generation,
-                    "no_op": true
-                }
-            }));
-            envelope.status = ResponseStatus::NoOp;
-            envelope.session_id = Some(request.session_id);
-            envelope.corpus_revision = Some(format!("generation:{generation}"));
-            return Ok(Json(envelope));
-        }
-        Err(ApiError::Public {
-            status: StatusCode::NOT_FOUND,
-            ..
-        }) => {}
-        Err(error) => return Err(error),
+    let mut tx = state.begin_write(&auth).await?;
+    lock_checkpoint_idempotency(&mut tx, auth.user_id.0, &idempotency_key).await?;
+    if let Some(receipt) =
+        replay_checkpoint_receipt_in_tx(&mut tx, auth.user_id.0, &idempotency_key, &request_hash)
+            .await?
+    {
+        tx.commit().await?;
+        return Ok(Json(checkpoint_envelope(&request.session_id, receipt)?));
     }
-    let generation = current_generation(&state, &auth).await?;
-    let source_entries =
-        resolve_checkpoint_sources(&state, &auth, &request.state, &request.source_refs).await?;
-    let content =
-        render_checkpoint_markdown(checkpoint_uuid, generation, &request, &source_entries)?;
+    if let Some(adopted) = adopt_legacy_checkpoint_receipt_in_tx(
+        &mut tx,
+        auth.user_id.0,
+        Some(auth.credential_id.0),
+        &idempotency_key,
+        &request_hash,
+        &request,
+    )
+    .await?
+    {
+        tx.commit().await?;
+        return Ok(Json(checkpoint_envelope(
+            &request.session_id,
+            adopted.receipt,
+        )?));
+    }
+    if let Some(parent_checkpoint_ref) = request.parent_checkpoint_id.as_deref() {
+        validate_checkpoint_parent_in_tx(&mut tx, auth.user_id.0, parent_checkpoint_ref).await?;
+    }
+    let (source_entries, source_snapshot_generation) = resolve_checkpoint_sources_in_tx(
+        &mut tx,
+        auth.user_id.0,
+        &request.state,
+        &request.source_refs,
+    )
+    .await?;
+    let pinned_generation = match source_snapshot_generation {
+        Some(generation) => generation,
+        None => max_generation_in_tx(&mut tx, auth.user_id.0).await?,
+    };
+    let content = render_checkpoint_markdown(
+        checkpoint_uuid,
+        pinned_generation,
+        &request,
+        &source_entries,
+    )?;
+    let source_entry_receipts = source_entries
+        .iter()
+        .map(entry_reference)
+        .collect::<Vec<_>>();
     let mut prepared = prepare_markdown(
         &state,
         WriteRequest {
@@ -1368,44 +1368,51 @@ pub async fn checkpoint(
             content,
             media_type: markdown_media_type(),
             expected_version: Some(0),
-            idempotency_key: request.idempotency_key.clone(),
+            idempotency_key: Some(idempotency_key.clone()),
             metadata: json!({
                 "kind": "checkpoint",
                 "checkpoint_ref": checkpoint_ref,
-                "workspace_generation": generation,
-                "session_id": request.session_id,
-                "parent_checkpoint_ref": request.parent_checkpoint_id,
-                "source_refs": request.source_refs,
-                "source_entries": source_entries.iter().map(entry_reference).collect::<Vec<_>>()
+                "workspace_generation": pinned_generation,
+                "pinned_workspace_generation": pinned_generation,
+                "resulting_workspace_generation": null,
+                "session_id": request.session_id.clone(),
+                "parent_checkpoint_ref": request.parent_checkpoint_id.clone(),
+                "source_refs": request.source_refs.clone(),
+                "source_entries": source_entry_receipts.clone(),
+                "request_hash": format!("sha256:{request_hash}"),
+                "operation_kind": "checkpoint"
             }),
         },
     )
     .await?;
-    let committed_bytes = u64::try_from(prepared.content.len()).unwrap_or(u64::MAX);
     prepared.entry_id_hint = Some(checkpoint_uuid);
-    let receipt = commit_markdown(&state, &auth, prepared).await?;
-    let resulting_generation = receipt
-        .get("workspace_generation")
-        .and_then(Value::as_i64)
-        .unwrap_or(generation);
-    let mut envelope = WorkspaceEnvelope::complete(json!({
-        "checkpoint_id": checkpoint_ref,
-        "checkpoint_ref": checkpoint_ref,
-        "path": path,
-        "workspace_generation": resulting_generation,
-        "source_entries": source_entries.iter().map(entry_reference).collect::<Vec<_>>(),
-        "write": receipt
-    }));
-    envelope.status = ResponseStatus::Committed;
-    envelope.session_id = Some(request.session_id);
-    envelope.corpus_revision = Some(format!("generation:{resulting_generation}"));
-    record_product_activity(
-        &state,
-        &auth,
-        ProductActivityOperation::Checkpoint,
-        committed_bytes,
-    );
-    Ok(Json(envelope))
+    let write = commit_checkpoint_in_tx(
+        &mut tx,
+        auth.user_id.0,
+        Some(auth.credential_id.0),
+        &idempotency_key,
+        &request_hash,
+        &checkpoint_ref,
+        &path,
+        pinned_generation,
+        source_entry_receipts,
+        prepared,
+    )
+    .await?;
+    tx.commit().await?;
+    state.workspace_features.invalidate(auth.user_id.0).await;
+    if write.created {
+        record_product_activity(
+            &state,
+            &auth,
+            ProductActivityOperation::Checkpoint,
+            write.committed_bytes,
+        );
+    }
+    Ok(Json(checkpoint_envelope(
+        &request.session_id,
+        write.receipt,
+    )?))
 }
 
 pub async fn changes(
@@ -3529,19 +3536,49 @@ async fn feature_snapshot(
     ))
 }
 
-/// The three retrieval lanes always start together; total retrieval wall
-/// time tracks the slowest lane rather than the lane sum.
+/// The three retrieval lanes always start together. Hybrid retrieval returns
+/// as soon as exact+lexical finish, taking semantic evidence only when it is
+/// already ready; an explicit semantic-only request waits for its bounded
+/// semantic result.
 async fn join_retrieval_lanes<E, L, S>(
     exact: E,
     lexical: L,
     semantic: S,
-) -> (E::Output, L::Output, S::Output)
+    semantic_required: bool,
+) -> (E::Output, L::Output, Option<S::Output>)
 where
     E: std::future::Future,
     L: std::future::Future,
     S: std::future::Future,
 {
-    tokio::join!(exact, lexical, semantic)
+    if semantic_required {
+        let (exact, lexical, semantic) = tokio::join!(exact, lexical, semantic);
+        return (exact, lexical, Some(semantic));
+    }
+
+    let core = async { tokio::join!(exact, lexical) };
+    tokio::pin!(core);
+    tokio::pin!(semantic);
+    tokio::select! {
+        // Poll semantic first so a result that becomes ready in the same
+        // scheduler turn as the core lanes is retained without extending the
+        // response by even one additional wait.
+        biased;
+        semantic = &mut semantic => {
+            let (exact, lexical) = core.await;
+            (exact, lexical, Some(semantic))
+        }
+        (exact, lexical) = &mut core => {
+            let semantic = tokio::select! {
+                // Give a semantic future woken while the core branch was
+                // being polled one final non-blocking chance to contribute.
+                biased;
+                semantic = &mut semantic => Some(semantic),
+                _ = std::future::ready(()) => None,
+            };
+            (exact, lexical, semantic)
+        },
+    }
 }
 
 async fn search_one(
@@ -3603,8 +3640,13 @@ async fn search_one(
         }
     };
     let semantic_future = semantic_lane(state, auth, query, sort, features, lanes);
-    let ((exact, exact_ms), (lexical, lexical_ms), semantic_report) =
-        join_retrieval_lanes(exact_future, lexical_future, semantic_future).await;
+    let ((exact, exact_ms), (lexical, lexical_ms), semantic_report) = join_retrieval_lanes(
+        exact_future,
+        lexical_future,
+        semantic_future,
+        lanes.semantic_only,
+    )
+    .await;
     timings.exact = exact_ms;
     timings.lexical = lexical_ms;
     let mut failures = Vec::new();
@@ -3625,7 +3667,15 @@ async fn search_one(
             }
         }
     }
-    apply_semantic_outcome(semantic_report, &mut merged, &mut failures, &mut timings);
+    if apply_semantic_outcome(
+        semantic_report,
+        lanes.semantic_only,
+        &mut merged,
+        &mut failures,
+        &mut timings,
+    ) {
+        state.semantic_runtime.record_opportunistic_miss();
+    }
     timings.merge += elapsed_ms(merge_started);
     let mut candidates = merged.into_values().collect::<Vec<_>>();
     annotate_candidates(
@@ -3737,9 +3787,7 @@ async fn semantic_lane(
         .unwrap_or(RETRIEVAL_LANE_TIMEOUT)
         .min(RETRIEVAL_LANE_TIMEOUT);
     let ready_started = Instant::now();
-    let readiness = if lanes.semantic_only {
-        Ok(Ok(true))
-    } else if let Some(cached) = state.semantic_runtime.cached_readiness(auth.user_id.0) {
+    let readiness = if let Some(cached) = state.semantic_runtime.cached_readiness(auth.user_id.0) {
         Ok(Ok(cached))
     } else {
         let probed = tokio::time::timeout(deadline, semantic_search_allowed(state, auth)).await;
@@ -3820,20 +3868,46 @@ async fn semantic_lane(
     }
 }
 
-/// Exact+lexical results are always preserved: every non-success semantic
-/// outcome only appends its failure token and leaves `merged` untouched.
+/// Exact+lexical results are always preserved. A semantic-only request reports
+/// a semantic failure to its caller; hybrid retrieval treats semantic as an
+/// opportunistic accelerator and never downgrades an otherwise complete core
+/// result. The return value records an optional attempt that was still pending
+/// when the core-lane barrier completed.
 fn apply_semantic_outcome(
-    report: SemanticLaneReport,
+    report: Option<SemanticLaneReport>,
+    semantic_required: bool,
     merged: &mut HashMap<Uuid, Candidate>,
     failures: &mut Vec<&'static str>,
     timings: &mut RetrievalTimings,
-) {
+) -> bool {
+    let Some(report) = report else {
+        if semantic_required {
+            failures.push("semantic");
+            return false;
+        }
+        return true;
+    };
     timings.semantic_ready = report.ready_ms;
     match report.outcome {
-        SemanticOutcome::NotRequested => {}
-        SemanticOutcome::Disabled => failures.push("semantic_disabled"),
-        SemanticOutcome::IndexUnavailable => failures.push("semantic_index_unavailable"),
-        SemanticOutcome::ReadinessError => failures.push("semantic_readiness_error"),
+        SemanticOutcome::NotRequested => false,
+        SemanticOutcome::Disabled => {
+            if semantic_required {
+                failures.push("semantic_disabled");
+            }
+            false
+        }
+        SemanticOutcome::IndexUnavailable => {
+            if semantic_required {
+                failures.push("semantic_index_unavailable");
+            }
+            false
+        }
+        SemanticOutcome::ReadinessError => {
+            if semantic_required {
+                failures.push("semantic_readiness_error");
+            }
+            false
+        }
         SemanticOutcome::Success(result) => {
             timings.semantic = report.lane_ms;
             timings.embed = result.embed_ms;
@@ -3843,14 +3917,21 @@ fn apply_semantic_outcome(
             for candidate in result.candidates {
                 merge_candidate(merged, candidate);
             }
+            false
         }
         SemanticOutcome::Failed => {
             timings.semantic = report.lane_ms;
-            failures.push("semantic");
+            if semantic_required {
+                failures.push("semantic");
+            }
+            false
         }
         SemanticOutcome::Deferred => {
             timings.semantic = report.lane_ms;
-            failures.push("semantic_deferred");
+            if semantic_required {
+                failures.push("semantic_deferred");
+            }
+            false
         }
     }
 }
@@ -5497,7 +5578,6 @@ fn entry_row_from_lookup(row: &PgRow, requested_version: Option<i64>) -> EntryRo
         kind: row.get("kind"),
         media_type: row.get("media_type"),
         version: requested_version.unwrap_or_else(|| row.get("current_version")),
-        version_id: row.get("version_id"),
         content_sha256: row.get("content_sha256"),
         content: row.get("content"),
         object_key: row.get("object_key"),
@@ -5627,7 +5707,6 @@ async fn resolve_entry_summary(
         kind: row.get("kind"),
         media_type: row.get("media_type"),
         version: row.get("current_version"),
-        version_id: row.get("version_id"),
         content_sha256: row.get("content_sha256"),
         content: None,
         object_key: row.get("object_key"),
@@ -6589,6 +6668,11 @@ async fn read_checkpoint(
         "checkpoint_id": checkpoint_ref,
         "path": entry.path,
         "workspace_generation": metadata.get("workspace_generation"),
+        "pinned_workspace_generation": metadata
+            .get("pinned_workspace_generation")
+            .or_else(|| metadata.get("workspace_generation")),
+        "resulting_workspace_generation": metadata
+            .get("resulting_workspace_generation"),
         "text": entry.content,
         "source_entries": metadata.get("source_entries")
     }))
@@ -6988,91 +7072,12 @@ fn unified_line_diff(path: &str, before: &str, after: &str) -> String {
     output
 }
 
-async fn resolve_checkpoint_sources(
-    state: &AppState,
-    auth: &AuthContext,
+async fn resolve_checkpoint_sources_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
     checkpoint_state: &Value,
     source_refs: &[String],
-) -> ApiResult<Vec<EntryRow>> {
-    if source_refs.len() > 64 {
-        return Err(ApiError::invalid(
-            "checkpoint source_refs are limited to 64 exact references",
-        ));
-    }
-    if state.config.read_path_roundtrip_v1 {
-        return resolve_checkpoint_sources_batched(state, auth, checkpoint_state, source_refs)
-            .await;
-    }
-    let mut resolved = Vec::new();
-    let mut seen = HashSet::new();
-    let explicit = source_refs
-        .iter()
-        .filter(|candidate| {
-            !candidate.starts_with("source_episode:") && !candidate.starts_with("evidence:")
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut explicit_results =
-        futures::stream::iter(explicit.into_iter().enumerate().map(|(index, candidate)| {
-            let state = state.clone();
-            let auth = auth.clone();
-            async move {
-                let entry = if candidate.starts_with("entry:") {
-                    resolve_entry_summary(&state, &auth, None, Some(&candidate)).await
-                } else {
-                    resolve_entry_summary(&state, &auth, Some(&candidate), None).await
-                };
-                (index, entry)
-            }
-        }))
-        .buffer_unordered(8)
-        .collect::<Vec<_>>()
-        .await;
-    explicit_results.sort_by_key(|(index, _)| *index);
-    for (_, entry) in explicit_results {
-        let entry = entry?;
-        if seen.insert(entry.id) {
-            resolved.push(entry);
-        }
-    }
-    let mut inferred = Vec::new();
-    collect_markdown_paths(checkpoint_state, &mut inferred);
-    inferred.sort();
-    inferred.dedup();
-    let remaining = 64_usize.saturating_sub(resolved.len());
-    let mut inferred_results =
-        futures::stream::iter(inferred.into_iter().take(remaining).enumerate().map(
-            |(index, candidate)| {
-                let state = state.clone();
-                let auth = auth.clone();
-                async move {
-                    (
-                        index,
-                        resolve_entry_summary(&state, &auth, Some(&candidate), None).await,
-                    )
-                }
-            },
-        ))
-        .buffer_unordered(8)
-        .collect::<Vec<_>>()
-        .await;
-    inferred_results.sort_by_key(|(index, _)| *index);
-    for (_, entry) in inferred_results {
-        if let Ok(entry) = entry
-            && seen.insert(entry.id)
-        {
-            resolved.push(entry);
-        }
-    }
-    Ok(resolved)
-}
-
-async fn resolve_checkpoint_sources_batched(
-    state: &AppState,
-    auth: &AuthContext,
-    checkpoint_state: &Value,
-    source_refs: &[String],
-) -> ApiResult<Vec<EntryRow>> {
+) -> ApiResult<(Vec<EntryRow>, Option<i64>)> {
     let explicit = source_refs
         .iter()
         .filter(|candidate| {
@@ -7113,14 +7118,16 @@ async fn resolve_checkpoint_sources_batched(
         .map(|path| portable_path_key(path))
         .collect::<Vec<_>>();
 
-    let mut tx = state.begin_read(auth).await?;
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.title,entry.kind,entry.media_type,
                entry.current_version,entry.updated_at,
                version.id AS version_id,version.content_sha256,
                NULL::text AS content,version.object_key,version.object_version_id,
-               version.size_bytes,version.metadata
+               version.size_bytes,version.metadata,
+               (SELECT coalesce(max(change.generation),0)
+                FROM straylight.workspace_changes AS change
+                WHERE change.user_id=$1) AS pinned_workspace_generation
         FROM straylight.entries AS entry
         JOIN straylight.entry_versions AS version
           ON version.user_id=entry.user_id
@@ -7135,13 +7142,15 @@ async fn resolve_checkpoint_sources_batched(
           )
         "#,
     )
-    .bind(auth.user_id.0)
+    .bind(user_id)
     .bind(&entry_ids)
     .bind(&paths)
     .bind(&normalized_path_keys)
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
-    tx.commit().await?;
+    let pinned_workspace_generation = rows
+        .first()
+        .map(|row| row.get::<i64, _>("pinned_workspace_generation"));
 
     let entries = rows
         .into_iter()
@@ -7152,7 +7161,6 @@ async fn resolve_checkpoint_sources_batched(
             kind: row.get("kind"),
             media_type: row.get("media_type"),
             version: row.get("current_version"),
-            version_id: row.get("version_id"),
             content_sha256: row.get("content_sha256"),
             content: None,
             object_key: row.get("object_key"),
@@ -7204,7 +7212,7 @@ async fn resolve_checkpoint_sources_batched(
             resolved.push(entry);
         }
     }
-    Ok(resolved)
+    Ok((resolved, pinned_workspace_generation))
 }
 
 fn collect_markdown_paths(value: &Value, output: &mut Vec<String>) {
@@ -7313,6 +7321,539 @@ fn deterministic_checkpoint_id(request: &CheckpointRequest) -> Uuid {
     let mut bytes = [0u8; 16];
     bytes.copy_from_slice(&digest[..16]);
     Uuid::from_bytes(bytes)
+}
+
+// Preserve the path identity understood by the pre-receipt binary so a
+// rolling deploy or rollback recognizes a checkpoint written by this binary.
+// Durable operation identity itself lives in workspace_idempotency_receipts.
+fn checkpoint_entry_id_for_new_write(request: &CheckpointRequest) -> Uuid {
+    deterministic_checkpoint_id(request)
+}
+
+fn implicit_checkpoint_idempotency_key(request: &CheckpointRequest) -> String {
+    format!("implicit:{}", checkpoint_entry_id_for_new_write(request))
+}
+
+fn is_reserved_implicit_checkpoint_key(key: &str) -> bool {
+    key.strip_prefix("implicit:")
+        .is_some_and(|suffix| Uuid::parse_str(suffix).is_ok())
+}
+
+fn validate_checkpoint_request(request: &CheckpointRequest) -> ApiResult<(String, String)> {
+    if request.session_id.is_empty()
+        || request.session_id.len() > 256
+        || request.session_id.chars().any(char::is_control)
+    {
+        return Err(ApiError::invalid(
+            "checkpoint session_id must contain 1 to 256 printable characters",
+        ));
+    }
+    if let Some(idempotency_key) = request.idempotency_key.as_deref() {
+        validate_idempotency_key(idempotency_key)?;
+        if is_reserved_implicit_checkpoint_key(idempotency_key) {
+            return Err(ApiError::invalid(
+                "checkpoint idempotency keys matching implicit:<uuid> are reserved",
+            ));
+        }
+    }
+    if !request.state.is_object() {
+        return Err(ApiError::invalid("checkpoint state must be an object"));
+    }
+    if request.source_refs.len() > 64 {
+        return Err(ApiError::invalid(
+            "checkpoint source_refs are limited to 64 exact references",
+        ));
+    }
+    if request.source_refs.iter().any(|reference| {
+        reference.is_empty() || reference.len() > 4_096 || reference.chars().any(char::is_control)
+    }) {
+        return Err(ApiError::invalid(
+            "checkpoint source_refs must contain 1 to 4096 printable characters",
+        ));
+    }
+    if request
+        .parent_checkpoint_id
+        .as_ref()
+        .is_some_and(|reference| {
+            reference.is_empty() || reference.len() > 256 || reference.chars().any(char::is_control)
+        })
+    {
+        return Err(ApiError::invalid(
+            "checkpoint parent_checkpoint_id must contain 1 to 256 printable characters",
+        ));
+    }
+    let identity = json!({
+        "schema": "straylight-simple-checkpoint-request@v1",
+        "parent_checkpoint_id": request.parent_checkpoint_id,
+        "state": request.state,
+        "source_refs": request.source_refs
+    });
+    let canonical = canonical_json(&identity)?;
+    if canonical.len() > MAX_WRITE_BYTES {
+        return Err(ApiError::public(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "checkpoint_too_large",
+            "checkpoint requests are limited to 4 MiB",
+        ));
+    }
+    let effective_idempotency_key = request
+        .idempotency_key
+        .clone()
+        .unwrap_or_else(|| implicit_checkpoint_idempotency_key(request));
+    Ok((
+        effective_idempotency_key,
+        hex::encode(Sha256::digest(canonical.as_bytes())),
+    ))
+}
+
+fn checkpoint_envelope(session_id: &str, receipt: Value) -> ApiResult<WorkspaceEnvelope<Value>> {
+    let resulting_generation = receipt
+        .get("resulting_workspace_generation")
+        .or_else(|| receipt.get("workspace_generation"))
+        .and_then(Value::as_i64)
+        .ok_or_else(|| {
+            ApiError::Internal("checkpoint receipt is missing its resulting generation".to_owned())
+        })?;
+    let mut envelope = WorkspaceEnvelope::complete(receipt);
+    envelope.status = ResponseStatus::Committed;
+    envelope.session_id = Some(session_id.to_owned());
+    envelope.corpus_revision = Some(format!("generation:{resulting_generation}"));
+    // A replay intentionally returns the same logical response as the first
+    // successful call. Per-request SQL counts are diagnostics, not receipt data.
+    envelope.query_count = None;
+    Ok(envelope)
+}
+
+async fn lock_checkpoint_idempotency(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    idempotency_key: &str,
+) -> ApiResult<()> {
+    let key_hash = hex::encode(Sha256::digest(idempotency_key.as_bytes()));
+    let lock_key = format!("simple-idempotency:{user_id}:checkpoint:{key_hash}");
+    sqlx::query_scalar::<_, ()>("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(lock_key)
+        .fetch_one(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+async fn replay_checkpoint_receipt_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    idempotency_key: &str,
+    request_hash: &str,
+) -> ApiResult<Option<Value>> {
+    let row = sqlx::query(
+        r#"
+        SELECT request_hash,receipt
+        FROM straylight.workspace_idempotency_receipts
+        WHERE user_id=$1 AND operation_kind='checkpoint' AND idempotency_key=$2
+        "#,
+    )
+    .bind(user_id)
+    .bind(idempotency_key)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let existing_hash: String = row.get("request_hash");
+    if existing_hash != request_hash {
+        return Err(checkpoint_idempotency_conflict(idempotency_key));
+    }
+    Ok(Some(row.get("receipt")))
+}
+
+fn checkpoint_idempotency_conflict(idempotency_key: &str) -> ApiError {
+    ApiError::conflict(
+        "idempotency_conflict",
+        "checkpoint idempotency key was already used for a different request",
+        json!({
+            "operation_kind": "checkpoint",
+            "idempotency_key": idempotency_key,
+            "idempotency_key_reused": true
+        }),
+    )
+}
+
+async fn persist_checkpoint_receipt_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    credential_id: Option<Uuid>,
+    idempotency_key: &str,
+    request_hash: &str,
+    entry_id: Uuid,
+    pinned_generation: i64,
+    resulting_generation: i64,
+    receipt: &Value,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.workspace_idempotency_receipts (
+          user_id,operation_kind,idempotency_key,request_hash,
+          checkpoint_entry_id,pinned_workspace_generation,
+          resulting_workspace_generation,receipt,created_by_credential_id
+        ) VALUES ($1,'checkpoint',$2,$3,$4,$5,$6,$7,$8)
+        "#,
+    )
+    .bind(user_id)
+    .bind(idempotency_key)
+    .bind(request_hash)
+    .bind(entry_id)
+    .bind(pinned_generation)
+    .bind(resulting_generation)
+    .bind(receipt)
+    .bind(credential_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+fn set_checkpoint_resulting_generation(
+    mut metadata: Value,
+    pinned_generation: i64,
+    resulting_generation: i64,
+) -> Value {
+    let target = if metadata.get("client").is_some_and(Value::is_object) {
+        metadata
+            .get_mut("client")
+            .and_then(Value::as_object_mut)
+            .expect("checked checkpoint client metadata")
+    } else {
+        metadata
+            .as_object_mut()
+            .expect("prepared Markdown metadata is always an object")
+    };
+    target.insert("workspace_generation".to_owned(), json!(pinned_generation));
+    target.insert(
+        "pinned_workspace_generation".to_owned(),
+        json!(pinned_generation),
+    );
+    target.insert(
+        "resulting_workspace_generation".to_owned(),
+        json!(resulting_generation),
+    );
+    metadata
+}
+
+#[allow(clippy::too_many_arguments)]
+fn checkpoint_receipt_value(
+    checkpoint_ref: &str,
+    path: &str,
+    entry_id: Uuid,
+    version_id: Uuid,
+    version: i64,
+    content_sha256: &str,
+    pinned_generation: i64,
+    resulting_generation: i64,
+    source_entries: Vec<Value>,
+) -> Value {
+    json!({
+        "checkpoint_id": checkpoint_ref,
+        "checkpoint_ref": checkpoint_ref,
+        "path": path,
+        // Compatibility: callers historically treated workspace_generation as
+        // the generation after the checkpoint write.
+        "workspace_generation": resulting_generation,
+        "pinned_workspace_generation": pinned_generation,
+        "resulting_workspace_generation": resulting_generation,
+        "source_entries": source_entries,
+        "write": {
+            "entry_ref": format!("entry:{entry_id}"),
+            "version_ref": format!("entry-version:{version_id}"),
+            "path": path,
+            "version": version,
+            "content_hash": format!("sha256:{content_sha256}"),
+            "workspace_generation": resulting_generation,
+            "pinned_workspace_generation": pinned_generation,
+            "resulting_workspace_generation": resulting_generation,
+            "search_status": "lexical_ready_semantic_queued",
+            "metadata_only": false,
+            "no_op": false
+        }
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn commit_checkpoint_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    credential_id: Option<Uuid>,
+    idempotency_key: &str,
+    request_hash: &str,
+    checkpoint_ref: &str,
+    path: &str,
+    pinned_generation: i64,
+    source_entries: Vec<Value>,
+    prepared: PreparedMarkdown,
+) -> ApiResult<CheckpointWriteResult> {
+    let committed_bytes = u64::try_from(prepared.content.len()).unwrap_or(u64::MAX);
+    let content_sha256 = prepared.content_sha256.clone();
+    let initial_metadata = prepared.metadata.clone();
+    require_local_publish_lock(
+        tx,
+        format!("simple-entry:{user_id}:{}", portable_path_key(path)),
+        true,
+    )
+    .await?;
+    let result = upsert_markdown_in_tx(tx, user_id, credential_id, prepared).await?;
+    let resulting_generation = match result.generation {
+        Some(generation) => generation,
+        None => sqlx::query_scalar::<_, Option<i64>>(
+            r#"
+            SELECT max(generation)
+            FROM straylight.workspace_changes
+            WHERE user_id=$1 AND entry_id=$2 AND entry_version=$3
+            "#,
+        )
+        .bind(user_id)
+        .bind(result.entry_id)
+        .bind(result.version)
+        .fetch_one(&mut **tx)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Internal(
+                "checkpoint entry exists without a workspace change receipt".to_owned(),
+            )
+        })?,
+    };
+    let version_id = result.version_id.ok_or_else(|| {
+        ApiError::Internal("checkpoint write did not produce a version reference".to_owned())
+    })?;
+    let metadata = set_checkpoint_resulting_generation(
+        initial_metadata,
+        pinned_generation,
+        resulting_generation,
+    );
+    sqlx::query(
+        r#"
+        UPDATE straylight.entry_versions
+        SET metadata=$4
+        WHERE user_id=$1 AND entry_id=$2 AND version=$3
+        "#,
+    )
+    .bind(user_id)
+    .bind(result.entry_id)
+    .bind(result.version)
+    .bind(metadata)
+    .execute(&mut **tx)
+    .await?;
+    let receipt = checkpoint_receipt_value(
+        checkpoint_ref,
+        path,
+        result.entry_id,
+        version_id,
+        result.version,
+        &content_sha256,
+        pinned_generation,
+        resulting_generation,
+        source_entries,
+    );
+    persist_checkpoint_receipt_in_tx(
+        tx,
+        user_id,
+        credential_id,
+        idempotency_key,
+        request_hash,
+        result.entry_id,
+        pinned_generation,
+        resulting_generation,
+        &receipt,
+    )
+    .await?;
+    Ok(CheckpointWriteResult {
+        receipt,
+        committed_bytes: if result.no_op { 0 } else { committed_bytes },
+        created: !result.no_op,
+    })
+}
+
+async fn adopt_legacy_checkpoint_receipt_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    credential_id: Option<Uuid>,
+    idempotency_key: &str,
+    request_hash: &str,
+    request: &CheckpointRequest,
+) -> ApiResult<Option<CheckpointWriteResult>> {
+    let idempotency_hash = request
+        .idempotency_key
+        .as_ref()
+        .map(|_| hex::encode(Sha256::digest(idempotency_key.as_bytes())));
+    let implicit_path = format!(
+        ".straylight/checkpoints/{}.md",
+        deterministic_checkpoint_id(request)
+    );
+    let rows = sqlx::query(
+        r#"
+        SELECT entry.id,entry.path,entry.current_version,
+               version.id AS version_id,version.content_sha256,version.metadata
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1
+          AND entry.deleted_at IS NULL
+          AND entry.path LIKE '.straylight/checkpoints/%'
+          AND version.metadata->>'kind'='checkpoint'
+          AND (
+            ($2::text IS NOT NULL
+             AND version.metadata->>'_straylight_idempotency_hash'=$2)
+            OR ($2::text IS NULL AND entry.path=$3)
+          )
+        ORDER BY entry.created_at,entry.id
+        "#,
+    )
+    .bind(user_id)
+    .bind(idempotency_hash)
+    .bind(implicit_path)
+    .fetch_all(&mut **tx)
+    .await?;
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    // Explicit-key adoption scans by the legacy key hash, then rebuilds each
+    // retired ID with the session stored on that immutable row and the
+    // caller's canonical payload. Missing-key adoption is deliberately
+    // session-scoped and starts from the exact legacy path. Both modes reject a
+    // row whose original deterministic request identity does not match. If the
+    // old implementation wrote one explicit-key operation from multiple
+    // sessions, retain the earliest equivalent receipt.
+    let mut matching_rows = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let metadata: Value = row.get("metadata");
+        let client_metadata = metadata
+            .get("client")
+            .filter(|value| value.is_object())
+            .unwrap_or(&metadata);
+        let Some(legacy_session_id) = client_metadata.get("session_id").and_then(Value::as_str)
+        else {
+            return Err(checkpoint_idempotency_conflict(idempotency_key));
+        };
+        let mut legacy_request = request.clone();
+        legacy_request.session_id = legacy_session_id.to_owned();
+        let expected_checkpoint_id = deterministic_checkpoint_id(&legacy_request);
+        let expected_path = format!(".straylight/checkpoints/{expected_checkpoint_id}.md");
+        if row.get::<String, _>("path") != expected_path {
+            return Err(checkpoint_idempotency_conflict(idempotency_key));
+        }
+        matching_rows.push((row, expected_checkpoint_id, expected_path));
+    }
+    let (row, expected_checkpoint_id, expected_path) = matching_rows
+        .into_iter()
+        .next()
+        .expect("non-empty legacy rows produced a match");
+    let entry_id: Uuid = row.get("id");
+    let version: i64 = row.get("current_version");
+    let version_id: Uuid = row.get("version_id");
+    let metadata: Value = row.get("metadata");
+    let client_metadata = metadata
+        .get("client")
+        .filter(|value| value.is_object())
+        .unwrap_or(&metadata);
+    if client_metadata.get("kind").and_then(Value::as_str) != Some("checkpoint") {
+        return Err(checkpoint_idempotency_conflict(idempotency_key));
+    }
+    let pinned_generation = client_metadata
+        .get("pinned_workspace_generation")
+        .or_else(|| client_metadata.get("workspace_generation"))
+        .and_then(Value::as_i64)
+        .ok_or_else(|| {
+            ApiError::Internal("legacy checkpoint is missing its pinned generation".to_owned())
+        })?;
+    let resulting_generation = sqlx::query_scalar::<_, Option<i64>>(
+        r#"
+        SELECT max(generation)
+        FROM straylight.workspace_changes
+        WHERE user_id=$1 AND entry_id=$2 AND entry_version=$3
+        "#,
+    )
+    .bind(user_id)
+    .bind(entry_id)
+    .bind(version)
+    .fetch_one(&mut **tx)
+    .await?
+    .ok_or_else(|| {
+        ApiError::Internal("legacy checkpoint is missing its workspace change".to_owned())
+    })?;
+    let checkpoint_ref = format!("checkpoint:{expected_checkpoint_id}");
+    let receipt = checkpoint_receipt_value(
+        &checkpoint_ref,
+        &expected_path,
+        entry_id,
+        version_id,
+        version,
+        &row.get::<String, _>("content_sha256"),
+        pinned_generation,
+        resulting_generation,
+        client_metadata
+            .get("source_entries")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+    );
+    persist_checkpoint_receipt_in_tx(
+        tx,
+        user_id,
+        credential_id,
+        idempotency_key,
+        request_hash,
+        entry_id,
+        pinned_generation,
+        resulting_generation,
+        &receipt,
+    )
+    .await?;
+    Ok(Some(CheckpointWriteResult {
+        receipt,
+        committed_bytes: 0,
+        created: false,
+    }))
+}
+
+async fn validate_checkpoint_parent_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    checkpoint_ref: &str,
+) -> ApiResult<()> {
+    let checkpoint_path = checkpoint_ref
+        .strip_prefix("checkpoint:")
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .map(|checkpoint_id| format!(".straylight/checkpoints/{checkpoint_id}.md"));
+    let entry_id = checkpoint_ref
+        .strip_prefix("entry:")
+        .or(Some(checkpoint_ref))
+        .and_then(|value| Uuid::parse_str(value).ok());
+    if checkpoint_path.is_none() && entry_id.is_none() {
+        return Err(ApiError::invalid(
+            "parent_checkpoint_id must be a checkpoint or entry ref",
+        ));
+    }
+    let row = fetch_entry_lookup(
+        tx,
+        user_id,
+        None,
+        checkpoint_path.as_deref(),
+        entry_id,
+        false,
+        false,
+        false,
+    )
+    .await?
+    .ok_or_else(|| ApiError::not_found("entry_not_found", checkpoint_ref))?;
+    let metadata: Value = row.get("metadata");
+    let metadata = metadata
+        .get("client")
+        .filter(|value| value.is_object())
+        .unwrap_or(&metadata);
+    if metadata.get("kind").and_then(Value::as_str) != Some("checkpoint") {
+        return Err(ApiError::invalid(
+            "parent_checkpoint_id does not identify a checkpoint entry",
+        ));
+    }
+    Ok(())
 }
 
 fn entry_reference(entry: &EntryRow) -> Value {
@@ -8568,20 +9109,54 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn retrieval_lanes_run_concurrently_not_serially() {
+    async fn hybrid_retrieval_never_waits_for_optional_semantic() {
         let started = tokio::time::Instant::now();
-        join_retrieval_lanes(
+        let (_, _, semantic) = join_retrieval_lanes(
             tokio::time::sleep(Duration::from_millis(120)),
             tokio::time::sleep(Duration::from_millis(180)),
             tokio::time::sleep(Duration::from_millis(300)),
+            false,
+        )
+        .await;
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_millis(180));
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "hybrid retrieval must return with exact+lexical instead of waiting for semantic; observed {elapsed:?}"
+        );
+        assert!(semantic.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn hybrid_retrieval_keeps_semantic_when_it_finishes_before_core() {
+        let started = tokio::time::Instant::now();
+        let (_, _, semantic) = join_retrieval_lanes(
+            tokio::time::sleep(Duration::from_millis(180)),
+            tokio::time::sleep(Duration::from_millis(150)),
+            tokio::time::sleep(Duration::from_millis(120)),
+            false,
+        )
+        .await;
+        let elapsed = started.elapsed();
+        assert!(elapsed >= Duration::from_millis(180));
+        assert!(elapsed < Duration::from_millis(200));
+        assert!(semantic.is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn semantic_only_retrieval_waits_for_its_bounded_lane() {
+        let started = tokio::time::Instant::now();
+        let (_, _, semantic) = join_retrieval_lanes(
+            tokio::time::sleep(Duration::from_millis(120)),
+            tokio::time::sleep(Duration::from_millis(180)),
+            tokio::time::sleep(Duration::from_millis(300)),
+            true,
         )
         .await;
         let elapsed = started.elapsed();
         assert!(elapsed >= Duration::from_millis(300));
-        assert!(
-            elapsed < Duration::from_millis(320),
-            "mixed retrieval wall time must approximate the slowest lane, not the lane sum; observed {elapsed:?}"
-        );
+        assert!(elapsed < Duration::from_millis(320));
+        assert!(semantic.is_some());
     }
 
     fn semantic_report(outcome: SemanticOutcome) -> SemanticLaneReport {
@@ -8593,7 +9168,46 @@ mod tests {
     }
 
     #[test]
-    fn semantic_failure_deferral_and_unavailability_never_remove_other_lane_results() {
+    fn optional_semantic_failures_never_downgrade_core_results() {
+        let mut merged = HashMap::new();
+        merge_candidate(&mut merged, candidate_with_sections(1, &[64]));
+        merge_candidate(&mut merged, candidate_with_sections(2, &[64]));
+        let mut failures: Vec<&'static str> = vec![];
+        let mut timings = RetrievalTimings::default();
+        assert!(!apply_semantic_outcome(
+            Some(semantic_report(SemanticOutcome::Disabled)),
+            false,
+            &mut merged,
+            &mut failures,
+            &mut timings,
+        ));
+        for outcome in [
+            SemanticOutcome::IndexUnavailable,
+            SemanticOutcome::ReadinessError,
+            SemanticOutcome::Failed,
+            SemanticOutcome::Deferred,
+        ] {
+            assert!(!apply_semantic_outcome(
+                Some(semantic_report(outcome)),
+                false,
+                &mut merged,
+                &mut failures,
+                &mut timings,
+            ));
+            assert_eq!(merged.len(), 2);
+        }
+        assert!(apply_semantic_outcome(
+            None,
+            false,
+            &mut merged,
+            &mut failures,
+            &mut timings,
+        ));
+        assert!(failures.is_empty());
+    }
+
+    #[test]
+    fn semantic_only_failures_are_reported_without_removing_core_results() {
         let mut merged = HashMap::new();
         merge_candidate(&mut merged, candidate_with_sections(1, &[64]));
         merge_candidate(&mut merged, candidate_with_sections(2, &[64]));
@@ -8606,12 +9220,13 @@ mod tests {
             SemanticOutcome::Failed,
             SemanticOutcome::Deferred,
         ] {
-            apply_semantic_outcome(
-                semantic_report(outcome),
+            assert!(!apply_semantic_outcome(
+                Some(semantic_report(outcome)),
+                true,
                 &mut merged,
                 &mut failures,
                 &mut timings,
-            );
+            ));
             assert_eq!(merged.len(), 2);
         }
         assert_eq!(
@@ -8632,8 +9247,8 @@ mod tests {
         merge_candidate(&mut merged, candidate_with_sections(1, &[64]));
         let mut failures: Vec<&'static str> = vec![];
         let mut timings = RetrievalTimings::default();
-        apply_semantic_outcome(
-            SemanticLaneReport {
+        assert!(!apply_semantic_outcome(
+            Some(SemanticLaneReport {
                 outcome: SemanticOutcome::Success(SemanticCandidates {
                     candidates: vec![candidate_with_sections(9, &[64])],
                     embed_ms: 10.0,
@@ -8641,11 +9256,12 @@ mod tests {
                 }),
                 ready_ms: 3.0,
                 lane_ms: 40.0,
-            },
+            }),
+            false,
             &mut merged,
             &mut failures,
             &mut timings,
-        );
+        ));
         assert_eq!(merged.len(), 2);
         assert!(failures.is_empty());
         assert_eq!(timings.semantic_ready, 3.0);
@@ -9114,17 +9730,149 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_ids_are_idempotent() {
+    fn checkpoint_fingerprints_and_ids_are_canonical_and_request_bound() {
         let request = CheckpointRequest {
+            session_id: "session:one".to_owned(),
+            parent_checkpoint_id: None,
+            state: serde_json::from_str(r#"{"z":1,"objective":"Continue","a":2}"#).unwrap(),
+            source_refs: vec![],
+            idempotency_key: Some("same".to_owned()),
+        };
+        let reordered = CheckpointRequest {
+            state: serde_json::from_str(r#"{"a":2,"objective":"Continue","z":1}"#).unwrap(),
+            ..request.clone()
+        };
+        let (effective_key, request_hash) = validate_checkpoint_request(&request).unwrap();
+        let (reordered_key, reordered_hash) = validate_checkpoint_request(&reordered).unwrap();
+        assert_eq!(effective_key, "same");
+        assert_eq!(effective_key, reordered_key);
+        assert_eq!(request_hash, reordered_hash);
+        let correlated_from_another_session = CheckpointRequest {
+            session_id: "session:two".to_owned(),
+            ..request.clone()
+        };
+        let (correlated_key, correlated_hash) =
+            validate_checkpoint_request(&correlated_from_another_session).unwrap();
+        assert_eq!(effective_key, correlated_key);
+        assert_eq!(
+            request_hash, correlated_hash,
+            "session IDs correlate calls but do not change the durable operation"
+        );
+        let newly_created_id = checkpoint_entry_id_for_new_write(&request);
+        let legacy_binary_id = deterministic_checkpoint_id(&request);
+        assert_eq!(
+            newly_created_id, legacy_binary_id,
+            "rolling deploys and rollbacks must agree on checkpoint entry identity"
+        );
+        assert_eq!(
+            format!(".straylight/checkpoints/{newly_created_id}.md"),
+            format!(".straylight/checkpoints/{legacy_binary_id}.md"),
+            "the new writer must publish at the path recognized by the legacy binary"
+        );
+        assert_eq!(
+            newly_created_id,
+            checkpoint_entry_id_for_new_write(&reordered),
+            "equivalent JSON payloads preserve the legacy-compatible path"
+        );
+        assert_ne!(
+            newly_created_id,
+            deterministic_checkpoint_id(&correlated_from_another_session),
+            "the legacy binary included session ID in path identity; new-code cross-session idempotency comes from the receipt"
+        );
+        let receipt = json!({
+            "checkpoint_ref": format!("checkpoint:{newly_created_id}"),
+            "workspace_generation": 7,
+            "resulting_workspace_generation": 7
+        });
+        let first_envelope = checkpoint_envelope(&request.session_id, receipt.clone()).unwrap();
+        let replay_envelope =
+            checkpoint_envelope(&correlated_from_another_session.session_id, receipt.clone())
+                .unwrap();
+        assert_eq!(first_envelope.data, replay_envelope.data);
+        assert_eq!(replay_envelope.data, receipt);
+        assert_eq!(first_envelope.session_id.as_deref(), Some("session:one"));
+        assert_eq!(replay_envelope.session_id.as_deref(), Some("session:two"));
+        let changed = CheckpointRequest {
+            state: json!({"a": 2, "objective": "Different", "z": 1}),
+            ..request.clone()
+        };
+        let (changed_key, changed_hash) = validate_checkpoint_request(&changed).unwrap();
+        assert_eq!(effective_key, changed_key);
+        assert_ne!(request_hash, changed_hash);
+        assert_ne!(
+            newly_created_id,
+            checkpoint_entry_id_for_new_write(&changed)
+        );
+    }
+
+    #[test]
+    fn checkpoint_input_bounds_are_enforced_before_database_work() {
+        let fixture = |key: Option<String>| CheckpointRequest {
             session_id: "session:one".to_owned(),
             parent_checkpoint_id: None,
             state: json!({"objective": "Continue"}),
             source_refs: vec![],
-            idempotency_key: Some("same".to_owned()),
+            idempotency_key: key,
         };
-        assert_eq!(
-            deterministic_checkpoint_id(&request),
-            deterministic_checkpoint_id(&request)
+        assert!(validate_checkpoint_request(&fixture(Some("x".repeat(256)))).is_ok());
+        assert!(validate_checkpoint_request(&fixture(Some("x".repeat(257)))).is_err());
+        assert!(validate_checkpoint_request(&fixture(None)).is_ok());
+        assert!(validate_checkpoint_request(&fixture(Some("bad\nkey".to_owned()))).is_err());
+        assert!(
+            validate_checkpoint_request(&fixture(Some(format!("implicit:{}", Uuid::nil()))))
+                .is_err()
+        );
+        assert!(
+            validate_checkpoint_request(&fixture(Some("implicit:caller-label".to_owned()))).is_ok()
+        );
+
+        let mut request = fixture(Some("bounded".to_owned()));
+        request.session_id = "x".repeat(257);
+        assert!(validate_checkpoint_request(&request).is_err());
+        request.session_id = "session:one".to_owned();
+        request.state = Value::String("not an object".to_owned());
+        assert!(validate_checkpoint_request(&request).is_err());
+        request.state = json!({"objective": "Continue"});
+        request.source_refs = (0..65).map(|index| format!("Sources/{index}.md")).collect();
+        assert!(validate_checkpoint_request(&request).is_err());
+    }
+
+    #[test]
+    fn checkpoint_missing_key_uses_stable_legacy_scoped_identity() {
+        let request: CheckpointRequest = serde_json::from_value(json!({
+            "session_id": "session:implicit-one",
+            "parent_checkpoint_id": null,
+            "state": {"objective": "Preserve the optional-key contract"},
+            "source_refs": ["Sources/Plan.md"]
+        }))
+        .expect("the HTTP request model keeps idempotency_key optional");
+        let (effective_key, request_hash) = validate_checkpoint_request(&request).unwrap();
+        assert_eq!(effective_key, implicit_checkpoint_idempotency_key(&request));
+        assert!(effective_key.len() <= 256);
+        let (replayed_key, replayed_hash) = validate_checkpoint_request(&request).unwrap();
+        assert_eq!(effective_key, replayed_key);
+        assert_eq!(request_hash, replayed_hash);
+
+        let changed_payload = CheckpointRequest {
+            state: json!({"objective": "A historically distinct checkpoint"}),
+            ..request.clone()
+        };
+        let (changed_payload_key, changed_payload_hash) =
+            validate_checkpoint_request(&changed_payload).unwrap();
+        assert_ne!(effective_key, changed_payload_key);
+        assert_ne!(request_hash, changed_payload_hash);
+
+        let changed_session = CheckpointRequest {
+            session_id: "session:implicit-two".to_owned(),
+            ..request
+        };
+        let (changed_session_key, changed_session_hash) =
+            validate_checkpoint_request(&changed_session).unwrap();
+        assert_ne!(effective_key, changed_session_key);
+        assert_eq!(request_hash, changed_session_hash);
+        assert_ne!(
+            checkpoint_entry_id_for_new_write(&changed_payload),
+            checkpoint_entry_id_for_new_write(&changed_session)
         );
     }
 
@@ -9685,6 +10433,738 @@ mod tests {
             tier_a_history_stage: None,
             frontmatter: DerivedFrontmatter::default(),
             force_new_version,
+        }
+    }
+
+    fn prepared_checkpoint_fixture(
+        request: &CheckpointRequest,
+        effective_idempotency_key: &str,
+        request_hash: &str,
+        pinned_generation: i64,
+    ) -> (String, String, PreparedMarkdown) {
+        prepared_checkpoint_fixture_for_id(
+            checkpoint_entry_id_for_new_write(request),
+            request,
+            Some(effective_idempotency_key),
+            Some(request_hash),
+            pinned_generation,
+        )
+    }
+
+    fn prepared_legacy_checkpoint_fixture(
+        request: &CheckpointRequest,
+        pinned_generation: i64,
+    ) -> (String, String, PreparedMarkdown) {
+        prepared_checkpoint_fixture_for_id(
+            deterministic_checkpoint_id(request),
+            request,
+            request.idempotency_key.as_deref(),
+            None,
+            pinned_generation,
+        )
+    }
+
+    fn prepared_checkpoint_fixture_for_id(
+        checkpoint_id: Uuid,
+        request: &CheckpointRequest,
+        metadata_idempotency_key: Option<&str>,
+        request_hash: Option<&str>,
+        pinned_generation: i64,
+    ) -> (String, String, PreparedMarkdown) {
+        let checkpoint_ref = format!("checkpoint:{checkpoint_id}");
+        let path = format!(".straylight/checkpoints/{checkpoint_id}.md");
+        let content =
+            render_checkpoint_markdown(checkpoint_id, pinned_generation, request, &[]).unwrap();
+        let normalized = normalize_document(&path, &content);
+        let chunks = normalized.chunks;
+        let embeddings = vec![None; chunks.len()];
+        let mut metadata = json!({
+            "kind": "checkpoint",
+            "checkpoint_ref": checkpoint_ref,
+            "workspace_generation": pinned_generation,
+            "session_id": request.session_id,
+            "parent_checkpoint_ref": request.parent_checkpoint_id,
+            "source_refs": request.source_refs,
+            "source_entries": []
+        });
+        if let Some(idempotency_key) = metadata_idempotency_key {
+            metadata
+                .as_object_mut()
+                .expect("checkpoint fixture metadata is an object")
+                .insert(
+                    "_straylight_idempotency_hash".to_owned(),
+                    json!(hex::encode(Sha256::digest(idempotency_key.as_bytes()))),
+                );
+        }
+        if let Some(request_hash) = request_hash {
+            let metadata = metadata
+                .as_object_mut()
+                .expect("checkpoint fixture metadata is an object");
+            metadata.insert(
+                "pinned_workspace_generation".to_owned(),
+                json!(pinned_generation),
+            );
+            metadata.insert("resulting_workspace_generation".to_owned(), Value::Null);
+            metadata.insert(
+                "request_hash".to_owned(),
+                json!(format!("sha256:{request_hash}")),
+            );
+            metadata.insert("operation_kind".to_owned(), json!("checkpoint"));
+        }
+        (
+            checkpoint_ref.clone(),
+            path.clone(),
+            PreparedMarkdown {
+                entry_id_hint: Some(checkpoint_id),
+                path,
+                title: normalized.title,
+                content,
+                content_sha256: normalized
+                    .content_hash
+                    .trim_start_matches("sha256:")
+                    .to_owned(),
+                media_type: markdown_media_type(),
+                metadata,
+                chunks,
+                embeddings,
+                expected_version: Some(0),
+                tier_a_history_stage: None,
+                frontmatter: DerivedFrontmatter::default(),
+                force_new_version: false,
+            },
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn checkpoint_attempt(
+        pool: &sqlx::PgPool,
+        user_id: Uuid,
+        key: &str,
+        request_hash: &str,
+        checkpoint_ref: &str,
+        path: &str,
+        pinned_generation: i64,
+        prepared: PreparedMarkdown,
+    ) -> ApiResult<Value> {
+        let mut tx = pool.begin().await?;
+        lock_checkpoint_idempotency(&mut tx, user_id, key).await?;
+        if let Some(receipt) =
+            replay_checkpoint_receipt_in_tx(&mut tx, user_id, key, request_hash).await?
+        {
+            tx.commit().await?;
+            return Ok(receipt);
+        }
+        let result = commit_checkpoint_in_tx(
+            &mut tx,
+            user_id,
+            None,
+            key,
+            request_hash,
+            checkpoint_ref,
+            path,
+            pinned_generation,
+            vec![],
+            prepared,
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(result.receipt)
+    }
+
+    #[tokio::test]
+    async fn checkpoint_receipts_are_atomic_replay_exact_and_concurrency_safe() {
+        let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+        else {
+            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping checkpoint receipt test");
+            return;
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(6)
+            .connect(&database_url)
+            .await
+            .expect("connect to disposable Postgres");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("apply Straylight migrations");
+        let user_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
+        )
+        .bind(user_id)
+        .bind(format!("checkpoint-receipt-test:{user_id}"))
+        .bind("Checkpoint receipt test")
+        .execute(&pool)
+        .await
+        .expect("insert checkpoint test user");
+
+        let request = CheckpointRequest {
+            session_id: "session:correlation-only".to_owned(),
+            parent_checkpoint_id: None,
+            state: json!({"objective": "Test durable replay"}),
+            source_refs: vec![],
+            idempotency_key: Some("checkpoint-concurrent".to_owned()),
+        };
+        let (key, request_hash) = validate_checkpoint_request(&request).unwrap();
+        let pinned_generation = 0;
+        let (checkpoint_ref, path, prepared) =
+            prepared_checkpoint_fixture(&request, &key, &request_hash, pinned_generation);
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let run = |prepared: PreparedMarkdown| {
+            let pool = pool.clone();
+            let key = key.clone();
+            let request_hash = request_hash.clone();
+            let checkpoint_ref = checkpoint_ref.clone();
+            let path = path.clone();
+            let barrier = barrier.clone();
+            tokio::spawn(async move {
+                barrier.wait().await;
+                checkpoint_attempt(
+                    &pool,
+                    user_id,
+                    &key,
+                    &request_hash,
+                    &checkpoint_ref,
+                    &path,
+                    pinned_generation,
+                    prepared,
+                )
+                .await
+                .expect("concurrent checkpoint attempt")
+            })
+        };
+        let first_task = run(prepared.clone());
+        let second_task = run(prepared.clone());
+        let first = first_task.await.expect("first task joins");
+        let second = second_task.await.expect("second task joins");
+        assert_eq!(first, second, "concurrent replay returns the exact receipt");
+        let replay_request = CheckpointRequest {
+            session_id: "session:after-client-restart".to_owned(),
+            ..request.clone()
+        };
+        let (_, replay_hash) = validate_checkpoint_request(&replay_request).unwrap();
+        assert_eq!(request_hash, replay_hash);
+        let cross_session_replay = checkpoint_attempt(
+            &pool,
+            user_id,
+            &key,
+            &replay_hash,
+            &checkpoint_ref,
+            &path,
+            pinned_generation,
+            prepared.clone(),
+        )
+        .await
+        .expect("cross-session checkpoint replay");
+        assert_eq!(first, cross_session_replay);
+        let first_envelope = checkpoint_envelope(&request.session_id, first.clone()).unwrap();
+        let replay_envelope =
+            checkpoint_envelope(&replay_request.session_id, cross_session_replay).unwrap();
+        assert_eq!(first_envelope.data, replay_envelope.data);
+        assert_eq!(
+            first_envelope.session_id.as_deref(),
+            Some("session:correlation-only")
+        );
+        assert_eq!(
+            replay_envelope.session_id.as_deref(),
+            Some("session:after-client-restart"),
+            "a durable replay carries the current correlation ID"
+        );
+
+        for (table, query, count) in [
+            (
+                "entries",
+                "SELECT count(*) FROM straylight.entries WHERE user_id=$1",
+                1_i64,
+            ),
+            (
+                "entry_versions",
+                "SELECT count(*) FROM straylight.entry_versions WHERE user_id=$1",
+                1,
+            ),
+            (
+                "workspace_changes",
+                "SELECT count(*) FROM straylight.workspace_changes WHERE user_id=$1",
+                1,
+            ),
+            (
+                "jobs",
+                "SELECT count(*) FROM straylight.jobs WHERE user_id=$1",
+                1,
+            ),
+            (
+                "workspace_idempotency_receipts",
+                "SELECT count(*) FROM straylight.workspace_idempotency_receipts WHERE user_id=$1",
+                1,
+            ),
+        ] {
+            let actual = sqlx::query_scalar::<_, i64>(query)
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(actual, count, "unexpected {table} count");
+        }
+
+        // A committed response can be lost by the caller; the next attempt is
+        // reconstructed from the atomic durable receipt, byte-for-byte.
+        let lost_response_replay = checkpoint_attempt(
+            &pool,
+            user_id,
+            &key,
+            &request_hash,
+            &checkpoint_ref,
+            &path,
+            pinned_generation,
+            prepared,
+        )
+        .await
+        .expect("lost-response replay");
+        assert_eq!(first, lost_response_replay);
+
+        let mut conflict_tx = pool.begin().await.unwrap();
+        lock_checkpoint_idempotency(&mut conflict_tx, user_id, &key)
+            .await
+            .unwrap();
+        let conflict =
+            replay_checkpoint_receipt_in_tx(&mut conflict_tx, user_id, &key, &"f".repeat(64))
+                .await
+                .unwrap_err();
+        assert!(matches!(
+            conflict,
+            ApiError::Public {
+                status: StatusCode::CONFLICT,
+                code: "idempotency_conflict",
+                ..
+            }
+        ));
+        conflict_tx.rollback().await.unwrap();
+
+        // A checkpoint written before durable receipts used session_id in its
+        // path identity. Adoption reconstructs that retired identity with the
+        // immutable session stored on the row, while binding the receipt to
+        // the new session-independent canonical request hash.
+        let legacy_pinned_generation = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap();
+        let legacy_request = CheckpointRequest {
+            session_id: "session:legacy-original".to_owned(),
+            parent_checkpoint_id: None,
+            state: json!({"objective": "Adopt an old checkpoint receipt"}),
+            source_refs: vec![],
+            idempotency_key: Some("checkpoint-legacy-adoption".to_owned()),
+        };
+        let (legacy_key, legacy_hash) = validate_checkpoint_request(&legacy_request).unwrap();
+        let legacy_key = legacy_key.to_owned();
+        let (legacy_ref, legacy_path, legacy_prepared) =
+            prepared_legacy_checkpoint_fixture(&legacy_request, legacy_pinned_generation);
+        let mut legacy_write_tx = pool.begin().await.unwrap();
+        upsert_markdown_in_tx(&mut legacy_write_tx, user_id, None, legacy_prepared)
+            .await
+            .expect("write pre-receipt checkpoint fixture");
+        legacy_write_tx.commit().await.unwrap();
+
+        let legacy_conflicting_request = CheckpointRequest {
+            session_id: "session:legacy-conflicting-retry".to_owned(),
+            state: json!({"objective": "A different operation under the same key"}),
+            ..legacy_request.clone()
+        };
+        let (_, legacy_conflicting_hash) =
+            validate_checkpoint_request(&legacy_conflicting_request).unwrap();
+        let mut legacy_conflict_tx = pool.begin().await.unwrap();
+        lock_checkpoint_idempotency(&mut legacy_conflict_tx, user_id, &legacy_key)
+            .await
+            .unwrap();
+        let legacy_conflict = adopt_legacy_checkpoint_receipt_in_tx(
+            &mut legacy_conflict_tx,
+            user_id,
+            None,
+            &legacy_key,
+            &legacy_conflicting_hash,
+            &legacy_conflicting_request,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            legacy_conflict,
+            ApiError::Public {
+                status: StatusCode::CONFLICT,
+                code: "idempotency_conflict",
+                ..
+            }
+        ));
+        legacy_conflict_tx.rollback().await.unwrap();
+
+        let legacy_replay_request = CheckpointRequest {
+            session_id: "session:legacy-replay-after-restart".to_owned(),
+            ..legacy_request.clone()
+        };
+        let (_, legacy_replay_hash) = validate_checkpoint_request(&legacy_replay_request).unwrap();
+        assert_eq!(legacy_hash, legacy_replay_hash);
+        let mut adoption_tx = pool.begin().await.unwrap();
+        lock_checkpoint_idempotency(&mut adoption_tx, user_id, &legacy_key)
+            .await
+            .unwrap();
+        let adopted = adopt_legacy_checkpoint_receipt_in_tx(
+            &mut adoption_tx,
+            user_id,
+            None,
+            &legacy_key,
+            &legacy_replay_hash,
+            &legacy_replay_request,
+        )
+        .await
+        .expect("legacy adoption lookup")
+        .expect("legacy checkpoint is adopted");
+        adoption_tx.commit().await.unwrap();
+        assert!(!adopted.created);
+        assert_eq!(adopted.receipt["checkpoint_ref"], legacy_ref);
+        assert_eq!(adopted.receipt["path"], legacy_path);
+        let adopted_envelope =
+            checkpoint_envelope(&legacy_replay_request.session_id, adopted.receipt.clone())
+                .unwrap();
+        assert_eq!(
+            adopted_envelope.session_id.as_deref(),
+            Some("session:legacy-replay-after-restart")
+        );
+        let mut adopted_replay_tx = pool.begin().await.unwrap();
+        lock_checkpoint_idempotency(&mut adopted_replay_tx, user_id, &legacy_key)
+            .await
+            .unwrap();
+        let adopted_replay = replay_checkpoint_receipt_in_tx(
+            &mut adopted_replay_tx,
+            user_id,
+            &legacy_key,
+            &legacy_hash,
+        )
+        .await
+        .unwrap()
+        .expect("adopted receipt replays durably");
+        adopted_replay_tx.commit().await.unwrap();
+        assert_eq!(adopted.receipt, adopted_replay);
+
+        // Direct HTTP clients historically could omit idempotency_key. The
+        // API derives a stable session-scoped key and still stores an atomic
+        // receipt, so an exact retry succeeds without changing the public
+        // optional field contract.
+        let implicit_pinned_generation = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap();
+        let implicit_request = CheckpointRequest {
+            session_id: "session:implicit-route".to_owned(),
+            parent_checkpoint_id: None,
+            state: json!({"objective": "Checkpoint without an explicit key"}),
+            source_refs: vec![],
+            idempotency_key: None,
+        };
+        let (implicit_key, implicit_hash) = validate_checkpoint_request(&implicit_request).unwrap();
+        let (implicit_ref, implicit_path, implicit_prepared) = prepared_checkpoint_fixture(
+            &implicit_request,
+            &implicit_key,
+            &implicit_hash,
+            implicit_pinned_generation,
+        );
+        let implicit_receipt = checkpoint_attempt(
+            &pool,
+            user_id,
+            &implicit_key,
+            &implicit_hash,
+            &implicit_ref,
+            &implicit_path,
+            implicit_pinned_generation,
+            implicit_prepared.clone(),
+        )
+        .await
+        .expect("checkpoint without an explicit idempotency key");
+        let (implicit_replay_key, implicit_replay_hash) =
+            validate_checkpoint_request(&implicit_request).unwrap();
+        let implicit_replay = checkpoint_attempt(
+            &pool,
+            user_id,
+            &implicit_replay_key,
+            &implicit_replay_hash,
+            &implicit_ref,
+            &implicit_path,
+            implicit_pinned_generation,
+            implicit_prepared,
+        )
+        .await
+        .expect("exact missing-key replay");
+        assert_eq!(implicit_receipt, implicit_replay);
+        let implicit_other_session = CheckpointRequest {
+            session_id: "session:implicit-route-other".to_owned(),
+            ..implicit_request.clone()
+        };
+        let (implicit_other_key, implicit_other_hash) =
+            validate_checkpoint_request(&implicit_other_session).unwrap();
+        assert_ne!(implicit_key, implicit_other_key);
+        assert_eq!(implicit_hash, implicit_other_hash);
+
+        // Pre-receipt checkpoints without caller keys have no legacy key hash.
+        // Adopt them by their exact deterministic path for the same session;
+        // another session remains a distinct historical operation.
+        let implicit_legacy_pinned = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap();
+        let implicit_legacy_request = CheckpointRequest {
+            session_id: "session:implicit-legacy".to_owned(),
+            parent_checkpoint_id: None,
+            state: json!({"objective": "Adopt a missing-key legacy checkpoint"}),
+            source_refs: vec![],
+            idempotency_key: None,
+        };
+        let (implicit_legacy_key, implicit_legacy_hash) =
+            validate_checkpoint_request(&implicit_legacy_request).unwrap();
+        let (implicit_legacy_ref, implicit_legacy_path, implicit_legacy_prepared) =
+            prepared_legacy_checkpoint_fixture(&implicit_legacy_request, implicit_legacy_pinned);
+        let mut implicit_legacy_write_tx = pool.begin().await.unwrap();
+        upsert_markdown_in_tx(
+            &mut implicit_legacy_write_tx,
+            user_id,
+            None,
+            implicit_legacy_prepared,
+        )
+        .await
+        .expect("write missing-key legacy checkpoint fixture");
+        implicit_legacy_write_tx.commit().await.unwrap();
+
+        let implicit_legacy_other_session = CheckpointRequest {
+            session_id: "session:implicit-legacy-other".to_owned(),
+            ..implicit_legacy_request.clone()
+        };
+        let (implicit_legacy_other_key, implicit_legacy_other_hash) =
+            validate_checkpoint_request(&implicit_legacy_other_session).unwrap();
+        let mut implicit_other_adoption_tx = pool.begin().await.unwrap();
+        lock_checkpoint_idempotency(
+            &mut implicit_other_adoption_tx,
+            user_id,
+            &implicit_legacy_other_key,
+        )
+        .await
+        .unwrap();
+        let implicit_other_adoption = adopt_legacy_checkpoint_receipt_in_tx(
+            &mut implicit_other_adoption_tx,
+            user_id,
+            None,
+            &implicit_legacy_other_key,
+            &implicit_legacy_other_hash,
+            &implicit_legacy_other_session,
+        )
+        .await
+        .unwrap();
+        implicit_other_adoption_tx.commit().await.unwrap();
+        assert!(implicit_other_adoption.is_none());
+
+        let mut implicit_adoption_tx = pool.begin().await.unwrap();
+        lock_checkpoint_idempotency(&mut implicit_adoption_tx, user_id, &implicit_legacy_key)
+            .await
+            .unwrap();
+        let implicit_adopted = adopt_legacy_checkpoint_receipt_in_tx(
+            &mut implicit_adoption_tx,
+            user_id,
+            None,
+            &implicit_legacy_key,
+            &implicit_legacy_hash,
+            &implicit_legacy_request,
+        )
+        .await
+        .expect("missing-key legacy adoption lookup")
+        .expect("missing-key legacy checkpoint is adopted");
+        implicit_adoption_tx.commit().await.unwrap();
+        assert_eq!(
+            implicit_adopted.receipt["checkpoint_ref"],
+            implicit_legacy_ref
+        );
+        assert_eq!(implicit_adopted.receipt["path"], implicit_legacy_path);
+
+        // Pin a generation, allow another writer to publish, then commit a
+        // second checkpoint using the same session correlation ID. The two
+        // generation meanings stay explicit and replay-stable.
+        let pinned_before_interleaved = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap();
+        let mut writer_tx = pool.begin().await.unwrap();
+        let writer = upsert_markdown_in_tx(
+            &mut writer_tx,
+            user_id,
+            None,
+            prepared_markdown_fixture(json!({"kind": "interleaved"}), false),
+        )
+        .await
+        .unwrap();
+        writer_tx.commit().await.unwrap();
+        let writer_generation = writer.generation.unwrap();
+
+        let interleaved_request = CheckpointRequest {
+            state: json!({"objective": "Checkpoint after an interleaved writer"}),
+            idempotency_key: Some("checkpoint-interleaved".to_owned()),
+            ..request
+        };
+        let (interleaved_key, interleaved_hash) =
+            validate_checkpoint_request(&interleaved_request).unwrap();
+        let (interleaved_ref, interleaved_path, interleaved_prepared) = prepared_checkpoint_fixture(
+            &interleaved_request,
+            &interleaved_key,
+            &interleaved_hash,
+            pinned_before_interleaved,
+        );
+        let interleaved = checkpoint_attempt(
+            &pool,
+            user_id,
+            &interleaved_key,
+            &interleaved_hash,
+            &interleaved_ref,
+            &interleaved_path,
+            pinned_before_interleaved,
+            interleaved_prepared.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            interleaved["pinned_workspace_generation"],
+            pinned_before_interleaved
+        );
+        let resulting = interleaved["resulting_workspace_generation"]
+            .as_i64()
+            .unwrap();
+        assert!(resulting > writer_generation);
+        assert_eq!(interleaved["workspace_generation"], resulting);
+        let interleaved_replay = checkpoint_attempt(
+            &pool,
+            user_id,
+            &interleaved_key,
+            &interleaved_hash,
+            &interleaved_ref,
+            &interleaved_path,
+            resulting,
+            interleaved_prepared,
+        )
+        .await
+        .unwrap();
+        assert_eq!(interleaved, interleaved_replay);
+
+        let checkpoint_count = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM straylight.entries WHERE user_id=$1 AND path LIKE '.straylight/checkpoints/%'",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            checkpoint_count, 5,
+            "session_id is correlation and does not limit checkpoints"
+        );
+
+        // Receipts are immutable during normal operation, but canonical
+        // account deletion disables user-table triggers for the purge and
+        // discovers this table by its user_id column. Verify both the receipt
+        // and its referenced entry rows are removed without weakening normal
+        // immutability.
+        let immutable_delete =
+            sqlx::query("DELETE FROM straylight.workspace_idempotency_receipts WHERE user_id=$1")
+                .bind(user_id)
+                .execute(&pool)
+                .await
+                .expect_err("ordinary receipt deletion must be rejected");
+        let immutable_delete_code = immutable_delete
+            .as_database_error()
+            .and_then(|error| error.code())
+            .map(|code| code.into_owned());
+        assert_eq!(immutable_delete_code.as_deref(), Some("55000"));
+        let purge_credential_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.api_credentials (
+              id,user_id,label,token_hash,capabilities
+            ) VALUES ($1,$2,'Checkpoint purge test',$3,ARRAY['checkpoint','status'])
+            "#,
+        )
+        .bind(purge_credential_id)
+        .bind(user_id)
+        .bind(hex::encode(Sha256::digest(
+            format!("checkpoint-purge:{purge_credential_id}").as_bytes(),
+        )))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let deletion_request_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.account_deletion_requests (
+              id,user_id,requested_by_credential_id,status,confirmation_hash,
+              reason,backup_expiry_due_at
+            ) VALUES (
+              $1,$2,$3,'queued',$4,'checkpoint receipt purge test',
+              clock_timestamp() + interval '1 day'
+            )
+            "#,
+        )
+        .bind(deletion_request_id)
+        .bind(user_id)
+        .bind(purge_credential_id)
+        .bind("b".repeat(64))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            UPDATE straylight.users
+            SET account_status='deleting',deletion_requested_at=clock_timestamp()
+            WHERE id=$1
+            "#,
+        )
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("activate account deletion fence");
+        let purge_result =
+            sqlx::query_scalar::<_, Value>("SELECT straylight.purge_account_user_rows($1)")
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .expect("purge checkpoint receipt owner");
+        assert_eq!(
+            purge_result["workspace_idempotency_receipts"], 5,
+            "all checkpoint receipts are included in schema-derived account purge"
+        );
+        for (table, query) in [
+            (
+                "workspace_idempotency_receipts",
+                "SELECT count(*) FROM straylight.workspace_idempotency_receipts WHERE user_id=$1",
+            ),
+            (
+                "entries",
+                "SELECT count(*) FROM straylight.entries WHERE user_id=$1",
+            ),
+        ] {
+            let survivors = sqlx::query_scalar::<_, i64>(query)
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(survivors, 0, "{table} rows survived account purge");
         }
     }
 

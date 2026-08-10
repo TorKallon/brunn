@@ -197,7 +197,13 @@ Behavior:
 - Return current workspace generation.
 - Run bounded exact and lexical candidate lanes, plus semantic only when the
   default-off runtime policy enables it.
-- Preserve results from successful lanes when another fails.
+- Treat exact+lexical as the required barrier for mixed retrieval: include
+  semantic evidence when already ready, but never extend or downgrade the
+  response for an optional semantic result.
+- Wait for semantic under the 2.5-second retrieval bound only when the caller
+  explicitly requests semantic alone.
+- Preserve results from successful required lanes when another required lane
+  fails.
 - Group chunks by entry.
 - Hydrate at most 12 coherent entries under the requested budget.
 - When resuming, return the exact checkpoint and up to 200 changed paths after
@@ -323,16 +329,33 @@ returned generation.
 A request supplies session ID, optional parent checkpoint, state, exact source
 references, and optional idempotency key.
 
+An explicit idempotency key opts into durable operation replay. The service
+binds that key to the canonical parent, state, and source-reference payload;
+`session_id` is correlation only in this mode. Reusing the key with the same
+payload from a later session returns the original receipt, while reusing it
+with a changed payload returns `409 idempotency_conflict`.
+
+When a direct API client omits the key, the service derives a bounded implicit
+key from the legacy deterministic checkpoint identity. This fallback preserves
+the historical contract: an exact retry with the same body and session replays
+the checkpoint, while a changed payload or session creates a distinct
+checkpoint. Keys matching the generated `implicit:<uuid>` shape are reserved
+for this fallback. MCP `memory.checkpoint` requires an explicit key and
+therefore always uses durable cross-session replay semantics.
+
 The service:
 
-- derives a deterministic checkpoint ID from the request
+- derives a legacy-compatible deterministic checkpoint ID from the request
 - resolves at most 64 explicit source paths or entry references
 - rejects a missing explicit workspace reference rather than silently omitting
   it
 - records their exact path, version, and hash
 - writes one immutable Markdown entry under `.straylight/checkpoints/`
 - appends only that entry's normal version, chunks, and change
-- returns the original checkpoint on exact replay
+- commits the entry, generation, embedding job, and exact replay receipt in one
+  transaction
+- returns the original logical receipt on replay, with the current request's
+  session ID in the response envelope
 
 Checkpoint state supports objective, current state, decisions, open questions,
 next actions, and artifacts. Unknown fields may be retained in a JSON appendix
