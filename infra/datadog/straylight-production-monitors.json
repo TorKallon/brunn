@@ -2,7 +2,7 @@
   {
     "name": "[Straylight] Public edge connectivity",
     "type": "service check",
-    "query": "\"http.can_connect\".over(\"env:__DD_ENV__\", \"service:__DD_SERVICE__\", \"probe:public-edge\", \"platform:railway\").last(3).by(\"host\", \"instance\", \"url\").count_by_status()",
+    "query": "\"http.can_connect\".over(\"env:__DD_ENV__\", \"service:__DD_SERVICE__\", \"probe:public-edge\", \"platform:railway\").by(\"host\", \"instance\", \"url\").last(3).count_by_status()",
     "message": "A public Straylight health or API-readiness endpoint failed from the Railway Datadog Agent. These probes resolve the public domain and traverse Railway's public edge; use the instance and URL tags to distinguish edge-to-web from edge-to-API failure before retrying writes.__NOTIFY__",
     "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight", "probe:public-edge"],
     "options": {
@@ -124,7 +124,7 @@
   {
     "name": "[Straylight] Model request degraded",
     "type": "query alert",
-    "query": "sum(last_10m):sum:straylight.model.requests{env:__DD_ENV__,service:__DD_SERVICE__,status IN (degraded_unavailable,invalid_output)} by {purpose,model,status}.as_count() >= 1",
+    "query": "sum(last_10m):sum:straylight.model.requests{env:__DD_ENV__ AND service:__DD_SERVICE__ AND status IN (degraded_unavailable,invalid_output)} by {purpose,model,status}.as_count() >= 1",
     "message": "A capture or dreaming model request degraded or returned invalid structured output. Canonical writes must remain gated.__NOTIFY__",
     "tags": ["env:__DD_ENV__", "service:__DD_SERVICE__", "managed_by:straylight"],
     "options": {

@@ -239,7 +239,11 @@ class ObservabilityContractTests(unittest.TestCase):
         self.assertIn('"http.can_connect"', connectivity["query"])
         self.assertIn("probe:public-edge", connectivity["query"])
         self.assertIn("platform:railway", connectivity["query"])
-        self.assertIn('.last(3).by("host", "instance", "url")', connectivity["query"])
+        self.assertIn(
+            '.by("host", "instance", "url").last(3).count_by_status()',
+            connectivity["query"],
+        )
+        self.assertNotIn(".last(3).by(", connectivity["query"])
         self.assertEqual(
             {"ok": 2, "warning": 1, "critical": 2},
             connectivity["options"]["thresholds"],
@@ -261,6 +265,19 @@ class ObservabilityContractTests(unittest.TestCase):
             monitor = by_name[name]
             self.assertEqual(gate_ms, monitor["options"]["thresholds"]["critical"])
             self.assertTrue(monitor["query"].endswith(f"> {gate_ms}"))
+
+    def test_functional_monitor_filters_do_not_mix_symbolic_commas(self):
+        for monitor in self.monitors:
+            query = monitor["query"]
+            if " IN (" not in query and " NOT IN (" not in query:
+                continue
+            scope = query.split("{", 1)[1].split("}", 1)[0]
+            self.assertIn(
+                "env:__DD_ENV__ AND service:__DD_SERVICE__ AND ",
+                scope,
+            )
+            self.assertNotIn("env:__DD_ENV__,", scope)
+            self.assertNotIn("service:__DD_SERVICE__,", scope)
 
 
 if __name__ == "__main__":
