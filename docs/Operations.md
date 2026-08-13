@@ -132,9 +132,16 @@ value on API and worker. While false, new notification deliveries are recorded
 as suppressed, previously queued/running transport work is also suppressed,
 and the worker never constructs an APNs provider or sends to Apple. When true,
 worker startup fails closed unless the complete provider
-configuration is usable. Turn it on only for an approved signed-device canary;
-turning it off again stops new transport attempts without affecting the durable
-inbox.
+configuration is usable. Turn it on only for an approved signed-device canary
+or owner rollout; turning it off again stops new transport attempts without
+affecting the durable inbox.
+
+On Railway, changing a service variable does not alter the environment snapshot
+of an existing deployment. A plain service restart therefore retains the old
+value; create a new deployment for both worker and API after changing the gate.
+Deploy the worker first and require its `APNs notification delivery enabled`
+startup line before deploying the API. A delivery suppressed under the old
+gate is terminal, so every post-rollout canary needs a fresh `event_key`.
 
 `STRAYLIGHT_APNS_APP_ID` is the non-secret iOS bundle ID
 (`com.rourkem.straylight`). Apple team and key identifiers are non-secret but

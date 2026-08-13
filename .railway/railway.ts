@@ -60,8 +60,9 @@ const releaseRuntime = {
   STRAYLIGHT_ALLOWED_ORIGINS: "https://straylight.rourkem.com",
   STRAYLIGHT_PUBLIC_URL: "https://straylight.rourkem.com",
   STRAYLIGHT_APNS_APP_ID: "com.rourkem.straylight",
-  // Release gate: change only with an approved signed-device APNs canary.
-  STRAYLIGHT_APNS_DELIVERY_ENABLED: "false",
+  // Owner-alpha push delivery is enabled for the signed-device sandbox
+  // rollout. API and worker must retain the same value.
+  STRAYLIGHT_APNS_DELIVERY_ENABLED: "true",
   AUTH_EMAIL_FROM: "Straylight <login@solark.io>",
   AUTH_EMAIL_REPLY_TO: "rourkem@rourkem.com",
   STRAYLIGHT_S3_ENDPOINT: "",

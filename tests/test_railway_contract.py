@@ -179,6 +179,29 @@ class RailwayContractTests(unittest.TestCase):
         )
         self.assertIn('AUTH_EMAIL_FROM: "Straylight <login@solark.io>"', RAILWAY)
 
+    def test_apns_delivery_is_enabled_with_provider_secrets_worker_only(self):
+        api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
+            'const worker = service("worker"', 1
+        )[0]
+        worker_block = RAILWAY.split('const worker = service("worker"', 1)[1].split(
+            'const mcp = service("mcp"', 1
+        )[0]
+        self.assertIn(
+            'STRAYLIGHT_APNS_APP_ID: "com.rourkem.straylight"',
+            RAILWAY,
+        )
+        self.assertIn('STRAYLIGHT_APNS_DELIVERY_ENABLED: "true"', RAILWAY)
+        self.assertIn(
+            "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: preserve()",
+            api_block,
+        )
+        self.assertNotIn("STRAYLIGHT_APNS_TEAM_ID", api_block)
+        self.assertNotIn("STRAYLIGHT_APNS_KEY_ID", api_block)
+        self.assertNotIn("STRAYLIGHT_APNS_PRIVATE_KEY", api_block)
+        self.assertIn("STRAYLIGHT_APNS_TEAM_ID: preserve()", worker_block)
+        self.assertIn("STRAYLIGHT_APNS_KEY_ID: preserve()", worker_block)
+        self.assertIn("STRAYLIGHT_APNS_PRIVATE_KEY: preserve()", worker_block)
+
     def test_browser_auth_has_a_small_rate_limited_proxy_boundary(self):
         self.assertIn(
             "zone=straylight_auth_limit:1m rate=2r/s",
