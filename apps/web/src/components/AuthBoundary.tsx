@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Navigate, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
-import { type PropsWithChildren, useCallback, useEffect } from "react";
+import { type PropsWithChildren, useCallback, useEffect, useRef } from "react";
 import { ApiError, SESSION_INVALIDATED_EVENT } from "../lib/api";
 import { AUTH_SESSION_QUERY_KEY, useApi } from "../lib/auth";
 import { CurrentProvider } from "../lib/current";
@@ -41,6 +41,9 @@ export function AuthBoundary({ children }: PropsWithChildren) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const currentHref = useRouterState({ select: (state) => state.location.href });
+  const redirectHref = useRef(currentHref);
+  const redirecting = useRef(false);
+  redirectHref.current = currentHref;
   const sessionQuery = useQuery({
     queryKey: AUTH_SESSION_QUERY_KEY,
     queryFn: () => api.authSession(),
@@ -56,13 +59,15 @@ export function AuthBoundary({ children }: PropsWithChildren) {
   const sessionUnauthenticated = sessionQuery.isError && isUnauthenticated(sessionQuery.error);
   const meUnauthenticated = meQuery.isError && isUnauthenticated(meQuery.error);
   const invalidateSession = useCallback(() => {
+    if (redirecting.current) return;
+    redirecting.current = true;
     queryClient.clear();
     void navigate({
       to: "/login",
-      search: { redirect: currentHref },
+      search: { redirect: redirectHref.current },
       replace: true,
     });
-  }, [currentHref, navigate, queryClient]);
+  }, [navigate, queryClient]);
 
   useEffect(() => {
     if (sessionUnauthenticated || meUnauthenticated) {
@@ -94,7 +99,7 @@ export function AuthBoundary({ children }: PropsWithChildren) {
   }
   if (sessionQuery.isError) {
     if (sessionUnauthenticated) {
-      return <Navigate to="/login" search={{ redirect: currentHref }} replace />;
+      return <ConnectionState label="Returning to sign in" />;
     }
     return (
       <main className="full-state">
@@ -111,7 +116,7 @@ export function AuthBoundary({ children }: PropsWithChildren) {
   }
   if (meQuery.isError) {
     if (meUnauthenticated) {
-      return <Navigate to="/login" search={{ redirect: currentHref }} replace />;
+      return <ConnectionState label="Returning to sign in" />;
     }
     return (
       <main className="full-state">

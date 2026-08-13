@@ -876,6 +876,35 @@ export interface BriefingEditionData {
   workspace_generation: number;
 }
 
+export interface PublishedDocumentSource {
+  label: string;
+  entry_ref?: string | null;
+  url?: string | null;
+}
+
+export interface PublishedDocumentVersion {
+  version: number;
+  created_at: string;
+  version_url: string;
+}
+
+export interface PublishedDocumentData {
+  slug: string;
+  title: string;
+  summary?: string | null;
+  sources: PublishedDocumentSource[];
+  body_md: string;
+  markdown: string;
+  version: number;
+  current_version: number;
+  published_at: string;
+  updated_at: string;
+  versions: PublishedDocumentVersion[];
+  url: string;
+  version_url: string;
+  workspace_generation: number;
+}
+
 export interface BriefingTopic {
   slug: string;
   name: string;

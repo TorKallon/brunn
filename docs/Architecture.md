@@ -53,8 +53,8 @@ durable store. Each hosted client authorizes with its own root-scoped
 read/write Straylight credential. The gateway encrypts that credential into
 short-lived OAuth access and rotating refresh tokens and creates a fresh API
 client per MCP request. It never has a process-global upstream credential.
-Local stdio clients retain the complete 12-tool surface. Hosted clients expose
-the ten tools that do not depend on the adapter host's filesystem; hosted
+Local stdio clients retain the complete tool surface. Hosted clients expose
+the tools that do not depend on the adapter host's filesystem; hosted
 `memory.stage` and `asset.fetch` are deliberately absent.
 
 ## Canonical Data
@@ -217,6 +217,21 @@ without delaying lexical availability.
 `capture` is a convenience write that places durable, source-bearing material
 under `Inbox/Captures/`. It does not compile prose into a hidden typed schema.
 An agent can later edit or move the resulting Markdown like any other entry.
+
+## Human-facing documents
+
+Request-directed documents are ordinary versioned Markdown entries at
+`Documents/<slug>.md`. A dedicated publish operation renders the title and
+body, marks the version with `kind: human_document` and `document.v1`
+metadata, and returns an authenticated deep link at `/documents/<slug>`.
+Reusing a slug revises the same entry, so the unversioned link always opens the
+latest published version; an explicit version query can pin history.
+
+The document route is a deliberate promotion boundary, not another workspace
+browser. It serves only versions carrying the human-document marker. There is
+no document index or automatic promotion from imports, captures, generic
+writes, search results, or conversational replies. The route remains behind
+normal Straylight authentication and per-user authorization.
 
 Deleting an entry marks its current head deleted, removes current search
 chunks, and appends one change. Historical versions remain available until an

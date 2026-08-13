@@ -17,6 +17,7 @@ import { CapturePage } from "./pages/CapturePage";
 import { ControlPage } from "./pages/ControlPage";
 import { DreamsPage } from "./pages/DreamsPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { DocumentPage } from "./pages/DocumentPage";
 import { ExplorePage } from "./pages/ExplorePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TopicsPage } from "./pages/TopicsPage";
@@ -49,6 +50,9 @@ export interface ExploreSearch {
   alternatePaths?: string;
   linkTarget?: string;
   fallbackQuery?: string;
+}
+export interface DocumentSearch {
+  version?: number;
 }
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -118,6 +122,14 @@ const briefingEditionRoute = createRoute({
       typeof search.item === "string" && search.item.trim()
         ? search.item
         : undefined,
+  }),
+});
+const documentRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/documents/$slug",
+  component: DocumentPage,
+  validateSearch: (search: Record<string, unknown>): DocumentSearch => ({
+    version: positiveSearchInteger(search.version),
   }),
 });
 const topicsRoute = createRoute({
@@ -193,6 +205,7 @@ const routeTree = rootRoute.addChildren([
     alertDetailRoute,
     briefingsRoute,
     briefingEditionRoute,
+    documentRoute,
     topicsRoute,
     workRoute,
     sessionRoute,
@@ -229,6 +242,13 @@ function boundedSearchString(value: unknown, maxLength = 4_096): string | undefi
   return typeof value === "string" && value.length > 0 && value.length <= maxLength
     ? value
     : undefined;
+}
+
+function positiveSearchInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" && typeof value !== "string") return undefined;
+  if (typeof value === "string" && !/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export function createAppRouter(history?: RouterHistory) {

@@ -10,6 +10,9 @@ import { type ApiResponse, StraylightApiClient, StraylightApiError } from "./api
 import { compactReasoningResponse } from "./reasoning-view.js";
 
 const reference = z.string().min(1);
+const entryReference = z.string()
+  .regex(/^entry:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+  .describe("Exact entry:... reference copied from a Straylight response; never infer or invent one.");
 const assetReference = z.string()
   .regex(/^entry:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   .describe("Exact entry:... binary reference copied from a Straylight response.");
@@ -75,6 +78,33 @@ const editionDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe(
 );
 const storyKey = z.string().regex(/^[a-z0-9][a-z0-9-]{2,79}$/);
 const storyUrl = z.string().min(1).max(2_048);
+const documentSlug = z.string()
+  .regex(/^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])$/)
+  .describe("Stable lowercase document slug, 2 to 80 characters; reuse it to revise the same document.");
+const documentSourceLabel = z.string().min(1).max(240);
+const documentSource = z.union([
+  z.object({
+    label: documentSourceLabel,
+    entry_ref: entryReference,
+  }).strict(),
+  z.object({
+    label: documentSourceLabel,
+    url: z.string().min(1).max(2_048).refine(isSafeDocumentSourceUrl, {
+      message: "document source URL must be HTTP(S) and must not contain credentials",
+    }),
+  }).strict(),
+]);
+
+function isSafeDocumentSourceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && url.username === ""
+      && url.password === "";
+  } catch {
+    return false;
+  }
+}
 
 const briefingStoryRef = z.object({
   key: storyKey.describe(
@@ -372,6 +402,56 @@ if (surface === "local") {
 }
 
 registerJsonTool(
+  "document.publish",
+  "Publish or revise a polished, human-facing Markdown document and return its direct Straylight links. " +
+  "Use this when the user asks to show, open, or read a plan, document, detailed analysis, vacation " +
+  "information, feature specification, or comparable long-form material; the request phrasing is the " +
+  "publication trigger. Do not use it for routine replies, raw imports, internal evidence, or uncurated " +
+  "files. Republishing the same slug revises the stable latest-document link. Return the response's stable " +
+  "`url` field to the user instead of an entry reference; use `version_url` only when the user explicitly " +
+  "asked for a pinned historical revision.",
+  {
+    slug: documentSlug,
+    title: z.string().min(1).max(240),
+    body_md: z.string().min(1).max(4 * 1024 * 1024).refine(
+      (value) => value.trim().length > 0,
+      { message: "body_md must contain non-whitespace Markdown" },
+    ),
+    summary: z.string().min(1).max(1_000).optional(),
+    sources: z.array(documentSource).max(32).optional().describe(
+      "Curated provenance for this human-facing document. Do not attach unrelated raw imports or internal evidence.",
+    ),
+    idempotency_key: z.string().min(1).max(240).optional(),
+    expected_version: z.number().int().nonnegative().optional().describe(
+      "Supply expected_version only when preventing a known stale overwrite matters; zero means create.",
+    ),
+  },
+  (input) => client.request("/v1/workspace/documents/publish", input),
+);
+
+registerJsonTool(
+  "document.get",
+  "Retrieve one intentionally published human-facing Markdown document and its direct Straylight links. " +
+  "Omit version for the stable latest document; request a positive version only for an explicit historical " +
+  "revision. Return the response's stable `url` field by default instead of an entry reference; return " +
+  "`version_url` only for an explicitly requested historical revision.",
+  {
+    slug: documentSlug,
+    version: z.number().int().positive().optional().describe(
+      "Optional historical document version. Omit it to retrieve the current version behind the stable link.",
+    ),
+  },
+  (input) => {
+    const query = input.version === undefined
+      ? ""
+      : `?${new URLSearchParams({ version: String(input.version) }).toString()}`;
+    return client.request(
+      `/v1/workspace/documents/${encodeURIComponent(input.slug)}${query}`,
+    );
+  },
+);
+
+registerJsonTool(
   "memory.status",
   "Inspect current service and dependency status.",
   {},
@@ -547,6 +627,7 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
   // McpServer validates the raw shape before calling this function. Its generic
   // callback type does not preserve a reusable helper's Zod shape inference.
   const readOnly = !new Set([
+    "document.publish",
     "memory.capture",
     "memory.write",
     "memory.checkpoint",

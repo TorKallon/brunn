@@ -7,6 +7,7 @@ import {
   briefingListFixture,
   briefingTopicsFixture,
 } from "./briefingFixtures";
+import { publishedDocumentFixture } from "./documentFixtures";
 import { installApiMock, renderApp } from "./renderApp";
 
 
@@ -110,6 +111,24 @@ describe("accessibility contracts", () => {
     await user.click(screen.getByRole("button", { name: "Feedback" }));
     expect(
       screen.getByRole("button", { name: "Follow closer" }),
+    ).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("has no automated violations on a published document", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/documents/switzerland-itinerary":
+        publishedDocumentFixture,
+    });
+    const { container } = renderApp(
+      "/documents/switzerland-itinerary",
+      "read-write-token",
+    );
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Switzerland summer itinerary",
+      }),
     ).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });

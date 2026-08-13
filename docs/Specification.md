@@ -314,6 +314,30 @@ objects, relations, or state machines. With an idempotency key, the capture
 uses a stable create-only path: an exact replay is a no-op and different
 content receives a conflict.
 
+### Human-facing documents
+
+`POST /v1/workspace/documents/publish`
+
+Publishes or revises one intentionally human-facing Markdown document. The
+request supplies a stable lowercase `slug`, plain `title`, Markdown `body_md`,
+optional summary and typed provenance links, and optional idempotency and
+expected-version guards. The service writes `Documents/<slug>.md` through the
+normal versioned Markdown pipeline and returns the absolute authenticated
+`/documents/<slug>` URL in `url`, plus the newly written revision in
+`version_url`. Agents return the stable `url` by default; the pinned URL is for
+an explicitly requested historical revision. Equal content and metadata are a
+no-op; changing the body or human-facing metadata appends a revision.
+
+`GET /v1/workspace/documents/<slug>?version=<n>`
+
+Returns the current published version by default, or one exact historical
+published version when requested, including title, body, freshness timestamps,
+revision information, provenance, and both stable and version-pinned URLs.
+Only versions marked `kind: human_document` are eligible. A raw import,
+capture, generic Markdown entry, or unmarked historical predecessor is never
+served through this route. Documents are private and require normal read
+authorization. There is intentionally no list endpoint or navigation library.
+
 ### Changes
 
 `GET /v1/workspace/changes?since_generation=<n>&limit=<n>`
@@ -454,6 +478,17 @@ Primary MCP tools:
 - `asset.list`
 - `asset.metadata`
 - `asset.fetch`
+- `briefing.publish`
+- `briefing.dedupe`
+- `briefing.topics`
+- `document.publish`
+- `document.get`
+- `notification.publish`
+
+`document.publish` is request-directed: agents use it when the user asks to
+show, open, or read a polished plan, specification, detailed analysis, travel
+information, or comparable long-form material. Routine replies, raw imports,
+and internal evidence are not automatically published.
 
 `memory.compute` and `memory.verify` are not service tools. Agents use their
 native reasoning, shell, browser, SQL, and code tools after retrieving exact

@@ -51,6 +51,13 @@ pub enum ProductActivityOperation {
 }
 
 impl ProductActivityOperation {
+    // Human documents are a curated view over ordinary workspace Markdown,
+    // so they intentionally share the existing read/write telemetry families.
+    // Keeping these aliases avoids a database activity-enum migration for the
+    // direct-link slice while making the call sites explicit.
+    pub const HUMAN_DOCUMENT_READ: Self = Self::Read;
+    pub const HUMAN_DOCUMENT_PUBLISH: Self = Self::Write;
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Open => "open",

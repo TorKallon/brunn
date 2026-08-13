@@ -76,6 +76,8 @@ try {
     "briefing.dedupe",
     "briefing.publish",
     "briefing.topics",
+    "document.get",
+    "document.publish",
     "memory.capture",
     "memory.changes",
     "memory.checkpoint",
@@ -84,6 +86,7 @@ try {
     "memory.read",
     "memory.status",
     "memory.write",
+    "notification.publish",
   ]);
 
   const opened = toolBody(await client.callTool({

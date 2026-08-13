@@ -39,12 +39,15 @@ The gateway exposes:
 - `memory.capture`, `memory.write`, and `memory.checkpoint`
 - `memory.status`
 - `asset.list` and `asset.metadata`
+- `briefing.publish`, `briefing.dedupe`, and `briefing.topics`
+- `document.publish` and `document.get`
+- `notification.publish`
 
 It does not expose `memory.stage` or `asset.fetch`. Those operations read or
 write the MCP adapter host's filesystem; in Railway that filesystem is not the
 user's phone or computer. Text reads are capped at 120,000 characters per item
-for hosted-client result limits. The local stdio adapter still exposes all 12
-tools.
+for hosted-client result limits. The local stdio adapter also exposes the two
+filesystem-dependent tools.
 
 ## Railway deployment
 
@@ -69,8 +72,8 @@ STRAYLIGHT_MCP_SEALING_KEY=<base64 for exactly 32 random bytes>
 ```
 
 Deploy `mcp` before `web`, then verify health, discovery, an unauthenticated
-OAuth challenge, a full authorization-code exchange, all ten tools, and a
-read/write canary using a dedicated client credential.
+OAuth challenge, a full authorization-code exchange, the complete hosted tool
+surface, and a read/write canary using a dedicated client credential.
 
 The checked-in canary consumes a credential only from its environment and does
 not print or persist it:

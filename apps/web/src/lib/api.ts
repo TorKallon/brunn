@@ -28,6 +28,7 @@ import type {
   NotificationReceiptData,
   ObjectRecord,
   PolicySummary,
+  PublishedDocumentData,
   QueryResultData,
   ScopeSummary,
   ServiceStatus,
@@ -160,6 +161,10 @@ export interface StraylightApi {
     edition: string,
     version?: number,
   ): Promise<ApiEnvelope<BriefingEditionData>>;
+  documentGet(
+    slug: string,
+    version?: number,
+  ): Promise<ApiEnvelope<PublishedDocumentData>>;
   briefingTopics(): Promise<ApiEnvelope<BriefingTopicsSnapshot>>;
   briefingItemAction(
     input: BriefingItemActionInput,
@@ -481,6 +486,12 @@ export function createApiClient(): StraylightApi {
       if (version === undefined) return get<BriefingEditionData>(path);
       const query = new URLSearchParams({ version: String(version) });
       return get<BriefingEditionData>(`${path}?${query.toString()}`);
+    },
+    documentGet: (slug, version) => {
+      const path = `/workspace/documents/${encodeURIComponent(slug)}`;
+      if (version === undefined) return get<PublishedDocumentData>(path);
+      const query = new URLSearchParams({ version: String(version) });
+      return get<PublishedDocumentData>(`${path}?${query.toString()}`);
     },
     briefingTopics: () =>
       get<BriefingTopicsSnapshot>("/workspace/briefings/topics"),
