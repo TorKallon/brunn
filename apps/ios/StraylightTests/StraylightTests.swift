@@ -441,6 +441,48 @@ final class StraylightTests: XCTestCase {
         XCTAssertNil(PushRouteBuffer.shared.take())
     }
 
+    func testNotificationResponseCompletesOnMainBeforePublishingBufferedRoute() async {
+        _ = PushRouteBuffer.shared.take()
+        let route = AppRoute.notification(
+            notificationRef: "notification:11111111111111111111111111111111",
+            deliveryRef: "delivery:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        let completed = expectation(description: "notification response completed")
+        let published = expectation(description: "push route published")
+        let events = NotificationHandoffRecorder()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .straylightPushRoute,
+            object: nil,
+            queue: .main
+        ) { _ in
+            events.append("published")
+            published.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        NotificationDelegateHandoff.finishResponse(route: route) {
+            XCTAssertTrue(Thread.isMainThread)
+            XCTAssertEqual(PushRouteBuffer.shared.take(), route)
+            events.append("completed")
+            completed.fulfill()
+        }
+
+        await fulfillment(of: [completed, published], timeout: 1)
+        XCTAssertEqual(events.snapshot(), ["completed", "published"])
+    }
+
+    @MainActor
+    func testAppDelegateExportsExplicitNotificationCompletionSelectors() {
+        let delegate = AppDelegate()
+
+        XCTAssertTrue(delegate.responds(to: NSSelectorFromString(
+            "userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:"
+        )))
+        XCTAssertTrue(delegate.responds(to: NSSelectorFromString(
+            "userNotificationCenter:willPresentNotification:withCompletionHandler:"
+        )))
+    }
+
     func testPushTokenBufferRetainsOnlyInMemoryUntilConsumed() {
         _ = PushTokenBuffer.shared.take()
         let token = Data([0x00, 0x7f, 0xff])
@@ -866,6 +908,23 @@ private actor NotificationTrace {
 
     func append(_ value: String) {
         values.append(value)
+    }
+}
+
+private final class NotificationHandoffRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [String] = []
+
+    func append(_ event: String) {
+        lock.lock()
+        events.append(event)
+        lock.unlock()
+    }
+
+    func snapshot() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
     }
 }
 

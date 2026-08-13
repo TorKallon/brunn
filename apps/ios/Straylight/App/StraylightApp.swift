@@ -33,6 +33,7 @@ struct StraylightApp: App {
                     Task { await model.handle(route) }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .straylightPushRoute)) { _ in
+                    guard scenePhase == .active else { return }
                     guard let route = PushRouteBuffer.shared.take() else { return }
                     Task { await model.handle(route) }
                 }

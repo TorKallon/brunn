@@ -179,8 +179,8 @@ final class AppModel: ObservableObject {
             accept(identity)
             Task { await refreshDashboard() }
             Task { await refreshNotifications() }
-            await refreshBriefing()
             await resumePendingRoute()
+            await refreshBriefing()
         } catch is BootstrapValidationError {
             connectionValidated = false
             phase = .connectionRequired
@@ -228,8 +228,8 @@ final class AppModel: ObservableObject {
             Task { await refreshDashboard() }
             Task { await refreshNotifications() }
             await loadCachedBriefing()
-            await refreshBriefing()
             await resumePendingRoute()
+            await refreshBriefing()
         } catch {
             await api.clearAuthenticatedSession()
             phase = .connectionRequired

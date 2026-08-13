@@ -244,6 +244,40 @@ final class PushTokenBuffer: @unchecked Sendable {
     }
 }
 
+enum NotificationDelegateHandoff {
+    static func finishPresentation(
+        _ options: UNNotificationPresentationOptions,
+        completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        DispatchQueue.main.async {
+            completionHandler(options)
+        }
+    }
+
+    static func finishResponse(
+        route: AppRoute?,
+        completionHandler: @escaping @Sendable () -> Void
+    ) {
+        if let route {
+            PushRouteBuffer.shared.store(route)
+        }
+
+        DispatchQueue.main.async {
+            // UIKit continues background response and state restoration on the
+            // queue that calls this closure. Keep that continuation on main.
+            completionHandler()
+
+            // Defer navigation until the completion call and its synchronous
+            // UIKit work have returned. An inactive scene retains the buffered
+            // route and consumes it when the scene becomes active.
+            guard route != nil else { return }
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .straylightPushRoute, object: nil)
+            }
+        }
+    }
+}
+
 private enum NotificationInstallationIdentity {
     private static let key = "straylight.notification-installation-id"
 
@@ -283,21 +317,25 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     nonisolated func userNotificationCenter(
         _: UNUserNotificationCenter,
-        willPresent _: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        willPresent _: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        NotificationDelegateHandoff.finishPresentation(
+            [.banner, .list, .sound],
+            completionHandler: completionHandler
+        )
     }
 
     nonisolated func userNotificationCenter(
         _: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
-        guard let route = NotificationRouteParser.route(
-            from: response.notification.request.content.userInfo
-        ) else { return }
-        PushRouteBuffer.shared.store(route)
-        await MainActor.run {
-            NotificationCenter.default.post(name: .straylightPushRoute, object: nil)
-        }
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
+        NotificationDelegateHandoff.finishResponse(
+            route: NotificationRouteParser.route(
+                from: response.notification.request.content.userInfo
+            ),
+            completionHandler: completionHandler
+        )
     }
 }
