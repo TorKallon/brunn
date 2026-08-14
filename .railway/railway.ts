@@ -154,6 +154,7 @@ const api = service("api", {
     DATABASE_URL_RO: db.env.DATABASE_URL_RO,
     STRAYLIGHT_CONTINUATION_SECRET: preserve(),
     STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: preserve(),
+    STRAYLIGHT_SECRET_ENCRYPTION_KEY: preserve(),
     STRAYLIGHT_S3_ACCESS_KEY: preserve(),
     STRAYLIGHT_S3_SECRET_KEY: preserve(),
     RESEND_API_KEY: preserve(),

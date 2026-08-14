@@ -30,6 +30,8 @@ const OWNER_CAPABILITIES: &[&str] = &[
     "credential:manage",
     "notification:publish",
     "notification:manage",
+    "secret:read",
+    "secret:write",
     "admin",
 ];
 

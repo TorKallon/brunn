@@ -54,6 +54,7 @@ const READ_ONLY_POST_PATHS = new Set([
   "/v1/workspace/open",
   "/v1/workspace/read",
   "/v1/workspace/search",
+  "/v1/workspace/secrets/get",
 ]);
 const IDEMPOTENCY_KEY_MUTATION_PATHS = new Set([
   "/v1/memory/capture",

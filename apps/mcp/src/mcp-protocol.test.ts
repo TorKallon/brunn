@@ -52,6 +52,10 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     "memory.status",
     "memory.write",
     "notification.publish",
+    "secret.delete",
+    "secret.get",
+    "secret.list",
+    "secret.put",
   ]);
   assert.equal(response.tools.every((tool) => tool.inputSchema.type === "object"), true);
   const open = response.tools.find((tool) => tool.name === "memory.open");

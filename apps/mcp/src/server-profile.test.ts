@@ -46,6 +46,10 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
       "memory.status",
       "memory.write",
       "notification.publish",
+      "secret.delete",
+      "secret.get",
+      "secret.list",
+      "secret.put",
     ]);
     assert.equal(response.tools.some((tool) => tool.name === "memory.stage"), false);
     assert.equal(response.tools.some((tool) => tool.name === "asset.fetch"), false);

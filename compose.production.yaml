@@ -102,6 +102,8 @@ services:
       STRAYLIGHT_APNS_DELIVERY_ENABLED: ${STRAYLIGHT_APNS_DELIVERY_ENABLED:-false}
       STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: ""
       STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
+      STRAYLIGHT_SECRET_ENCRYPTION_KEY: ""
+      STRAYLIGHT_SECRET_ENCRYPTION_KEY_FILE: /run/secrets/secret_encryption_key
     labels:
       com.datadoghq.tags.env: production
       com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
@@ -118,6 +120,7 @@ services:
       - openai_api_key
       - resend_api_key
       - notification_token_encryption_key
+      - secret_encryption_key
 
   worker:
     build: !reset null
@@ -270,6 +273,8 @@ secrets:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/continuation_signing_key
   notification_token_encryption_key:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/notification_token_encryption_key
+  secret_encryption_key:
+    file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/secret_encryption_key
   apns_private_key:
     file: ${STRAYLIGHT_SECRETS_DIR:-./secrets}/apns_private_key
   openai_api_key:

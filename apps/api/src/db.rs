@@ -306,6 +306,8 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
         "credential:manage",
         "notification:publish",
         "notification:manage",
+        "secret:read",
+        "secret:write",
         "admin",
     ];
     let (user_id, _, scope_id, _): (Uuid, Uuid, Uuid, Uuid) =

@@ -42,6 +42,7 @@ pub mod request_context;
 pub mod request_query_count;
 pub mod retrieval;
 pub mod retrieval_sql;
+pub mod secret_service;
 pub mod semantic_policy;
 pub mod service;
 pub mod session_service;

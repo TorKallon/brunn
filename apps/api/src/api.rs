@@ -13,7 +13,8 @@ use tower_http::{
 
 use crate::{
     auth, briefing_service, dashboard_service, db::AppState, document_service, dreams,
-    eval_service, notification_service, request_context, service, simple_core, telemetry, web_auth,
+    eval_service, notification_service, request_context, secret_service, service, simple_core,
+    telemetry, web_auth,
 };
 
 pub fn router(state: AppState) -> Router {
@@ -86,6 +87,13 @@ pub fn router(state: AppState) -> Router {
             "/workspace/notification-installations/{installation_id}",
             put(notification_service::upsert_installation)
                 .delete(notification_service::revoke_installation),
+        )
+        .route("/workspace/secrets", get(secret_service::list))
+        .route("/workspace/secrets/put", post(secret_service::put))
+        .route("/workspace/secrets/get", post(secret_service::get))
+        .route(
+            "/workspace/secrets/delete",
+            post(secret_service::delete_secret),
         )
         .route(
             "/workspace/checkpoint",

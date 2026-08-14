@@ -82,6 +82,7 @@ pub struct Config {
     pub apns_private_key: Option<String>,
     pub apns_app_id: Option<String>,
     pub notification_token_encryption_key: Option<String>,
+    pub secret_encryption_key: Option<String>,
     pub apns_delivery_enabled: bool,
     pub public_url: String,
     pub account_export_ttl: Duration,
@@ -301,6 +302,7 @@ impl Config {
             notification_token_encryption_key: first_env_or_file(&[
                 "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
             ])?,
+            secret_encryption_key: first_env_or_file(&["STRAYLIGHT_SECRET_ENCRYPTION_KEY"])?,
             apns_delivery_enabled: env_parse("STRAYLIGHT_APNS_DELIVERY_ENABLED", "false")?,
             public_url: env_default("STRAYLIGHT_PUBLIC_URL", "https://straylight.rourkem.com")
                 .trim()
@@ -380,6 +382,9 @@ impl Config {
         if let Some(key) = config.notification_token_encryption_key.as_deref() {
             decode_notification_token_key(key)?;
         }
+        if let Some(key) = config.secret_encryption_key.as_deref() {
+            decode_secret_encryption_key(key)?;
+        }
         if config.apns_app_id.is_some() != config.notification_token_encryption_key.is_some() {
             return Err(ApiError::configuration(
                 "STRAYLIGHT_APNS_APP_ID and STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY must be configured together",
@@ -391,8 +396,7 @@ impl Config {
             ));
         }
         if config.apns_delivery_enabled
-            && (config.apns_app_id.is_none()
-                || config.notification_token_encryption_key.is_none())
+            && (config.apns_app_id.is_none() || config.notification_token_encryption_key.is_none())
         {
             return Err(ApiError::configuration(
                 "enabled APNs delivery requires app ID and notification token encryption key",
@@ -564,6 +568,19 @@ pub fn decode_notification_token_key(value: &str) -> ApiResult<[u8; 32]> {
         ApiError::configuration(
             "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes",
         )
+    })
+}
+
+pub fn decode_secret_encryption_key(value: &str) -> ApiResult<[u8; 32]> {
+    let value = value.trim();
+    let bytes = URL_SAFE_NO_PAD
+        .decode(value)
+        .or_else(|_| STANDARD.decode(value))
+        .map_err(|_| {
+            ApiError::configuration("STRAYLIGHT_SECRET_ENCRYPTION_KEY must be base64 encoded")
+        })?;
+    bytes.try_into().map_err(|_| {
+        ApiError::configuration("STRAYLIGHT_SECRET_ENCRYPTION_KEY must decode to exactly 32 bytes")
     })
 }
 

@@ -1032,6 +1032,8 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "credential:manage",
                 "notification:publish",
                 "notification:manage",
+                "secret:read",
+                "secret:write",
                 "admin",
             ],
         )),
@@ -1476,11 +1478,13 @@ mod credential_tests {
     fn owner_template_has_every_capability() {
         let (access, capabilities) = credential_template(Some("owner")).expect("owner template");
         assert_eq!(access, "owner");
-        assert_eq!(capabilities.len(), 16);
+        assert_eq!(capabilities.len(), 18);
         assert!(capabilities.contains(&"dream"));
         assert!(capabilities.contains(&"credential:manage"));
         assert!(capabilities.contains(&"notification:publish"));
         assert!(capabilities.contains(&"notification:manage"));
+        assert!(capabilities.contains(&"secret:read"));
+        assert!(capabilities.contains(&"secret:write"));
         assert!(capabilities.contains(&"admin"));
     }
 

@@ -76,6 +76,9 @@ const queryItem = z.object({
 const editionDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe(
   "Exact edition date YYYY-MM-DD.",
 );
+const secretName = z.string().min(1).max(120).regex(/^[a-z0-9][a-z0-9._-]{0,119}$/i).describe(
+  "Stable secret name such as datadog-prod-api-key. Case-insensitive; stored lowercase.",
+);
 const storyKey = z.string().regex(/^[a-z0-9][a-z0-9-]{2,79}$/);
 const storyUrl = z.string().min(1).max(2_048);
 const documentSlug = z.string()
@@ -586,6 +589,56 @@ registerJsonTool(
   (input) => client.request("/v1/workspace/notifications/publish", input),
 );
 
+registerJsonTool(
+  "secret.put",
+  "Store or replace one named secret for the authenticated owner in the encrypted vault. "
+  + "Use this when the user hands over a credential, API key, or token that agents will need "
+  + "again; replacing an existing name rotates it to a new version. Never store secrets in "
+  + "memory files or captures.",
+  {
+    name: secretName,
+    value: z.string().min(1).max(64 * 1024).describe(
+      "The secret value exactly as provided, including any newlines. Text, JSON, and "
+      + "multiline keys up to 64 KiB are accepted.",
+    ),
+    description: z.string().min(1).max(1_000).optional().describe(
+      "Non-secret usage note, e.g. what the credential unlocks. Omitting it on replace "
+      + "keeps the existing note.",
+    ),
+  },
+  (input) => client.request("/v1/workspace/secrets/put", input),
+);
+
+registerJsonTool(
+  "secret.get",
+  "Retrieve one named secret's plaintext value from the encrypted vault. Treat the returned "
+  + "value as sensitive: use it for the requested action, and never write it into memory "
+  + "files, captures, checkpoints, or other durable output.",
+  {
+    name: secretName,
+  },
+  (input) => client.request("/v1/workspace/secrets/get", input),
+);
+
+registerJsonTool(
+  "secret.list",
+  "List stored secret names and metadata (description, version, timestamps, last use). "
+  + "Values are never included. Use this to discover whether a needed credential already "
+  + "exists before asking the user for it.",
+  {},
+  () => client.request("/v1/workspace/secrets"),
+);
+
+registerJsonTool(
+  "secret.delete",
+  "Permanently delete one named secret from the encrypted vault. The encrypted value is "
+  + "removed immediately; content-free access history is retained.",
+  {
+    name: secretName,
+  },
+  (input) => client.request("/v1/workspace/secrets/delete", input),
+);
+
   return server;
 }
 
@@ -634,6 +687,8 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
     "memory.stage",
     "briefing.publish",
     "notification.publish",
+    "secret.put",
+    "secret.delete",
   ]).has(name);
   const idempotent = readOnly
     || name === "memory.checkpoint"

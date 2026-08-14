@@ -1446,6 +1446,7 @@ fn account_export_projection(table: &str) -> &'static str {
         "notification_installations" => {
             "to_jsonb(table_row) - 'token_ciphertext' - 'token_nonce' - 'token_hash'"
         }
+        "secrets" => "to_jsonb(table_row) - 'value_ciphertext' - 'value_nonce'",
         "web_identities" => "to_jsonb(table_row) - 'password_hash'",
         _ => "to_jsonb(table_row)",
     }
@@ -1486,6 +1487,18 @@ mod tests {
         );
         assert_eq!(
             account_export_projection("notification_deliveries"),
+            "to_jsonb(table_row)"
+        );
+    }
+
+    #[test]
+    fn secret_export_excludes_encrypted_value_material() {
+        assert_eq!(
+            account_export_projection("secrets"),
+            "to_jsonb(table_row) - 'value_ciphertext' - 'value_nonce'"
+        );
+        assert_eq!(
+            account_export_projection("secret_access_log"),
             "to_jsonb(table_row)"
         );
     }

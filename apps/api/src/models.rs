@@ -122,6 +122,8 @@ pub enum Capability {
     CredentialManage,
     NotificationPublish,
     NotificationManage,
+    SecretRead,
+    SecretWrite,
     Admin,
 }
 
@@ -143,6 +145,8 @@ impl Capability {
             Self::CredentialManage => "credential:manage",
             Self::NotificationPublish => "notification:publish",
             Self::NotificationManage => "notification:manage",
+            Self::SecretRead => "secret:read",
+            Self::SecretWrite => "secret:write",
             Self::Admin => "admin",
         }
     }
@@ -168,6 +172,8 @@ impl FromStr for Capability {
             "credential:manage" => Ok(Self::CredentialManage),
             "notification:publish" => Ok(Self::NotificationPublish),
             "notification:manage" => Ok(Self::NotificationManage),
+            "secret:read" => Ok(Self::SecretRead),
+            "secret:write" => Ok(Self::SecretWrite),
             "admin" => Ok(Self::Admin),
             _ => Err(()),
         }
