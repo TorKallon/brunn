@@ -1385,6 +1385,10 @@ export interface ServiceStatus {
   status: "healthy" | "degraded" | "unavailable" | string;
   version?: string;
   corpus_revision?: string;
+  feature_flags?: {
+    messaging_enabled?: boolean;
+    [name: string]: boolean | number | string | null | undefined;
+  };
   dependencies?: Record<
     string,
     { status: string; latency_ms?: number; detail?: string }

@@ -4,11 +4,17 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  notFound,
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { lazy, Suspense } from "react";
 import { AuthBoundary } from "./components/AuthBoundary";
-import { EmptyState } from "./components/StateViews";
+import { EmptyState, LoadingState } from "./components/StateViews";
+import { Page } from "./components/Page";
+import { useApi } from "./lib/auth";
+import { isMessagingEnabled, serviceStatusQuery } from "./lib/serviceStatus";
 import { AssetsPage } from "./pages/AssetsPage";
 import { AlertDetailPage, AlertsPage } from "./pages/AlertsPage";
 import { BriefingEditionPage } from "./pages/BriefingEditionPage";
@@ -31,6 +37,12 @@ function RootLayout() {
   return <Outlet />;
 }
 
+const AgentsPage = lazy(() =>
+  import("./messaging/AgentsPage").then((module) => ({
+    default: module.AgentsPage,
+  })),
+);
+
 function ProtectedLayout() {
   return <AuthBoundary><Outlet /></AuthBoundary>;
 }
@@ -40,6 +52,27 @@ function NotFound() {
     <main className="page">
       <EmptyState title="Route not found" />
     </main>
+  );
+}
+
+function AgentsRoute() {
+  const api = useApi();
+  const statusQuery = useQuery(serviceStatusQuery(api));
+
+  if (statusQuery.isPending) {
+    return (
+      <Page>
+        <LoadingState label="Checking agent messaging availability" />
+      </Page>
+    );
+  }
+  if (!isMessagingEnabled(statusQuery.data?.data)) {
+    throw notFound({ routeId: rootRoute.id });
+  }
+  return (
+    <Suspense fallback={<LoadingState label="Opening Agents" />}>
+      <AgentsPage />
+    </Suspense>
   );
 }
 
@@ -96,6 +129,11 @@ const tasksRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/tasks",
   component: TasksPage,
+});
+const agentsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/agents",
+  component: AgentsRoute,
 });
 const taskDetailRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -219,6 +257,7 @@ const routeTree = rootRoute.addChildren([
   protectedRoute.addChildren([
     indexRoute,
     dashboardRoute,
+    agentsRoute,
     tasksRoute,
     taskDetailRoute,
     projectDetailRoute,

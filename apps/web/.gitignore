@@ -4,6 +4,7 @@ coverage/
 playwright-report/
 test-results/
 artifacts/gate12c-results.json
+artifacts/gate12d-messaging-results.json
 *.tsbuildinfo
 *.log
 .DS_Store

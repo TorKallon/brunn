@@ -187,7 +187,7 @@ async fn seed_workspace(pool: &PgPool, label: &str) -> WorkspaceFixture {
         user_id,
         scope_id,
         &format!("{label} owner"),
-        &["message.read", "message.write"],
+        &["message.read", "message.write", "status"],
     )
     .await;
     let agent_writer = insert_credential(
@@ -411,8 +411,37 @@ async fn messaging_routes_enforce_the_flag_identity_idempotency_sync_and_authori
 
     let fixture = seed_workspace(&pool, "primary-workspace").await;
     let other_owner = seed_other_owner(&pool).await;
+    let status_off = request_bytes(
+        &gate_off,
+        Method::GET,
+        "/v1/status",
+        Some(&fixture.owner.token),
+        None,
+    )
+    .await;
+    assert_status(&status_off, StatusCode::OK);
+    assert_eq!(
+        status_off.body.pointer("/feature_flags/messaging_enabled"),
+        Some(&Value::Bool(false)),
+        "service status must expose the disabled messaging runtime flag"
+    );
+
     state.config.messaging_enabled = true;
     let app = router(state);
+    let status_on = request_bytes(
+        &app,
+        Method::GET,
+        "/v1/status",
+        Some(&fixture.owner.token),
+        None,
+    )
+    .await;
+    assert_status(&status_on, StatusCode::OK);
+    assert_eq!(
+        status_on.body.pointer("/feature_flags/messaging_enabled"),
+        Some(&Value::Bool(true)),
+        "service status must expose the enabled messaging runtime flag"
+    );
 
     let listed_agents = request_bytes(
         &app,

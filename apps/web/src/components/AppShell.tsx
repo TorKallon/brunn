@@ -3,6 +3,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   Bell,
+  Bot,
   ChevronDown,
   CircleUserRound,
   LogOut,
@@ -18,6 +19,7 @@ import { ApiError } from "../lib/api";
 import { useApi } from "../lib/auth";
 import { useCurrent, useReadOnly } from "../lib/current";
 import { formatRelative } from "../lib/format";
+import { isMessagingEnabled, serviceStatusQuery } from "../lib/serviceStatus";
 import { ReadOnlyNotice, StatusBadge } from "./StateViews";
 
 const navItems = [
@@ -26,6 +28,13 @@ const navItems = [
   { to: "/briefings", label: "Briefings", icon: Sunrise },
   { to: "/explore", label: "Search", icon: Search },
   { to: "/control", label: "Detailed Activity", icon: Activity },
+] as const;
+
+const messagingNavItems = [
+  navItems[0],
+  navItems[1],
+  { to: "/agents", label: "Agents", icon: Bot },
+  ...navItems.slice(2),
 ] as const;
 
 export function AppShell({ children }: PropsWithChildren) {
@@ -37,15 +46,13 @@ export function AppShell({ children }: PropsWithChildren) {
   const current = useCurrent();
   const readOnly = useReadOnly();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const statusQuery = useQuery({
-    queryKey: ["service-status"],
-    queryFn: () => api.status(),
-    refetchInterval: 30_000,
-    retry: 1,
-  });
+  const statusQuery = useQuery(serviceStatusQuery(api));
   const me = current.data;
   const freshness = me.freshness ?? current.freshness;
   const serviceStatus = statusQuery.data?.data.status ?? (statusQuery.isError ? "unavailable" : "checking");
+  const visibleNavItems = isMessagingEnabled(statusQuery.data?.data)
+    ? messagingNavItems
+    : navItems;
   const logoutMutation = useMutation({
     mutationFn: () => api.logout(),
     onSuccess: async () => {
@@ -81,7 +88,7 @@ export function AppShell({ children }: PropsWithChildren) {
           </div>
         </Link>
         <nav className="primary-nav" aria-label="Primary navigation">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.to || pathname.startsWith(`${item.to}/`);
             return (

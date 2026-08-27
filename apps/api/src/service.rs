@@ -174,6 +174,7 @@ fn runtime_feature_flags(state: &AppState) -> Value {
             state.config.embedding_backfill_foreground_status_url.is_some(),
         "intention_ledger": state.config.intention_ledger,
         "lexical_single_scan": state.config.lexical_single_scan,
+        "messaging_enabled": state.config.messaging_enabled,
         "observability_timings_ms": state.config.observability_timings_ms,
         "read_path_roundtrip_v1": state.config.read_path_roundtrip_v1,
         "resume_deltas": state.config.resume_deltas,
