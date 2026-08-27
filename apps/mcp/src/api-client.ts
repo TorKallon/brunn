@@ -14,6 +14,8 @@ export interface ApiResponse {
   elapsedMs: number;
 }
 
+export type ApiHttpMethod = "GET" | "POST" | "PATCH" | "PUT";
+
 const MAX_STAGE_FILES = 2_000;
 const MAX_STAGE_BYTES = 64 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
@@ -63,6 +65,10 @@ const IDEMPOTENCY_KEY_MUTATION_PATHS = new Set([
   "/v1/workspace/briefings/publish",
   "/v1/workspace/capture",
   "/v1/workspace/checkpoint",
+  "/v1/workspace/contexts",
+  "/v1/workspace/contexts/merge",
+  "/v1/workspace/tasks/capture",
+  "/v1/workspace/tasks/settings",
   "/v1/workspace/write",
 ]);
 
@@ -115,11 +121,33 @@ export class StraylightApiClient {
     this.retryBackoffMs = configuredRetryBackoff(timeouts.retryBackoffMs);
   }
 
-  async request(path: string, body?: unknown): Promise<ApiResponse> {
+  async request(path: string, body?: unknown): Promise<ApiResponse>;
+  async request(method: ApiHttpMethod, path: string, body?: unknown): Promise<ApiResponse>;
+  async request(
+    methodOrPath: ApiHttpMethod | string,
+    pathOrBody?: unknown,
+    explicitBody?: unknown,
+  ): Promise<ApiResponse> {
+    const explicitMethod = isApiHttpMethod(methodOrPath);
+    const method: ApiHttpMethod = explicitMethod
+      ? methodOrPath
+      : pathOrBody === undefined ? "GET" : "POST";
+    const path = explicitMethod
+      ? typeof pathOrBody === "string"
+        ? pathOrBody
+        : undefined
+      : methodOrPath;
+    if (path === undefined || !path.startsWith("/")) {
+      throw new TypeError("Straylight API request path must start with /");
+    }
+    const body = explicitMethod ? explicitBody : pathOrBody;
+    if (method === "GET" && body !== undefined) {
+      throw new TypeError("Straylight API GET requests cannot include a body");
+    }
     const started = performance.now();
     const deadline = started + this.requestTimeoutMs;
     const serializedBody = body === undefined ? undefined : JSON.stringify(body);
-    const policy = requestRetryPolicy(path, body);
+    const policy = requestRetryPolicy(method, path, body);
     let attempts = 0;
     let lastRequestId: string | undefined;
 
@@ -132,6 +160,7 @@ export class StraylightApiClient {
       let transientStatus = 503;
       try {
         const result = await this.jsonAttempt(
+          method,
           path,
           serializedBody,
           Math.max(1, Math.ceil(remainingMs)),
@@ -184,6 +213,7 @@ export class StraylightApiClient {
   }
 
   private async jsonAttempt(
+    method: ApiHttpMethod,
     path: string,
     serializedBody: string | undefined,
     timeoutMs: number,
@@ -207,7 +237,7 @@ export class StraylightApiClient {
     try {
       const response = await Promise.race([
         this.fetchImpl(`${this.baseUrl}${path}`, {
-          method: serializedBody === undefined ? "GET" : "POST",
+          method,
           headers: {
             accept: "application/json",
             authorization: `Bearer ${this.token}`,
@@ -551,15 +581,19 @@ class ResponseTooLargeError extends Error {
   }
 }
 
-function requestRetryPolicy(path: string, body: unknown): RequestRetryPolicy {
+function requestRetryPolicy(
+  method: ApiHttpMethod,
+  path: string,
+  body: unknown,
+): RequestRetryPolicy {
   const requestPath = normalizedPath(path);
-  if (body === undefined || READ_ONLY_POST_PATHS.has(requestPath)) {
+  if (method === "GET" || (method === "POST" && READ_ONLY_POST_PATHS.has(requestPath))) {
     return { mutation: false, retryable: true };
   }
   const record = typeof body === "object" && body !== null
     ? body as Record<string, unknown>
     : {};
-  const hasIdempotencyKey = IDEMPOTENCY_KEY_MUTATION_PATHS.has(requestPath)
+  const hasIdempotencyKey = supportsIdempotencyKey(requestPath)
     && validIdempotencyIdentity(record.idempotency_key);
   const notificationIdentity = requestPath === "/v1/workspace/notifications/publish"
     && validIdempotencyIdentity(record.event_key);
@@ -567,6 +601,21 @@ function requestRetryPolicy(path: string, body: unknown): RequestRetryPolicy {
     mutation: true,
     retryable: hasIdempotencyKey || notificationIdentity,
   };
+}
+
+function isApiHttpMethod(value: string): value is ApiHttpMethod {
+  return value === "GET" || value === "POST" || value === "PATCH" || value === "PUT";
+}
+
+function supportsIdempotencyKey(requestPath: string): boolean {
+  if (IDEMPOTENCY_KEY_MUTATION_PATHS.has(requestPath)) {
+    return true;
+  }
+  return /^\/v1\/workspace\/tasks\/[0-9a-f-]{36}$/u.test(requestPath)
+    || /^\/v1\/workspace\/contexts\/(?:available\/)?[a-z0-9]+(?:[._-][a-z0-9]+)*$/u
+      .test(requestPath)
+    || /^\/v1\/workspace\/projects\/[a-z0-9]+(?:-[a-z0-9]+)*(?:\/interest)?$/u
+      .test(requestPath);
 }
 
 function normalizedPath(path: string): string {

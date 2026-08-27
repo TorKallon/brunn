@@ -981,3 +981,148 @@ test("staging preserves nested logical paths and requests binary descriptions", 
     await rm(importRoot, { recursive: true, force: true });
   }
 });
+
+test("explicit HTTP methods are preserved for bodyless GET and JSON POST PATCH PUT", async () => {
+  const calls: Array<{ method: string; url: string; body: string | undefined }> = [];
+  const client = new StraylightApiClient(
+    "http://straylight.test",
+    "task-token",
+    async (input, init) => {
+      calls.push({
+        method: init?.method ?? "GET",
+        url: String(input),
+        body: typeof init?.body === "string" ? init.body : undefined,
+      });
+      return new Response(JSON.stringify({ status: "complete" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  );
+
+  await client.request("GET", "/v1/workspace/tasks/candidates?view=next");
+  await client.request("POST", "/v1/workspace/tasks/capture", {
+    idempotency_key: "capture:1",
+  });
+  await client.request("PATCH", "/v1/workspace/tasks/019f8800-0000-7000-8000-000000000001", {
+    expected_version: 1,
+    idempotency_key: "update:1",
+    operation: {
+      type: "complete",
+      source: "agent:codex",
+      completed_via: "agent:codex",
+    },
+  });
+  await client.request("PUT", "/v1/workspace/projects/straylight/interest", {
+    expected_version: 1,
+    idempotency_key: "interest:1",
+    interest: "hot",
+  });
+
+  assert.deepEqual(calls, [
+    {
+      method: "GET",
+      url: "http://straylight.test/v1/workspace/tasks/candidates?view=next",
+      body: undefined,
+    },
+    {
+      method: "POST",
+      url: "http://straylight.test/v1/workspace/tasks/capture",
+      body: JSON.stringify({ idempotency_key: "capture:1" }),
+    },
+    {
+      method: "PATCH",
+      url: "http://straylight.test/v1/workspace/tasks/019f8800-0000-7000-8000-000000000001",
+      body: JSON.stringify({
+        expected_version: 1,
+        idempotency_key: "update:1",
+        operation: {
+          type: "complete",
+          source: "agent:codex",
+          completed_via: "agent:codex",
+        },
+      }),
+    },
+    {
+      method: "PUT",
+      url: "http://straylight.test/v1/workspace/projects/straylight/interest",
+      body: JSON.stringify({
+        expected_version: 1,
+        idempotency_key: "interest:1",
+        interest: "hot",
+      }),
+    },
+  ]);
+});
+
+test("explicit task mutations retry only with a durable idempotency key", async () => {
+  for (const fixture of [
+    {
+      method: "POST" as const,
+      path: "/v1/workspace/tasks/capture",
+      body: { idempotency_key: "capture:retry", items: [] },
+    },
+    {
+      method: "PATCH" as const,
+      path: "/v1/workspace/tasks/019f8800-0000-7000-8000-000000000001",
+      body: {
+        expected_version: 1,
+        idempotency_key: "update:retry",
+        operation: {
+          type: "complete",
+          source: "agent:codex",
+          completed_via: "agent:codex",
+        },
+      },
+    },
+    {
+      method: "PUT" as const,
+      path: "/v1/workspace/contexts/available/agent",
+      body: { idempotency_key: "contexts:retry", contexts_available: ["online"] },
+    },
+  ]) {
+    let keyedCalls = 0;
+    const keyed = new StraylightApiClient(
+      "http://straylight.test",
+      "task-token",
+      async () => {
+        keyedCalls += 1;
+        return keyedCalls === 1
+          ? new Response("temporary gateway", { status: 503 })
+          : new Response(JSON.stringify({ status: "committed" }), { status: 200 });
+      },
+      {},
+      undefined,
+      ONE_FAST_RETRY,
+    );
+    await keyed.request(fixture.method, fixture.path, fixture.body);
+    assert.equal(keyedCalls, 2, `${fixture.method} ${fixture.path} should retry with a key`);
+
+    let unkeyedCalls = 0;
+    const unkeyed = new StraylightApiClient(
+      "http://straylight.test",
+      "task-token",
+      async () => {
+        unkeyedCalls += 1;
+        return new Response("temporary gateway", { status: 503 });
+      },
+      {},
+      undefined,
+      ONE_FAST_RETRY,
+    );
+    const { idempotency_key: _omitted, ...unkeyedBody } = fixture.body;
+    await assert.rejects(
+      unkeyed.request(fixture.method, fixture.path, unkeyedBody),
+      (error: unknown) => {
+        if (!(error instanceof StraylightApiError)) {
+          return false;
+        }
+        const detail = error.body.error as Record<string, unknown>;
+        assert.equal(detail.code, "ambiguous_outcome");
+        assert.equal(detail.retryable, false);
+        return true;
+      },
+    );
+    assert.equal(unkeyedCalls, 1, `${fixture.method} ${fixture.path} must not retry without a key`);
+  }
+});

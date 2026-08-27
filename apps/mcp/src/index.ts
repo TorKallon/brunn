@@ -209,6 +209,243 @@ const notificationTarget = z.discriminatedUnion("type", [
   }),
 ]);
 
+const taskRef = z.string()
+  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
+  .describe(
+    "Raw lowercase UUIDv7 returned as task_ref. Do not prefix it with task: and never infer one.",
+  );
+const taskSlug = z.string()
+  .min(1)
+  .max(100)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
+const contextSlug = z.string()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
+const surfaceSlug = z.string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9._-]{0,63}$/u);
+const localDate = z.iso.date().describe("Local calendar date in YYYY-MM-DD form.");
+const rfc3339Timestamp = z.iso.datetime({ offset: true }).describe(
+  "Exact RFC3339 timestamp with an offset or Z suffix.",
+);
+const taskIdempotencyKey = printableUtf8String(240).describe(
+  "Stable durable replay identity. Reuse the exact key only with the identical mutation payload.",
+);
+const taskWriteSource = z.string()
+  .regex(/^(?:owner|agent:[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199})$/u)
+  .describe(
+    "Use owner only for a value the owner directly supplied; agent:<id> for inference. "
+    + "todoist and derived are reserved for internal service writers.",
+  );
+const taskCompletedVia = z.union([
+  z.literal("ios"),
+  z.literal("web"),
+  z.string().regex(/^agent:[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/u),
+]).describe("Actual completion surface. MCP agents normally use agent:<id>.");
+const contextList = z.array(contextSlug).max(20).refine(
+  (values) => new Set(values).size === values.length,
+  "contexts must not contain duplicates",
+);
+const surfaceDefaults = z.record(surfaceSlug, contextList).refine(
+  (values) => Object.keys(values).length <= 20,
+  "surface_defaults accepts at most 20 surfaces",
+);
+
+function sourcedTaskCell<Value extends z.ZodType>(value: Value) {
+  return z.object({
+    value,
+    source: taskWriteSource,
+    note: z.string().min(1).max(1_000).optional(),
+  }).strict();
+}
+
+const costOfDelay = z.union([
+  z.object({
+    amount_cents: z.number().int().nonnegative(),
+    per: z.enum(["day", "week", "month"]),
+    since: localDate,
+    note: z.string().min(1).max(1_000).optional(),
+  }).strict(),
+  z.object({
+    flag: z.literal(true),
+    since: localDate,
+    note: z.string().min(1).max(1_000).optional(),
+  }).strict(),
+]);
+
+const taskCaptureItem = z.object({
+  client_ref: printableUtf8String(200).optional().describe(
+    "Caller-local correlation value echoed in the capture result; not a task identifier.",
+  ),
+  raw_text: z.string().min(1).max(20_000).describe(
+    "The owner's original task sentence, preserved as the capture basis.",
+  ),
+  title: z.string().min(1).max(500).optional(),
+  notes: sourcedTaskCell(z.string().max(20_000).nullable()).optional(),
+  project: sourcedTaskCell(taskSlug).optional(),
+  ready_at: sourcedTaskCell(rfc3339Timestamp.nullable()).optional(),
+  soft_due: sourcedTaskCell(localDate.nullable()).optional(),
+  hard_due: sourcedTaskCell(rfc3339Timestamp.nullable()).optional(),
+  hard_due_lead_days: sourcedTaskCell(z.number().int().min(0).max(3_650).nullable()).optional(),
+  cost_of_delay: sourcedTaskCell(costOfDelay.nullable()).optional(),
+  required_contexts: sourcedTaskCell(contextList).optional(),
+  estimate_minutes: sourcedTaskCell(z.number().int().min(1).max(10_080).nullable()).optional(),
+  captured_from: printableUtf8String(4_096).optional().describe(
+    "Exact conversation or entry reference supporting this capture; omit when none was supplied.",
+  ),
+}).strict();
+
+const correctionAuditFields = {
+  source: taskWriteSource,
+  note: z.string().min(1).max(1_000).optional(),
+  reason: z.string().min(1).max(1_000).optional().describe(
+    "Why this correction supersedes the previous value; retained in the corrections log.",
+  ),
+};
+
+const taskUpdateOperation = z.union([
+  z.object({
+    type: z.literal("correct"),
+    field: z.enum([
+      "title",
+      "notes",
+      "project",
+      "ready_at",
+      "soft_due",
+      "hard_due",
+      "hard_due_lead_days",
+      "cost_of_delay",
+      "estimate_minutes",
+      "recurrence",
+    ]),
+    value: z.unknown(),
+    ...correctionAuditFields,
+  }).strict(),
+  z.object({
+    type: z.literal("correct"),
+    field: z.literal("required_contexts"),
+    value: contextList,
+    ...correctionAuditFields,
+  }).strict(),
+  z.object({
+    type: z.literal("complete"),
+    source: taskWriteSource,
+    completed_via: taskCompletedVia,
+  }).strict(),
+  z.object({ type: z.literal("reopen"), source: taskWriteSource }).strict(),
+  z.object({
+    type: z.literal("snooze"),
+    until: rfc3339Timestamp,
+    source: taskWriteSource,
+  }).strict(),
+  z.object({
+    type: z.literal("snooze"),
+    days: z.number().int().min(1).max(3_650),
+    source: taskWriteSource,
+  }).strict(),
+  z.object({
+    type: z.literal("drop"),
+    reason: z.string().min(1).max(1_000).optional(),
+    source: taskWriteSource,
+  }).strict(),
+  z.object({
+    type: z.literal("wait_on"),
+    who_or_what: z.string().min(1).max(1_000),
+    check_back_at: rfc3339Timestamp.optional(),
+    source: taskWriteSource,
+  }).strict(),
+  z.object({ type: z.literal("unpark"), source: taskWriteSource }).strict(),
+  z.object({ type: z.literal("pin_today"), source: taskWriteSource }).strict(),
+  z.object({ type: z.literal("unpin"), source: taskWriteSource }).strict(),
+  z.object({ type: z.literal("confirm_hard"), source: taskWriteSource }).strict(),
+  z.object({ type: z.literal("downgrade_to_soft"), source: taskWriteSource }).strict(),
+]);
+
+const contextOperation = z.union([
+  z.object({
+    type: z.literal("list"),
+    include_archived: z.boolean().default(false),
+    limit: z.number().int().min(1).max(100).default(50),
+    cursor: contextSlug.optional(),
+  }).strict(),
+  z.object({
+    type: z.literal("create"),
+    slug: contextSlug.optional().describe(
+      "Optional canonical lowercase-kebab slug. Omit it to derive the slug from display_name.",
+    ),
+    display_name: z.string().min(1).max(120),
+    aliases: z.array(z.string().min(1).max(120)).max(32).optional(),
+    description: z.string().min(1).max(1_000).optional(),
+    source: taskWriteSource,
+    confirm_new: z.boolean().default(false).describe(
+      "Leave false initially. Set true only after Straylight returns suggested_existing and the owner confirms a new context.",
+    ),
+    idempotency_key: taskIdempotencyKey,
+  }).strict(),
+  z.object({
+    type: z.literal("merge"),
+    from: contextSlug,
+    into: contextSlug,
+    expected_from_version: z.number().int().positive(),
+    expected_into_version: z.number().int().positive(),
+    source: taskWriteSource,
+    reason: z.string().min(1).max(1_000).optional(),
+    idempotency_key: taskIdempotencyKey,
+  }).strict().refine((value) => value.from !== value.into, {
+    message: "merge source and destination must differ",
+  }),
+  z.object({
+    type: z.literal("archive"),
+    slug: contextSlug,
+    archived: z.boolean().default(true),
+    expected_version: z.number().int().positive(),
+    source: taskWriteSource,
+    idempotency_key: taskIdempotencyKey,
+  }).strict(),
+  z.object({
+    type: z.literal("set_available"),
+    surface: surfaceSlug,
+    contexts_available: contextList,
+    expected_version: z.number().int().nonnegative().describe(
+      "Use 0 only when creating defaults for an unseeded surface; otherwise use the positive surface_defaults version returned by list.",
+    ),
+    source: taskWriteSource,
+    idempotency_key: taskIdempotencyKey,
+  }).strict(),
+]);
+
+const taskSettingsOperation = z.union([
+  z.object({ type: z.literal("get") }).strict(),
+  z.object({
+    type: z.literal("update"),
+    expected_version: z.number().int().positive(),
+    idempotency_key: taskIdempotencyKey,
+    timezone: z.string().min(1).max(80).optional(),
+    hard_lead_days: z.number().int().min(1).max(90).optional(),
+    hard_second_lead_hours: z.number().int().min(1).max(2_160).optional(),
+    due_day_local_time: z.string().regex(/^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/u).optional(),
+    soft_window_days: z.number().int().min(1).max(90).optional(),
+    triage_after_days: z.number().int().min(1).max(3_650).optional(),
+    waiting_followup_days: z.number().int().min(1).max(3_650).optional(),
+    quiet_override_enabled: z.boolean().optional(),
+    quiet_override_within_hours: z.number().int().min(1).max(168).optional(),
+    quiet_hours_start: z.string()
+      .regex(/^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/u)
+      .optional(),
+    quiet_hours_end: z.string()
+      .regex(/^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/u)
+      .optional(),
+    surface_defaults: surfaceDefaults.optional(),
+  }).strict().refine(
+    (value) => Object.keys(value).some(
+      (key) => !["type", "expected_version", "idempotency_key"].includes(key),
+    ),
+    { message: "settings update requires at least one changed setting" },
+  ),
+]);
+
 function createReadItem(maxChars: number) {
   return z.object({
     ref: reference.optional().describe(
@@ -596,6 +833,308 @@ registerJsonTool(
 );
 
 registerJsonTool(
+  "task.capture",
+  "Capture one or many owner tasks from raw text without exposing the backlog. Before inferring, consult "
+  + "task.corrections, task.contexts, and the project registry from project.list. Infer project aliases; "
+  + "call means phone; buy, pick up, or drop off means errands; needs Nyx means home; renewal, expiry, "
+  + "charges, or lost value may make a date hard; and infer evidenced cost or an obvious estimate. Source "
+  + "every enrichment, never overwrite an owner value, and preserve the original sentence. Ask at most one "
+  + "clarifying question, only for consequential hard/soft ambiguity. This tool never returns the backlog.",
+  {
+    idempotency_key: taskIdempotencyKey,
+    items: z.array(taskCaptureItem).min(1).max(25),
+  },
+  (input) => client.request("POST", "/v1/workspace/tasks/capture", input),
+);
+
+registerJsonTool(
+  "task.candidates",
+  "Return deterministic ranked tasks with reasons and provenance markers using context AND semantics. "
+  + "Defaults to the bounded next five; next accepts at most 25. Urgent returns every visible tier-1/2 "
+  + "task and must not be given a limit. Triage is bounded to ten. Use all only for an explicit owner request, "
+  + "with deliberate_all=true and cursor pagination. as_of exists for deterministic testing; otherwise omit it.",
+  {
+    view: z.enum(["next", "urgent", "triage", "all"]).default("next"),
+    limit: z.number().int().min(1).max(25).optional().describe(
+      "Omit for service defaults (next five, triage ten). Omit for urgent so every tier-1/2 item returns.",
+    ),
+    contexts_available: contextList.optional().describe(
+      "Every required context must be present. Omit or pass [] when no context is available.",
+    ),
+    project: taskSlug.optional(),
+    include_waiting: z.boolean().default(false),
+    include_parked: z.boolean().default(false),
+    as_of: rfc3339Timestamp.optional().describe(
+      "Explicit evaluation instant for deterministic testing. Omit in normal use.",
+    ),
+    cursor: taskRef.optional(),
+    deliberate_all: z.literal(true).optional().describe(
+      "Required only for view=all, after the owner explicitly asks to see the full paginated list.",
+    ),
+  },
+  (input) => {
+    if (input.view === "all" && input.deliberate_all !== true) {
+      throw new Error("view=all requires deliberate_all=true after an explicit owner request");
+    }
+    if (input.view !== "all" && input.deliberate_all !== undefined) {
+      throw new Error("deliberate_all is valid only with view=all");
+    }
+    if (input.view === "urgent" && input.limit !== undefined) {
+      throw new Error("urgent is unbounded across visible tier-1/2 tasks; omit limit");
+    }
+    if (input.view === "triage" && input.limit !== undefined && input.limit > 10) {
+      throw new Error("triage is bounded to at most ten tasks");
+    }
+    const query = new URLSearchParams();
+    query.set("view", input.view);
+    appendQuery(query, "limit", input.limit);
+    for (const context of input.contexts_available ?? []) {
+      query.append("contexts_available", context);
+    }
+    appendQuery(query, "project", input.project);
+    query.set("include_waiting", String(input.include_waiting));
+    query.set("include_parked", String(input.include_parked));
+    appendQuery(query, "as_of", input.as_of);
+    appendQuery(query, "cursor", input.cursor);
+    appendQuery(query, "deliberate_all", input.deliberate_all);
+    return client.request("GET", withQuery("/v1/workspace/tasks/candidates", query));
+  },
+);
+
+registerJsonTool(
+  "task.update",
+  "Apply exactly one sourced correction or action to one task with optimistic concurrency. Actions are "
+  + "complete, reopen, snooze, drop, wait_on, unpark, pin_today, unpin, confirm_hard, and "
+  + "downgrade_to_soft. Every operation requires source; complete also requires completed_via and returns "
+  + "done_today_count. Replay an ambiguous result with the identical idempotency_key and payload.",
+  {
+    task_ref: taskRef,
+    expected_version: z.number().int().positive(),
+    idempotency_key: taskIdempotencyKey,
+    operation: taskUpdateOperation,
+  },
+  (input) => {
+    const { task_ref, ...body } = input;
+    return client.request(
+      "PATCH",
+      `/v1/workspace/tasks/${encodeURIComponent(task_ref)}`,
+      body,
+    );
+  },
+);
+
+registerJsonTool(
+  "task.corrections",
+  "Read a bounded, recent corrections log for enrichment feedback. Consult this before task.capture; "
+  + "Straylight records corrections but never turns them into hidden learned logic.",
+  {
+    task_ref: taskRef.optional().describe(
+      "Optional exact task_ref filter when reviewing corrections for one task.",
+    ),
+    limit: z.number().int().min(1).max(100).default(20),
+    cursor: printableUtf8String(4_096).optional(),
+  },
+  (input) => {
+    const query = new URLSearchParams();
+    appendQuery(query, "task_ref", input.task_ref);
+    query.set("limit", String(input.limit));
+    appendQuery(query, "cursor", input.cursor);
+    return client.request("GET", withQuery("/v1/workspace/tasks/corrections", query));
+  },
+);
+
+registerJsonTool(
+  "task.contexts",
+  "List, create, explicitly merge, archive, or set available task contexts. Create performs exact alias, "
+  + "shared-token, and small-edit checks. A near match is a successful status=needs_review response with "
+  + "suggested_existing and no write; ask the owner one question, then retry with confirm_new=true only if "
+  + "they want a distinct context. Never merge automatically; merge is explicit and audited. List first to "
+  + "obtain expected_from_version and expected_into_version for merge, expected_version for archive, and "
+  + "the surface-default expected_version; zero creates an unseeded surface and must not overwrite one.",
+  {
+    operation: contextOperation,
+  },
+  (input) => {
+    const operation = input.operation;
+    if (operation.type === "list") {
+      const query = new URLSearchParams({
+        include_archived: String(operation.include_archived),
+        limit: String(operation.limit),
+      });
+      appendQuery(query, "cursor", operation.cursor);
+      return client.request("GET", withQuery("/v1/workspace/contexts", query));
+    }
+    if (operation.type === "create") {
+      const { type: _type, ...body } = operation;
+      return client.request("POST", "/v1/workspace/contexts", body);
+    }
+    if (operation.type === "merge") {
+      const { type: _type, ...body } = operation;
+      return client.request("POST", "/v1/workspace/contexts/merge", body);
+    }
+    if (operation.type === "archive") {
+      const { type: _type, slug, ...body } = operation;
+      return client.request(
+        "PATCH",
+        `/v1/workspace/contexts/${encodeURIComponent(slug)}`,
+        body,
+      );
+    }
+    const { type: _type, surface, ...body } = operation;
+    return client.request(
+      "PUT",
+      `/v1/workspace/contexts/available/${encodeURIComponent(surface)}`,
+      body,
+    );
+  },
+);
+
+registerJsonTool(
+  "task.done_summary",
+  "Return bounded completed tasks for an explicit inclusive owner-local date range. Supply both from and "
+  + "through, or neither for owner-local Done today. Use an explicit range for weekly summaries; there is no "
+  + "ambiguous implicit week. as_of exists only for deterministic testing.",
+  {
+    from: localDate.optional(),
+    through: localDate.optional(),
+    as_of: rfc3339Timestamp.optional(),
+    limit: z.number().int().min(1).max(100).default(25),
+    cursor: printableUtf8String(4_096).optional(),
+  },
+  (input) => {
+    if ((input.from === undefined) !== (input.through === undefined)) {
+      throw new Error("done summary requires both from and through, or neither for Done today");
+    }
+    if (input.from !== undefined && input.through !== undefined && input.from > input.through) {
+      throw new Error("done summary from date must not be after through date");
+    }
+    const query = new URLSearchParams();
+    appendQuery(query, "from", input.from);
+    appendQuery(query, "through", input.through);
+    appendQuery(query, "as_of", input.as_of);
+    query.set("limit", String(input.limit));
+    appendQuery(query, "cursor", input.cursor);
+    return client.request("GET", withQuery("/v1/workspace/tasks/done-summary", query));
+  },
+);
+
+registerJsonTool(
+  "task.settings",
+  "Get or optimistically update deterministic task windows, timezone, guard leads, quiet-hours override, "
+  + "and per-surface context defaults. The mixed tool is conservatively annotated as a mutation; update "
+  + "requires a durable idempotency key and expected version.",
+  {
+    operation: taskSettingsOperation,
+  },
+  (input) => {
+    if (input.operation.type === "get") {
+      return client.request("GET", "/v1/workspace/tasks/settings");
+    }
+    const { type: _type, ...body } = input.operation;
+    return client.request("PUT", "/v1/workspace/tasks/settings", body);
+  },
+);
+
+registerJsonTool(
+  "project.register",
+  "Create or update one open-vocabulary project registry record. Register aliases and optional hub_path "
+  + "or repo_path so checkpoint linkage can use deterministic longest-prefix fallback. This stores registry "
+  + "metadata, not a task list.",
+  {
+    slug: taskSlug,
+    title: z.string().min(1).max(200),
+    aliases: z.array(z.string().min(1).max(160)).max(32).optional(),
+    description: z.string().min(1).max(2_000).optional(),
+    hub_path: z.string().min(1).max(4_096).refine(
+      (value) => !value.startsWith("/") && !value.split("/").includes(".."),
+      "hub_path must be a safe workspace-relative path",
+    ).optional(),
+    repo_path: z.string().min(1).max(4_096).optional(),
+    archived: z.boolean().optional(),
+    source: taskWriteSource,
+    expected_version: z.number().int().nonnegative().optional(),
+    idempotency_key: taskIdempotencyKey,
+  },
+  (input) => {
+    const { slug, ...body } = input;
+    return client.request(
+      "PUT",
+      `/v1/workspace/projects/${encodeURIComponent(slug)}`,
+      body,
+    );
+  },
+);
+
+registerJsonTool(
+  "project.list",
+  "List the bounded project registry with deterministic current interest and activity. It never returns "
+  + "a wall of tasks; use project.state for one project's checkpoint and rollups.",
+  {
+    include_archived: z.boolean().default(false),
+    limit: z.number().int().min(1).max(100).default(50),
+    cursor: taskSlug.optional(),
+    as_of: rfc3339Timestamp.optional(),
+  },
+  (input) => {
+    const query = new URLSearchParams({
+      include_archived: String(input.include_archived),
+      limit: String(input.limit),
+    });
+    appendQuery(query, "cursor", input.cursor);
+    appendQuery(query, "as_of", input.as_of);
+    return client.request("GET", withQuery("/v1/workspace/projects", query));
+  },
+);
+
+registerJsonTool(
+  "project.state",
+  "Return one project's latest linked checkpoint objective and current state, next actions, open questions, "
+  + "checkpoint time, next three candidates, urgent and parked counts, waiting items with ages, current "
+  + "interest, and last activity. It never returns the full task backlog.",
+  {
+    slug: taskSlug,
+    as_of: rfc3339Timestamp.optional(),
+  },
+  (input) => {
+    const query = new URLSearchParams();
+    appendQuery(query, "as_of", input.as_of);
+    return client.request(
+      "GET",
+      withQuery(`/v1/workspace/projects/${encodeURIComponent(input.slug)}/state`, query),
+    );
+  },
+);
+
+registerJsonTool(
+  "project.set_interest",
+  "Set an optimistic, sourced hot, normal, or parked project-interest override. The explicit override lasts "
+  + "14 days, then deterministic activity-derived interest resumes.",
+  {
+    slug: taskSlug,
+    interest: z.enum(["hot", "normal", "parked"]),
+    source: taskWriteSource,
+    expected_version: z.number().int().positive(),
+    idempotency_key: taskIdempotencyKey,
+  },
+  (input) => {
+    const { slug, ...body } = input;
+    return client.request(
+      "PUT",
+      `/v1/workspace/projects/${encodeURIComponent(slug)}/interest`,
+      body,
+    );
+  },
+);
+
+registerJsonTool(
+  "task.sync_status",
+  "Read content-free Todoist pull status: environment gate, saved and effective mode, token-configured "
+  + "boolean, last run/outcome/error summary, and next run. It never returns a token or task content.",
+  {},
+  () => client.request("GET", "/v1/workspace/integrations/todoist/status"),
+);
+
+registerJsonTool(
   "secret.put",
   "Store or replace one named secret for the authenticated owner in the encrypted vault. "
   + "Use this when the user hands over a credential, API key, or token that agents will need "
@@ -693,12 +1232,24 @@ function registerJsonToolOnServer<Shape extends z.ZodRawShape>(
     "memory.stage",
     "briefing.publish",
     "notification.publish",
+    "task.capture",
+    "task.update",
+    "task.contexts",
+    "task.settings",
+    "project.register",
+    "project.set_interest",
     "secret.put",
     "secret.delete",
   ]).has(name);
   const idempotent = readOnly
     || name === "memory.checkpoint"
-    || name === "notification.publish";
+    || name === "notification.publish"
+    || name === "task.capture"
+    || name === "task.update"
+    || name === "task.contexts"
+    || name === "task.settings"
+    || name === "project.register"
+    || name === "project.set_interest";
   server.registerTool(name, {
     description,
     inputSchema,
@@ -739,6 +1290,21 @@ function requiredEnvironment(name: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function appendQuery(
+  query: URLSearchParams,
+  name: string,
+  value: string | number | boolean | undefined,
+): void {
+  if (value !== undefined) {
+    query.set(name, String(value));
+  }
+}
+
+function withQuery(path: string, query: URLSearchParams): string {
+  const serialized = query.toString();
+  return serialized.length === 0 ? path : `${path}?${serialized}`;
 }
 
 function printableUtf8String(maxBytes: number) {

@@ -14,7 +14,7 @@ use tower_http::{
 use crate::{
     auth, briefing_service, dashboard_service, db::AppState, document_service, dreams,
     eval_service, notification_service, request_context, secret_service, service, simple_core,
-    telemetry, web_auth,
+    task_service, telemetry, web_auth,
 };
 
 pub fn router(state: AppState) -> Router {
@@ -38,6 +38,63 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/workspace/capture",
             post(simple_core::capture).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+        )
+        .route(
+            "/workspace/tasks/capture",
+            post(task_service::capture_tasks),
+        )
+        .route(
+            "/workspace/tasks/candidates",
+            get(task_service::task_candidates),
+        )
+        .route(
+            "/workspace/tasks/corrections",
+            get(task_service::task_corrections),
+        )
+        .route(
+            "/workspace/tasks/done-summary",
+            get(task_service::task_done_summary),
+        )
+        .route(
+            "/workspace/tasks/settings",
+            get(task_service::get_task_settings).put(task_service::update_task_settings),
+        )
+        .route(
+            "/workspace/tasks/{task_ref}",
+            get(task_service::get_task).patch(task_service::update_task),
+        )
+        .route(
+            "/workspace/contexts",
+            get(task_service::list_contexts).post(task_service::create_context),
+        )
+        .route(
+            "/workspace/contexts/merge",
+            post(task_service::merge_contexts),
+        )
+        .route(
+            "/workspace/contexts/available/{surface}",
+            put(task_service::set_available_contexts),
+        )
+        .route(
+            "/workspace/contexts/{slug}",
+            axum::routing::patch(task_service::archive_context),
+        )
+        .route("/workspace/projects", get(task_service::list_projects))
+        .route(
+            "/workspace/projects/{slug}/state",
+            get(task_service::project_state),
+        )
+        .route(
+            "/workspace/projects/{slug}/interest",
+            put(task_service::set_project_interest),
+        )
+        .route(
+            "/workspace/projects/{slug}",
+            put(task_service::register_project),
+        )
+        .route(
+            "/workspace/integrations/todoist/status",
+            get(task_service::todoist_status),
         )
         .route(
             "/workspace/briefings/publish",
@@ -321,7 +378,13 @@ pub fn router(state: AppState) -> Router {
                             http::header::CONTENT_DISPOSITION,
                             http::header::CONTENT_RANGE,
                         ])
-                        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+                        .allow_methods([
+                            Method::GET,
+                            Method::POST,
+                            Method::PUT,
+                            Method::PATCH,
+                            Method::DELETE,
+                        ])
                         .allow_credentials(true),
                 ),
         )

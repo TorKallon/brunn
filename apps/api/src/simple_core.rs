@@ -8383,7 +8383,17 @@ fn validate_public_path(path: &str) -> ApiResult<()> {
 
 fn require_write_capabilities(auth: &AuthContext, path: &str) -> ApiResult<()> {
     auth.require(Capability::Save)?;
-    if is_checkpoint_path(path) {
+    if path.starts_with(crate::task_service::TASK_ENTRY_PREFIX) {
+        if crate::task_service::task_id_from_path(path).is_none() {
+            return Err(ApiError::invalid(
+                "managed task paths require a lowercase canonical UUIDv7 filename",
+            ));
+        }
+        auth.require(Capability::TaskWrite)?;
+        if !auth.can(Capability::CredentialManage) && !auth.can(Capability::Admin) {
+            return Err(ApiError::capability(Capability::CredentialManage.as_str()));
+        }
+    } else if is_checkpoint_path(path) {
         auth.require(Capability::Checkpoint)?;
     } else if path.starts_with(".straylight/binaries/") {
         auth.require(Capability::Stage)?;
@@ -9748,6 +9758,41 @@ mod tests {
             .is_err()
         );
         assert!(require_write_capabilities(&save_only, ".straylight/binaries/receipt.md").is_err());
+        let task_id = Uuid::now_v7();
+        let task_path = format!(".straylight/tasks/{task_id}.md");
+        assert!(require_write_capabilities(&save_only, &task_path).is_err());
+        assert!(
+            require_write_capabilities(
+                &auth(&[Capability::Save, Capability::TaskWrite]),
+                &task_path
+            )
+            .is_err()
+        );
+        assert!(
+            require_write_capabilities(
+                &auth(&[
+                    Capability::Save,
+                    Capability::TaskWrite,
+                    Capability::CredentialManage
+                ]),
+                &task_path
+            )
+            .is_ok()
+        );
+        assert!(
+            require_write_capabilities(
+                &auth(&[Capability::Save, Capability::TaskWrite, Capability::Admin]),
+                &task_path
+            )
+            .is_ok()
+        );
+        assert!(
+            require_write_capabilities(
+                &auth(&[Capability::Save, Capability::TaskWrite, Capability::Admin]),
+                ".straylight/tasks/550e8400-e29b-41d4-a716-446655440000.md"
+            )
+            .is_err()
+        );
         assert!(
             require_write_capabilities(
                 &auth(&[Capability::Save, Capability::Checkpoint]),

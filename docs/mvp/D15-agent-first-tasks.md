@@ -113,14 +113,21 @@ item and enters triage, creating neither a guessed date nor duplicate.
 
 All routes are under `/v1/workspace`, derive identity only from AuthContext,
 enforce typed validation and CSRF for cookie mutations, and return generic
-not-found across ownership boundaries.
+not-found across ownership boundaries. Public task references are raw lowercase
+UUIDs; entry references and optimistic versions remain separate. Every
+mutation binds `(user, operation kind, idempotency key)` to a canonical request
+hash and durable receipt in the same transaction. Receipt replay precedes the
+version check, an exact replay returns `no_op`, key reuse with different input
+returns `idempotency_conflict`, and a new key with a stale version returns
+`task_version_conflict`. A near-match context response is the normal
+`needs_review` envelope with `suggested_existing` and no writes.
 
 | Route | Capability |
 | --- | --- |
-| `POST /tasks/capture`, `PATCH /tasks/{id}` | task.write |
-| `GET /tasks/candidates`, `/tasks/corrections`, `/tasks/done-summary` | task.read |
+| `POST /tasks/capture`, `PATCH /tasks/{task_ref}` | task.write |
+| `GET /tasks/{task_ref}`, `/tasks/candidates`, `/tasks/corrections`, `/tasks/done-summary` | task.read |
 | `GET/POST /contexts`, `POST /contexts/merge`, `PATCH /contexts/{slug}`, `PUT /contexts/available/{surface}` | read/write as applicable |
-| `GET /projects`, `GET /projects/{slug}/state`, `PUT /projects/{slug}/interest` | read/read/write |
+| `GET /projects`, `PUT /projects/{slug}`, `GET /projects/{slug}/state`, `PUT /projects/{slug}/interest` | read/write/read/write |
 | `GET/PUT /tasks/settings` | read/write |
 | `GET /integrations/todoist/status` | task.read |
 | `PUT /integrations/todoist/config`, `POST /integrations/todoist/pull` | integration.manage |
@@ -135,14 +142,22 @@ contracts:
   question and only for consequential hard/soft ambiguity; never overwrite an
   owner value or return a backlog.
 - `task.candidates`: deterministic reasons/provenance, default next/five,
-  maximum 25, context AND; urgent/triage are bounded intents and all is used
-  only on an explicit owner request; `as_of` is for deterministic testing.
+  maximum 25, context AND; urgent returns all tiers 1–2, triage is bounded to
+  ten, and all is used only on an explicit owner request; `as_of` is for
+  deterministic testing. Web and iOS independently enforce the global default
+  render budget of five unique tasks plus pins.
 - `task.update`: one sourced correction or one action—complete, reopen,
   snooze, drop, wait_on, unpark, pin_today, unpin, confirm_hard, or
   downgrade_to_soft—with expected version; completion returns done count.
 - `task.corrections`: bounded recent enrichment feedback, never learned logic.
 - `task.contexts`: list/create/merge/archive/set-available with suggestion
   blocking and explicit audited merge.
+- `task.done_summary`: bounded completions for an explicit local-date range,
+  including the owner-local Done-today count.
+- `task.settings`: get/update deterministic windows, timezone, leads, quiet
+  hours, and surface defaults with optimistic versioning.
+- `project.register`: create/update the registry title, aliases, and optional
+  hub/repository paths used by deterministic checkpoint fallback.
 - `project.list`: registry and interest, never a task wall.
 - `project.state`: checkpoint state, next three, and rollups for one project.
 - `project.set_interest`: expected-state hot/normal/parked 14-day override.

@@ -73,6 +73,40 @@ test("dynamic client registrations round-trip statelessly and reject tampering",
   assert.equal(await wrongKey.getClient(publicClient.client_id), undefined);
 });
 
+test("dynamic client registrations reject noncanonical base64url tail-bit aliases", async () => {
+  const store = new StatelessOAuthClientsStore({ secret: SECRET });
+  let canonicalClient: OAuthClientInformationFull | undefined;
+  let alias: string | undefined;
+  for (let suffixLength = 0; suffixLength < 3; suffixLength += 1) {
+    const candidate = await registerPublicClient(
+      store,
+      REDIRECT_URI,
+      `Tail alias fixture${"x".repeat(suffixLength)}`,
+    );
+    const candidateAlias = noncanonicalBase64urlTailAlias(candidate.client_id);
+    if (candidateAlias !== undefined) {
+      canonicalClient = candidate;
+      alias = candidateAlias;
+      break;
+    }
+  }
+
+  assert.ok(canonicalClient, "one of three adjacent plaintext lengths must leave base64 tail bits");
+  assert.ok(alias);
+  assert.notEqual(alias, canonicalClient.client_id);
+  const canonicalSegment = canonicalClient.client_id.split(".").at(-1);
+  const aliasSegment = alias.split(".").at(-1);
+  assert.ok(canonicalSegment);
+  assert.ok(aliasSegment);
+  assert.deepEqual(
+    Buffer.from(aliasSegment, "base64url"),
+    Buffer.from(canonicalSegment, "base64url"),
+    "the alternate text must decode to the exact same authenticated packed bytes",
+  );
+  assert.deepEqual(await store.getClient(canonicalClient.client_id), canonicalClient);
+  assert.equal(await store.getClient(alias), undefined);
+});
+
 test("client registration permits HTTPS and loopback HTTP redirects only", async () => {
   const store = new StatelessOAuthClientsStore({ secret: SECRET });
   for (const uri of [
@@ -98,6 +132,28 @@ test("client registration permits HTTPS and loopback HTTP redirects only", async
     );
   }
 });
+
+function noncanonicalBase64urlTailAlias(value: string): string | undefined {
+  const separator = value.lastIndexOf(".");
+  assert.notEqual(separator, -1);
+  const prefix = value.slice(0, separator + 1);
+  const encoded = value.slice(separator + 1);
+  const remainder = encoded.length % 4;
+  if (remainder === 0) {
+    return undefined;
+  }
+  assert.ok(remainder === 2 || remainder === 3);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const finalCharacter = encoded.at(-1);
+  assert.ok(finalCharacter);
+  const canonicalIndex = alphabet.indexOf(finalCharacter);
+  assert.notEqual(canonicalIndex, -1);
+  const unusedBitCount = remainder === 2 ? 4 : 2;
+  const unusedMask = (1 << unusedBitCount) - 1;
+  assert.equal(canonicalIndex & unusedMask, 0, "canonical base64url has zero unused tail bits");
+  const aliasIndex = canonicalIndex | 1;
+  return `${prefix}${encoded.slice(0, -1)}${alphabet[aliasIndex]}`;
+}
 
 test("authorization GET is a protected no-script approval form and POST verifies the token", async () => {
   const verified: string[] = [];

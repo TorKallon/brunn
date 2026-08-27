@@ -176,6 +176,40 @@ pub fn rank_tasks(
     }
 }
 
+/// Return the complete deterministic order for explicit pagination. This is
+/// intentionally separate from bounded surfaces: callers must slice the
+/// result before rendering, while sharing the exact visibility, pressure, and
+/// comparator implementation used by [`rank_tasks`].
+pub fn rank_all_tasks(
+    tasks: &[TaskSnapshot],
+    request: &CandidateRequest,
+    settings: &EngineSettings,
+) -> RankedTasks {
+    let backlog_total = tasks
+        .iter()
+        .filter(|task| matches!(task.status, TaskStatus::Open | TaskStatus::Waiting))
+        .count();
+    let mut evaluated = tasks
+        .iter()
+        .filter(|task| is_visible(task, request))
+        .map(|task| evaluate(task, request.as_of, settings))
+        .collect::<Vec<_>>();
+    evaluated.sort_by(compare_ranked);
+    let urgent_total = evaluated.iter().filter(|item| item.tier <= 2).count();
+    let next_remaining = evaluated
+        .len()
+        .saturating_sub(request.limit.min(MAX_NEXT_LIMIT));
+    RankedTasks {
+        items: evaluated
+            .into_iter()
+            .map(EvaluatedTask::into_public)
+            .collect(),
+        urgent_total,
+        next_remaining,
+        backlog_total,
+    }
+}
+
 pub fn snooze_transition(current_count: u32) -> (u32, bool) {
     let next_count = current_count.saturating_add(1);
     (next_count, next_count >= 3)
@@ -658,6 +692,20 @@ mod tests {
                 .all(|item| item.reason.contains("~$10/day"))
         );
         assert!(ranked.items[0].reason.contains("~$260 so far"));
+    }
+
+    #[test]
+    fn full_order_is_single_sort_authority_for_deliberate_pagination() {
+        let as_of = instant(27, 12);
+        let tasks = (1..=60)
+            .map(|id| task(id, &format!("task-{id}"), 1))
+            .collect::<Vec<_>>();
+        let request = request(TaskView::All, as_of, 25);
+        let bounded = rank_tasks(&tasks, &request, &EngineSettings::default());
+        let full = rank_all_tasks(&tasks, &request, &EngineSettings::default());
+        assert_eq!(bounded.items.len(), 25);
+        assert_eq!(full.items.len(), 60);
+        assert_eq!(bounded.items, full.items[..25]);
     }
 
     #[test]

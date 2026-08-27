@@ -84,6 +84,7 @@ pub struct Config {
     pub notification_token_encryption_key: Option<String>,
     pub secret_encryption_key: Option<String>,
     pub apns_delivery_enabled: bool,
+    pub todoist_sync_enabled: bool,
     pub public_url: String,
     pub account_export_ttl: Duration,
     pub account_export_temp_dir: PathBuf,
@@ -304,6 +305,7 @@ impl Config {
             ])?,
             secret_encryption_key: first_env_or_file(&["STRAYLIGHT_SECRET_ENCRYPTION_KEY"])?,
             apns_delivery_enabled: env_parse("STRAYLIGHT_APNS_DELIVERY_ENABLED", "false")?,
+            todoist_sync_enabled: env_parse("STRAYLIGHT_TODOIST_SYNC_ENABLED", "false")?,
             public_url: env_default("STRAYLIGHT_PUBLIC_URL", "https://straylight.rourkem.com")
                 .trim()
                 .trim_end_matches('/')
@@ -384,6 +386,11 @@ impl Config {
         }
         if let Some(key) = config.secret_encryption_key.as_deref() {
             decode_secret_encryption_key(key)?;
+        }
+        if config.todoist_sync_enabled && config.secret_encryption_key.is_none() {
+            return Err(ApiError::configuration(
+                "enabled Todoist sync requires STRAYLIGHT_SECRET_ENCRYPTION_KEY",
+            ));
         }
         if config.apns_app_id.is_some() != config.notification_token_encryption_key.is_some() {
             return Err(ApiError::configuration(
@@ -879,6 +886,12 @@ mod tests {
         assert!(decode_notification_token_key(&STANDARD.encode([7_u8; 31])).is_err());
     }
 
+    #[test]
+    fn enabled_todoist_sync_requires_the_secret_vault_key() {
+        run_config_env_probe("todoist_without_secret_key");
+        run_config_env_probe("todoist_with_secret_key");
+    }
+
     fn run_config_env_probe(scenario: &str) {
         let mut command = Command::new(std::env::current_exe().unwrap());
         let mut resend_secret_file = None;
@@ -1014,6 +1027,17 @@ mod tests {
                     .env("STRAYLIGHT_APNS_KEY_ID", "KEYID12345")
                     .env("STRAYLIGHT_APNS_PRIVATE_KEY", "unit-private-key")
                     .env("STRAYLIGHT_APNS_APP_ID", "com.example.Straylight");
+            }
+            "todoist_without_secret_key" => {
+                command.env("STRAYLIGHT_TODOIST_SYNC_ENABLED", "true");
+            }
+            "todoist_with_secret_key" => {
+                command
+                    .env("STRAYLIGHT_TODOIST_SYNC_ENABLED", "true")
+                    .env(
+                        "STRAYLIGHT_SECRET_ENCRYPTION_KEY",
+                        STANDARD.encode([11_u8; 32]),
+                    );
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
@@ -1207,6 +1231,23 @@ mod tests {
                     error
                         .to_string()
                         .contains("STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY")
+                );
+            }
+            "todoist_without_secret_key" => {
+                let error = Config::from_env()
+                    .err()
+                    .expect("enabled Todoist sync without a vault key must fail");
+                assert!(error.to_string().contains("STRAYLIGHT_SECRET_ENCRYPTION_KEY"));
+            }
+            "todoist_with_secret_key" => {
+                let config = Config::from_env().unwrap();
+                assert!(config.todoist_sync_enabled);
+                assert_eq!(
+                    decode_secret_encryption_key(
+                        config.secret_encryption_key.as_deref().unwrap()
+                    )
+                    .unwrap(),
+                    [11_u8; 32]
                 );
             }
             scenario => panic!("unknown config probe scenario {scenario}"),

@@ -504,7 +504,15 @@ class AesGcmSealer {
     ) {
       throw new Error("Invalid sealed value");
     }
-    const packed = Buffer.from(sealed.slice(prefix.length + 1), "base64url");
+    const encoded = sealed.slice(prefix.length + 1);
+    const packed = Buffer.from(encoded, "base64url");
+    // Node's base64url decoder accepts noncanonical trailing-bit aliases. Two
+    // different strings can therefore decode to the same authenticated bytes,
+    // making a textual client/token mutation appear valid. Sealed identities
+    // are canonical protocol values, so reject aliases before authenticating.
+    if (packed.toString("base64url") !== encoded) {
+      throw new Error("Invalid sealed value");
+    }
     if (packed.byteLength <= 28) {
       throw new Error("Invalid sealed value");
     }

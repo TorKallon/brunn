@@ -46,10 +46,22 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
       "memory.status",
       "memory.write",
       "notification.publish",
+      "project.list",
+      "project.register",
+      "project.set_interest",
+      "project.state",
       "secret.delete",
       "secret.get",
       "secret.list",
       "secret.put",
+      "task.candidates",
+      "task.capture",
+      "task.contexts",
+      "task.corrections",
+      "task.done_summary",
+      "task.settings",
+      "task.sync_status",
+      "task.update",
     ]);
     assert.equal(response.tools.some((tool) => tool.name === "memory.stage"), false);
     assert.equal(response.tools.some((tool) => tool.name === "asset.fetch"), false);

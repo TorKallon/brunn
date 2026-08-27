@@ -87,6 +87,22 @@ try {
     "memory.status",
     "memory.write",
     "notification.publish",
+    "project.list",
+    "project.register",
+    "project.set_interest",
+    "project.state",
+    "secret.delete",
+    "secret.get",
+    "secret.list",
+    "secret.put",
+    "task.candidates",
+    "task.capture",
+    "task.contexts",
+    "task.corrections",
+    "task.done_summary",
+    "task.settings",
+    "task.sync_status",
+    "task.update",
   ]);
 
   const opened = toolBody(await client.callTool({

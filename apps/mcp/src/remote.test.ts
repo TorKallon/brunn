@@ -193,7 +193,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
       // its exact-optional base declaration under this repository's TS mode.
       await client.connect(transport as never);
       const tools = await client.listTools();
-      assert.equal(tools.tools.length, 20);
+      assert.equal(tools.tools.length, 32);
       assert.equal(tools.tools.some((tool) => tool.name === "memory.stage"), false);
       assert.equal(tools.tools.some((tool) => tool.name === "asset.fetch"), false);
       assert.equal(
