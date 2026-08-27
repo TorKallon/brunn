@@ -29,6 +29,9 @@ const OWNER_CAPABILITIES: &[&str] = &[
     "notification:manage",
     "secret:read",
     "secret:write",
+    "task.read",
+    "task.write",
+    "integration.manage",
     "admin",
 ];
 

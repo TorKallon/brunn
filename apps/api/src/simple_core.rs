@@ -1377,6 +1377,8 @@ pub async fn checkpoint(
                 "resulting_workspace_generation": null,
                 "session_id": request.session_id.clone(),
                 "parent_checkpoint_ref": request.parent_checkpoint_id.clone(),
+                "checkpoint_state": request.state.clone(),
+                "project": request.state.get("project").cloned().unwrap_or(Value::Null),
                 "source_refs": request.source_refs.clone(),
                 "source_entries": source_entry_receipts.clone(),
                 "request_hash": format!("sha256:{request_hash}"),
@@ -3156,6 +3158,8 @@ pub async fn import_evaluation(
         "correct",
         "delete",
         "dream",
+        "task.read",
+        "task.write",
     ];
     let row = sqlx::query(
         r#"
@@ -5964,7 +5968,6 @@ pub(crate) async fn prepare_markdown(
     } else {
         DerivedFrontmatter::default()
     };
-    let embeddings = vec![None; normalized.chunks.len()];
     let mut metadata = match request.metadata {
         Value::Object(values) => values,
         Value::Null => serde_json::Map::new(),
@@ -5978,6 +5981,13 @@ pub(crate) async fn prepare_markdown(
         );
     }
     let metadata = Value::Object(metadata);
+    let task_entry = crate::task_service::validate_task_entry(&request.path, &metadata)?;
+    let chunks = if task_entry {
+        Vec::new()
+    } else {
+        normalized.chunks
+    };
+    let embeddings = vec![None; chunks.len()];
     let tier_a_history_stage = validate_tier_a_history_request(
         &request.path,
         &metadata,
@@ -5995,12 +6005,52 @@ pub(crate) async fn prepare_markdown(
         content: request.content,
         media_type: request.media_type,
         metadata,
-        chunks: normalized.chunks,
+        chunks,
         embeddings,
         expected_version: request.expected_version,
         tier_a_history_stage,
         frontmatter,
-        force_new_version: false,
+        force_new_version: task_entry,
+    })
+}
+
+pub(crate) fn prepare_task_markdown_for_update(
+    path: String,
+    content: String,
+    metadata: Value,
+    expected_version: i64,
+) -> ApiResult<PreparedMarkdown> {
+    validate_path(&path)?;
+    if content.len() > MAX_WRITE_BYTES {
+        return Err(ApiError::public(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "entry_too_large",
+            "Task Markdown is limited to 4 MiB",
+        ));
+    }
+    if !crate::task_service::validate_task_entry(&path, &metadata)? {
+        return Err(ApiError::invalid(
+            "managed task updates require canonical task.v1 metadata",
+        ));
+    }
+    let normalized = normalize_document(&path, &content);
+    Ok(PreparedMarkdown {
+        entry_id_hint: None,
+        path,
+        title: normalized.title,
+        content_sha256: normalized
+            .content_hash
+            .trim_start_matches("sha256:")
+            .to_owned(),
+        content,
+        media_type: markdown_media_type(),
+        metadata,
+        chunks: Vec::new(),
+        embeddings: Vec::new(),
+        expected_version: Some(expected_version),
+        tier_a_history_stage: None,
+        frontmatter: DerivedFrontmatter::default(),
+        force_new_version: true,
     })
 }
 
@@ -6244,6 +6294,15 @@ pub(crate) async fn upsert_markdown_in_tx(
         let row = existing
             .as_ref()
             .expect("an idempotent Tier-A history target has an existing entry");
+        crate::task_service::sync_managed_entry_in_tx(
+            tx,
+            user_id,
+            row.get("id"),
+            row.get("current_version"),
+            &prepared.path,
+            &row.get("metadata"),
+        )
+        .await?;
         return Ok(MarkdownUpsertResult {
             entry_id: row.get("id"),
             version: row.get("current_version"),
@@ -6259,6 +6318,15 @@ pub(crate) async fn upsert_markdown_in_tx(
         if row.get::<String, _>("content_sha256") == prepared.content_sha256
             && row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_none()
         {
+            crate::task_service::sync_managed_entry_in_tx(
+                tx,
+                user_id,
+                row.get("id"),
+                row.get("current_version"),
+                &prepared.path,
+                &row.get("metadata"),
+            )
+            .await?;
             return Ok(MarkdownUpsertResult {
                 entry_id: row.get("id"),
                 version: row.get("current_version"),
@@ -6380,6 +6448,20 @@ pub(crate) async fn upsert_markdown_in_tx(
         } else {
             None
         };
+        let projection_metadata = if metadata_only {
+            &prepared.metadata
+        } else {
+            &current_metadata
+        };
+        crate::task_service::sync_managed_entry_in_tx(
+            tx,
+            user_id,
+            row.get("id"),
+            row.get("current_version"),
+            &prepared.path,
+            projection_metadata,
+        )
+        .await?;
         return Ok(MarkdownUpsertResult {
             entry_id: row.get("id"),
             version: row.get("current_version"),
@@ -6484,7 +6566,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     .bind(&prepared.content_sha256)
     .fetch_one(&mut **tx)
     .await?;
-    if checkpoint_import {
+    let final_metadata = if checkpoint_import {
         let metadata = rebase_imported_checkpoint_metadata(prepared.metadata.clone(), generation);
         sqlx::query(
             r#"
@@ -6496,10 +6578,22 @@ pub(crate) async fn upsert_markdown_in_tx(
         .bind(user_id)
         .bind(entry_id)
         .bind(version)
-        .bind(metadata)
+        .bind(&metadata)
         .execute(&mut **tx)
         .await?;
-    }
+        metadata
+    } else {
+        prepared.metadata.clone()
+    };
+    crate::task_service::sync_managed_entry_in_tx(
+        tx,
+        user_id,
+        entry_id,
+        version,
+        &prepared.path,
+        &final_metadata,
+    )
+    .await?;
     if prepared.embeddings.iter().any(Option::is_none) {
         sqlx::query(
             r#"
@@ -7250,12 +7344,21 @@ fn render_checkpoint_markdown(
         .get("objective")
         .and_then(Value::as_str)
         .unwrap_or("Resume durable work");
+    let project = request
+        .state
+        .get("project")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if !project.is_empty() {
+        crate::task_service::validate_project_slug(project)?;
+    }
     let mut output = format!(
         "---\nstraylight_kind: checkpoint\ncheckpoint_id: {checkpoint_id}\n\
-         workspace_generation: {generation}\nsession_id: {}\nparent_checkpoint_id: {}\n---\n\n\
+         workspace_generation: {generation}\nsession_id: {}\nparent_checkpoint_id: {}\nproject: {}\n---\n\n\
          # Checkpoint: {}\n\n",
         request.session_id,
         request.parent_checkpoint_id.as_deref().unwrap_or(""),
+        project,
         objective
     );
     for (field, heading) in [
@@ -7358,6 +7461,16 @@ fn validate_checkpoint_request(request: &CheckpointRequest) -> ApiResult<(String
     }
     if !request.state.is_object() {
         return Err(ApiError::invalid("checkpoint state must be an object"));
+    }
+    if let Some(project) = request
+        .state
+        .get("project")
+        .filter(|value| !value.is_null())
+    {
+        let project = project
+            .as_str()
+            .ok_or_else(|| ApiError::invalid("checkpoint state.project must be a string"))?;
+        crate::task_service::validate_project_slug(project)?;
     }
     if request.source_refs.len() > 64 {
         return Err(ApiError::invalid(
@@ -8313,9 +8426,10 @@ fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
             .get("binary_path")
             .and_then(Value::as_str)
             .is_some();
+    let task_restore = crate::task_service::validate_task_entry(&request.path, &request.metadata)?;
     if portable_restore
         && request.expected_version.is_some()
-        && (checkpoint_restore || binary_companion_restore)
+        && (checkpoint_restore || binary_companion_restore || task_restore)
     {
         return Ok(());
     }
@@ -10436,6 +10550,34 @@ mod tests {
         }
     }
 
+    fn prepared_task_fixture(
+        task_id: Uuid,
+        content: &str,
+        metadata: Value,
+        expected_version: Option<i64>,
+    ) -> PreparedMarkdown {
+        let path = format!(".straylight/tasks/{task_id}.md");
+        let normalized = normalize_document(&path, content);
+        PreparedMarkdown {
+            entry_id_hint: None,
+            path,
+            title: normalized.title,
+            content: content.to_owned(),
+            content_sha256: normalized
+                .content_hash
+                .trim_start_matches("sha256:")
+                .to_owned(),
+            media_type: markdown_media_type(),
+            metadata,
+            chunks: Vec::new(),
+            embeddings: Vec::new(),
+            expected_version,
+            tier_a_history_stage: None,
+            frontmatter: DerivedFrontmatter::default(),
+            force_new_version: true,
+        }
+    }
+
     fn prepared_checkpoint_fixture(
         request: &CheckpointRequest,
         effective_idempotency_key: &str,
@@ -10484,6 +10626,8 @@ mod tests {
             "workspace_generation": pinned_generation,
             "session_id": request.session_id,
             "parent_checkpoint_ref": request.parent_checkpoint_id,
+            "checkpoint_state": request.state,
+            "project": request.state.get("project").cloned().unwrap_or(Value::Null),
             "source_refs": request.source_refs,
             "source_entries": []
         });
@@ -11166,6 +11310,545 @@ mod tests {
                 .unwrap();
             assert_eq!(survivors, 0, "{table} rows survived account purge");
         }
+    }
+
+    #[tokio::test]
+    async fn task_entries_rebuild_projection_version_metadata_and_link_checkpoint_projects() {
+        let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+        else {
+            eprintln!("STRAYLIGHT_TEST_DATABASE_URL is unset; skipping task storage test");
+            return;
+        };
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&database_url)
+            .await
+            .expect("connect to disposable Postgres");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("apply Straylight migrations");
+        let user_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO straylight.users (id,external_ref,display_name) VALUES ($1,$2,$3)",
+        )
+        .bind(user_id)
+        .bind(format!("task-storage-test:{user_id}"))
+        .bind("Task storage test")
+        .execute(&pool)
+        .await
+        .expect("insert task storage user");
+        let credential_id = Uuid::now_v7();
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.api_credentials (
+              id,user_id,label,token_hash,capabilities
+            ) VALUES ($1,$2,'Task storage writer',$3,ARRAY['task.read','task.write'])
+            "#,
+        )
+        .bind(credential_id)
+        .bind(user_id)
+        .bind(format!("task-storage-token-{credential_id}"))
+        .execute(&pool)
+        .await
+        .expect("insert task storage credential");
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.task_projects (
+              user_id,slug,title,hub_path,repo_path,created_by
+            ) VALUES (
+              $1,'straylight','Straylight',
+              'sources/Projects/Straylight/Straylight.md',
+              '/Volumes/NyxFastData/dev/projects/straylight','owner'
+            )
+            "#,
+        )
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("register task checkpoint project");
+
+        let task_id = Uuid::now_v7();
+        let content = "# Downgrade Charlemagne\n\nPreserve these exact task bytes.\n";
+        let sourced = |value: Value, source: &str| {
+            json!({
+                "value": value,
+                "source": source,
+                "set_at": "2026-08-27T07:00:00Z"
+            })
+        };
+        let open_task = json!({
+            "kind": "task",
+            "schema": "task.v1",
+            "task": {
+                "id": task_id,
+                "title": "Downgrade Charlemagne",
+                "status": sourced(json!("open"), "owner"),
+                "project": sourced(json!("straylight"), "agent:codex"),
+                "soft_due": sourced(json!("2026-08-31"), "agent:codex"),
+                "cost_of_delay": sourced(json!({
+                    "amount_cents": 700,
+                    "per": "week",
+                    "since": "2026-08-01"
+                }), "agent:codex"),
+                "required_contexts": sourced(json!(["home", "online"]), "owner"),
+                "today_pin": sourced(json!("2026-08-27"), "owner"),
+                "provenance": {
+                    "captured_by": "agent:codex",
+                    "captured_from": "entry:test",
+                    "created_at": "2026-08-27T07:00:00Z"
+                }
+            }
+        });
+        let mut tx = pool.begin().await.expect("begin canonical task write");
+        let first = upsert_markdown_in_tx(
+            &mut tx,
+            user_id,
+            None,
+            prepared_task_fixture(task_id, content, open_task.clone(), Some(0)),
+        )
+        .await
+        .expect("write canonical task");
+        tx.commit().await.expect("commit canonical task");
+        assert_eq!(first.version, 1);
+
+        let stored_projection: (i64, String, Option<i64>, Option<String>, Vec<String>) =
+            sqlx::query_as(
+                r#"
+                SELECT entry_version,status,cost_amount_cents,cost_period,required_contexts
+                FROM straylight.task_index
+                WHERE user_id=$1 AND task_id=$2
+                "#,
+            )
+            .bind(user_id)
+            .bind(task_id)
+            .fetch_one(&pool)
+            .await
+            .expect("read canonical task projection");
+        assert_eq!(stored_projection.0, 1);
+        assert_eq!(stored_projection.1, "open");
+        assert_eq!(stored_projection.2, Some(700));
+        assert_eq!(stored_projection.3.as_deref(), Some("week"));
+        assert_eq!(stored_projection.4, ["home", "online"]);
+
+        sqlx::query("DELETE FROM straylight.task_index WHERE user_id=$1 AND task_id=$2")
+            .bind(user_id)
+            .bind(task_id)
+            .execute(&pool)
+            .await
+            .expect("simulate a missing rebuildable projection");
+        let mut no_op_replay = prepared_task_fixture(task_id, content, open_task, Some(1));
+        no_op_replay.force_new_version = false;
+        let mut tx = pool.begin().await.expect("begin projection rebuild replay");
+        let rebuilt = upsert_markdown_in_tx(&mut tx, user_id, None, no_op_replay)
+            .await
+            .expect("generic replay rebuilds task projection");
+        tx.commit().await.expect("commit projection rebuild replay");
+        assert!(rebuilt.no_op);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+            )
+            .bind(user_id)
+            .bind(task_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            1
+        );
+
+        let done_task = json!({
+            "_straylight_import": {
+                "format": "straylight-workspace-import-manifest@v1"
+            },
+            "client": {
+                "kind": "task",
+                "schema": "task.v1",
+                "task": {
+                    "id": task_id,
+                    "title": "Downgrade Charlemagne",
+                    "status": sourced(json!("done"), "owner"),
+                    "project": sourced(json!("straylight"), "agent:codex"),
+                    "soft_due": sourced(json!("2026-08-31"), "agent:codex"),
+                    "cost_of_delay": sourced(json!({
+                        "amount_cents": 700,
+                        "per": "week",
+                        "since": "2026-08-01"
+                    }), "agent:codex"),
+                    "required_contexts": sourced(json!(["home", "online"]), "owner"),
+                    "done_at": "2026-08-27T08:00:00Z",
+                    "provenance": {
+                        "captured_by": "agent:codex",
+                        "created_at": "2026-08-27T07:00:00Z"
+                    }
+                }
+            }
+        });
+        let mut tx = pool
+            .begin()
+            .await
+            .expect("begin metadata-only task mutation");
+        let second = upsert_markdown_in_tx(
+            &mut tx,
+            user_id,
+            None,
+            prepared_task_fixture(task_id, content, done_task, Some(1)),
+        )
+        .await
+        .expect("unchanged Markdown with changed task state versions");
+        tx.commit()
+            .await
+            .expect("commit metadata-only task mutation");
+        assert_eq!(second.version, 2);
+        assert!(!second.no_op);
+        let projected: (i64, String, Option<DateTime<Utc>>) = sqlx::query_as(
+            "SELECT entry_version,status,done_at FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+        )
+        .bind(user_id)
+        .bind(task_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read updated task projection");
+        assert_eq!(projected.0, 2);
+        assert_eq!(projected.1, "done");
+        assert_eq!(
+            projected.2.unwrap().to_rfc3339(),
+            "2026-08-27T08:00:00+00:00"
+        );
+        let project_activity_after_task = sqlx::query_scalar::<_, DateTime<Utc>>(
+            "SELECT last_activity_at FROM straylight.task_projects WHERE user_id=$1 AND slug='straylight'",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("task mutation advances project activity");
+        let task_projection_updated_at = sqlx::query_scalar::<_, DateTime<Utc>>(
+            "SELECT updated_at FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+        )
+        .bind(user_id)
+        .bind(task_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read task projection activity time");
+        assert_eq!(project_activity_after_task, task_projection_updated_at);
+
+        let task_entry_id = first.entry_id;
+        let history = sqlx::query_scalar::<_, String>(
+            "SELECT content FROM straylight.entry_versions WHERE user_id=$1 AND entry_id=$2 ORDER BY version",
+        )
+        .bind(user_id)
+        .bind(task_entry_id)
+        .fetch_all(&pool)
+        .await
+        .expect("read exact task entry history");
+        assert_eq!(history, [content.to_owned(), content.to_owned()]);
+        let task_path = format!(".straylight/tasks/{task_id}.md");
+        let changes = sqlx::query_as::<_, (String, i64, String)>(
+            "SELECT path,entry_version,operation FROM straylight.workspace_changes WHERE user_id=$1 AND entry_id=$2 ORDER BY generation",
+        )
+        .bind(user_id)
+        .bind(task_entry_id)
+        .fetch_all(&pool)
+        .await
+        .expect("read task workspace changes");
+        assert_eq!(
+            changes,
+            [
+                (task_path.clone(), 1, "create".to_owned()),
+                (task_path, 2, "update".to_owned()),
+            ]
+        );
+        let chunk_count = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM straylight.search_chunks WHERE user_id=$1 AND entry_id=$2",
+        )
+        .bind(user_id)
+        .bind(task_entry_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count forbidden task search chunks");
+        assert_eq!(chunk_count, 0, "task entry created search chunks");
+        let job_count = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM straylight.jobs WHERE user_id=$1 AND payload->>'entry_id'=$2",
+        )
+        .bind(user_id)
+        .bind(task_entry_id.to_string())
+        .fetch_one(&pool)
+        .await
+        .expect("count forbidden task jobs");
+        assert_eq!(job_count, 0, "task entry created jobs");
+
+        let explicit_request = CheckpointRequest {
+            session_id: format!("session:task-explicit-project:{user_id}"),
+            parent_checkpoint_id: None,
+            state: json!({
+                "objective": "Resume Straylight",
+                "project": "straylight",
+                "current_state": ["Task storage is durable"]
+            }),
+            source_refs: vec![],
+            idempotency_key: Some(format!("task-explicit-project:{user_id}")),
+        };
+        let (explicit_key, explicit_hash) = validate_checkpoint_request(&explicit_request).unwrap();
+        let (explicit_ref, explicit_path, explicit_prepared) =
+            prepared_checkpoint_fixture(&explicit_request, &explicit_key, &explicit_hash, 2);
+        checkpoint_attempt(
+            &pool,
+            user_id,
+            &explicit_key,
+            &explicit_hash,
+            &explicit_ref,
+            &explicit_path,
+            2,
+            explicit_prepared,
+        )
+        .await
+        .expect("write project-explicit checkpoint");
+        let explicit_id = checkpoint_entry_id_for_new_write(&explicit_request);
+        let explicit_link: (String, String) = sqlx::query_as(
+            "SELECT project_slug,attribution FROM straylight.task_checkpoint_links WHERE user_id=$1 AND checkpoint_entry_id=$2",
+        )
+        .bind(user_id)
+        .bind(explicit_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read explicit checkpoint project link");
+        assert_eq!(
+            explicit_link,
+            ("straylight".to_owned(), "explicit".to_owned())
+        );
+        let (project_activity_after_checkpoint, checkpoint_created_at) =
+            sqlx::query_as::<_, (DateTime<Utc>, DateTime<Utc>)>(
+                r#"
+                SELECT project.last_activity_at,version.created_at
+                FROM straylight.task_projects AS project
+                JOIN straylight.entries AS entry
+                  ON entry.user_id=project.user_id AND entry.id=$2
+                JOIN straylight.entry_versions AS version
+                  ON version.user_id=entry.user_id
+                 AND version.entry_id=entry.id
+                 AND version.version=entry.current_version
+                WHERE project.user_id=$1 AND project.slug='straylight'
+                "#,
+            )
+            .bind(user_id)
+            .bind(explicit_id)
+            .fetch_one(&pool)
+            .await
+            .expect("checkpoint link advances project activity");
+        assert_eq!(project_activity_after_checkpoint, checkpoint_created_at);
+        assert!(project_activity_after_checkpoint >= project_activity_after_task);
+        let checkpoint_payload: (String, Value) = sqlx::query_as(
+            r#"
+            SELECT version.content,version.metadata
+            FROM straylight.entry_versions AS version
+            WHERE version.user_id=$1 AND version.entry_id=$2 AND version.version=1
+            "#,
+        )
+        .bind(user_id)
+        .bind(explicit_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read durable checkpoint state");
+        assert!(checkpoint_payload.0.contains("project: straylight"));
+        assert_eq!(checkpoint_payload.1["project"], "straylight");
+        assert_eq!(
+            checkpoint_payload.1["checkpoint_state"]["current_state"][0],
+            "Task storage is durable"
+        );
+
+        let fallback_request = CheckpointRequest {
+            session_id: format!("session:task-path-project:{user_id}"),
+            parent_checkpoint_id: None,
+            state: json!({"objective": "Resume by source path"}),
+            source_refs: vec!["sources/Projects/Straylight/Agent notes.md".to_owned()],
+            idempotency_key: Some(format!("task-path-project:{user_id}")),
+        };
+        let (fallback_key, fallback_hash) = validate_checkpoint_request(&fallback_request).unwrap();
+        let (fallback_ref, fallback_path, fallback_prepared) =
+            prepared_checkpoint_fixture(&fallback_request, &fallback_key, &fallback_hash, 3);
+        checkpoint_attempt(
+            &pool,
+            user_id,
+            &fallback_key,
+            &fallback_hash,
+            &fallback_ref,
+            &fallback_path,
+            3,
+            fallback_prepared,
+        )
+        .await
+        .expect("write path-fallback checkpoint");
+        let fallback_id = checkpoint_entry_id_for_new_write(&fallback_request);
+        let fallback_link: (String, String, Option<String>) = sqlx::query_as(
+            "SELECT project_slug,attribution,matched_path FROM straylight.task_checkpoint_links WHERE user_id=$1 AND checkpoint_entry_id=$2",
+        )
+        .bind(user_id)
+        .bind(fallback_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read fallback checkpoint project link");
+        assert_eq!(fallback_link.0, "straylight");
+        assert_eq!(fallback_link.1, "path_fallback");
+        assert_eq!(
+            fallback_link.2.as_deref(),
+            Some("sources/Projects/Straylight/")
+        );
+
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.task_surface_defaults (user_id,surface,contexts)
+            VALUES ($1,'test',ARRAY['home','online'])
+            ON CONFLICT (user_id,surface) DO UPDATE SET contexts=EXCLUDED.contexts
+            "#,
+        )
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("seed mergeable surface contexts");
+        let mut context_tx = pool.begin().await.expect("begin context registry flow");
+        let blocked = crate::task_service::create_context_in_tx(
+            &mut context_tx,
+            user_id,
+            credential_id,
+            "phne",
+            None,
+            None,
+            "agent:codex",
+            false,
+        )
+        .await
+        .expect_err("near-match context creation must require explicit confirmation");
+        assert!(matches!(
+            blocked,
+            ApiError::Public {
+                status: StatusCode::CONFLICT,
+                code: "context_confirmation_required",
+                ..
+            }
+        ));
+        let created = crate::task_service::create_context_in_tx(
+            &mut context_tx,
+            user_id,
+            credential_id,
+            "Workshop",
+            None,
+            Some("At the workshop"),
+            "agent:codex",
+            false,
+        )
+        .await
+        .expect("distinct dynamic context is created");
+        assert_eq!(created, "workshop");
+        let rewritten = crate::task_service::merge_contexts_in_tx(
+            &mut context_tx,
+            user_id,
+            credential_id,
+            "home",
+            "online",
+            "agent:codex",
+            "2026-08-27T09:00:00Z".parse().unwrap(),
+        )
+        .await
+        .expect("explicit context merge rewrites canonical task state");
+        assert_eq!(rewritten, 1);
+        context_tx
+            .commit()
+            .await
+            .expect("commit context registry flow");
+
+        let merged_contexts = sqlx::query_scalar::<_, Vec<String>>(
+            "SELECT required_contexts FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+        )
+        .bind(user_id)
+        .bind(task_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read context-merged projection");
+        assert_eq!(merged_contexts, ["online"]);
+        let canonical_contexts = sqlx::query_scalar::<_, Value>(
+            r#"
+            SELECT version.metadata #> '{client,task,required_contexts,value}'
+            FROM straylight.entries AS entry
+            JOIN straylight.entry_versions AS version
+              ON version.user_id=entry.user_id
+             AND version.entry_id=entry.id
+             AND version.version=entry.current_version
+            WHERE entry.user_id=$1 AND entry.id=$2
+            "#,
+        )
+        .bind(user_id)
+        .bind(task_entry_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read canonical merged context cell");
+        assert_eq!(canonical_contexts, json!(["online"]));
+        let canonical_context_source = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT version.metadata #>> '{client,task,required_contexts,source}'
+            FROM straylight.entries AS entry
+            JOIN straylight.entry_versions AS version
+              ON version.user_id=entry.user_id
+             AND version.entry_id=entry.id
+             AND version.version=entry.current_version
+            WHERE entry.user_id=$1 AND entry.id=$2
+            "#,
+        )
+        .bind(user_id)
+        .bind(task_entry_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read canonical merged context source");
+        assert_eq!(canonical_context_source, "owner");
+        let alias_target = sqlx::query_scalar::<_, String>(
+            "SELECT context_slug FROM straylight.task_context_aliases WHERE user_id=$1 AND alias='home'",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read durable context merge alias");
+        assert_eq!(alias_target, "online");
+        let merged_defaults = sqlx::query_scalar::<_, Vec<String>>(
+            "SELECT contexts FROM straylight.task_surface_defaults WHERE user_id=$1 AND surface='test'",
+        )
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("read merged surface contexts");
+        assert_eq!(merged_defaults, ["online"]);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM straylight.task_corrections WHERE user_id=$1 AND task_id=$2 AND field_name='required_contexts'",
+            )
+            .bind(user_id)
+            .bind(task_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            sqlx::query_as::<_, (Option<String>, String)>(
+                "SELECT previous_source,corrected_source FROM straylight.task_corrections WHERE user_id=$1 AND task_id=$2 AND field_name='required_contexts'",
+            )
+            .bind(user_id)
+            .bind(task_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            (Some("owner".to_owned()), "owner".to_owned())
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM straylight.task_audit_events WHERE user_id=$1 AND action IN ('context.create','context.merge')",
+            )
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            2
+        );
     }
 
     #[tokio::test]

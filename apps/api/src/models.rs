@@ -124,6 +124,12 @@ pub enum Capability {
     NotificationManage,
     SecretRead,
     SecretWrite,
+    #[serde(rename = "task.read")]
+    TaskRead,
+    #[serde(rename = "task.write")]
+    TaskWrite,
+    #[serde(rename = "integration.manage")]
+    IntegrationManage,
     Admin,
 }
 
@@ -147,6 +153,9 @@ impl Capability {
             Self::NotificationManage => "notification:manage",
             Self::SecretRead => "secret:read",
             Self::SecretWrite => "secret:write",
+            Self::TaskRead => "task.read",
+            Self::TaskWrite => "task.write",
+            Self::IntegrationManage => "integration.manage",
             Self::Admin => "admin",
         }
     }
@@ -174,6 +183,9 @@ impl FromStr for Capability {
             "notification:manage" => Ok(Self::NotificationManage),
             "secret:read" => Ok(Self::SecretRead),
             "secret:write" => Ok(Self::SecretWrite),
+            "task.read" => Ok(Self::TaskRead),
+            "task.write" => Ok(Self::TaskWrite),
+            "integration.manage" => Ok(Self::IntegrationManage),
             "admin" => Ok(Self::Admin),
             _ => Err(()),
         }

@@ -136,12 +136,15 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   const checkpointState = checkpoint.inputSchema.properties?.state as {
     properties?: {
       objective?: { maxLength?: number };
+      project?: { maxLength?: number; pattern?: string };
       decisions?: { maxItems?: number; items?: { maxLength?: number } };
       artifacts?: { maxItems?: number; items?: { maxLength?: number } };
       state_refs?: { maxItems?: number; items?: { maxLength?: number } };
     };
   } | undefined;
   assert.equal(checkpointState?.properties?.objective?.maxLength, 4 * 1024 * 1024);
+  assert.equal(checkpointState?.properties?.project?.maxLength, 100);
+  assert.match(checkpointState?.properties?.project?.pattern ?? "", /a-z0-9/);
   assert.equal(checkpointState?.properties?.decisions?.maxItems, 4_096);
   assert.equal(
     checkpointState?.properties?.decisions?.items?.maxLength,

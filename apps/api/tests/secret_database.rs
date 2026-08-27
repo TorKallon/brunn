@@ -369,7 +369,8 @@ async fn secret_capabilities_are_constrained_and_owner_credentials_carry_them() 
           'open','query','read','compute','verify','status',
           'checkpoint','save','stage','correct','delete','dream',
           'credential:manage','notification:publish','notification:manage',
-          'secret:read','secret:write','admin'
+          'secret:read','secret:write',
+          'task.read','task.write','integration.manage','admin'
         ])
         "#,
     )

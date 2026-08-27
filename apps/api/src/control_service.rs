@@ -995,7 +995,15 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
     match access.unwrap_or("read_write") {
         "read_only" => Ok((
             "read_only",
-            vec!["open", "query", "read", "compute", "verify", "status"],
+            vec![
+                "open",
+                "query",
+                "read",
+                "compute",
+                "verify",
+                "status",
+                "task.read",
+            ],
         )),
         "read_write" => Ok((
             "read_write",
@@ -1012,6 +1020,8 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "correct",
                 "delete",
                 "dream",
+                "task.read",
+                "task.write",
             ],
         )),
         "owner" => Ok((
@@ -1034,6 +1044,9 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "notification:manage",
                 "secret:read",
                 "secret:write",
+                "task.read",
+                "task.write",
+                "integration.manage",
                 "admin",
             ],
         )),
@@ -1478,13 +1491,16 @@ mod credential_tests {
     fn owner_template_has_every_capability() {
         let (access, capabilities) = credential_template(Some("owner")).expect("owner template");
         assert_eq!(access, "owner");
-        assert_eq!(capabilities.len(), 18);
+        assert_eq!(capabilities.len(), 21);
         assert!(capabilities.contains(&"dream"));
         assert!(capabilities.contains(&"credential:manage"));
         assert!(capabilities.contains(&"notification:publish"));
         assert!(capabilities.contains(&"notification:manage"));
         assert!(capabilities.contains(&"secret:read"));
         assert!(capabilities.contains(&"secret:write"));
+        assert!(capabilities.contains(&"task.read"));
+        assert!(capabilities.contains(&"task.write"));
+        assert!(capabilities.contains(&"integration.manage"));
         assert!(capabilities.contains(&"admin"));
     }
 

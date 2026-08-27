@@ -54,7 +54,8 @@ RLS-enabled-and-forced tables:
 | `task_surface_defaults` | Available contexts by user and surface |
 | `task_external_refs` | Idempotent system ids and recurrence occurrence keys |
 | `task_checkpoint_links` | Explicit/fallback project attribution |
-| `task_settings` | Windows, leads, timezone, quiet override, saved Todoist mode |
+| `task_settings` | Windows, leads, timezone, and quiet override |
+| `task_integration_config` | Owner-only saved Todoist mode and configuration generation |
 | `task_sync_state` | Content-free cursor, run/outcome/error, manual request |
 
 Every table has account-cascade behavior and policies based on

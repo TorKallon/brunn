@@ -41,6 +41,12 @@ const checkpointStructuredItem = jsonObject.refine(
 );
 const checkpointState = z.object({
   objective: checkpointText.min(1),
+  project: z.string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u)
+    .optional()
+    .describe("Optional registered Straylight project slug for durable checkpoint linkage."),
   current_state: z.union([
     checkpointText,
     z.array(checkpointText).max(MAX_CHECKPOINT_ITEMS),

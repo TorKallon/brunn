@@ -308,6 +308,9 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
         "notification:manage",
         "secret:read",
         "secret:write",
+        "task.read",
+        "task.write",
+        "integration.manage",
         "admin",
     ];
     let (user_id, _, scope_id, _): (Uuid, Uuid, Uuid, Uuid) =
@@ -321,7 +324,15 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
             .await?;
 
     if let Some(read_only_token) = &config.dev_read_only_token {
-        let read_capabilities = vec!["open", "query", "read", "compute", "verify", "status"];
+        let read_capabilities = vec![
+            "open",
+            "query",
+            "read",
+            "compute",
+            "verify",
+            "status",
+            "task.read",
+        ];
         let _: (Uuid, Uuid, Uuid, Uuid) =
             sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
                 .bind(&config.dev_user_ref)
