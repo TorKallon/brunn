@@ -1063,6 +1063,17 @@ USING (
   AND revoked_at IS NULL
 );
 
+-- Message delivery uses the owner's existing task quiet-hours settings without
+-- granting a message-only credential any task projection or mutation access.
+CREATE POLICY messaging_task_settings_select
+ON straylight.task_settings
+FOR SELECT TO app_rw
+USING (
+  user_id = straylight_auth.current_user_id()
+  AND straylight_auth.context_is_valid()
+  AND straylight_auth.has_capability('message.write')
+);
+
 CREATE POLICY messaging_notifications_insert
 ON straylight.notifications
 FOR INSERT TO app_rw
@@ -1149,6 +1160,26 @@ WITH CHECK (
   AND (
     (state = 'queued' AND last_error_code IS NULL)
     OR (state = 'suppressed' AND last_error_code = 'transport_disabled')
+  )
+);
+
+-- The shared publisher reports its bounded fan-out count inside the send
+-- transaction. Keep that read scoped to deliveries for the caller's own
+-- typed Conversation notification.
+CREATE POLICY messaging_notification_deliveries_select
+ON straylight.notification_deliveries
+FOR SELECT TO app_rw
+USING (
+  user_id = straylight_auth.current_user_id()
+  AND straylight_auth.context_is_valid()
+  AND straylight_auth.has_capability('message.write')
+  AND EXISTS (
+    SELECT 1
+    FROM straylight.notifications AS notification
+    WHERE notification.user_id = notification_deliveries.user_id
+      AND notification.id = notification_deliveries.notification_id
+      AND notification.producer_credential_id = straylight_auth.current_credential_id()
+      AND notification.target->>'type' = 'conversation'
   )
 );
 

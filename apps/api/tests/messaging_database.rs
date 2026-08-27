@@ -452,6 +452,22 @@ async fn assert_narrow_notification_side_effect(
     .expect("message.write fans its typed alert into the existing delivery outbox")
     .rows_affected();
     assert_eq!(deliveries, 1, "the live installation gets one outbox row");
+    let visible_delivery_count = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM straylight.notification_deliveries WHERE notification_id=$1",
+    )
+    .bind(notification_id)
+    .fetch_one(&mut *tx)
+    .await
+    .expect("message.write can read only its typed notification fan-out result");
+    assert_eq!(visible_delivery_count, 1);
+    let visible_settings = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM straylight.task_settings WHERE user_id=$1",
+    )
+    .bind(writer.user_id)
+    .fetch_one(&mut *tx)
+    .await
+    .expect("message.write can read the owner's quiet-hours settings");
+    assert_eq!(visible_settings, 1);
 
     let forged = sqlx::query(
         r#"
