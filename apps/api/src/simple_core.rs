@@ -8534,6 +8534,13 @@ fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
         .path
         .starts_with(crate::messaging_protocol::CONVERSATION_ENTRY_PREFIX)
     {
+        if request.content.len() > crate::messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES {
+            return Err(ApiError::public(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "conversation_entry_too_large",
+                "canonical conversation Markdown is limited to 12 MiB",
+            ));
+        }
         crate::messaging_protocol::validate_conversation_entry(
             &request.path,
             &request.metadata,
@@ -9944,6 +9951,19 @@ mod tests {
             validate_write_path(&conversation_restore).is_ok(),
             "a canonical portable conversation restore owns its reserved path"
         );
+
+        let oversized_conversation_restore = WriteRequest {
+            content: "x".repeat(crate::messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES + 1),
+            ..conversation_restore
+        };
+        assert!(matches!(
+            validate_write_path(&oversized_conversation_restore),
+            Err(ApiError::Public {
+                status: StatusCode::PAYLOAD_TOO_LARGE,
+                code: "conversation_entry_too_large",
+                ..
+            })
+        ));
     }
 
     #[test]
