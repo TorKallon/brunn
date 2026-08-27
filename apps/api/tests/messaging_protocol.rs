@@ -1,0 +1,173 @@
+#[path = "../src/messaging_protocol.rs"]
+mod messaging_protocol;
+
+use chrono::{TimeZone, Utc};
+use messaging_protocol::{
+    CanonicalMessage, ConversationHeader, ConversationKind, ConversationParticipant,
+    ConversationStatus, MessageKind, MessageRef, ProtocolError, SendMessageInput,
+    conversation_path, parse_conversation, render_conversation, request_hash, validate_send_input,
+};
+use uuid::Uuid;
+
+fn as_of() -> chrono::DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 8, 27, 8, 0, 0).single().unwrap()
+}
+
+fn input() -> SendMessageInput {
+    SendMessageInput {
+        client_key: "01J00000000000000000000000".to_owned(),
+        kind: MessageKind::Question,
+        body_md: "Can you verify this?".to_owned(),
+        refs: vec![MessageRef {
+            entry_ref: Some("entry:018f0000-0000-7000-8000-000000000001".to_owned()),
+            url: None,
+            label: Some("Evidence".to_owned()),
+        }],
+        in_reply_to: None,
+        correlation_id: Some("task:check".to_owned()),
+        expects_reply: true,
+        reply_by: Some(as_of() + chrono::Duration::minutes(10)),
+    }
+}
+
+fn header() -> ConversationHeader {
+    ConversationHeader {
+        schema: "conversation.v1".to_owned(),
+        conversation_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000010").unwrap(),
+        conversation_kind: ConversationKind::Direct,
+        subject: Some("Release check".to_owned()),
+        status: ConversationStatus::Open,
+        participants: vec![
+            ConversationParticipant {
+                agent_id: "echo".to_owned(),
+                role: "participant".to_owned(),
+            },
+            ConversationParticipant {
+                agent_id: "owner".to_owned(),
+                role: "participant".to_owned(),
+            },
+        ],
+        continues_from: None,
+    }
+}
+
+fn messages() -> Vec<CanonicalMessage> {
+    vec![
+        CanonicalMessage {
+            seq: 1,
+            message_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000011").unwrap(),
+            from_agent_id: Some("owner".to_owned()),
+            client_key: Some("01J00000000000000000000000".to_owned()),
+            kind: MessageKind::Question,
+            body_md: "Arbitrary Markdown\n\n<!-- /straylight-message-v1 -->\n`-->` 🛰️".to_owned(),
+            refs: input().refs,
+            in_reply_to: None,
+            correlation_id: Some("has-->marker".to_owned()),
+            expects_reply: true,
+            reply_by: Some(as_of() + chrono::Duration::minutes(10)),
+            created_at: as_of(),
+        },
+        CanonicalMessage {
+            seq: 2,
+            message_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000012").unwrap(),
+            from_agent_id: Some("echo".to_owned()),
+            client_key: Some("01J00000000000000000000001".to_owned()),
+            kind: MessageKind::Text,
+            body_md: "Verified.".to_owned(),
+            refs: vec![],
+            in_reply_to: Some(1),
+            correlation_id: None,
+            expects_reply: false,
+            reply_by: None,
+            created_at: as_of() + chrono::Duration::seconds(2),
+        },
+    ]
+}
+
+#[test]
+fn canonical_conversation_round_trips_arbitrary_markdown() {
+    assert_eq!(
+        conversation_path(header().conversation_id),
+        ".straylight/conversations/018f0000-0000-7000-8000-000000000010.md"
+    );
+    let rendered = render_conversation(&header(), &messages()).unwrap();
+    assert!(rendered.contains("\\u003e"));
+    let (parsed_header, parsed_messages) = parse_conversation(&rendered).unwrap();
+    assert_eq!(parsed_header, header());
+    assert_eq!(parsed_messages, messages());
+    assert_eq!(
+        render_conversation(&parsed_header, &parsed_messages).unwrap(),
+        rendered
+    );
+}
+
+#[test]
+fn canonical_parser_rejects_body_length_and_sequence_tampering() {
+    let rendered = render_conversation(&header(), &messages()).unwrap();
+    let mut wrong_length = rendered.clone();
+    let length_prefix = "\"body_bytes\":";
+    let length_start = wrong_length.find(length_prefix).unwrap() + length_prefix.len();
+    let length_end = length_start
+        + wrong_length[length_start..]
+            .find(|character: char| !character.is_ascii_digit())
+            .unwrap();
+    let body_bytes = wrong_length[length_start..length_end]
+        .parse::<usize>()
+        .unwrap();
+    wrong_length.replace_range(length_start..length_end, &(body_bytes - 1).to_string());
+    assert_eq!(
+        parse_conversation(&wrong_length),
+        Err(ProtocolError::NonCanonical)
+    );
+
+    let wrong_sequence = rendered.replacen("\"seq\":2", "\"seq\":3", 1);
+    assert!(matches!(
+        parse_conversation(&wrong_sequence),
+        Err(ProtocolError::Invalid(message)) if message.contains("gapless")
+    ));
+}
+
+#[test]
+fn client_input_is_strict_and_question_deadline_is_bounded() {
+    let valid = input();
+    validate_send_input(&valid, as_of()).unwrap();
+
+    let mut unknown = serde_json::to_value(&valid).unwrap();
+    unknown["from"] = serde_json::json!("spoofed");
+    assert!(serde_json::from_value::<SendMessageInput>(unknown).is_err());
+
+    let mut bad_key = input();
+    bad_key.client_key = "new-key-per-retry".to_owned();
+    assert!(validate_send_input(&bad_key, as_of()).is_err());
+
+    let mut late = input();
+    late.reply_by = Some(as_of() + chrono::Duration::hours(25));
+    assert!(validate_send_input(&late, as_of()).is_err());
+
+    let mut oversized = input();
+    oversized.body_md = "é".repeat(8_193);
+    assert!(validate_send_input(&oversized, as_of()).is_err());
+}
+
+#[test]
+fn request_hash_covers_target_and_payload_but_is_retry_stable() {
+    let conversation = header().conversation_id;
+    let original = input();
+    assert_eq!(
+        request_hash(conversation, &original),
+        request_hash(conversation, &original)
+    );
+
+    let other_conversation = Uuid::parse_str("018f0000-0000-7000-8000-000000000020").unwrap();
+    assert_ne!(
+        request_hash(conversation, &original),
+        request_hash(other_conversation, &original)
+    );
+
+    let mut changed = input();
+    changed.body_md.push('!');
+    assert_ne!(
+        request_hash(conversation, &original),
+        request_hash(conversation, &changed)
+    );
+}
