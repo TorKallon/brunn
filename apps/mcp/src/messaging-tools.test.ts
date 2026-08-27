@@ -60,8 +60,8 @@ const MESSAGING_TOOL_NAMES = [
 // These hashes bind both each pre-messaging tool name and its complete,
 // byte-exact description while keeping this regression snapshot readable.
 const EXISTING_DESCRIPTION_HASHES = {
-  local: "ac95053e1033ec5ff8189081b9fd1e404def574149b726e2359772c82e8bc7b3",
-  remote: "dffb5adeb14fcfef33d52e33dc773ad3c1a7aef1bd1b37c29a875abbdb37ebf2",
+  local: "dd223c9a9dbd09c631502d3ae06d4f9dd604fd1221728618587366f6339f469a",
+  remote: "dbf05c5b95eb731581c3bf2ec2eff50d09105fffd8231a0fef3d1a6f11669c8d",
 } as const;
 
 const MESSAGING_DESCRIPTIONS = {
