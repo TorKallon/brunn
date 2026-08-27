@@ -35,7 +35,7 @@ fn header() -> ConversationHeader {
         schema: "conversation.v1".to_owned(),
         conversation_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000010").unwrap(),
         conversation_kind: ConversationKind::Direct,
-        direct_key: Some("echo|owner".to_owned()),
+        direct_key: None,
         subject: Some("Release check".to_owned()),
         status: ConversationStatus::Open,
         participants: vec![
@@ -113,6 +113,31 @@ fn canonical_conversation_round_trips_arbitrary_markdown() {
         render_conversation(&parsed_header, &parsed_messages).unwrap(),
         rendered
     );
+}
+
+#[test]
+fn direct_identity_separates_default_and_subject_conversations() {
+    let subject_conversation = header();
+    render_conversation(&subject_conversation, &messages()).unwrap();
+
+    let mut default_conversation = header();
+    default_conversation.subject = None;
+    default_conversation.direct_key = Some("echo|owner".to_owned());
+    render_conversation(&default_conversation, &messages()).unwrap();
+
+    let mut missing_default_key = default_conversation.clone();
+    missing_default_key.direct_key = None;
+    assert!(matches!(
+        render_conversation(&missing_default_key, &messages()),
+        Err(ProtocolError::Invalid(message)) if message.contains("requires direct_key")
+    ));
+
+    let mut keyed_subject = subject_conversation;
+    keyed_subject.direct_key = Some("echo|owner".to_owned());
+    assert!(matches!(
+        render_conversation(&keyed_subject, &messages()),
+        Err(ProtocolError::Invalid(message)) if message.contains("cannot contain direct_key")
+    ));
 }
 
 #[test]

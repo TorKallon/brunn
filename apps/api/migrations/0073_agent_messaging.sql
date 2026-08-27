@@ -414,8 +414,11 @@ CREATE TABLE straylight.messaging_conversations (
     path = '.straylight/conversations/' || conversation_id::text || '.md'
   ),
   CHECK (
-    (conversation_kind = 'direct' AND direct_key IS NOT NULL
-      AND length(btrim(direct_key)) BETWEEN 1 AND 200)
+    (conversation_kind = 'direct' AND (
+      (subject IS NULL AND direct_key IS NOT NULL
+        AND length(btrim(direct_key)) BETWEEN 1 AND 200)
+      OR (subject IS NOT NULL AND direct_key IS NULL)
+    ))
     OR (conversation_kind = 'group' AND direct_key IS NULL)
   ),
   CHECK ((last_seq = 0) = (last_message_at IS NULL)),
@@ -426,7 +429,8 @@ CREATE TABLE straylight.messaging_conversations (
 
 CREATE UNIQUE INDEX messaging_conversations_active_direct_idx
   ON straylight.messaging_conversations (user_id, direct_key)
-  WHERE conversation_kind = 'direct' AND status IN ('open', 'paused_for_human');
+  WHERE conversation_kind = 'direct' AND direct_key IS NOT NULL
+    AND status IN ('open', 'paused_for_human');
 
 CREATE UNIQUE INDEX messaging_conversations_continuation_idx
   ON straylight.messaging_conversations (user_id, continues_from)

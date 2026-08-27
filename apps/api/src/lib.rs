@@ -28,6 +28,8 @@ pub mod eval_service;
 pub mod foreground_latency;
 pub mod ingest;
 pub mod logging;
+pub mod messaging_protocol;
+pub mod messaging_service;
 pub mod models;
 pub mod notification_service;
 pub mod object_store;

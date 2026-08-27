@@ -423,13 +423,25 @@ fn validate_header(header: &ConversationHeader) -> Result<(), ProtocolError> {
     validate_agent_id(&header.created_by_agent_id)?;
     match header.conversation_kind {
         ConversationKind::Direct => {
-            let direct_key = header.direct_key.as_deref().ok_or_else(|| {
-                ProtocolError::Invalid("direct conversation requires direct_key".to_owned())
-            })?;
-            if direct_key.trim().is_empty() || direct_key.chars().count() > 200 {
-                return Err(ProtocolError::Invalid(
-                    "direct_key must contain 1 to 200 characters".to_owned(),
-                ));
+            match (header.subject.is_none(), header.direct_key.as_deref()) {
+                (true, None) => {
+                    return Err(ProtocolError::Invalid(
+                        "subjectless direct conversation requires direct_key".to_owned(),
+                    ));
+                }
+                (true, Some(direct_key)) => {
+                    if direct_key.trim().is_empty() || direct_key.chars().count() > 200 {
+                        return Err(ProtocolError::Invalid(
+                            "direct_key must contain 1 to 200 characters".to_owned(),
+                        ));
+                    }
+                }
+                (false, Some(_)) => {
+                    return Err(ProtocolError::Invalid(
+                        "subject conversation cannot contain direct_key".to_owned(),
+                    ));
+                }
+                (false, None) => {}
             }
         }
         ConversationKind::Group if header.direct_key.is_some() => {
