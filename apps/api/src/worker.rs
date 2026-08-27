@@ -7,7 +7,7 @@ use crate::{
     account_worker,
     db::AppState,
     error::{ApiError, ApiResult},
-    notification_service, simple_worker, telemetry, upload_service,
+    notification_service, simple_worker, task_guard, telemetry, upload_service,
 };
 
 const ACCOUNT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
@@ -37,11 +37,18 @@ pub async fn run(state: AppState) -> ApiResult<()> {
     let worker_id = format!("worker:{}", std::process::id());
     let mut next_account_maintenance = Instant::now();
     let mut next_upload_maintenance = Instant::now();
+    let mut next_task_guard = Instant::now();
 
     loop {
         let cycle_started = Instant::now();
         let mut cycle_failed = false;
-        let mut did_work =
+        let now = Instant::now();
+        let mut did_work = false;
+        if next_task_guard <= now {
+            next_task_guard = now + task_guard::TASK_GUARD_SCHEDULER_INTERVAL;
+            did_work |= run_task_guard(&state, &mut cycle_failed).await;
+        }
+        did_work |=
             run_notification_delivery(&state, notification_provider.as_ref(), &mut cycle_failed)
                 .await;
         did_work |= run_simple_workspace_job(&state, &mut cycle_failed).await;
@@ -67,6 +74,18 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(BACKGROUND_WORK_PAUSE).await;
         } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+async fn run_task_guard(state: &AppState, cycle_failed: &mut bool) -> bool {
+    match task_guard::run_once(state, None).await {
+        Ok(report) => report.events.iter().any(|event| event.inserted),
+        Err(error) => {
+            metrics::counter!("worker.cycle.errors", "stage" => "task_guard").increment(1);
+            tracing::warn!(?error, "task guard scheduler cycle failed");
+            *cycle_failed = true;
+            false
         }
     }
 }

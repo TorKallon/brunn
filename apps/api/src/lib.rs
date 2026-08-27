@@ -50,6 +50,7 @@ pub mod simple_core;
 pub mod simple_dream;
 pub mod simple_worker;
 pub mod task_engine;
+pub mod task_guard;
 pub mod task_service;
 pub mod telemetry;
 pub mod upload_service;

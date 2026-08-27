@@ -7,7 +7,7 @@ use straylight::{
     object_store::{ObjectStore, backup as object_backup},
     operator_service,
     request_query_count::QueryCountLayer,
-    router, telemetry, worker,
+    router, task_guard, telemetry, worker,
 };
 use tokio::net::TcpListener;
 use tracing_subscriber::{
@@ -26,6 +26,10 @@ struct Cli {
 enum Command {
     Serve,
     Worker,
+    TaskGuardOnce {
+        #[arg(long)]
+        as_of: Option<String>,
+    },
     Migrate,
     Healthcheck,
     ObjectStoreCheck,
@@ -112,6 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let component = match &cli.command {
         Command::Serve => "api",
         Command::Worker => "worker",
+        Command::TaskGuardOnce { .. } => "task-guard",
         Command::Migrate => "migrate",
         Command::Healthcheck => "healthcheck",
         Command::ObjectStoreCheck => "operator",
@@ -178,6 +183,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 telemetry::spawn_runtime_metrics(state.clone());
             }
             worker::run(state).await?;
+        }
+        Command::TaskGuardOnce { as_of } => {
+            let as_of = as_of
+                .as_deref()
+                .map(chrono::DateTime::parse_from_rfc3339)
+                .transpose()
+                .map_err(|_| "--as-of must be an RFC3339 timestamp")?
+                .map(|value| value.with_timezone(&chrono::Utc));
+            let state = AppState::connect(config).await?;
+            let report = task_guard::run_once(&state, as_of).await?;
+            println!("{}", serde_json::to_string(&report)?);
         }
         Command::ObjectStoreCheck => {
             let result = ObjectStore::new(&config).await?.qualify().await?;

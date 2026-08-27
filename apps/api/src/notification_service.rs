@@ -83,6 +83,9 @@ pub enum NotificationTarget {
     Entry {
         entry_ref: String,
     },
+    Task {
+        task_ref: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -722,6 +725,13 @@ fn require_manage(auth: &AuthContext) -> ApiResult<()> {
 
 fn validate_publish(request: &PublishRequest) -> ApiResult<()> {
     validate_text(&request.event_key, 200, "event_key")?;
+    if request.event_key.starts_with("task-deadline:")
+        || request.event_key.starts_with("task-cost:")
+    {
+        return Err(ApiError::invalid(
+            "task guard event-key namespaces are reserved for the internal scheduler",
+        ));
+    }
     validate_text(&request.correlation_id, 200, "correlation_id")?;
     if !matches!(
         request.kind.as_str(),
@@ -752,6 +762,9 @@ fn validate_publish(request: &PublishRequest) -> ApiResult<()> {
         }
         NotificationTarget::Entry { entry_ref } => {
             validate_text(entry_ref, 500, "target.entry_ref")?;
+        }
+        NotificationTarget::Task { task_ref } => {
+            parse_canonical_task_ref(task_ref)?;
         }
         NotificationTarget::Notification | NotificationTarget::Today => {}
     }
@@ -812,7 +825,9 @@ fn normalize_publish(mut request: PublishRequest) -> PublishRequest {
         NotificationTarget::Entry { entry_ref } => {
             *entry_ref = entry_ref.trim().to_owned();
         }
-        NotificationTarget::Notification | NotificationTarget::Today => {}
+        NotificationTarget::Task { .. }
+        | NotificationTarget::Notification
+        | NotificationTarget::Today => {}
     }
     request
 }
@@ -1381,6 +1396,7 @@ struct ClaimedDelivery {
     budget_attempt_count: i32,
     max_attempts: i32,
     kind: String,
+    target: Value,
     environment: String,
     app_id: String,
     token_ciphertext: Vec<u8>,
@@ -1587,7 +1603,8 @@ async fn claim_delivery(pool: &PgPool) -> ApiResult<Option<ClaimedDelivery>> {
                   delivery.installation_id,
                   delivery.attempt_count+delivery.provider_block_count AS attempt_number,
                   delivery.attempt_count AS budget_attempt_count,
-                  delivery.max_attempts,notification.kind,notification.expires_at,
+                  delivery.max_attempts,notification.kind,notification.target,
+                  notification.expires_at,
                   installation.client_installation_id,
                   installation.environment,installation.app_id,
                   installation.token_ciphertext,installation.token_nonce
@@ -1607,6 +1624,7 @@ async fn claim_delivery(pool: &PgPool) -> ApiResult<Option<ClaimedDelivery>> {
             budget_attempt_count: row.try_get("budget_attempt_count")?,
             max_attempts: row.try_get("max_attempts")?,
             kind: row.try_get("kind")?,
+            target: row.try_get("target")?,
             environment: row.try_get("environment")?,
             app_id: row.try_get("app_id")?,
             token_ciphertext: row.try_get("token_ciphertext")?,
@@ -1630,12 +1648,23 @@ fn push_payload(delivery: &ClaimedDelivery) -> Value {
         "schema": "straylight-push@v1",
         "notification_ref": notification_ref,
         "delivery_ref": delivery_ref,
-        "straylight_route": format!(
+        "straylight_route": push_route(delivery)
+    })
+}
+
+fn push_route(delivery: &ClaimedDelivery) -> String {
+    match serde_json::from_value::<NotificationTarget>(delivery.target.clone()) {
+        Ok(NotificationTarget::Task { task_ref })
+            if parse_canonical_task_ref(&task_ref).is_ok() =>
+        {
+            format!("straylight://task/{task_ref}")
+        }
+        _ => format!(
             "straylight://notification/{}?delivery={}",
             delivery.notification_id.simple(),
             delivery.id.simple()
-        )
-    })
+        ),
+    }
 }
 
 fn generic_push_body(kind: &str) -> &'static str {
@@ -1645,6 +1674,17 @@ fn generic_push_body(kind: &str) -> &'static str {
         "operational" => "Straylight has an operational alert.",
         _ => "A new Straylight alert is available.",
     }
+}
+
+fn parse_canonical_task_ref(value: &str) -> ApiResult<Uuid> {
+    let task_id = Uuid::parse_str(value)
+        .map_err(|_| ApiError::invalid("target.task_ref must be a canonical UUIDv7"))?;
+    if value != task_id.to_string() || task_id.get_version_num() != 7 {
+        return Err(ApiError::invalid(
+            "target.task_ref must be a canonical lowercase hyphenated UUIDv7",
+        ));
+    }
+    Ok(task_id)
 }
 
 async fn record_acceptance(
@@ -1844,6 +1884,18 @@ mod tests {
     }
 
     #[test]
+    fn public_publish_cannot_preempt_task_guard_event_keys() {
+        for event_key in [
+            format!("task-deadline:{}:7d", Uuid::now_v7()),
+            format!("task-cost:{}:set", Uuid::now_v7()),
+        ] {
+            let mut request = fixture();
+            request.event_key = event_key;
+            assert!(validate_publish(&request).is_err());
+        }
+    }
+
+    #[test]
     fn notification_expiry_defaults_to_one_day_and_is_bounded() {
         let occurred_at = DateTime::parse_from_rfc3339("2026-08-03T12:00:00Z")
             .unwrap()
@@ -1919,6 +1971,7 @@ mod tests {
             budget_attempt_count: 1,
             max_attempts: 8,
             kind: "news_alert".to_owned(),
+            target: json!({"type":"notification"}),
             environment: "development".to_owned(),
             app_id: "com.example.Straylight".to_owned(),
             token_ciphertext: Vec::new(),
@@ -1952,6 +2005,54 @@ mod tests {
                 "straylight_route",
             ])
         );
+    }
+
+    #[test]
+    fn task_push_uses_the_exact_typed_uuidv7_route() {
+        let task_id = Uuid::now_v7();
+        let delivery = ClaimedDelivery {
+            id: Uuid::now_v7(),
+            user_id: Uuid::now_v7(),
+            notification_id: Uuid::now_v7(),
+            installation_id: Uuid::now_v7(),
+            client_installation_id: Uuid::now_v7(),
+            attempt_number: 1,
+            budget_attempt_count: 1,
+            max_attempts: 8,
+            kind: "task_guard".to_owned(),
+            target: json!({"type":"task","task_ref":task_id.to_string()}),
+            environment: "development".to_owned(),
+            app_id: "com.example.Straylight".to_owned(),
+            token_ciphertext: Vec::new(),
+            token_nonce: Vec::new(),
+            expires_at: None,
+        };
+        let payload = push_payload(&delivery);
+        assert_eq!(
+            payload["straylight_route"],
+            format!("straylight://task/{task_id}")
+        );
+        assert_eq!(
+            payload["aps"]["alert"]["body"],
+            "A new Straylight alert is available."
+        );
+        let mut request = fixture();
+        request.target = NotificationTarget::Task {
+            task_ref: Uuid::new_v4().to_string(),
+        };
+        assert!(validate_publish(&request).is_err());
+        request.target = NotificationTarget::Task {
+            task_ref: format!("task:{task_id}"),
+        };
+        assert!(validate_publish(&request).is_err());
+        request.target = NotificationTarget::Task {
+            task_ref: task_id.to_string().to_uppercase(),
+        };
+        assert!(validate_publish(&request).is_err());
+        request.target = NotificationTarget::Task {
+            task_ref: task_id.to_string(),
+        };
+        assert!(validate_publish(&request).is_ok());
     }
 
     #[test]
