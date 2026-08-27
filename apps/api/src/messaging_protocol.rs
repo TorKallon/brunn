@@ -100,10 +100,16 @@ pub struct ConversationHeader {
     pub schema: String,
     pub conversation_id: Uuid,
     pub conversation_kind: ConversationKind,
+    pub direct_key: Option<String>,
     pub subject: Option<String>,
     pub status: ConversationStatus,
     pub participants: Vec<ConversationParticipant>,
+    pub created_by_agent_id: String,
     pub continues_from: Option<Uuid>,
+    pub agent_streak: i32,
+    pub needs_human: bool,
+    pub created_at: DateTime<Utc>,
+    pub closed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -113,6 +119,8 @@ pub struct CanonicalMessage {
     pub message_id: Uuid,
     pub from_agent_id: Option<String>,
     pub client_key: Option<String>,
+    pub system_key: Option<String>,
+    pub request_hash: Option<String>,
     pub kind: MessageKind,
     pub body_md: String,
     #[serde(default)]
@@ -121,6 +129,8 @@ pub struct CanonicalMessage {
     pub correlation_id: Option<String>,
     pub expects_reply: bool,
     pub reply_by: Option<DateTime<Utc>>,
+    pub reply_by_handled_at: Option<DateTime<Utc>>,
+    pub sync_cursor: i64,
     pub created_at: DateTime<Utc>,
 }
 
@@ -131,6 +141,8 @@ struct MessageEnvelope {
     message_id: Uuid,
     from_agent_id: Option<String>,
     client_key: Option<String>,
+    system_key: Option<String>,
+    request_hash: Option<String>,
     kind: MessageKind,
     #[serde(default)]
     refs: Vec<MessageRef>,
@@ -138,6 +150,8 @@ struct MessageEnvelope {
     correlation_id: Option<String>,
     expects_reply: bool,
     reply_by: Option<DateTime<Utc>>,
+    reply_by_handled_at: Option<DateTime<Utc>>,
+    sync_cursor: i64,
     created_at: DateTime<Utc>,
     body_bytes: usize,
 }
@@ -149,12 +163,16 @@ impl From<&CanonicalMessage> for MessageEnvelope {
             message_id: message.message_id,
             from_agent_id: message.from_agent_id.clone(),
             client_key: message.client_key.clone(),
+            system_key: message.system_key.clone(),
+            request_hash: message.request_hash.clone(),
             kind: message.kind,
             refs: message.refs.clone(),
             in_reply_to: message.in_reply_to,
             correlation_id: message.correlation_id.clone(),
             expects_reply: message.expects_reply,
             reply_by: message.reply_by,
+            reply_by_handled_at: message.reply_by_handled_at,
+            sync_cursor: message.sync_cursor,
             created_at: message.created_at,
             body_bytes: message.body_md.len(),
         }
@@ -344,6 +362,8 @@ pub fn parse_conversation(
             message_id: envelope.message_id,
             from_agent_id: envelope.from_agent_id,
             client_key: envelope.client_key,
+            system_key: envelope.system_key,
+            request_hash: envelope.request_hash,
             kind: envelope.kind,
             body_md,
             refs: envelope.refs,
@@ -351,6 +371,8 @@ pub fn parse_conversation(
             correlation_id: envelope.correlation_id,
             expects_reply: envelope.expects_reply,
             reply_by: envelope.reply_by,
+            reply_by_handled_at: envelope.reply_by_handled_at,
+            sync_cursor: envelope.sync_cursor,
             created_at: envelope.created_at,
         });
         offset = body_end + MESSAGE_END.len();
@@ -398,6 +420,40 @@ fn validate_header(header: &ConversationHeader) -> Result<(), ProtocolError> {
         ));
     }
     validate_subject(header.subject.as_deref())?;
+    validate_agent_id(&header.created_by_agent_id)?;
+    match header.conversation_kind {
+        ConversationKind::Direct => {
+            let direct_key = header.direct_key.as_deref().ok_or_else(|| {
+                ProtocolError::Invalid("direct conversation requires direct_key".to_owned())
+            })?;
+            if direct_key.trim().is_empty() || direct_key.chars().count() > 200 {
+                return Err(ProtocolError::Invalid(
+                    "direct_key must contain 1 to 200 characters".to_owned(),
+                ));
+            }
+        }
+        ConversationKind::Group if header.direct_key.is_some() => {
+            return Err(ProtocolError::Invalid(
+                "group conversation cannot contain direct_key".to_owned(),
+            ));
+        }
+        ConversationKind::Group => {}
+    }
+    if !(0..=20).contains(&header.agent_streak) {
+        return Err(ProtocolError::Invalid(
+            "agent_streak must be between 0 and 20".to_owned(),
+        ));
+    }
+    if header.status == ConversationStatus::PausedForHuman && !header.needs_human {
+        return Err(ProtocolError::Invalid(
+            "paused conversation must need human attention".to_owned(),
+        ));
+    }
+    if (header.status == ConversationStatus::Closed) != header.closed_at.is_some() {
+        return Err(ProtocolError::Invalid(
+            "closed_at must be present exactly when a conversation is closed".to_owned(),
+        ));
+    }
     if header.participants.len() < 2 {
         return Err(ProtocolError::Invalid(
             "conversation must have at least two participants".to_owned(),
@@ -441,6 +497,13 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
         }
         validate_body(&message.body_md)?;
         validate_refs(&message.refs)?;
+        if message.sync_cursor <= 0
+            || index > 0 && message.sync_cursor <= messages[index - 1].sync_cursor
+        {
+            return Err(ProtocolError::Invalid(
+                "message sync cursors must be positive and increasing".to_owned(),
+            ));
+        }
         if message
             .in_reply_to
             .is_some_and(|seq| seq <= 0 || seq >= message.seq)
@@ -451,13 +514,24 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
         }
         match message.kind {
             MessageKind::System => {
-                if message.from_agent_id.is_some() || message.client_key.is_some() {
+                if message.from_agent_id.is_some()
+                    || message.client_key.is_some()
+                    || message.request_hash.is_some()
+                    || message.system_key.as_deref().is_none_or(|key| {
+                        key.trim().is_empty() || key.chars().count() > 200 || key != key.trim()
+                    })
+                {
                     return Err(ProtocolError::Invalid(
-                        "system messages cannot claim a credential-derived sender".to_owned(),
+                        "system message identity and dedupe fields are invalid".to_owned(),
                     ));
                 }
             }
             MessageKind::Text | MessageKind::Question => {
+                if message.system_key.is_some() {
+                    return Err(ProtocolError::Invalid(
+                        "non-system message cannot contain system_key".to_owned(),
+                    ));
+                }
                 let sender = message.from_agent_id.as_deref().ok_or_else(|| {
                     ProtocolError::Invalid("non-system message requires a sender".to_owned())
                 })?;
@@ -470,6 +544,18 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
                         "stored client_key must be a Crockford ULID".to_owned(),
                     ));
                 }
+                let request_hash = message.request_hash.as_deref().ok_or_else(|| {
+                    ProtocolError::Invalid("non-system message requires request_hash".to_owned())
+                })?;
+                if request_hash.len() != 64
+                    || !request_hash
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                {
+                    return Err(ProtocolError::Invalid(
+                        "stored request_hash must be lowercase SHA-256 hex".to_owned(),
+                    ));
+                }
             }
         }
         if message.expects_reply && message.kind != MessageKind::Question {
@@ -480,6 +566,11 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
         if message.reply_by.is_some() && !message.expects_reply {
             return Err(ProtocolError::Invalid(
                 "reply_by requires expects_reply".to_owned(),
+            ));
+        }
+        if message.reply_by_handled_at.is_some() && message.reply_by.is_none() {
+            return Err(ProtocolError::Invalid(
+                "reply_by_handled_at requires reply_by".to_owned(),
             ));
         }
     }

@@ -35,6 +35,7 @@ fn header() -> ConversationHeader {
         schema: "conversation.v1".to_owned(),
         conversation_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000010").unwrap(),
         conversation_kind: ConversationKind::Direct,
+        direct_key: Some("echo|owner".to_owned()),
         subject: Some("Release check".to_owned()),
         status: ConversationStatus::Open,
         participants: vec![
@@ -47,7 +48,12 @@ fn header() -> ConversationHeader {
                 role: "participant".to_owned(),
             },
         ],
+        created_by_agent_id: "owner".to_owned(),
         continues_from: None,
+        agent_streak: 0,
+        needs_human: false,
+        created_at: as_of(),
+        closed_at: None,
     }
 }
 
@@ -58,6 +64,8 @@ fn messages() -> Vec<CanonicalMessage> {
             message_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000011").unwrap(),
             from_agent_id: Some("owner".to_owned()),
             client_key: Some("01J00000000000000000000000".to_owned()),
+            system_key: None,
+            request_hash: Some("a".repeat(64)),
             kind: MessageKind::Question,
             body_md: "Arbitrary Markdown\n\n<!-- /straylight-message-v1 -->\n`-->` 🛰️".to_owned(),
             refs: input().refs,
@@ -65,6 +73,8 @@ fn messages() -> Vec<CanonicalMessage> {
             correlation_id: Some("has-->marker".to_owned()),
             expects_reply: true,
             reply_by: Some(as_of() + chrono::Duration::minutes(10)),
+            reply_by_handled_at: None,
+            sync_cursor: 41,
             created_at: as_of(),
         },
         CanonicalMessage {
@@ -72,6 +82,8 @@ fn messages() -> Vec<CanonicalMessage> {
             message_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000012").unwrap(),
             from_agent_id: Some("echo".to_owned()),
             client_key: Some("01J00000000000000000000001".to_owned()),
+            system_key: None,
+            request_hash: Some("b".repeat(64)),
             kind: MessageKind::Text,
             body_md: "Verified.".to_owned(),
             refs: vec![],
@@ -79,6 +91,8 @@ fn messages() -> Vec<CanonicalMessage> {
             correlation_id: None,
             expects_reply: false,
             reply_by: None,
+            reply_by_handled_at: None,
+            sync_cursor: 42,
             created_at: as_of() + chrono::Duration::seconds(2),
         },
     ]
