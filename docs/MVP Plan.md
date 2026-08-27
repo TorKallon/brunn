@@ -160,6 +160,7 @@ Infrastructure — no reasoning-quality risk (code, no experiment gate):
 | [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — safe subset not started | Deferred lexical consolidation rejected by [E05](mvp/E05-lexical-consolidation-guard.md) and closed |
 | [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Railway/import/web/client/backfill/worker/publication gates passed; restore exception recorded | Railway is the only production target |
 | [D15](mvp/D15-agent-first-tasks.md) | Agent-first tasks | Accepted for implementation — measured storage choice complete; build in progress | Deterministic bounded surfaces; gates 1–12 required before release |
+| [D16](mvp/D16-agent-messaging.md) | Agent messaging | Accepted for implementation — measured storage choice complete; build in progress | Durable gated mailbox; gates 1–12 required before release |
 
 Features — flag + experiment gated:
 
@@ -271,6 +272,7 @@ then superseded the staged rollout with the direct-cutover Track 1 on
 
 ## Change log
 
+- 2026-08-27: Added D16 for the owner-approved agent-messaging feature.
 - 2026-08-27: Added D15 for the owner-approved agent-first tasks feature.
   Selected canonical versioned task entries plus a transactional indexed
   projection after a 2,000-task spike measured 0.295 ms p95 projection reads
