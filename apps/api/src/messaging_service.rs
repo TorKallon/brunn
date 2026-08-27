@@ -276,6 +276,7 @@ struct Principal {
 #[derive(Clone, Debug)]
 struct ConversationRow {
     conversation_id: Uuid,
+    entry_id: Uuid,
     conversation_kind: String,
     direct_key: Option<String>,
     subject: Option<String>,
@@ -1515,6 +1516,7 @@ async fn create_conversation_in_tx(
     participants.sort_by(|left, right| left.agent_id.cmp(&right.agent_id));
 
     let conversation_id = Uuid::now_v7();
+    let entry_id = new_local_entry_id(conversation_id);
     let cursor = allocate_cursor_in_tx(tx, auth.user_id.0).await?;
     sqlx::query(
         r#"
@@ -1524,12 +1526,13 @@ async fn create_conversation_in_tx(
           agent_streak,needs_human,continues_from,latest_sync_cursor,
           closed_at,created_at,updated_at
         ) VALUES (
-          $1,$2,$2,$3,$4,$5,$6,'open',$7,0,NULL,0,false,NULL,$8,NULL,$9,$9
+          $1,$2,$3,$4,$5,$6,$7,'open',$8,0,NULL,0,false,NULL,$9,NULL,$10,$10
         )
         "#,
     )
     .bind(auth.user_id.0)
     .bind(conversation_id)
+    .bind(entry_id)
     .bind(messaging_protocol::conversation_path(conversation_id))
     .bind(conversation_kind)
     .bind(direct_key)
@@ -1566,6 +1569,15 @@ async fn create_conversation_in_tx(
 
 fn direct_key(participants: &[String]) -> String {
     participants.join("|")
+}
+
+fn new_local_entry_id(conversation_id: Uuid) -> Uuid {
+    loop {
+        let entry_id = Uuid::now_v7();
+        if entry_id != conversation_id {
+            return entry_id;
+        }
+    }
 }
 
 async fn active_owner_principal_in_tx(
@@ -2373,7 +2385,7 @@ async fn load_conversation_for_update(
 ) -> ApiResult<ConversationRow> {
     let row = sqlx::query(
         r#"
-        SELECT conversation_id,conversation_kind,direct_key,subject,status,
+        SELECT conversation_id,entry_id,conversation_kind,direct_key,subject,status,
                created_by_agent_id,last_seq,agent_streak,
                needs_human,continues_from,latest_sync_cursor,closed_at,created_at
         FROM straylight.messaging_conversations
@@ -2388,6 +2400,7 @@ async fn load_conversation_for_update(
     .ok_or_else(|| messaging_not_found(&conversation_id.to_string()))?;
     Ok(ConversationRow {
         conversation_id: row.try_get("conversation_id")?,
+        entry_id: row.try_get("entry_id")?,
         conversation_kind: row.try_get("conversation_kind")?,
         direct_key: row.try_get("direct_key")?,
         subject: row.try_get("subject")?,
@@ -2680,6 +2693,7 @@ async fn create_continuation_in_tx(
     as_of: DateTime<Utc>,
 ) -> ApiResult<Uuid> {
     let continuation_id = Uuid::now_v7();
+    let entry_id = new_local_entry_id(continuation_id);
     let continuation_cursor = allocate_cursor_in_tx(tx, auth.user_id.0).await?;
     let pause_cursor = if include_pause_system {
         Some(allocate_cursor_in_tx(tx, auth.user_id.0).await?)
@@ -2696,12 +2710,13 @@ async fn create_continuation_in_tx(
           agent_streak,needs_human,continues_from,latest_sync_cursor,
           closed_at,created_at,updated_at
         ) VALUES (
-          $1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULL,$10,$10
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NULL,$11,$11
         )
         "#,
     )
     .bind(auth.user_id.0)
     .bind(continuation_id)
+    .bind(entry_id)
     .bind(messaging_protocol::conversation_path(continuation_id))
     .bind(&previous.conversation_kind)
     .bind(&previous.direct_key)
@@ -2833,12 +2848,15 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
     let producer_credential_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT version.created_by_credential_id
-        FROM straylight.entries AS entry
+        FROM straylight.messaging_conversations AS conversation
+        JOIN straylight.entries AS entry
+          ON entry.user_id=conversation.user_id
+         AND entry.id=conversation.entry_id
         JOIN straylight.entry_versions AS version
           ON version.user_id=entry.user_id
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
-        WHERE entry.user_id=$1 AND entry.id=$2
+        WHERE conversation.user_id=$1 AND conversation.conversation_id=$2
         "#,
     )
     .bind(user_id)
@@ -3014,12 +3032,6 @@ pub(crate) async fn sync_managed_entry_in_tx(
         messaging_protocol::validate_conversation_entry(path, metadata, &content)
             .map_err(protocol_error)?
             .ok_or_else(|| ApiError::invalid("canonical conversation metadata is required"))?;
-    if header.conversation_id != entry_id {
-        return Err(ApiError::invalid(
-            "conversation entry id must equal its canonical conversation id",
-        ));
-    }
-
     let mut required_principals = BTreeSet::new();
     required_principals.insert(header.created_by_agent_id.clone());
     required_principals.extend(
@@ -3315,7 +3327,7 @@ async fn load_conversation_snapshot_in_tx(
 ) -> ApiResult<ConversationRow> {
     let row = sqlx::query(
         r#"
-        SELECT conversation_id,conversation_kind,direct_key,subject,status,
+        SELECT conversation_id,entry_id,conversation_kind,direct_key,subject,status,
                created_by_agent_id,last_seq,agent_streak,
                needs_human,continues_from,latest_sync_cursor,closed_at,created_at
         FROM straylight.messaging_conversations
@@ -3329,6 +3341,7 @@ async fn load_conversation_snapshot_in_tx(
     .ok_or_else(|| messaging_not_found(&conversation_id.to_string()))?;
     Ok(ConversationRow {
         conversation_id: row.try_get("conversation_id")?,
+        entry_id: row.try_get("entry_id")?,
         conversation_kind: row.try_get("conversation_kind")?,
         direct_key: row.try_get("direct_key")?,
         subject: row.try_get("subject")?,
@@ -3477,7 +3490,7 @@ async fn upsert_canonical_entry_in_tx(
         let entry_id: Uuid = row.try_get("id")?;
         let kind: String = row.try_get("kind")?;
         let deleted_at: Option<DateTime<Utc>> = row.try_get("deleted_at")?;
-        if entry_id != conversation.conversation_id || kind != "markdown" || deleted_at.is_some() {
+        if entry_id != conversation.entry_id || kind != "markdown" || deleted_at.is_some() {
             return Err(ApiError::conflict(
                 "conversation_entry_conflict",
                 "the canonical conversation path is occupied by a different entry",
@@ -3493,7 +3506,7 @@ async fn upsert_canonical_entry_in_tx(
             ) VALUES ($1,$2,$3,$4,'markdown','text/markdown',0)
             "#,
         )
-        .bind(conversation.conversation_id)
+        .bind(conversation.entry_id)
         .bind(auth.user_id.0)
         .bind(&path)
         .bind(&title)
@@ -3513,7 +3526,7 @@ async fn upsert_canonical_entry_in_tx(
     )
     .bind(version_id)
     .bind(auth.user_id.0)
-    .bind(conversation.conversation_id)
+    .bind(conversation.entry_id)
     .bind(version)
     .bind(&content_sha256)
     .bind(&content)
@@ -3531,7 +3544,7 @@ async fn upsert_canonical_entry_in_tx(
         "#,
     )
     .bind(auth.user_id.0)
-    .bind(conversation.conversation_id)
+    .bind(conversation.entry_id)
     .bind(title)
     .bind(version)
     .execute(&mut **tx)
@@ -3545,7 +3558,7 @@ async fn upsert_canonical_entry_in_tx(
         "#,
     )
     .bind(auth.user_id.0)
-    .bind(conversation.conversation_id)
+    .bind(conversation.entry_id)
     .bind(version)
     .bind(operation)
     .bind(path)
@@ -3700,6 +3713,12 @@ mod tests {
         participants.sort();
         assert_eq!(direct_key(&participants), "nyx.echo|owner");
         assert!(!participants.iter().any(|value| value.contains('|')));
+    }
+
+    #[test]
+    fn conversation_and_workspace_entry_ids_are_distinct() {
+        let conversation_id = Uuid::now_v7();
+        assert_ne!(new_local_entry_id(conversation_id), conversation_id);
     }
 
     #[test]

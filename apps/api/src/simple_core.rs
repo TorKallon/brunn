@@ -6017,19 +6017,15 @@ pub(crate) async fn prepare_markdown(
             "Markdown writes are limited to 4 MiB; use a binary entry and companion Markdown",
         ));
     }
-    let conversation_entry_id = if conversation_candidate {
+    if conversation_candidate {
         crate::messaging_protocol::validate_conversation_entry(
             &request.path,
             &metadata,
             &request.content,
         )
         .map_err(|error| ApiError::invalid(error.to_string()))?
-        .map(|(header, _)| header.conversation_id)
-        .ok_or_else(|| ApiError::invalid("canonical conversation metadata is required"))?
-        .into()
-    } else {
-        None
-    };
+        .ok_or_else(|| ApiError::invalid("canonical conversation metadata is required"))?;
+    }
     let normalized = normalize_document(&request.path, &request.content);
     let frontmatter = if state.config.supersession_demotion || state.config.intention_ledger {
         parse_frontmatter(&request.content)
@@ -6037,7 +6033,7 @@ pub(crate) async fn prepare_markdown(
         DerivedFrontmatter::default()
     };
     let task_entry = crate::task_service::validate_task_entry(&request.path, &metadata)?;
-    let chunks = if task_entry || conversation_entry_id.is_some() {
+    let chunks = if task_entry || conversation_candidate {
         Vec::new()
     } else {
         normalized.chunks
@@ -6050,7 +6046,7 @@ pub(crate) async fn prepare_markdown(
         state.config.evaluation_api_enabled,
     )?;
     Ok(PreparedMarkdown {
-        entry_id_hint: conversation_entry_id,
+        entry_id_hint: None,
         path: request.path,
         title: normalized.title,
         content_sha256: normalized
@@ -6065,7 +6061,7 @@ pub(crate) async fn prepare_markdown(
         expected_version: request.expected_version,
         tier_a_history_stage,
         frontmatter,
-        force_new_version: task_entry || conversation_entry_id.is_some(),
+        force_new_version: task_entry || conversation_candidate,
     })
 }
 
@@ -9272,10 +9268,11 @@ mod tests {
 
         let header = test_conversation_header();
         let conversation_id = header.conversation_id;
+        let entry_id = Uuid::parse_str("550e8400-e29b-71d4-a716-446655440001").unwrap();
         let created_at = header.created_at;
         let content = render_conversation(&header, &[]).unwrap();
         let mut entry = EntryRow {
-            id: conversation_id,
+            id: entry_id,
             path: conversation_path(conversation_id),
             title: "Conversation".to_owned(),
             kind: "markdown".to_owned(),
@@ -9291,7 +9288,7 @@ mod tests {
             workspace_generation: Some(1),
         };
         let request = ReadItem {
-            reference: Some(format!("entry:{conversation_id}")),
+            reference: Some(format!("entry:{entry_id}")),
             path: None,
             link_target: None,
             view: Some("full".to_owned()),
@@ -9301,6 +9298,7 @@ mod tests {
             version: None,
         };
 
+        assert_ne!(entry.id, conversation_id);
         assert_eq!(
             exact_read_char_limit(1, &request, &entry),
             crate::messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES

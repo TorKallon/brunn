@@ -539,7 +539,11 @@ def assert_failed_candidate_absent(
     conversation_ids: Iterable[uuid.UUID],
     ordinary_path: str,
 ) -> None:
+    conversation_ids = tuple(conversation_ids)
     ids = ",".join(f"'{value}'::uuid" for value in conversation_ids)
+    paths = ",".join(
+        f"'{CONVERSATION_PREFIX}{value}.md'" for value in conversation_ids
+    )
     result = docker_psql(
         args,
         f"""
@@ -547,7 +551,7 @@ def assert_failed_candidate_absent(
           'entries',(
             SELECT count(*) FROM straylight.entries
             WHERE user_id='{user_id}'::uuid
-              AND (path='{ordinary_path}' OR id IN ({ids}))
+              AND (path='{ordinary_path}' OR path IN ({paths}))
           ),
           'conversations',(
             SELECT count(*) FROM straylight.messaging_conversations
@@ -568,7 +572,7 @@ def projection_snapshot(
         "conversations": f"""
           SELECT coalesce(jsonb_agg(to_jsonb(item) ORDER BY item.conversation_id),'[]')::text
           FROM (
-            SELECT conversation_id,entry_id,path,conversation_kind,direct_key,subject,status,
+            SELECT conversation_id,path,conversation_kind,direct_key,subject,status,
                    created_by_agent_id,last_seq,last_message_at,agent_streak,needs_human,
                    continues_from,latest_sync_cursor,closed_at,created_at
             FROM straylight.messaging_conversations
@@ -842,13 +846,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             fixture["child_metadata"],
         )
     )
+    parent_entry_id = parse_ref(parent_receipt.get("entry_ref"), "entry")
+    child_entry_id = parse_ref(child_receipt.get("entry_ref"), "entry")
     require(
-        parent_receipt.get("entry_ref") == f"entry:{PARENT_ID}",
-        "managed parent did not preserve path-derived entry identity",
-    )
-    require(
-        child_receipt.get("entry_ref") == f"entry:{CHILD_ID}",
-        "managed child did not preserve path-derived entry identity",
+        parent_entry_id != child_entry_id,
+        "managed conversations did not receive distinct workspace entry identities",
     )
     expected_paths = {
         f"{CONVERSATION_PREFIX}{PARENT_ID}.md",
@@ -865,6 +867,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         and len(source_projection["participants"]) == 4
         and len(source_projection["messages"]) == MESSAGE_COUNT + 1,
         "source messaging projection has the wrong cardinality",
+    )
+    require(
+        {
+            (item.get("conversation_id"), item.get("path"))
+            for item in source_projection["conversations"]
+        }
+        == {
+            (str(PARENT_ID), f"{CONVERSATION_PREFIX}{PARENT_ID}.md"),
+            (str(CHILD_ID), f"{CONVERSATION_PREFIX}{CHILD_ID}.md"),
+        },
+        "source projection did not preserve canonical conversation identity and paths",
     )
 
     target_generation = workspace_generation(target.client)
@@ -947,7 +960,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     target_projection = projection_snapshot(args, target.user_id)
     require(
         target_projection == source_projection,
-        "rebuilt target conversation/message projection differs from source",
+        "rebuilt target portable conversation/message projection differs from source",
     )
     require(
         all(
@@ -966,7 +979,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "checks": {
             "byte_exact_export_import": True,
             "memory_changes_source_and_target": True,
-            "identical_conversation_message_projection": True,
+            "identical_portable_conversation_message_projection": True,
             "no_search_chunks_or_embed_jobs": True,
             "parent_first_continuation_import": True,
             "malformed_and_unmarked_fail_closed": True,
