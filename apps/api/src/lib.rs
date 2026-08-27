@@ -53,6 +53,7 @@ pub mod task_engine;
 pub mod task_guard;
 pub mod task_service;
 pub mod telemetry;
+pub mod todoist_sync;
 pub mod upload_service;
 pub mod usage;
 pub mod usage_service;

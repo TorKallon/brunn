@@ -30,10 +30,61 @@ use crate::{
     db::AppState,
     error::{ApiError, ApiResult},
     models::Capability,
+    todoist_sync::TodoistToken,
 };
 
 const MAX_SECRET_VALUE_BYTES: usize = 64 * 1024;
 const MAX_DESCRIPTION_CHARS: usize = 1_000;
+
+/// The token and non-bearer producer identity used by one worker pull. This
+/// type deliberately has no Debug implementation so a caller cannot
+/// accidentally format the secret-bearing value.
+pub(crate) struct TodoistWorkerSecret {
+    pub(crate) token: TodoistToken,
+    pub(crate) producer_credential_id: Uuid,
+}
+
+/// Reads and audits exactly the `todoist-api-token` secret through the
+/// migration-owned, admin-only primitive. No generic worker vault read exists.
+pub(crate) async fn todoist_token_for_worker(
+    state: &AppState,
+    user_id: Uuid,
+) -> ApiResult<Option<TodoistWorkerSecret>> {
+    let pool = state
+        .admin_pool
+        .as_ref()
+        .ok_or_else(|| ApiError::configuration("DATABASE_URL_ADMIN is required by Todoist sync"))?;
+    let row = sqlx::query(
+        r#"
+        SELECT secret_id,value_ciphertext,value_nonce,version,
+               producer_credential_id
+        FROM straylight.task_todoist_secret_for_worker($1)
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let secret_id: Uuid = row.try_get("secret_id")?;
+    let version: i32 = row.try_get("version")?;
+    let ciphertext: Vec<u8> = row.try_get("value_ciphertext")?;
+    let nonce: Vec<u8> = row.try_get("value_nonce")?;
+    let producer_credential_id: Uuid = row.try_get("producer_credential_id")?;
+    let aad = secret_value_aad(
+        &state.config.deployment_environment,
+        user_id,
+        secret_id,
+        version,
+    );
+    let plaintext = decrypt_secret_value(&encryption_key(state)?, &aad, &ciphertext, &nonce)?;
+    let token = TodoistToken::from_secret(plaintext)?;
+    Ok(Some(TodoistWorkerSecret {
+        token,
+        producer_credential_id,
+    }))
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

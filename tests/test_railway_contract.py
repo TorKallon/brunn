@@ -202,6 +202,29 @@ class RailwayContractTests(unittest.TestCase):
         self.assertIn("STRAYLIGHT_APNS_KEY_ID: preserve()", worker_block)
         self.assertIn("STRAYLIGHT_APNS_PRIVATE_KEY: preserve()", worker_block)
 
+    def test_todoist_kill_switch_and_vault_key_are_shared_by_api_and_worker(self):
+        api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
+            'const worker = service("worker"', 1
+        )[0]
+        worker_block = RAILWAY.split('const worker = service("worker"', 1)[1].split(
+            'const mcp = service("mcp"', 1
+        )[0]
+        self.assertEqual(
+            1,
+            RAILWAY.count("STRAYLIGHT_TODOIST_SYNC_ENABLED: preserve()"),
+        )
+        self.assertIn(
+            "STRAYLIGHT_TODOIST_SYNC_ENABLED:\n"
+            "      api.env.STRAYLIGHT_TODOIST_SYNC_ENABLED",
+            worker_block,
+        )
+        self.assertIn("STRAYLIGHT_SECRET_ENCRYPTION_KEY: preserve()", api_block)
+        self.assertIn(
+            "STRAYLIGHT_SECRET_ENCRYPTION_KEY:\n"
+            "      api.env.STRAYLIGHT_SECRET_ENCRYPTION_KEY",
+            worker_block,
+        )
+
     def test_browser_auth_has_a_small_rate_limited_proxy_boundary(self):
         self.assertIn(
             "zone=straylight_auth_limit:1m rate=2r/s",

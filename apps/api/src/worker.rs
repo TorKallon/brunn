@@ -2,16 +2,18 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use uuid::Uuid;
 
 use crate::{
     account_worker,
     db::AppState,
     error::{ApiError, ApiResult},
-    notification_service, simple_worker, task_guard, telemetry, upload_service,
+    notification_service, simple_worker, task_guard, telemetry, todoist_sync, upload_service,
 };
 
 const ACCOUNT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
 const UPLOAD_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
+const TODOIST_QUEUE_SCAN_INTERVAL: Duration = Duration::from_secs(5);
 const BACKGROUND_WORK_PAUSE: Duration = Duration::from_millis(250);
 
 pub async fn run(state: AppState) -> ApiResult<()> {
@@ -34,10 +36,14 @@ pub async fn run(state: AppState) -> ApiResult<()> {
         None
     };
     tracing::info!("Straylight background worker started");
-    let worker_id = format!("worker:{}", std::process::id());
+    // A PID is commonly reused as 1 across overlapping container revisions.
+    // A boot-unique suffix is part of the durable lease fence, so a stale pull
+    // can never finalize after a replacement worker reclaims the row.
+    let worker_id = boot_unique_worker_id();
     let mut next_account_maintenance = Instant::now();
     let mut next_upload_maintenance = Instant::now();
     let mut next_task_guard = Instant::now();
+    let mut next_todoist_sync = Instant::now();
 
     loop {
         let cycle_started = Instant::now();
@@ -47,6 +53,15 @@ pub async fn run(state: AppState) -> ApiResult<()> {
         if next_task_guard <= now {
             next_task_guard = now + task_guard::TASK_GUARD_SCHEDULER_INTERVAL;
             did_work |= run_task_guard(&state, &mut cycle_failed).await;
+        }
+        if next_todoist_sync <= now {
+            let todoist_did_work = run_todoist_sync(&state, &worker_id, &mut cycle_failed).await;
+            next_todoist_sync = if todoist_did_work {
+                Instant::now()
+            } else {
+                now + TODOIST_QUEUE_SCAN_INTERVAL
+            };
+            did_work |= todoist_did_work;
         }
         did_work |=
             run_notification_delivery(&state, notification_provider.as_ref(), &mut cycle_failed)
@@ -74,6 +89,26 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(BACKGROUND_WORK_PAUSE).await;
         } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+fn boot_unique_worker_id() -> String {
+    format!("worker:{}:{}", std::process::id(), Uuid::now_v7())
+}
+
+async fn run_todoist_sync(state: &AppState, worker_id: &str, cycle_failed: &mut bool) -> bool {
+    match todoist_sync::process_next(state, worker_id).await {
+        Ok(did_work) => did_work,
+        Err(_error) => {
+            metrics::counter!("worker.cycle.errors", "stage" => "todoist_sync").increment(1);
+            // Todoist apply/configuration errors can contain upstream task
+            // identifiers in their internal diagnostic details. The durable
+            // sync state carries a bounded code; never mirror error content to
+            // process logs at this boundary.
+            tracing::warn!("Todoist sync cycle failed");
+            *cycle_failed = true;
+            false
         }
     }
 }
@@ -169,4 +204,18 @@ async fn run_upload_maintenance(state: &AppState, cycle_failed: &mut bool) -> bo
         }
     };
     did_work
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_lease_identity_is_unique_across_boots_even_when_pid_matches() {
+        let first = boot_unique_worker_id();
+        let second = boot_unique_worker_id();
+        assert_ne!(first, second);
+        assert!(first.starts_with(&format!("worker:{}:", std::process::id())));
+        assert!(first.len() <= 200);
+    }
 }

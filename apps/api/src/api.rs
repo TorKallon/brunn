@@ -97,6 +97,14 @@ pub fn router(state: AppState) -> Router {
             get(task_service::todoist_status),
         )
         .route(
+            "/workspace/integrations/todoist/config",
+            put(task_service::configure_todoist),
+        )
+        .route(
+            "/workspace/integrations/todoist/pull",
+            post(task_service::pull_todoist),
+        )
+        .route(
             "/workspace/briefings/publish",
             post(briefing_service::publish).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
         )

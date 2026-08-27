@@ -23,6 +23,10 @@ use crate::{
         self, CandidateRequest as EngineCandidateRequest, CostOfDelay, CostPeriod, EngineSettings,
         ProjectInterest, Sourced, TaskSnapshot, TaskStatus, TaskView,
     },
+    todoist_sync::{
+        MappedRecurrence, MappedTodoistItem, TodoistCompletedOccurrence, TodoistSyncResponse,
+        TodoistTerminal, map_item, next_todoist_occurrence,
+    },
 };
 
 pub(crate) const TASK_ENTRY_PREFIX: &str = ".straylight/tasks/";
@@ -141,7 +145,8 @@ pub(crate) fn validate_task_entry(path: &str, metadata: &Value) -> ApiResult<boo
     Ok(true)
 }
 
-pub(crate) async fn sync_managed_entry_in_tx(
+#[doc(hidden)]
+pub async fn sync_managed_entry_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     entry_id: Uuid,
@@ -167,6 +172,16 @@ pub(crate) async fn delete_task_projection_in_tx(
     user_id: Uuid,
     entry_id: Uuid,
 ) -> ApiResult<()> {
+    sqlx::query("DELETE FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND entry_id=$2")
+        .bind(user_id)
+        .bind(entry_id)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("DELETE FROM straylight.task_external_refs WHERE user_id=$1 AND entry_id=$2")
+        .bind(user_id)
+        .bind(entry_id)
+        .execute(&mut **tx)
+        .await?;
     sqlx::query("DELETE FROM straylight.task_index WHERE user_id=$1 AND entry_id=$2")
         .bind(user_id)
         .bind(entry_id)
@@ -645,6 +660,114 @@ fn rewrite_context_cell_for_merge(
     })
 }
 
+async fn sync_task_identity_projection_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    task_id: Uuid,
+    entry_id: Uuid,
+    task: &Value,
+) -> ApiResult<()> {
+    sqlx::query("DELETE FROM straylight.task_todoist_occurrences WHERE user_id=$1 AND task_id=$2")
+        .bind(user_id)
+        .bind(task_id)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query(
+        "DELETE FROM straylight.task_external_refs WHERE user_id=$1 AND system='todoist' AND task_id=$2",
+    )
+    .bind(user_id)
+    .bind(task_id)
+    .execute(&mut **tx)
+    .await?;
+    let refs = task
+        .get("external_refs")
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(|| ApiError::invalid("task external_refs must be an array"))
+        })
+        .transpose()?
+        .cloned()
+        .unwrap_or_default();
+    for external in refs {
+        let external = external
+            .as_object()
+            .ok_or_else(|| ApiError::invalid("task external_refs entries must be objects"))?;
+        if external.get("system").and_then(Value::as_str) != Some("todoist") {
+            continue;
+        }
+        let external_id = external
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= 512)
+            .ok_or_else(|| ApiError::invalid("Todoist external ref id is invalid"))?;
+        let series_id = external.get("series_id").and_then(Value::as_str);
+        let occurrence_key = external.get("occurrence_key").and_then(Value::as_str);
+        if series_id.is_some() != occurrence_key.is_some()
+            || series_id.is_some_and(|value| value.is_empty() || value.len() > 512)
+            || occurrence_key.is_some_and(|value| value.is_empty() || value.len() > 512)
+        {
+            return Err(ApiError::invalid(
+                "Todoist series identity must contain bounded series_id and occurrence_key",
+            ));
+        }
+        if let (Some(series_id), Some(occurrence_key)) = (series_id, occurrence_key) {
+            let inserted = sqlx::query(
+                r#"
+                INSERT INTO straylight.task_todoist_occurrences(
+                  user_id,series_id,occurrence_key,task_id,entry_id
+                ) VALUES($1,$2,$3,$4,$5)
+                ON CONFLICT(user_id,series_id,occurrence_key) DO UPDATE SET
+                  entry_id=EXCLUDED.entry_id
+                WHERE task_todoist_occurrences.task_id=EXCLUDED.task_id
+                "#,
+            )
+            .bind(user_id)
+            .bind(series_id)
+            .bind(occurrence_key)
+            .bind(task_id)
+            .bind(entry_id)
+            .execute(&mut **tx)
+            .await?;
+            if inserted.rows_affected() != 1 {
+                return Err(ApiError::conflict(
+                    "todoist_occurrence_conflict",
+                    "Todoist occurrence identity belongs to another canonical task",
+                    json!({"series_id":series_id,"occurrence_key":occurrence_key}),
+                ));
+            }
+        }
+        if external.get("current").and_then(Value::as_bool) == Some(false) {
+            continue;
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.task_external_refs(
+              user_id,system,external_id,task_id,entry_id,series_id,
+              occurrence_key,metadata
+            ) VALUES($1,'todoist',$2,$3,$4,$5,$6,$7)
+            ON CONFLICT(user_id,system,external_id) DO UPDATE SET
+              task_id=EXCLUDED.task_id,entry_id=EXCLUDED.entry_id,
+              series_id=EXCLUDED.series_id,occurrence_key=EXCLUDED.occurrence_key,
+              metadata=EXCLUDED.metadata,last_seen_at=clock_timestamp()
+            "#,
+        )
+        .bind(user_id)
+        .bind(external_id)
+        .bind(task_id)
+        .bind(entry_id)
+        .bind(series_id)
+        .bind(occurrence_key)
+        .bind(json!({
+            "url":external.get("url").cloned().unwrap_or(Value::Null),
+            "project_id":external.get("project_id").cloned().unwrap_or(Value::Null),
+        }))
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
+}
+
 async fn sync_task_projection_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
@@ -810,6 +933,14 @@ async fn sync_task_projection_in_tx(
     .bind(captured_at)
     .bind(version_created_at)
     .execute(&mut **tx)
+    .await?;
+    sync_task_identity_projection_in_tx(
+        tx,
+        user_id,
+        projection.task_id,
+        entry_id,
+        &projection.task,
+    )
     .await?;
     Ok(())
 }
@@ -3149,6 +3280,18 @@ pub(crate) async fn update_task(
         reason,
     )
     .await?;
+    let next_occurrence = if action == "complete" {
+        materialize_next_todoist_occurrence_in_tx(
+            &mut tx,
+            auth.user_id.0,
+            auth.credential_id.0,
+            task_id,
+            now,
+        )
+        .await?
+    } else {
+        None
+    };
     sqlx::query(
         r#"
         INSERT INTO straylight.task_audit_events (
@@ -3189,6 +3332,7 @@ pub(crate) async fn update_task(
         "action": action,
         "correction_ref": correction_ref,
         "done_today_count": done_today_count,
+        "next_occurrence_task_ref":next_occurrence,
         "replayed": false,
     });
     finalize_receipt(
@@ -5507,29 +5651,1871 @@ pub(crate) async fn update_task_settings(
     Ok(envelope(ResponseStatus::Committed, receipt))
 }
 
-pub(crate) async fn todoist_status(
-    State(state): State<AppState>,
-    Extension(auth): Extension<AuthContext>,
-) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
-    auth.require(Capability::TaskRead)?;
-    let mut tx = state.begin_read(&auth).await?;
+#[derive(Clone, Debug, Default, Serialize)]
+#[doc(hidden)]
+pub struct TodoistApplyReport {
+    pub(crate) projects_seen: usize,
+    pub(crate) items_seen: usize,
+    pub(crate) created: usize,
+    pub(crate) updated: usize,
+    pub(crate) completed: usize,
+    pub(crate) dropped: usize,
+    pub(crate) unchanged: usize,
+}
+
+fn todoist_refresh_allowed(raw: Option<&Value>) -> bool {
+    match raw {
+        None | Some(Value::Null) => true,
+        Some(raw) => raw
+            .get("source")
+            .and_then(Value::as_str)
+            .is_some_and(|source| source == "todoist"),
+    }
+}
+
+fn todoist_should_repoint(current_occurrence: Option<&str>, incoming_occurrence: &str) -> bool {
+    let _ = incoming_occurrence;
+    !current_occurrence.is_some_and(|current| current.starts_with("review:"))
+}
+
+fn todoist_task_url(external_id: &str) -> String {
+    format!("https://app.todoist.com/app/task/{external_id}")
+}
+
+fn refresh_todoist_field(
+    metadata: &mut Value,
+    field: &str,
+    value: Value,
+    now: DateTime<Utc>,
+    note: Option<&str>,
+) -> ApiResult<bool> {
+    let current = effective_metadata(metadata)
+        .get("task")
+        .and_then(Value::as_object)
+        .and_then(|task| task.get(field));
+    if !todoist_refresh_allowed(current) {
+        return Ok(false);
+    }
+    let unchanged = current.is_some_and(|cell| {
+        cell.get("value") == Some(&value)
+            && cell.get("source").and_then(Value::as_str) == Some("todoist")
+            && cell.get("note").and_then(Value::as_str) == note
+    });
+    if unchanged {
+        return Ok(false);
+    }
+    if current.is_some_and(|cell| {
+        cell.get("value") == Some(&value)
+            && cell.get("source").and_then(Value::as_str) == Some("todoist")
+    }) {
+        let task = direct_task_object_mut(metadata)?;
+        let cell = task
+            .get_mut(field)
+            .and_then(Value::as_object_mut)
+            .ok_or_else(|| ApiError::invalid("Todoist task field is not a sourced cell"))?;
+        cell.insert("set_at".to_owned(), json!(now));
+        cell.insert(
+            "note".to_owned(),
+            note.map_or(Value::Null, |value| json!(value)),
+        );
+        return Ok(true);
+    }
+    apply_sourced_field(metadata, field, value, "todoist", now, note, false)?;
+    Ok(true)
+}
+
+fn todoist_recurrence_from_value(value: &Value) -> ApiResult<MappedRecurrence> {
+    let recurrence = value
+        .as_object()
+        .ok_or_else(|| ApiError::invalid("Todoist recurrence must be an object"))?;
+    let required = |name: &str| {
+        recurrence
+            .get(name)
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| ApiError::invalid(format!("Todoist recurrence requires {name}")))
+    };
+    if required("recurrence_source")? != "todoist" {
+        return Err(ApiError::invalid(
+            "Todoist recurrence_source must be todoist",
+        ));
+    }
+    Ok(MappedRecurrence {
+        recurrence_source: "todoist",
+        original: required("original")?,
+        lang: required("lang")?,
+        series_id: required("series_id")?,
+        due: required("due")?,
+        timezone: recurrence
+            .get("timezone")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        rrule: recurrence
+            .get("rrule")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        needs_review: recurrence
+            .get("needs_review")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
+}
+
+fn validate_todoist_project(project_id: &str, name: &str, deleted: bool) -> ApiResult<()> {
+    if project_id.is_empty()
+        || project_id.len() > 512
+        || project_id.chars().any(char::is_control)
+        || (!deleted
+            && (name.trim().is_empty()
+                || name.chars().count() > 200
+                || has_forbidden_control(name, false)))
+        || (deleted && (name.chars().count() > 200 || has_forbidden_control(name, false)))
+    {
+        return Err(ApiError::invalid("Todoist project payload is invalid"));
+    }
+    Ok(())
+}
+
+async fn cache_todoist_project_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    project_id: &str,
+    name: &str,
+    deleted: bool,
+) -> ApiResult<()> {
+    validate_todoist_project(project_id, name, deleted)?;
+    if deleted && name.trim().is_empty() {
+        sqlx::query(
+            r#"
+            UPDATE straylight.task_todoist_projects
+            SET is_deleted=true,updated_at=clock_timestamp()
+            WHERE user_id=$1 AND external_id=$2
+            "#,
+        )
+        .bind(user_id)
+        .bind(project_id)
+        .execute(&mut **tx)
+        .await?;
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.task_todoist_projects(
+          user_id,external_id,name,is_deleted
+        ) VALUES($1,$2,$3,$4)
+        ON CONFLICT(user_id,external_id) DO UPDATE SET
+          name=EXCLUDED.name,is_deleted=EXCLUDED.is_deleted,
+          updated_at=clock_timestamp()
+        "#,
+    )
+    .bind(user_id)
+    .bind(project_id)
+    .bind(name.trim())
+    .bind(deleted)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn todoist_project_slug_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    external_project_id: &str,
+) -> ApiResult<String> {
+    let name = sqlx::query_scalar::<_, String>(
+        "SELECT name FROM straylight.task_todoist_projects WHERE user_id=$1 AND external_id=$2",
+    )
+    .bind(user_id)
+    .bind(external_project_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(name) = name else {
+        return Ok("todoist-inbox".to_owned());
+    };
+    let normalized = normalize_slug(&name).ok();
+    let matched = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT project_slug FROM (
+          SELECT project.slug AS project_slug,0 AS priority
+          FROM straylight.task_projects AS project
+          WHERE project.user_id=$1 AND project.archived_at IS NULL
+            AND ($2::text IS NOT NULL AND project.slug=$2)
+          UNION ALL
+          SELECT project.slug,1
+          FROM straylight.task_projects AS project
+          WHERE project.user_id=$1 AND project.archived_at IS NULL
+            AND lower(project.title)=lower($3)
+          UNION ALL
+          SELECT alias.project_slug,2
+          FROM straylight.task_project_aliases AS alias
+          JOIN straylight.task_projects AS project
+            ON project.user_id=alias.user_id AND project.slug=alias.project_slug
+          WHERE alias.user_id=$1 AND lower(alias.alias)=lower($3)
+            AND project.archived_at IS NULL
+        ) AS matches
+        ORDER BY priority,project_slug
+        LIMIT 1
+        "#,
+    )
+    .bind(user_id)
+    .bind(normalized)
+    .bind(name.trim())
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(matched.unwrap_or_else(|| "todoist-inbox".to_owned()))
+}
+
+async fn remap_todoist_project_tasks_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    external_project_id: &str,
+    now: DateTime<Utc>,
+) -> ApiResult<usize> {
+    let project_slug = todoist_project_slug_in_tx(tx, user_id, external_project_id).await?;
+    let task_ids = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT task_id
+        FROM straylight.task_external_refs
+        WHERE user_id=$1 AND system='todoist'
+          AND metadata->>'project_id'=$2
+        ORDER BY task_id
+        "#,
+    )
+    .bind(user_id)
+    .bind(external_project_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut changed = 0;
+    for task_id in task_ids {
+        let Some(row) = fetch_task_row(tx, user_id, task_id, true).await? else {
+            continue;
+        };
+        let mut metadata: Value = row.get("metadata");
+        if refresh_todoist_field(&mut metadata, "project", json!(project_slug), now, None)? {
+            persist_loaded_todoist_task_in_tx(tx, user_id, producer_credential_id, &row, metadata)
+                .await?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
+async fn todoist_context_slug_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    label: &str,
+) -> ApiResult<Result<String, Vec<ContextSuggestion>>> {
+    if let Some(canonical) = resolve_context_in_tx(tx, user_id, label).await? {
+        return Ok(Ok(canonical));
+    }
+    if label.trim().is_empty() || label.chars().count() > 120 || has_forbidden_control(label, false)
+    {
+        return Err(ApiError::invalid("Todoist label is invalid"));
+    }
+    let suggestions = context_suggestions_in_tx(tx, user_id, label).await?;
+    if !suggestions.is_empty() {
+        return Ok(Err(suggestions));
+    }
+    let slug = create_context_in_tx(
+        tx,
+        user_id,
+        producer_credential_id,
+        label,
+        Some(label.trim()),
+        Some("Imported from a Todoist label."),
+        "todoist",
+        false,
+    )
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.task_context_aliases(
+          user_id,alias,context_slug,reason
+        ) VALUES($1,$2,$3,'todoist')
+        ON CONFLICT(user_id,alias) DO NOTHING
+        "#,
+    )
+    .bind(user_id)
+    .bind(label.trim())
+    .bind(&slug)
+    .execute(&mut **tx)
+    .await?;
+    Ok(Ok(slug))
+}
+
+async fn todoist_contexts_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    labels: &[String],
+) -> ApiResult<(Vec<String>, Vec<Value>)> {
+    let mut contexts = Vec::with_capacity(labels.len());
+    let mut review = Vec::new();
+    for label in labels {
+        match todoist_context_slug_in_tx(tx, user_id, producer_credential_id, label).await? {
+            Ok(context) => contexts.push(context),
+            Err(suggestions) => review.push(json!({
+                "requested":label,
+                "suggested_existing":suggestions.into_iter().map(|suggestion|json!({
+                    "slug":suggestion.slug,
+                    "reason":suggestion.reason,
+                })).collect::<Vec<_>>(),
+            })),
+        }
+    }
+    contexts.sort();
+    contexts.dedup();
+    Ok((contexts, review))
+}
+
+fn todoist_task_content(task: &Map<String, Value>) -> ApiResult<String> {
+    let title = task
+        .get("title")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::invalid("Todoist task requires a title"))?;
+    let notes = string_value(task, "notes")?.unwrap_or_default();
+    Ok(if notes.is_empty() {
+        format!("# {title}\n")
+    } else {
+        format!("# {title}\n\n{notes}\n")
+    })
+}
+
+async fn create_todoist_task_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    mapped: &MappedTodoistItem,
+    project_slug: &str,
+    contexts: &[String],
+    context_review: &[Value],
+    now: DateTime<Utc>,
+) -> ApiResult<(Uuid, Uuid)> {
+    if mapped.title.trim().is_empty()
+        || mapped.title.len() > 500
+        || has_forbidden_control(&mapped.title, false)
+        || mapped.notes.len() > 20_000
+        || has_forbidden_control(&mapped.notes, true)
+    {
+        return Err(ApiError::invalid(
+            "Todoist task title or description exceeds the canonical task boundary",
+        ));
+    }
+    let task_id = Uuid::now_v7();
+    let mut task = Map::new();
+    task.insert("id".to_owned(), json!(task_id));
+    task.insert("title".to_owned(), json!(mapped.title.trim()));
+    task.insert(
+        "provenance".to_owned(),
+        json!({
+            "created_at":now,
+            "created_by":"todoist",
+            "captured_by":"todoist",
+            "captured_from":format!("todoist:item:{}",mapped.external_id),
+            "credential_id":producer_credential_id,
+            "title_source":"todoist",
+            "title_set_at":now,
+        }),
+    );
+    task.insert(
+        "status".to_owned(),
+        json!({"value":"open","source":"todoist","set_at":now}),
+    );
+    task.insert(
+        "notes".to_owned(),
+        json!({"value":mapped.notes,"source":"todoist","set_at":now}),
+    );
+    task.insert(
+        "project".to_owned(),
+        json!({"value":project_slug,"source":"todoist","set_at":now}),
+    );
+    task.insert(
+        "required_contexts".to_owned(),
+        json!({"value":contexts,"source":"todoist","set_at":now}),
+    );
+    task.insert(
+        "soft_due".to_owned(),
+        json!({"value":mapped.soft_due,"source":"todoist","set_at":now}),
+    );
+    task.insert(
+        "hard_due".to_owned(),
+        json!({
+            "value":mapped.hard_due,
+            "source":"todoist",
+            "set_at":now,
+            "note":mapped.hard_due_note,
+        }),
+    );
+    task.insert(
+        "triaged_at".to_owned(),
+        json!({"value":null,"source":"todoist","set_at":now}),
+    );
+    task.insert(
+        "recurrence".to_owned(),
+        json!({"value":mapped.recurrence,"source":"todoist","set_at":now}),
+    );
+    task.insert(
+        "external_refs".to_owned(),
+        json!([{
+            "system":"todoist",
+            "id":mapped.external_id,
+            "url":todoist_task_url(&mapped.external_id),
+            "project_id":mapped.project_id,
+            "series_id":mapped.recurrence.as_ref().map(|value|value.series_id.as_str()),
+            "occurrence_key":mapped.occurrence_key,
+            "current":true,
+            "last_seen_at":now,
+        }]),
+    );
+    if !context_review.is_empty() {
+        task.insert(
+            "todoist_context_suggestions".to_owned(),
+            json!(context_review),
+        );
+    }
+    match mapped.terminal {
+        TodoistTerminal::Open => {}
+        TodoistTerminal::Completed => {
+            let completed_at = mapped.completed_at.unwrap_or(now);
+            task.insert(
+                "status".to_owned(),
+                json!({"value":"done","source":"todoist","set_at":completed_at}),
+            );
+            task.insert(
+                "completed_via".to_owned(),
+                json!({"value":"todoist","source":"todoist","set_at":completed_at}),
+            );
+            task.insert("done_at".to_owned(), json!(completed_at));
+        }
+        TodoistTerminal::Deleted => {
+            return Err(ApiError::invalid(
+                "an unknown Todoist tombstone cannot create a task",
+            ));
+        }
+    }
+    let content = todoist_task_content(&task)?;
+    let metadata = json!({"kind":"task","schema":TASK_SCHEMA,"task":task});
+    let path = format!("{TASK_ENTRY_PREFIX}{task_id}.md");
+    let prepared = simple_core::prepare_task_markdown_for_update(path, content, metadata, 0)?;
+    let result =
+        simple_core::upsert_markdown_in_tx(tx, user_id, Some(producer_credential_id), prepared)
+            .await?;
+    Ok((task_id, result.entry_id))
+}
+
+fn set_todoist_terminal(
+    metadata: &mut Value,
+    terminal: TodoistTerminal,
+    now: DateTime<Utc>,
+) -> ApiResult<bool> {
+    let task = direct_task_object_mut(metadata)?;
+    let current_status = string_value(task, "status")?.unwrap_or_else(|| "open".to_owned());
+    let status_source = task
+        .get("status")
+        .and_then(|value| value.get("source"))
+        .and_then(Value::as_str);
+    match terminal {
+        TodoistTerminal::Open => Ok(false),
+        TodoistTerminal::Completed if current_status == "done" => Ok(false),
+        TodoistTerminal::Completed if status_source != Some("todoist") => Ok(false),
+        TodoistTerminal::Completed => {
+            task.insert(
+                "status".to_owned(),
+                json!({"value":"done","source":"todoist","set_at":now}),
+            );
+            task.insert(
+                "completed_via".to_owned(),
+                json!({"value":"todoist","source":"todoist","set_at":now}),
+            );
+            task.insert("done_at".to_owned(), json!(now));
+            if todoist_refresh_allowed(task.get("dropped_reason")) {
+                task.remove("dropped_at");
+                task.remove("dropped_reason");
+            }
+            Ok(true)
+        }
+        TodoistTerminal::Deleted if current_status == "done" || current_status == "dropped" => {
+            Ok(false)
+        }
+        TodoistTerminal::Deleted if status_source != Some("todoist") => Ok(false),
+        TodoistTerminal::Deleted => {
+            task.insert(
+                "status".to_owned(),
+                json!({"value":"dropped","source":"todoist","set_at":now}),
+            );
+            task.insert(
+                "dropped_reason".to_owned(),
+                if todoist_refresh_allowed(task.get("dropped_reason")) {
+                    json!({"value":"todoist_deleted","source":"todoist","set_at":now})
+                } else {
+                    task.get("dropped_reason").cloned().unwrap_or(Value::Null)
+                },
+            );
+            task.insert("dropped_at".to_owned(), json!(now));
+            Ok(true)
+        }
+    }
+}
+
+async fn persist_loaded_todoist_task_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    row: &sqlx::postgres::PgRow,
+    metadata: Value,
+) -> ApiResult<Uuid> {
+    let path: String = row.get("path");
+    let current_version: i64 = row.get("current_version");
+    let task = effective_metadata(&metadata)
+        .get("task")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ApiError::invalid("Todoist task metadata is invalid"))?;
+    let content = todoist_task_content(task)?;
+    let prepared =
+        simple_core::prepare_task_markdown_for_update(path, content, metadata, current_version)?;
+    let result =
+        simple_core::upsert_markdown_in_tx(tx, user_id, Some(producer_credential_id), prepared)
+            .await?;
+    Ok(result.entry_id)
+}
+
+async fn refresh_existing_todoist_task_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    task_id: Uuid,
+    mapped: &MappedTodoistItem,
+    project_slug: Option<&str>,
+    contexts: Option<&[String]>,
+    context_review: Option<&[Value]>,
+    now: DateTime<Utc>,
+) -> ApiResult<(Uuid, bool, bool)> {
+    let row = fetch_task_row(tx, user_id, task_id, true)
+        .await?
+        .ok_or_else(|| ApiError::not_found("task_not_found", &task_id.to_string()))?;
+    let mut metadata: Value = row.get("metadata");
+    let original = metadata.clone();
+    if mapped.terminal != TodoistTerminal::Deleted {
+        if mapped.title.trim().is_empty()
+            || mapped.title.len() > 500
+            || mapped.notes.len() > 20_000
+            || has_forbidden_control(&mapped.title, false)
+            || has_forbidden_control(&mapped.notes, true)
+        {
+            return Err(ApiError::invalid(
+                "Todoist task title or description exceeds the canonical task boundary",
+            ));
+        }
+        let task = direct_task_object_mut(&mut metadata)?;
+        let title_source = task
+            .get("provenance")
+            .and_then(|value| value.get("title_source"))
+            .and_then(Value::as_str);
+        if title_source == Some("todoist")
+            && task.get("title").and_then(Value::as_str) != Some(mapped.title.trim())
+        {
+            task.insert("title".to_owned(), json!(mapped.title.trim()));
+            let provenance = task
+                .get_mut("provenance")
+                .and_then(Value::as_object_mut)
+                .ok_or_else(|| ApiError::invalid("task provenance must be an object"))?;
+            provenance.insert("title_set_at".to_owned(), json!(now));
+        }
+        if let Some(external_refs) = task.get_mut("external_refs").and_then(Value::as_array_mut) {
+            for external in external_refs {
+                if external.get("system").and_then(Value::as_str) == Some("todoist")
+                    && external.get("id").and_then(Value::as_str)
+                        == Some(mapped.external_id.as_str())
+                {
+                    let external = external.as_object_mut().ok_or_else(|| {
+                        ApiError::invalid("Todoist external ref must be an object")
+                    })?;
+                    external.insert("project_id".to_owned(), json!(mapped.project_id));
+                    external.insert(
+                        "url".to_owned(),
+                        json!(todoist_task_url(&mapped.external_id)),
+                    );
+                }
+            }
+        }
+        refresh_todoist_field(&mut metadata, "notes", json!(mapped.notes), now, None)?;
+        if let Some(project_slug) = project_slug {
+            refresh_todoist_field(&mut metadata, "project", json!(project_slug), now, None)?;
+        }
+        if let Some(contexts) = contexts {
+            refresh_todoist_field(
+                &mut metadata,
+                "required_contexts",
+                json!(contexts),
+                now,
+                None,
+            )?;
+        }
+        if let Some(context_review) = context_review {
+            let task = direct_task_object_mut(&mut metadata)?;
+            if context_review.is_empty() {
+                task.remove("todoist_context_suggestions");
+            } else {
+                task.insert(
+                    "todoist_context_suggestions".to_owned(),
+                    json!(context_review),
+                );
+                refresh_todoist_field(
+                    &mut metadata,
+                    "triaged_at",
+                    Value::Null,
+                    now,
+                    Some("todoist_context_confirmation_required"),
+                )?;
+            }
+        }
+        refresh_todoist_field(&mut metadata, "soft_due", json!(mapped.soft_due), now, None)?;
+        refresh_todoist_field(
+            &mut metadata,
+            "hard_due",
+            json!(mapped.hard_due),
+            now,
+            mapped.hard_due_note,
+        )?;
+        refresh_todoist_field(
+            &mut metadata,
+            "recurrence",
+            json!(mapped.recurrence),
+            now,
+            None,
+        )?;
+    }
+    let terminal_changed = set_todoist_terminal(
+        &mut metadata,
+        mapped.terminal,
+        mapped.completed_at.unwrap_or(now),
+    )?;
+    let changed = metadata != original;
+    let entry_id: Uuid = if changed {
+        persist_loaded_todoist_task_in_tx(tx, user_id, producer_credential_id, &row, metadata)
+            .await?
+    } else {
+        row.get("entry_id")
+    };
+    Ok((entry_id, changed, terminal_changed))
+}
+
+async fn complete_existing_todoist_task_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    task_id: Uuid,
+    now: DateTime<Utc>,
+) -> ApiResult<bool> {
+    let row = fetch_task_row(tx, user_id, task_id, true)
+        .await?
+        .ok_or_else(|| ApiError::not_found("task_not_found", &task_id.to_string()))?;
+    let mut metadata: Value = row.get("metadata");
+    if !set_todoist_terminal(&mut metadata, TodoistTerminal::Completed, now)? {
+        return Ok(false);
+    }
+    persist_loaded_todoist_task_in_tx(tx, user_id, producer_credential_id, &row, metadata).await?;
+    Ok(true)
+}
+
+async fn todoist_recurrence_is_authoritative_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    task_id: Uuid,
+) -> ApiResult<bool> {
+    let task = sqlx::query_scalar::<_, Value>(
+        "SELECT task FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+    )
+    .bind(user_id)
+    .bind(task_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(task) = task else {
+        return Ok(false);
+    };
+    let recurrence = task.get("recurrence");
+    Ok(recurrence
+        .and_then(|value| value.get("source"))
+        .and_then(Value::as_str)
+        == Some("todoist"))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn set_todoist_canonical_identity_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    task_id: Uuid,
+    external_id: &str,
+    series_id: Option<&str>,
+    occurrence_key: Option<&str>,
+    current: bool,
+    now: DateTime<Utc>,
+) -> ApiResult<Uuid> {
+    let row = fetch_task_row(tx, user_id, task_id, true)
+        .await?
+        .ok_or_else(|| ApiError::not_found("task_not_found", &task_id.to_string()))?;
+    let mut metadata: Value = row.get("metadata");
+    let original = metadata.clone();
+    let task = direct_task_object_mut(&mut metadata)?;
+    let refs = task
+        .entry("external_refs")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .ok_or_else(|| ApiError::invalid("task external_refs must be an array"))?;
+    let mut found = false;
+    for external in refs.iter_mut() {
+        if external.get("system").and_then(Value::as_str) == Some("todoist")
+            && external.get("id").and_then(Value::as_str) == Some(external_id)
+        {
+            let external = external
+                .as_object_mut()
+                .ok_or_else(|| ApiError::invalid("Todoist external ref must be an object"))?;
+            external.insert("series_id".to_owned(), json!(series_id));
+            external.insert("occurrence_key".to_owned(), json!(occurrence_key));
+            external.insert("current".to_owned(), json!(current));
+            found = true;
+        }
+    }
+    if !found {
+        refs.push(json!({
+            "system":"todoist",
+            "id":external_id,
+            "url":todoist_task_url(external_id),
+            "series_id":series_id,
+            "occurrence_key":occurrence_key,
+            "current":current,
+            "last_seen_at":now,
+        }));
+    }
+    if metadata == original {
+        return Ok(row.get("entry_id"));
+    }
+    persist_loaded_todoist_task_in_tx(tx, user_id, producer_credential_id, &row, metadata).await
+}
+
+#[derive(Clone, Debug)]
+struct TodoistExternalRef {
+    task_id: Uuid,
+    series_id: Option<String>,
+    occurrence_key: Option<String>,
+}
+
+async fn todoist_external_ref_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    external_id: &str,
+) -> ApiResult<Option<TodoistExternalRef>> {
+    Ok(sqlx::query(
+        r#"
+        SELECT task_id,series_id,occurrence_key
+        FROM straylight.task_external_refs
+        WHERE user_id=$1 AND system='todoist' AND external_id=$2
+        "#,
+    )
+    .bind(user_id)
+    .bind(external_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .map(|row| TodoistExternalRef {
+        task_id: row.get("task_id"),
+        series_id: row.get("series_id"),
+        occurrence_key: row.get("occurrence_key"),
+    }))
+}
+
+async fn todoist_occurrence_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    series_id: &str,
+    occurrence_key: &str,
+) -> ApiResult<Option<(Uuid, Uuid)>> {
+    Ok(sqlx::query(
+        r#"
+        SELECT task_id,entry_id
+        FROM straylight.task_todoist_occurrences
+        WHERE user_id=$1 AND series_id=$2 AND occurrence_key=$3
+        "#,
+    )
+    .bind(user_id)
+    .bind(series_id)
+    .bind(occurrence_key)
+    .fetch_optional(&mut **tx)
+    .await?
+    .map(|row| (row.get("task_id"), row.get("entry_id"))))
+}
+
+async fn record_todoist_occurrence_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    series_id: &str,
+    occurrence_key: &str,
+    task_id: Uuid,
+    entry_id: Uuid,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.task_todoist_occurrences(
+          user_id,series_id,occurrence_key,task_id,entry_id
+        ) VALUES($1,$2,$3,$4,$5)
+        ON CONFLICT(user_id,series_id,occurrence_key) DO NOTHING
+        "#,
+    )
+    .bind(user_id)
+    .bind(series_id)
+    .bind(occurrence_key)
+    .bind(task_id)
+    .bind(entry_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_todoist_external_ref_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    external_id: &str,
+    task_id: Uuid,
+    entry_id: Uuid,
+    series_id: Option<&str>,
+    occurrence_key: Option<&str>,
+    repoint: bool,
+) -> ApiResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.task_external_refs(
+          user_id,system,external_id,task_id,entry_id,series_id,
+          occurrence_key,metadata
+        ) VALUES($1,'todoist',$2,$3,$4,$5,$6,$7)
+        ON CONFLICT(user_id,system,external_id) DO UPDATE SET
+          task_id=CASE WHEN $8 THEN EXCLUDED.task_id ELSE task_external_refs.task_id END,
+          entry_id=CASE WHEN $8 THEN EXCLUDED.entry_id ELSE task_external_refs.entry_id END,
+          series_id=CASE WHEN $8 THEN EXCLUDED.series_id ELSE task_external_refs.series_id END,
+          occurrence_key=CASE WHEN $8 THEN EXCLUDED.occurrence_key ELSE task_external_refs.occurrence_key END,
+          metadata=CASE WHEN $8 THEN task_external_refs.metadata || EXCLUDED.metadata ELSE task_external_refs.metadata END,
+          last_seen_at=clock_timestamp()
+        "#,
+    )
+    .bind(user_id)
+    .bind(external_id)
+    .bind(task_id)
+    .bind(entry_id)
+    .bind(series_id)
+    .bind(occurrence_key)
+    .bind(json!({"url":todoist_task_url(external_id)}))
+    .bind(repoint)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+#[doc(hidden)]
+pub async fn materialize_next_todoist_occurrence_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    completed_task_id: Uuid,
+    now: DateTime<Utc>,
+) -> ApiResult<Option<Uuid>> {
+    let occurrence = sqlx::query(
+        r#"
+        SELECT series_id,occurrence_key
+        FROM straylight.task_todoist_occurrences
+        WHERE user_id=$1 AND task_id=$2
+        "#,
+    )
+    .bind(user_id)
+    .bind(completed_task_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(occurrence) = occurrence else {
+        return Ok(None);
+    };
+    let series_id: String = occurrence.get("series_id");
+    let current_key: String = occurrence.get("occurrence_key");
+    let row = fetch_task_row(tx, user_id, completed_task_id, true)
+        .await?
+        .ok_or_else(|| ApiError::not_found("task_not_found", &completed_task_id.to_string()))?;
+    if row.get::<String, _>("status") != "done" {
+        return Ok(None);
+    }
+    let metadata: Value = row.get("metadata");
+    let task = effective_metadata(&metadata)
+        .get("task")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ApiError::invalid("Todoist task metadata is invalid"))?;
+    if task
+        .get("recurrence")
+        .and_then(|value| value.get("source"))
+        .and_then(Value::as_str)
+        != Some("todoist")
+    {
+        return Ok(None);
+    }
+    let recurrence_value = owned_value(task, "recurrence")?
+        .filter(|value| !value.is_null())
+        .ok_or_else(|| ApiError::invalid("Todoist occurrence requires recurrence metadata"))?;
+    let recurrence = todoist_recurrence_from_value(&recurrence_value)?;
+    if recurrence.series_id != series_id {
+        return Err(ApiError::conflict(
+            "todoist_series_conflict",
+            "Todoist occurrence ledger and canonical recurrence disagree",
+            json!({"task_ref":completed_task_id}),
+        ));
+    }
+    let external_project_id = task
+        .get("external_refs")
+        .and_then(Value::as_array)
+        .and_then(|refs| {
+            refs.iter().find(|external| {
+                external.get("system").and_then(Value::as_str) == Some("todoist")
+                    && external.get("series_id").and_then(Value::as_str) == Some(series_id.as_str())
+            })
+        })
+        .and_then(|external| external.get("project_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let timezone_name = sqlx::query_scalar::<_, String>(
+        "SELECT timezone FROM straylight.task_settings WHERE user_id=$1",
+    )
+    .bind(user_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let timezone = timezone_name
+        .parse::<Tz>()
+        .map_err(|_| ApiError::Internal("stored task timezone is invalid".to_owned()))?;
+    let next = next_todoist_occurrence(&recurrence, timezone)?;
+    let (next_key, next_soft_due, next_due, needs_review) = match next {
+        Some(next) => (
+            next.occurrence_key,
+            Some(next.soft_due),
+            Some(next.due_instant),
+            false,
+        ),
+        None => (format!("review:{completed_task_id}"), None, None, true),
+    };
+    if let Some((task_id, entry_id)) =
+        todoist_occurrence_in_tx(tx, user_id, &series_id, &next_key).await?
+    {
+        if task_id != completed_task_id {
+            set_todoist_canonical_identity_in_tx(
+                tx,
+                user_id,
+                producer_credential_id,
+                completed_task_id,
+                &series_id,
+                Some(&series_id),
+                Some(&current_key),
+                false,
+                now,
+            )
+            .await?;
+            set_todoist_canonical_identity_in_tx(
+                tx,
+                user_id,
+                producer_credential_id,
+                task_id,
+                &series_id,
+                Some(&series_id),
+                Some(&next_key),
+                true,
+                now,
+            )
+            .await?;
+            record_todoist_external_ref_in_tx(
+                tx,
+                user_id,
+                &series_id,
+                task_id,
+                entry_id,
+                Some(&series_id),
+                Some(&next_key),
+                true,
+            )
+            .await?;
+        }
+        return Ok(Some(task_id));
+    }
+
+    let mut next_metadata = metadata.clone();
+    let next_task_id = Uuid::now_v7();
+    let next_task = direct_task_object_mut(&mut next_metadata)?;
+    next_task.insert("id".to_owned(), json!(next_task_id));
+    next_task.insert(
+        "status".to_owned(),
+        json!({"value":"open","source":"todoist","set_at":now}),
+    );
+    next_task.remove("done_at");
+    next_task.remove("dropped_at");
+    next_task.remove("completed_via");
+    next_task.remove("dropped_reason");
+    next_task.remove("today_pin");
+    let provenance = next_task
+        .entry("provenance")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| ApiError::invalid("task provenance must be an object"))?;
+    provenance.insert("created_at".to_owned(), json!(now));
+    provenance.insert("created_by".to_owned(), json!("todoist"));
+    provenance.insert(
+        "captured_from".to_owned(),
+        json!(format!("todoist:series:{series_id}")),
+    );
+    let mut next_recurrence = recurrence_value;
+    let recurrence_object = next_recurrence
+        .as_object_mut()
+        .ok_or_else(|| ApiError::invalid("Todoist recurrence must be an object"))?;
+    if next_due.is_some() {
+        // `occurrence_key` preserves Todoist's representation class (date,
+        // floating local time, or fixed UTC). `due_instant` is only for local
+        // hard-deadline calculations and must not turn a floating series into
+        // a fixed-zone series after one roll.
+        recurrence_object.insert("due".to_owned(), json!(next_key.clone()));
+    }
+    recurrence_object.insert("needs_review".to_owned(), json!(needs_review));
+    next_task.insert(
+        "recurrence".to_owned(),
+        json!({"value":next_recurrence,"source":"todoist","set_at":now}),
+    );
+    next_task.insert(
+        "soft_due".to_owned(),
+        json!({"value":next_soft_due,"source":"todoist","set_at":now}),
+    );
+    let previous_hard_note = task
+        .get("hard_due")
+        .and_then(|value| value.get("note"))
+        .and_then(Value::as_str);
+    let next_hard_due = match previous_hard_note {
+        Some("todoist_priority_p1" | "todoist_hard_label") => next_due,
+        _ => None,
+    };
+    next_task.insert(
+        "hard_due".to_owned(),
+        json!({
+            "value":next_hard_due,
+            "source":"todoist",
+            "set_at":now,
+            "note":previous_hard_note.filter(|note|*note!="todoist_deadline"),
+        }),
+    );
+    if needs_review {
+        next_task.insert(
+            "triaged_at".to_owned(),
+            json!({"value":null,"source":"todoist","set_at":now,"note":"todoist_recurrence_review"}),
+        );
+    }
+    next_task.insert(
+        "external_refs".to_owned(),
+        json!([{
+            "system":"todoist",
+            "id":series_id,
+            "url":todoist_task_url(&series_id),
+            "project_id":external_project_id,
+            "series_id":series_id,
+            "occurrence_key":next_key,
+            "current":true,
+            "last_seen_at":now,
+        }]),
+    );
+    set_todoist_canonical_identity_in_tx(
+        tx,
+        user_id,
+        producer_credential_id,
+        completed_task_id,
+        &series_id,
+        Some(&series_id),
+        Some(&current_key),
+        false,
+        now,
+    )
+    .await?;
+    let content = todoist_task_content(next_task)?;
+    let path = format!("{TASK_ENTRY_PREFIX}{next_task_id}.md");
+    let prepared = simple_core::prepare_task_markdown_for_update(path, content, next_metadata, 0)?;
+    let result =
+        simple_core::upsert_markdown_in_tx(tx, user_id, Some(producer_credential_id), prepared)
+            .await?;
+    record_todoist_occurrence_in_tx(
+        tx,
+        user_id,
+        &series_id,
+        &next_key,
+        next_task_id,
+        result.entry_id,
+    )
+    .await?;
+    record_todoist_external_ref_in_tx(
+        tx,
+        user_id,
+        &series_id,
+        next_task_id,
+        result.entry_id,
+        Some(&series_id),
+        Some(&next_key),
+        true,
+    )
+    .await?;
+    Ok(Some(next_task_id))
+}
+
+async fn materialize_unparseable_completed_occurrence_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    review_task_id: Uuid,
+    series_id: &str,
+    occurrence_key: &str,
+    completed_at: DateTime<Utc>,
+) -> ApiResult<(Uuid, bool)> {
+    if let Some((task_id, _)) =
+        todoist_occurrence_in_tx(tx, user_id, series_id, occurrence_key).await?
+    {
+        return Ok((task_id, false));
+    }
+    let row = fetch_task_row(tx, user_id, review_task_id, true)
+        .await?
+        .ok_or_else(|| ApiError::not_found("task_not_found", &review_task_id.to_string()))?;
+    let mut metadata: Value = row.get("metadata");
+    let next_task_id = Uuid::now_v7();
+    let task = direct_task_object_mut(&mut metadata)?;
+    let current_external = task
+        .get("external_refs")
+        .and_then(Value::as_array)
+        .and_then(|refs| {
+            refs.iter()
+                .find(|external| external.get("system").and_then(Value::as_str) == Some("todoist"))
+        })
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    task.insert("id".to_owned(), json!(next_task_id));
+    task.insert(
+        "status".to_owned(),
+        json!({"value":"done","source":"todoist","set_at":completed_at}),
+    );
+    task.insert(
+        "completed_via".to_owned(),
+        json!({"value":"todoist","source":"todoist","set_at":completed_at}),
+    );
+    task.insert("done_at".to_owned(), json!(completed_at));
+    task.remove("dropped_at");
+    task.remove("dropped_reason");
+    task.remove("today_pin");
+    if let Some(provenance) = task.get_mut("provenance").and_then(Value::as_object_mut) {
+        provenance.insert("created_at".to_owned(), json!(completed_at));
+        provenance.insert("created_by".to_owned(), json!("todoist"));
+        provenance.insert(
+            "captured_from".to_owned(),
+            json!(format!("todoist:series:{series_id}")),
+        );
+    }
+    if let Some(recurrence) = task
+        .get_mut("recurrence")
+        .and_then(|cell| cell.get_mut("value"))
+        .and_then(Value::as_object_mut)
+    {
+        recurrence.insert("due".to_owned(), json!(occurrence_key));
+        recurrence.insert("needs_review".to_owned(), json!(true));
+    }
+    let soft_due = occurrence_key
+        .get(..10)
+        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok());
+    task.insert(
+        "soft_due".to_owned(),
+        json!({"value":soft_due,"source":"todoist","set_at":completed_at}),
+    );
+    task.insert(
+        "external_refs".to_owned(),
+        json!([{
+            "system":"todoist",
+            "id":series_id,
+            "url":current_external.get("url").cloned().unwrap_or_else(||json!(todoist_task_url(series_id))),
+            "project_id":current_external.get("project_id").cloned().unwrap_or(Value::Null),
+            "series_id":series_id,
+            "occurrence_key":occurrence_key,
+            "current":false,
+            "last_seen_at":completed_at,
+        }]),
+    );
+    let content = todoist_task_content(task)?;
+    let path = format!("{TASK_ENTRY_PREFIX}{next_task_id}.md");
+    let prepared = simple_core::prepare_task_markdown_for_update(path, content, metadata, 0)?;
+    let result =
+        simple_core::upsert_markdown_in_tx(tx, user_id, Some(producer_credential_id), prepared)
+            .await?;
+    record_todoist_occurrence_in_tx(
+        tx,
+        user_id,
+        series_id,
+        occurrence_key,
+        next_task_id,
+        result.entry_id,
+    )
+    .await?;
+    Ok((next_task_id, true))
+}
+
+async fn seed_unknown_full_sync_items_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    owner_timezone: Tz,
+    responses: &[TodoistSyncResponse],
+    now: DateTime<Utc>,
+) -> ApiResult<usize> {
+    let mut created = 0;
+    for response in responses.iter().filter(|response| response.full_sync) {
+        for item in &response.items {
+            let mapped = map_item(item, owner_timezone)?;
+            if mapped.terminal == TodoistTerminal::Deleted
+                || todoist_external_ref_in_tx(tx, user_id, &mapped.external_id)
+                    .await?
+                    .is_some()
+            {
+                continue;
+            }
+            let project_slug = todoist_project_slug_in_tx(tx, user_id, &mapped.project_id).await?;
+            let (contexts, context_review) =
+                todoist_contexts_in_tx(tx, user_id, producer_credential_id, &mapped.labels).await?;
+            let (task_id, entry_id) = create_todoist_task_in_tx(
+                tx,
+                user_id,
+                producer_credential_id,
+                &mapped,
+                &project_slug,
+                &contexts,
+                &context_review,
+                now,
+            )
+            .await?;
+            let series_id = mapped
+                .recurrence
+                .as_ref()
+                .map(|recurrence| recurrence.series_id.as_str());
+            if let (Some(series_id), Some(occurrence_key)) =
+                (series_id, mapped.occurrence_key.as_deref())
+            {
+                record_todoist_occurrence_in_tx(
+                    tx,
+                    user_id,
+                    series_id,
+                    occurrence_key,
+                    task_id,
+                    entry_id,
+                )
+                .await?;
+            }
+            record_todoist_external_ref_in_tx(
+                tx,
+                user_id,
+                &mapped.external_id,
+                task_id,
+                entry_id,
+                series_id,
+                mapped.occurrence_key.as_deref(),
+                true,
+            )
+            .await?;
+            created += 1;
+        }
+    }
+    Ok(created)
+}
+
+#[doc(hidden)]
+pub async fn apply_todoist_sync_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    producer_credential_id: Uuid,
+    owner_timezone: Tz,
+    responses: &[TodoistSyncResponse],
+    completed_occurrences: &[TodoistCompletedOccurrence],
+) -> ApiResult<TodoistApplyReport> {
+    let mut report = TodoistApplyReport::default();
+    let now = Utc::now();
+    // Cache every project delta before applying any items. A full snapshot
+    // followed by its immediate incremental catch-up can otherwise route an
+    // item using a project name that the second response already renamed.
+    let mut changed_project_ids = BTreeSet::new();
+    for response in responses {
+        for project in &response.projects {
+            cache_todoist_project_in_tx(
+                tx,
+                user_id,
+                &project.id,
+                &project.name,
+                project.is_deleted,
+            )
+            .await?;
+            changed_project_ids.insert(project.id.clone());
+            report.projects_seen += 1;
+        }
+    }
+    for project_id in changed_project_ids {
+        report.updated += remap_todoist_project_tasks_in_tx(
+            tx,
+            user_id,
+            producer_credential_id,
+            &project_id,
+            now,
+        )
+        .await?;
+    }
+    // On a cursorless logical pull, establish the stale full-sync baseline
+    // before consuming completion evidence. The immediate incremental item
+    // pass below then refreshes/reuses the occurrence materialized by that
+    // evidence instead of erasing the completed baseline occurrence.
+    report.created += seed_unknown_full_sync_items_in_tx(
+        tx,
+        user_id,
+        producer_credential_id,
+        owner_timezone,
+        responses,
+        now,
+    )
+    .await?;
+    let initial_full_baseline = responses.iter().any(|response| response.full_sync);
+    let mut ordered_completions = completed_occurrences.to_vec();
+    ordered_completions.sort_by(|left, right| {
+        left.completed_at
+            .cmp(&right.completed_at)
+            .then_with(|| left.external_id.cmp(&right.external_id))
+            .then_with(|| left.occurrence_key.cmp(&right.occurrence_key))
+    });
+    for completed in &ordered_completions {
+        if completed.external_id.is_empty()
+            || completed.external_id.len() > 512
+            || completed.external_id.chars().any(char::is_control)
+        {
+            return Err(ApiError::invalid(
+                "Todoist completed occurrence identity is invalid",
+            ));
+        }
+        let Some(external) =
+            todoist_external_ref_in_tx(tx, user_id, &completed.external_id).await?
+        else {
+            continue;
+        };
+        let (target_task_id, advances_current_occurrence) = if let Some(series_id) =
+            external.series_id.as_deref()
+        {
+            let occurrence_key = completed.occurrence_key.as_deref().ok_or_else(|| {
+                ApiError::invalid("Todoist recurring completion requires an occurrence identity")
+            })?;
+            if external.occurrence_key.as_deref() == Some(occurrence_key) {
+                (external.task_id, true)
+            } else if external
+                .occurrence_key
+                .as_deref()
+                .is_some_and(|key| key.starts_with("review:"))
+            {
+                let (_, created) = materialize_unparseable_completed_occurrence_in_tx(
+                    tx,
+                    user_id,
+                    producer_credential_id,
+                    external.task_id,
+                    series_id,
+                    occurrence_key,
+                    completed.completed_at,
+                )
+                .await?;
+                report.completed += usize::from(created);
+                continue;
+            } else if let Some((task_id, _)) =
+                todoist_occurrence_in_tx(tx, user_id, series_id, occurrence_key).await?
+            {
+                // A replay of already materialized history may name an
+                // older occurrence. Complete it monotonically without
+                // moving the current external pointer backwards.
+                (task_id, false)
+            } else if initial_full_baseline
+                && external
+                    .occurrence_key
+                    .as_deref()
+                    .is_some_and(|current| occurrence_key < current)
+            {
+                // A current full snapshot defines the import baseline.
+                // The bounded completion overlap may legitimately include
+                // a pre-import occurrence older than that baseline; it has
+                // no canonical local task to complete and must not wedge
+                // initial configuration. The stale-full case is handled
+                // above because its baseline key matches before the
+                // immediate incremental response advances the series.
+                continue;
+            } else {
+                // Never commit the Sync cursor across an unexplained
+                // occurrence gap. A later retry or owner review can
+                // reconcile it without silently losing task history.
+                return Err(ApiError::conflict(
+                    "todoist_occurrence_gap",
+                    "Todoist completion history does not follow the canonical occurrence ledger",
+                    json!({
+                        "series_id":series_id,
+                        "occurrence_key":occurrence_key,
+                    }),
+                ));
+            }
+        } else {
+            (external.task_id, false)
+        };
+        let recurrence_authoritative = advances_current_occurrence
+            && todoist_recurrence_is_authoritative_in_tx(tx, user_id, target_task_id).await?;
+        if complete_existing_todoist_task_in_tx(
+            tx,
+            user_id,
+            producer_credential_id,
+            target_task_id,
+            completed.completed_at,
+        )
+        .await?
+        {
+            report.completed += 1;
+        }
+        // Advance the current pointer before consuming the next chronological
+        // completion record. This preserves every occurrence across long poll
+        // gaps and makes the later active Sync item reuse the last materialized
+        // occurrence rather than creating a duplicate.
+        if recurrence_authoritative {
+            materialize_next_todoist_occurrence_in_tx(
+                tx,
+                user_id,
+                producer_credential_id,
+                target_task_id,
+                completed.completed_at,
+            )
+            .await?;
+        }
+    }
+    for response in responses {
+        for item in &response.items {
+            let mapped = map_item(item, owner_timezone)?;
+            report.items_seen += 1;
+            let external = todoist_external_ref_in_tx(tx, user_id, &mapped.external_id).await?;
+            if mapped.terminal == TodoistTerminal::Deleted && external.is_none() {
+                report.unchanged += 1;
+                continue;
+            }
+
+            let project_slug = if mapped.terminal == TodoistTerminal::Deleted {
+                None
+            } else {
+                Some(todoist_project_slug_in_tx(tx, user_id, &mapped.project_id).await?)
+            };
+            let (contexts, context_review) = if mapped.terminal == TodoistTerminal::Deleted {
+                (None, None)
+            } else {
+                let (contexts, review) =
+                    todoist_contexts_in_tx(tx, user_id, producer_credential_id, &mapped.labels)
+                        .await?;
+                (Some(contexts), Some(review))
+            };
+
+            let Some(recurrence) = mapped.recurrence.as_ref() else {
+                let (task_id, entry_id, created, changed, terminal_changed) =
+                    if let Some(external) = external.as_ref() {
+                        let (entry_id, changed, terminal_changed) =
+                            refresh_existing_todoist_task_in_tx(
+                                tx,
+                                user_id,
+                                producer_credential_id,
+                                external.task_id,
+                                &mapped,
+                                project_slug.as_deref(),
+                                contexts.as_deref(),
+                                context_review.as_deref(),
+                                now,
+                            )
+                            .await?;
+                        (external.task_id, entry_id, false, changed, terminal_changed)
+                    } else {
+                        let (task_id, entry_id) = create_todoist_task_in_tx(
+                            tx,
+                            user_id,
+                            producer_credential_id,
+                            &mapped,
+                            project_slug.as_deref().unwrap_or("todoist-inbox"),
+                            contexts.as_deref().unwrap_or_default(),
+                            context_review.as_deref().unwrap_or_default(),
+                            now,
+                        )
+                        .await?;
+                        (
+                            task_id,
+                            entry_id,
+                            true,
+                            true,
+                            mapped.terminal != TodoistTerminal::Open,
+                        )
+                    };
+                let clear_series = mapped.terminal != TodoistTerminal::Deleted
+                    && external
+                        .as_ref()
+                        .is_some_and(|value| value.series_id.is_some());
+                let entry_id = if clear_series {
+                    set_todoist_canonical_identity_in_tx(
+                        tx,
+                        user_id,
+                        producer_credential_id,
+                        task_id,
+                        &mapped.external_id,
+                        None,
+                        None,
+                        true,
+                        now,
+                    )
+                    .await?
+                } else {
+                    entry_id
+                };
+                record_todoist_external_ref_in_tx(
+                    tx,
+                    user_id,
+                    &mapped.external_id,
+                    task_id,
+                    entry_id,
+                    if clear_series {
+                        None
+                    } else {
+                        external
+                            .as_ref()
+                            .and_then(|value| value.series_id.as_deref())
+                    },
+                    if clear_series {
+                        None
+                    } else {
+                        external
+                            .as_ref()
+                            .and_then(|value| value.occurrence_key.as_deref())
+                    },
+                    true,
+                )
+                .await?;
+                report.created += usize::from(created);
+                report.updated += usize::from(!created && changed);
+                report.completed +=
+                    usize::from(terminal_changed && mapped.terminal == TodoistTerminal::Completed);
+                report.dropped +=
+                    usize::from(terminal_changed && mapped.terminal == TodoistTerminal::Deleted);
+                report.unchanged += usize::from(!changed);
+                continue;
+            };
+
+            if let Some(external) = external.as_ref()
+                && !todoist_recurrence_is_authoritative_in_tx(tx, user_id, external.task_id).await?
+            {
+                let (entry_id, changed, terminal_changed) = refresh_existing_todoist_task_in_tx(
+                    tx,
+                    user_id,
+                    producer_credential_id,
+                    external.task_id,
+                    &mapped,
+                    project_slug.as_deref(),
+                    contexts.as_deref(),
+                    context_review.as_deref(),
+                    now,
+                )
+                .await?;
+                record_todoist_external_ref_in_tx(
+                    tx,
+                    user_id,
+                    &mapped.external_id,
+                    external.task_id,
+                    entry_id,
+                    external.series_id.as_deref(),
+                    external.occurrence_key.as_deref(),
+                    false,
+                )
+                .await?;
+                report.updated += usize::from(changed);
+                report.completed +=
+                    usize::from(terminal_changed && mapped.terminal == TodoistTerminal::Completed);
+                report.dropped +=
+                    usize::from(terminal_changed && mapped.terminal == TodoistTerminal::Deleted);
+                report.unchanged += usize::from(!changed);
+                continue;
+            }
+
+            let occurrence_key = mapped.occurrence_key.as_deref().ok_or_else(|| {
+                ApiError::invalid("Todoist recurrence requires an occurrence key")
+            })?;
+            let occurrence =
+                todoist_occurrence_in_tx(tx, user_id, &recurrence.series_id, occurrence_key)
+                    .await?;
+            let repoint = todoist_should_repoint(
+                external
+                    .as_ref()
+                    .and_then(|value| value.occurrence_key.as_deref()),
+                occurrence_key,
+            ) && !matches!(
+                (external.as_ref(), occurrence.as_ref()),
+                (Some(external), Some((occurrence_task_id, _)))
+                    if *occurrence_task_id != external.task_id
+            );
+            if let Some(external) = external.as_ref()
+                && external
+                    .occurrence_key
+                    .as_deref()
+                    .is_some_and(|current| current.starts_with("review:"))
+            {
+                if occurrence.is_some() {
+                    report.unchanged += 1;
+                    continue;
+                }
+                let (entry_id, changed, terminal_changed) = refresh_existing_todoist_task_in_tx(
+                    tx,
+                    user_id,
+                    producer_credential_id,
+                    external.task_id,
+                    &mapped,
+                    project_slug.as_deref(),
+                    contexts.as_deref(),
+                    context_review.as_deref(),
+                    now,
+                )
+                .await?;
+                record_todoist_external_ref_in_tx(
+                    tx,
+                    user_id,
+                    &mapped.external_id,
+                    external.task_id,
+                    entry_id,
+                    external.series_id.as_deref(),
+                    external.occurrence_key.as_deref(),
+                    false,
+                )
+                .await?;
+                report.updated += usize::from(changed);
+                report.completed +=
+                    usize::from(terminal_changed && mapped.terminal == TodoistTerminal::Completed);
+                report.dropped +=
+                    usize::from(terminal_changed && mapped.terminal == TodoistTerminal::Deleted);
+                report.unchanged += usize::from(!changed);
+                continue;
+            }
+            if occurrence.is_none()
+                && repoint
+                && external
+                    .as_ref()
+                    .is_some_and(|value| value.occurrence_key.as_deref() != Some(occurrence_key))
+            {
+                let external = external.as_ref().expect("checked external");
+                let current_status = sqlx::query_scalar::<_, String>(
+                    "SELECT status FROM straylight.task_index WHERE user_id=$1 AND task_id=$2",
+                )
+                .bind(user_id)
+                .bind(external.task_id)
+                .fetch_one(&mut **tx)
+                .await?;
+                if current_status != "done" {
+                    let (_, changed, terminal_changed) = refresh_existing_todoist_task_in_tx(
+                        tx,
+                        user_id,
+                        producer_credential_id,
+                        external.task_id,
+                        &mapped,
+                        project_slug.as_deref(),
+                        contexts.as_deref(),
+                        context_review.as_deref(),
+                        now,
+                    )
+                    .await?;
+                    let entry_id = set_todoist_canonical_identity_in_tx(
+                        tx,
+                        user_id,
+                        producer_credential_id,
+                        external.task_id,
+                        &mapped.external_id,
+                        Some(&recurrence.series_id),
+                        Some(occurrence_key),
+                        true,
+                        now,
+                    )
+                    .await?;
+                    record_todoist_occurrence_in_tx(
+                        tx,
+                        user_id,
+                        &recurrence.series_id,
+                        occurrence_key,
+                        external.task_id,
+                        entry_id,
+                    )
+                    .await?;
+                    record_todoist_external_ref_in_tx(
+                        tx,
+                        user_id,
+                        &mapped.external_id,
+                        external.task_id,
+                        entry_id,
+                        Some(&recurrence.series_id),
+                        Some(occurrence_key),
+                        true,
+                    )
+                    .await?;
+                    report.updated += usize::from(changed);
+                    report.completed += usize::from(
+                        terminal_changed && mapped.terminal == TodoistTerminal::Completed,
+                    );
+                    report.dropped += usize::from(
+                        terminal_changed && mapped.terminal == TodoistTerminal::Deleted,
+                    );
+                    report.unchanged += usize::from(!changed);
+                    continue;
+                }
+            }
+            if occurrence.is_none() && external.is_some() && !repoint {
+                report.unchanged += 1;
+                continue;
+            }
+
+            if repoint
+                && external.as_ref().is_some_and(|external| {
+                    occurrence
+                        .as_ref()
+                        .is_none_or(|(task_id, _)| *task_id != external.task_id)
+                })
+            {
+                let external = external.as_ref().expect("checked external");
+                set_todoist_canonical_identity_in_tx(
+                    tx,
+                    user_id,
+                    producer_credential_id,
+                    external.task_id,
+                    &mapped.external_id,
+                    external.series_id.as_deref(),
+                    external.occurrence_key.as_deref(),
+                    false,
+                    now,
+                )
+                .await?;
+            }
+            let (task_id, entry_id, created, changed, terminal_changed) =
+                if let Some((task_id, _)) = occurrence {
+                    let (entry_id, changed, terminal_changed) =
+                        refresh_existing_todoist_task_in_tx(
+                            tx,
+                            user_id,
+                            producer_credential_id,
+                            task_id,
+                            &mapped,
+                            project_slug.as_deref(),
+                            contexts.as_deref(),
+                            context_review.as_deref(),
+                            now,
+                        )
+                        .await?;
+                    (task_id, entry_id, false, changed, terminal_changed)
+                } else {
+                    let (task_id, entry_id) = create_todoist_task_in_tx(
+                        tx,
+                        user_id,
+                        producer_credential_id,
+                        &mapped,
+                        project_slug.as_deref().unwrap_or("todoist-inbox"),
+                        contexts.as_deref().unwrap_or_default(),
+                        context_review.as_deref().unwrap_or_default(),
+                        now,
+                    )
+                    .await?;
+                    (
+                        task_id,
+                        entry_id,
+                        true,
+                        true,
+                        mapped.terminal != TodoistTerminal::Open,
+                    )
+                };
+            let entry_id = if repoint {
+                set_todoist_canonical_identity_in_tx(
+                    tx,
+                    user_id,
+                    producer_credential_id,
+                    task_id,
+                    &mapped.external_id,
+                    Some(&recurrence.series_id),
+                    Some(occurrence_key),
+                    true,
+                    now,
+                )
+                .await?
+            } else {
+                entry_id
+            };
+            record_todoist_occurrence_in_tx(
+                tx,
+                user_id,
+                &recurrence.series_id,
+                occurrence_key,
+                task_id,
+                entry_id,
+            )
+            .await?;
+            record_todoist_external_ref_in_tx(
+                tx,
+                user_id,
+                &mapped.external_id,
+                task_id,
+                entry_id,
+                Some(&recurrence.series_id),
+                Some(occurrence_key),
+                repoint,
+            )
+            .await?;
+            report.created += usize::from(created);
+            report.updated += usize::from(!created && changed);
+            report.completed +=
+                usize::from(terminal_changed && mapped.terminal == TodoistTerminal::Completed);
+            report.dropped +=
+                usize::from(terminal_changed && mapped.terminal == TodoistTerminal::Deleted);
+            report.unchanged += usize::from(!changed);
+        }
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.task_audit_events(
+          user_id,credential_id,action,details
+        ) VALUES($1,$2,'todoist.pull.apply',$3)
+        "#,
+    )
+    .bind(user_id)
+    .bind(producer_credential_id)
+    .bind(json!({
+        "projects_seen":report.projects_seen,
+        "items_seen":report.items_seen,
+        "created":report.created,
+        "updated":report.updated,
+        "completed":report.completed,
+        "dropped":report.dropped,
+        "unchanged":report.unchanged,
+    }))
+    .execute(&mut **tx)
+    .await?;
+    Ok(report)
+}
+
+async fn todoist_status_json_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    environment_enabled: bool,
+) -> ApiResult<Value> {
     let config=sqlx::query("SELECT mode,configuration_generation,updated_at FROM straylight.task_integration_config WHERE user_id=$1 AND system='todoist'")
-        .bind(auth.user_id.0).fetch_one(&mut *tx).await?;
+        .bind(user_id).fetch_one(&mut **tx).await?;
     let sync=sqlx::query("SELECT configuration_generation,last_run_at,last_outcome,last_error_code,next_run_at,updated_at FROM straylight.task_sync_state WHERE user_id=$1 AND system='todoist'")
-        .bind(auth.user_id.0).fetch_optional(&mut *tx).await?;
+        .bind(user_id).fetch_optional(&mut **tx).await?;
     let token_configured =
         sqlx::query_scalar::<_, bool>("SELECT straylight.task_todoist_token_configured($1)")
-            .bind(auth.user_id.0)
-            .fetch_one(&mut *tx)
+            .bind(user_id)
+            .fetch_one(&mut **tx)
             .await?;
     let saved_mode: String = config.get("mode");
-    let effective_mode = if state.config.todoist_sync_enabled && token_configured {
+    let effective_mode = if environment_enabled && token_configured {
         saved_mode.as_str()
     } else {
         "off"
     };
-    let data = json!({
-        "environment_enabled":state.config.todoist_sync_enabled,
+    Ok(json!({
+        "environment_enabled":environment_enabled,
         "saved_mode":saved_mode,
         "effective_mode":effective_mode,
         "token_configured":token_configured,
@@ -5538,7 +7524,314 @@ pub(crate) async fn todoist_status(
         "last_outcome":sync.as_ref().and_then(|row|row.get::<Option<String>,_>("last_outcome")),
         "last_error_code":sync.as_ref().and_then(|row|row.get::<Option<String>,_>("last_error_code")),
         "next_run_at":sync.as_ref().and_then(|row|row.get::<Option<DateTime<Utc>>,_>("next_run_at")),
-    });
+    }))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ConfigureTodoistRequest {
+    pub expected_generation: i64,
+    pub idempotency_key: String,
+    pub mode: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PullTodoistRequest {
+    pub idempotency_key: String,
+}
+
+async fn require_todoist_web_owner_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> ApiResult<()> {
+    let result = sqlx::query("SELECT straylight.require_todoist_web_owner($1)")
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await;
+    if let Err(error) = result {
+        if error
+            .as_database_error()
+            .and_then(|database| database.code())
+            .as_deref()
+            == Some("42501")
+        {
+            return Err(ApiError::public(
+                axum::http::StatusCode::FORBIDDEN,
+                "todoist_owner_web_required",
+                "Todoist integration management requires an owner Web session",
+            ));
+        }
+        return Err(error.into());
+    }
+    Ok(())
+}
+
+pub(crate) async fn configure_todoist(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(request): Json<ConfigureTodoistRequest>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::IntegrationManage)?;
+    if request.expected_generation < 1 {
+        return Err(ApiError::invalid("expected_generation must be positive"));
+    }
+    if !["off", "import_once", "pull"].contains(&request.mode.as_str()) {
+        return Err(ApiError::invalid(
+            "Todoist mode must be off, import_once, or pull",
+        ));
+    }
+    let mut tx = state.begin_write(&auth).await?;
+    require_todoist_web_owner_in_tx(&mut tx, auth.user_id.0).await?;
+    match begin_receipt(
+        &mut tx,
+        &auth,
+        "task.todoist.configure",
+        &request.idempotency_key,
+        &request,
+    )
+    .await?
+    {
+        ReceiptStart::Replay(receipt) => {
+            tx.commit().await?;
+            return Ok(envelope(ResponseStatus::NoOp, receipt));
+        }
+        ReceiptStart::New => {}
+    }
+
+    let row = sqlx::query(
+        "SELECT mode,configuration_generation FROM straylight.task_integration_config WHERE user_id=$1 AND system='todoist' FOR UPDATE",
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&mut *tx)
+    .await?;
+    let current_mode: String = row.get("mode");
+    let current_generation: i64 = row.get("configuration_generation");
+    if current_generation != request.expected_generation {
+        return Err(ApiError::conflict(
+            "todoist_configuration_conflict",
+            "Todoist configuration changed after expected_generation",
+            json!({
+                "expected_generation":request.expected_generation,
+                "current_generation":current_generation,
+            }),
+        ));
+    }
+    let changed = current_mode != request.mode;
+    let generation = current_generation + i64::from(changed);
+    if changed {
+        sqlx::query(
+            r#"
+            UPDATE straylight.task_integration_config
+            SET mode=$2,configuration_generation=$3,updated_at=clock_timestamp()
+            WHERE user_id=$1 AND system='todoist'
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .bind(&request.mode)
+        .bind(generation)
+        .execute(&mut *tx)
+        .await?;
+    }
+    let token_configured =
+        sqlx::query_scalar::<_, bool>("SELECT straylight.task_todoist_token_configured($1)")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?;
+    let import_once_complete = !changed
+        && request.mode == "import_once"
+        && sqlx::query_scalar::<_, Option<String>>(
+            "SELECT last_outcome FROM straylight.task_sync_state WHERE user_id=$1 AND system='todoist'",
+        )
+        .bind(auth.user_id.0)
+        .fetch_one(&mut *tx)
+        .await?
+        .as_deref()
+            == Some("success");
+    let eligible = state.config.todoist_sync_enabled
+        && token_configured
+        && request.mode.as_str() != "off"
+        && !import_once_complete;
+    if changed {
+        sqlx::query(
+            r#"
+            UPDATE straylight.task_sync_state
+            SET configuration_generation=$2,last_outcome=NULL,last_error_code=NULL,
+                next_run_at=CASE WHEN $3 THEN clock_timestamp() ELSE NULL END,
+                manual_requested_at=NULL,lease_owner=NULL,lease_expires_at=NULL,
+                updated_at=clock_timestamp()
+            WHERE user_id=$1 AND system='todoist'
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .bind(generation)
+        .bind(eligible)
+        .execute(&mut *tx)
+        .await?;
+    } else if !eligible {
+        sqlx::query(
+            r#"
+            UPDATE straylight.task_sync_state
+            SET next_run_at=NULL,manual_requested_at=NULL,
+                lease_owner=NULL,lease_expires_at=NULL,updated_at=clock_timestamp()
+            WHERE user_id=$1 AND system='todoist'
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query(
+        "INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES($1,$2,'todoist.configure',$3)",
+    )
+    .bind(auth.user_id.0)
+    .bind(auth.credential_id.0)
+    .bind(json!({"mode":request.mode,"generation":generation,"changed":changed}))
+    .execute(&mut *tx)
+    .await?;
+    let status =
+        todoist_status_json_in_tx(&mut tx, auth.user_id.0, state.config.todoist_sync_enabled)
+            .await?;
+    let receipt = json!({"status":status,"changed":changed,"replayed":false});
+    finalize_receipt(
+        &mut tx,
+        &auth,
+        "task.todoist.configure",
+        &request.idempotency_key,
+        None,
+        &receipt,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(envelope(
+        if changed {
+            ResponseStatus::Committed
+        } else {
+            ResponseStatus::NoOp
+        },
+        receipt,
+    ))
+}
+
+pub(crate) async fn pull_todoist(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(request): Json<PullTodoistRequest>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::IntegrationManage)?;
+    let mut tx = state.begin_write(&auth).await?;
+    require_todoist_web_owner_in_tx(&mut tx, auth.user_id.0).await?;
+    match begin_receipt(
+        &mut tx,
+        &auth,
+        "task.todoist.pull",
+        &request.idempotency_key,
+        &request,
+    )
+    .await?
+    {
+        ReceiptStart::Replay(receipt) => {
+            tx.commit().await?;
+            return Ok(envelope(ResponseStatus::NoOp, receipt));
+        }
+        ReceiptStart::New => {}
+    }
+    let row = sqlx::query(
+        r#"
+        SELECT config.mode,config.configuration_generation,
+               state.last_outcome,state.configuration_generation AS state_generation
+        FROM straylight.task_integration_config AS config
+        JOIN straylight.task_sync_state AS state
+          ON state.user_id=config.user_id AND state.system=config.system
+        WHERE config.user_id=$1 AND config.system='todoist'
+        FOR UPDATE OF config,state
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&mut *tx)
+    .await?;
+    let mode: String = row.get("mode");
+    let generation: i64 = row.get("configuration_generation");
+    let state_generation: i64 = row.get("state_generation");
+    let last_outcome: Option<String> = row.get("last_outcome");
+    let token_configured =
+        sqlx::query_scalar::<_, bool>("SELECT straylight.task_todoist_token_configured($1)")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?;
+    let eligible = state.config.todoist_sync_enabled
+        && token_configured
+        && matches!(mode.as_str(), "import_once" | "pull")
+        && !(mode == "import_once"
+            && state_generation == generation
+            && last_outcome.as_deref() == Some("success"));
+    if eligible {
+        sqlx::query(
+            r#"
+            UPDATE straylight.task_sync_state
+            SET manual_requested_at=COALESCE(manual_requested_at,clock_timestamp()),
+                next_run_at=COALESCE(next_run_at,clock_timestamp()),
+                updated_at=clock_timestamp()
+            WHERE user_id=$1 AND system='todoist'
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE straylight.task_sync_state
+            SET next_run_at=NULL,manual_requested_at=NULL,
+                lease_owner=NULL,lease_expires_at=NULL,updated_at=clock_timestamp()
+            WHERE user_id=$1 AND system='todoist'
+            "#,
+        )
+        .bind(auth.user_id.0)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query(
+        "INSERT INTO straylight.task_audit_events(user_id,credential_id,action,details) VALUES($1,$2,'todoist.pull.request',$3)",
+    )
+    .bind(auth.user_id.0)
+    .bind(auth.credential_id.0)
+    .bind(json!({"queued":eligible,"mode":mode,"generation":generation}))
+    .execute(&mut *tx)
+    .await?;
+    let status =
+        todoist_status_json_in_tx(&mut tx, auth.user_id.0, state.config.todoist_sync_enabled)
+            .await?;
+    let receipt = json!({"queued":eligible,"status":status,"replayed":false});
+    finalize_receipt(
+        &mut tx,
+        &auth,
+        "task.todoist.pull",
+        &request.idempotency_key,
+        None,
+        &receipt,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(envelope(
+        if eligible {
+            ResponseStatus::Committed
+        } else {
+            ResponseStatus::NoOp
+        },
+        receipt,
+    ))
+}
+
+pub(crate) async fn todoist_status(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::TaskRead)?;
+    let mut tx = state.begin_read(&auth).await?;
+    let data =
+        todoist_status_json_in_tx(&mut tx, auth.user_id.0, state.config.todoist_sync_enabled)
+            .await?;
     tx.commit().await?;
     Ok(envelope(ResponseStatus::Complete, data))
 }
@@ -5950,6 +8243,76 @@ mod tests {
         assert_eq!(damerau_levenshtein("errands", "erands"), 1);
         assert_eq!(damerau_levenshtein("phone", "phnoe"), 1);
         assert!(damerau_levenshtein("phone", "workshop") > 2);
+    }
+
+    #[test]
+    fn todoist_refresh_and_occurrence_order_preserve_local_authority() {
+        let todoist = cell(json!("remote"), "todoist");
+        let owner = cell(json!("local"), "owner");
+        let agent = cell(json!("local"), "agent:codex");
+        assert!(todoist_refresh_allowed(Some(&todoist)));
+        assert!(todoist_refresh_allowed(None));
+        assert!(!todoist_refresh_allowed(Some(&owner)));
+        assert!(!todoist_refresh_allowed(Some(&agent)));
+
+        assert!(todoist_should_repoint(None, "2026-09-01"));
+        assert!(todoist_should_repoint(Some("2026-08-25"), "2026-09-01"));
+        assert!(todoist_should_repoint(Some("2026-09-01"), "2026-09-01"));
+        assert!(todoist_should_repoint(Some("2026-09-08"), "2026-09-01"));
+        assert!(!todoist_should_repoint(
+            Some("review:0198f000-0000-7000-8000-000000000001"),
+            "2026-09-01"
+        ));
+        assert_eq!(
+            todoist_task_url("6X4F7q8v2R9p3M5N"),
+            "https://app.todoist.com/app/task/6X4F7q8v2R9p3M5N"
+        );
+
+        let now: DateTime<Utc> = "2026-08-27T12:00:00Z".parse().unwrap();
+        let task_id = Uuid::now_v7();
+        let mut owner_dropped = json!({
+            "kind":"task","schema":TASK_SCHEMA,"task":{
+                "id":task_id,"title":"Owner decision",
+                "status":cell(json!("dropped"),"owner"),
+                "dropped_reason":cell(json!("not doing this"),"owner"),
+                "dropped_at":now,
+            }
+        });
+        assert!(
+            !set_todoist_terminal(&mut owner_dropped, TodoistTerminal::Completed, now,).unwrap()
+        );
+        assert_eq!(
+            string_value(
+                direct_task_object_mut(&mut owner_dropped).unwrap(),
+                "status"
+            )
+            .unwrap()
+            .as_deref(),
+            Some("dropped")
+        );
+        assert_eq!(
+            string_value(
+                direct_task_object_mut(&mut owner_dropped).unwrap(),
+                "dropped_reason"
+            )
+            .unwrap()
+            .as_deref(),
+            Some("not doing this")
+        );
+
+        let mut owner_open = json!({
+            "kind":"task","schema":TASK_SCHEMA,"task":{
+                "id":task_id,"title":"Owner kept open",
+                "status":cell(json!("open"),"agent:codex"),
+            }
+        });
+        assert!(!set_todoist_terminal(&mut owner_open, TodoistTerminal::Deleted, now,).unwrap());
+        assert_eq!(
+            string_value(direct_task_object_mut(&mut owner_open).unwrap(), "status")
+                .unwrap()
+                .as_deref(),
+            Some("open")
+        );
     }
 
     #[test]

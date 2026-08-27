@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TEST_NOTIFICATION_TOKEN_KEY = "A" * 43 + "="
+TEST_SECRET_ENCRYPTION_KEY = "B" * 43 + "="
 TEST_APNS_PRIVATE_KEY = (
     "-----BEGIN PRIVATE KEY-----\n"
     + ("A" * 128)
@@ -125,6 +126,7 @@ class ProductionContractTests(unittest.TestCase):
             "STRAYLIGHT_CONTINUATION_SIGNING_KEY",
             "OPENAI_API_KEY",
             "STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY",
+            "STRAYLIGHT_SECRET_ENCRYPTION_KEY",
             "STRAYLIGHT_APNS_PRIVATE_KEY",
             "RESEND_API_KEY",
             "STRAYLIGHT_DEV_READ_WRITE_TOKEN",
@@ -145,6 +147,11 @@ class ProductionContractTests(unittest.TestCase):
                 "/run/secrets/notification_token_encryption_key",
                 environment["STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE"],
             )
+            self.assertEqual(
+                "/run/secrets/secret_encryption_key",
+                environment["STRAYLIGHT_SECRET_ENCRYPTION_KEY_FILE"],
+            )
+            self.assertEqual("false", environment["STRAYLIGHT_TODOIST_SYNC_ENABLED"])
             self.assertEqual(
                 "com.rourkem.straylight",
                 environment["STRAYLIGHT_APNS_APP_ID"],
@@ -360,6 +367,8 @@ class ProductionContractTests(unittest.TestCase):
             "/run/secrets/notification_token_encryption_key",
             worker_secret_targets,
         )
+        self.assertIn("/run/secrets/secret_encryption_key", api_secret_targets)
+        self.assertIn("/run/secrets/secret_encryption_key", worker_secret_targets)
         self.assertNotIn("/run/secrets/apns_private_key", api_secret_targets)
         self.assertIn("/run/secrets/apns_private_key", worker_secret_targets)
 
@@ -396,6 +405,18 @@ class ProductionContractTests(unittest.TestCase):
         self.assertIn("straylight-managed-s3-coordinated-backup@v1", verifier)
         self.assertIn("managed-production-backup:", makefile)
         self.assertIn("managed-production-restore-drill:", makefile)
+
+    def test_todoist_fixture_transport_is_absent_from_production_builds(self):
+        production_sources = [
+            ROOT / "apps/api/Dockerfile",
+            ROOT / "compose.production.yaml",
+            ROOT / "compose.managed-s3.yaml",
+            ROOT / ".railway/railway.ts",
+        ]
+        for path in production_sources:
+            source = path.read_text()
+            self.assertNotIn("todoist-fixture", source, path)
+            self.assertNotIn("STRAYLIGHT_TODOIST_FIXTURE_ORIGIN", source, path)
 
     def test_shipped_base_images_are_digest_pinned(self):
         dockerfiles = [
@@ -576,6 +597,7 @@ class ProductionContractTests(unittest.TestCase):
                 "minio_app_secret_key": "s" * 24,
                 "continuation_signing_key": "c" * 32,
                 "notification_token_encryption_key": TEST_NOTIFICATION_TOKEN_KEY,
+                "secret_encryption_key": TEST_SECRET_ENCRYPTION_KEY,
                 "apns_private_key": TEST_APNS_PRIVATE_KEY,
                 "openai_api_key": "sk-unit-" + ("o" * 32),
                 "resend_api_key": "re-unit-" + ("r" * 32),
@@ -756,6 +778,7 @@ class ProductionContractTests(unittest.TestCase):
                 ),
                 "continuation_signing_key": "c" * 32,
                 "notification_token_encryption_key": TEST_NOTIFICATION_TOKEN_KEY,
+                "secret_encryption_key": TEST_SECRET_ENCRYPTION_KEY,
                 "apns_private_key": TEST_APNS_PRIVATE_KEY,
                 "openai_api_key": "sk-unit-" + ("o" * 32),
                 "resend_api_key": "re-unit-" + ("r" * 32),
@@ -1255,6 +1278,7 @@ fi
                 {
                     "continuation_signing_key",
                     "notification_token_encryption_key",
+                    "secret_encryption_key",
                     "apns_private_key",
                     "database_url_admin",
                     "database_url_ro",

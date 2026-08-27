@@ -45,6 +45,7 @@ database_url_ro
 database_url_admin
 continuation_signing_key
 notification_token_encryption_key
+secret_encryption_key
 apns_private_key
 openai_api_key
 resend_api_key
@@ -97,6 +98,7 @@ require_minimum_bytes postgres_app_rw_password 16
 require_minimum_bytes postgres_app_ro_password 16
 require_minimum_bytes continuation_signing_key 32
 require_minimum_bytes notification_token_encryption_key 43
+require_minimum_bytes secret_encryption_key 43
 require_minimum_bytes apns_private_key 100
 require_minimum_bytes openai_api_key 20
 require_minimum_bytes resend_api_key 20
@@ -108,7 +110,8 @@ fi
 
 for name in postgres_admin_password postgres_app_rw_password \
   postgres_app_ro_password continuation_signing_key \
-  notification_token_encryption_key apns_private_key openai_api_key \
+  notification_token_encryption_key secret_encryption_key \
+  apns_private_key openai_api_key \
   resend_api_key dd_api_key; do
   if grep -Eiq '(^|[_-])(replace|change-?me|placeholder|example)([_-]|$)' \
     "$secrets_dir/$name"; then
@@ -133,6 +136,26 @@ case "$notification_key" in
     ;;
   *)
     echo "notification_token_encryption_key must decode to exactly 32 bytes" >&2
+    exit 1
+    ;;
+esac
+
+secret_key=$(tr -d '\r\n' <"$secrets_dir/secret_encryption_key")
+case "$secret_key" in
+  ???????????????????????????????????????????=)
+    printf '%s' "$secret_key" | grep -Eq '^[A-Za-z0-9+/]{43}=$' || {
+      echo "secret_encryption_key must be standard base64 for exactly 32 bytes" >&2
+      exit 1
+    }
+    ;;
+  ???????????????????????????????????????????)
+    printf '%s' "$secret_key" | grep -Eq '^[A-Za-z0-9_-]{43}$' || {
+      echo "secret_encryption_key must be unpadded URL-safe base64 for exactly 32 bytes" >&2
+      exit 1
+    }
+    ;;
+  *)
+    echo "secret_encryption_key must decode to exactly 32 bytes" >&2
     exit 1
     ;;
 esac

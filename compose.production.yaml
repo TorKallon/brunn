@@ -104,6 +104,7 @@ services:
       STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
       STRAYLIGHT_SECRET_ENCRYPTION_KEY: ""
       STRAYLIGHT_SECRET_ENCRYPTION_KEY_FILE: /run/secrets/secret_encryption_key
+      STRAYLIGHT_TODOIST_SYNC_ENABLED: ${STRAYLIGHT_TODOIST_SYNC_ENABLED:-false}
     labels:
       com.datadoghq.tags.env: production
       com.datadoghq.tags.service: ${DD_SERVICE:-straylight}
@@ -135,6 +136,9 @@ services:
       STRAYLIGHT_APNS_PRIVATE_KEY_FILE: /run/secrets/apns_private_key
       STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY: ""
       STRAYLIGHT_NOTIFICATION_TOKEN_ENCRYPTION_KEY_FILE: /run/secrets/notification_token_encryption_key
+      STRAYLIGHT_SECRET_ENCRYPTION_KEY: ""
+      STRAYLIGHT_SECRET_ENCRYPTION_KEY_FILE: /run/secrets/secret_encryption_key
+      STRAYLIGHT_TODOIST_SYNC_ENABLED: ${STRAYLIGHT_TODOIST_SYNC_ENABLED:-false}
     secrets:
       - database_url_rw
       - database_url_ro
@@ -144,6 +148,7 @@ services:
       - continuation_signing_key
       - openai_api_key
       - notification_token_encryption_key
+      - secret_encryption_key
       - apns_private_key
     labels:
       com.datadoghq.tags.env: production

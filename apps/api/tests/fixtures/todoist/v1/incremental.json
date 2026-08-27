@@ -1,0 +1,61 @@
+{
+  "sync_token": "fixture-sync-token-incremental-redacted",
+  "full_sync": false,
+  "projects": [],
+  "items": [
+    {
+      "id": "9QwErTyUiOpAsDfG",
+      "content": "Todoist tried to replace owner title",
+      "description": "Todoist refreshes only fields still sourced by Todoist.",
+      "project_id": "6X7r2pQm9AbCdEfG",
+      "labels": ["online"],
+      "priority": 2,
+      "checked": true,
+      "is_deleted": true,
+      "completed_at": "2026-09-01T18:00:00Z",
+      "due": {
+        "date": "2026-08-30",
+        "string": "Aug 30",
+        "lang": "en",
+        "is_recurring": false,
+        "timezone": null
+      },
+      "deadline": {
+        "date": "2026-09-01",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "A1b2C3d4E5f6G7h8",
+      "content": "Monday owner review",
+      "description": "Recurring review from Todoist.",
+      "project_id": "6X7r2pQm9AbCdEfG",
+      "labels": ["review"],
+      "priority": 4,
+      "checked": false,
+      "is_deleted": false,
+      "completed_at": null,
+      "due": {
+        "date": "2026-09-07T16:00:00Z",
+        "string": "every Monday at 9am",
+        "lang": "en",
+        "is_recurring": true,
+        "timezone": "America/Los_Angeles"
+      },
+      "deadline": null
+    },
+    {
+      "id": "H4rDNoDue0000001",
+      "content": "Clarify hard-label date",
+      "description": "Deleted remotely.",
+      "project_id": "8N4t5UvWxYz12345",
+      "labels": ["hard"],
+      "priority": 1,
+      "checked": false,
+      "is_deleted": true,
+      "completed_at": null,
+      "due": null,
+      "deadline": null
+    }
+  ]
+}

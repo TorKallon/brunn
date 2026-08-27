@@ -6,6 +6,13 @@ rust-version = "1.96"
 license = "UNLICENSED"
 publish = false
 
+[features]
+default = []
+# Builds used only by the disposable gate-12e stack may point the read-only
+# Todoist client at a loopback fixture server. Production builds never enable
+# this feature, and runtime validation also rejects it under STRAYLIGHT_ENV=production.
+todoist-fixture = []
+
 [lib]
 name = "straylight"
 path = "src/lib.rs"
