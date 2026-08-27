@@ -337,20 +337,99 @@ async fn messaging_routes_enforce_the_flag_identity_idempotency_sync_and_authori
     };
 
     let gate_off = router(state.clone());
-    let response = request_bytes(
-        &gate_off,
-        Method::GET,
-        &format!("{MESSAGING_ROOT}/sync?cursor=0&wait=0"),
-        None,
-        None,
-    )
-    .await;
-    assert_status(&response, StatusCode::NOT_FOUND);
+    let gated_conversation_id = Uuid::now_v7();
+    let gate_off_routes = vec![
+        (
+            "sync",
+            Method::GET,
+            format!("{MESSAGING_ROOT}/sync?cursor=0&wait=0"),
+            None,
+        ),
+        (
+            "list agents",
+            Method::GET,
+            format!("{MESSAGING_ROOT}/agents"),
+            None,
+        ),
+        (
+            "create conversation",
+            Method::POST,
+            format!("{MESSAGING_ROOT}/conversations"),
+            Some(b"{}".to_vec()),
+        ),
+        (
+            "send message",
+            Method::POST,
+            format!("{MESSAGING_ROOT}/conversations/{gated_conversation_id}/messages"),
+            Some(b"{}".to_vec()),
+        ),
+        (
+            "mark read",
+            Method::POST,
+            format!("{MESSAGING_ROOT}/conversations/{gated_conversation_id}/read"),
+            Some(b"{}".to_vec()),
+        ),
+        (
+            "resume conversation",
+            Method::POST,
+            format!("{MESSAGING_ROOT}/conversations/{gated_conversation_id}/resume"),
+            Some(b"{}".to_vec()),
+        ),
+        (
+            "close conversation",
+            Method::POST,
+            format!("{MESSAGING_ROOT}/conversations/{gated_conversation_id}/close"),
+            Some(b"{}".to_vec()),
+        ),
+        (
+            "create agent",
+            Method::POST,
+            format!("{MESSAGING_ROOT}/agents"),
+            Some(b"{}".to_vec()),
+        ),
+        (
+            "update agent",
+            Method::PATCH,
+            format!("{MESSAGING_ROOT}/agents/agent-a"),
+            Some(b"{}".to_vec()),
+        ),
+        (
+            "bind agent credential",
+            Method::PUT,
+            format!("{MESSAGING_ROOT}/agents/agent-a/credential"),
+            Some(b"{}".to_vec()),
+        ),
+    ];
+    for (route_name, method, uri, bytes) in gate_off_routes {
+        let response = request_bytes(&gate_off, method.clone(), &uri, None, bytes).await;
+        assert_eq!(
+            response.status,
+            StatusCode::NOT_FOUND,
+            "messaging gate leaked the {route_name} route ({method} {uri})"
+        );
+    }
 
     let fixture = seed_workspace(&pool, "primary-workspace").await;
     let other_owner = seed_other_owner(&pool).await;
     state.config.messaging_enabled = true;
     let app = router(state);
+
+    let listed_agents = request_bytes(
+        &app,
+        Method::GET,
+        &format!("{MESSAGING_ROOT}/agents"),
+        Some(&fixture.owner.token),
+        None,
+    )
+    .await;
+    assert_status(&listed_agents, StatusCode::OK);
+    assert!(
+        data(&listed_agents)
+            .get("agents")
+            .and_then(Value::as_array)
+            .is_some_and(|agents| agents.len() == 2),
+        "gate-on agents route reaches its handler and lists the seeded principals"
+    );
 
     let create_request = json!({
         "participants": ["agent-a"],
