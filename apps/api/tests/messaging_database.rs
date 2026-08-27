@@ -313,6 +313,132 @@ async fn insert_ordinary_entry(pool: &PgPool, user_id: Uuid) {
     tx.commit().await.expect("commit ordinary entry fixture");
 }
 
+async fn assert_narrow_notification_side_effect(
+    pool: &PgPool,
+    writer: &Principal,
+    entry: &EntryFixture,
+    conversation_id: Uuid,
+) {
+    let agent_id = format!("writer-{}", &conversation_id.simple().to_string()[..12]);
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.messaging_agents (
+          user_id,agent_id,display_name,principal_kind,delivery_mode,
+          created_by_credential_id
+        ) VALUES ($1,$2,'Notification writer','resident','pull',$3)
+        "#,
+    )
+    .bind(writer.user_id)
+    .bind(&agent_id)
+    .bind(writer.credential_id)
+    .execute(pool)
+    .await
+    .expect("seed messaging notification principal");
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.messaging_conversations (
+          user_id,conversation_id,entry_id,path,conversation_kind,direct_key,
+          created_by_agent_id,last_seq,last_message_at,latest_sync_cursor
+        ) VALUES ($1,$2,$3,$4,'direct',$5,$6,1,clock_timestamp(),1)
+        "#,
+    )
+    .bind(writer.user_id)
+    .bind(conversation_id)
+    .bind(entry.entry_id)
+    .bind(&entry.path)
+    .bind(format!("notification:{conversation_id}"))
+    .bind(&agent_id)
+    .execute(pool)
+    .await
+    .expect("seed messaging notification conversation");
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.messaging_participants (
+          user_id,conversation_id,agent_id,role
+        ) VALUES ($1,$2,$3,'participant')
+        "#,
+    )
+    .bind(writer.user_id)
+    .bind(conversation_id)
+    .bind(&agent_id)
+    .execute(pool)
+    .await
+    .expect("seed messaging notification participant");
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.messaging_message_index (
+          user_id,conversation_id,seq,message_id,from_agent_id,client_key,
+          request_hash,kind,body_md,sync_cursor
+        ) VALUES ($1,$2,1,$3,$4,'01ARZ3NDEKTSV4RRFFQ69G5FAV',$5,'text','hello',1)
+        "#,
+    )
+    .bind(writer.user_id)
+    .bind(conversation_id)
+    .bind(Uuid::now_v7())
+    .bind(&agent_id)
+    .bind("a".repeat(64))
+    .execute(pool)
+    .await
+    .expect("seed messaging notification message");
+
+    let target = json!({
+        "type": "conversation",
+        "conversation_id": conversation_id,
+        "seq": 1
+    });
+    let event_key = format!("message:{conversation_id}:1");
+    let mut tx = begin_as_app_rw(pool, &writer.auth).await;
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.notifications (
+          id,user_id,producer_credential_id,event_key,request_hash,
+          correlation_id,kind,importance,title,body,source,target,
+          occurred_at,expires_at
+        ) VALUES (
+          $1,$2,$3,$4,$5,$4,'operational','normal','New agent message',
+          'Open Straylight to view the conversation.',NULL,$6,
+          clock_timestamp(),clock_timestamp()+interval '24 hours'
+        )
+        "#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(writer.user_id)
+    .bind(writer.credential_id)
+    .bind(&event_key)
+    .bind("b".repeat(64))
+    .bind(&target)
+    .execute(&mut *tx)
+    .await
+    .expect("message.write publishes only its typed generic conversation side effect");
+
+    let forged = sqlx::query(
+        r#"
+        INSERT INTO straylight.notifications (
+          id,user_id,producer_credential_id,event_key,request_hash,
+          correlation_id,kind,importance,title,body,source,target,
+          occurred_at,expires_at
+        ) VALUES (
+          $1,$2,$3,$4,$5,$4,'operational','normal','New agent message',
+          'private message text',NULL,$6,
+          clock_timestamp(),clock_timestamp()+interval '24 hours'
+        )
+        "#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(writer.user_id)
+    .bind(writer.credential_id)
+    .bind(format!("message-system:{conversation_id}:1"))
+    .bind("c".repeat(64))
+    .bind(target)
+    .execute(&mut *tx)
+    .await
+    .expect_err("message.write cannot publish private or arbitrary notification copy");
+    assert_eq!(database_code(&forged).as_deref(), Some("42501"));
+    tx.rollback()
+        .await
+        .expect("rollback messaging notification policy contract");
+}
+
 async fn assert_entry_insert_denied(
     pool: &PgPool,
     principal: &Principal,
@@ -550,6 +676,7 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
 
     let own_conversation_id = Uuid::now_v7();
     let own_entry = insert_canonical_entry_as(&pool, &writer, own_conversation_id).await;
+    assert_narrow_notification_side_effect(&pool, &writer, &own_entry, own_conversation_id).await;
     insert_ordinary_entry(&pool, writer.user_id).await;
     let neighbor_entry = insert_canonical_entry_as(&pool, &neighbor, Uuid::now_v7()).await;
 

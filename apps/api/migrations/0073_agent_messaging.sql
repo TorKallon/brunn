@@ -987,6 +987,87 @@ WITH CHECK (
   )
 );
 
+-- A message send owns its generic conversation alert as one atomic side
+-- effect. This does not grant message writers the general notification
+-- publisher: only a typed target backed by the just-written conversation
+-- message and the fixed content-free copies below are writable.
+CREATE POLICY messaging_notifications_insert
+ON straylight.notifications
+FOR INSERT TO app_rw
+WITH CHECK (
+  user_id = straylight_auth.current_user_id()
+  AND straylight_auth.context_is_valid()
+  AND straylight_auth.has_capability('message.write')
+  AND producer_credential_id = straylight_auth.current_credential_id()
+  AND kind = 'operational'
+  AND source IS NULL
+  AND correlation_id = event_key
+  AND jsonb_typeof(target) = 'object'
+  AND target->>'type' = 'conversation'
+  AND target - 'type' - 'conversation_id' - 'seq' = '{}'::jsonb
+  AND target->>'conversation_id' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  AND target->>'seq' ~ '^[1-9][0-9]*$'
+  AND (
+    (
+      event_key = 'message:' || (target->>'conversation_id') || ':' || (target->>'seq')
+      AND importance = 'normal'
+      AND title = 'New agent message'
+      AND body = 'Open Straylight to view the conversation.'
+    )
+    OR (
+      event_key IN (
+        'needs-human:' || (target->>'conversation_id') || ':' || (target->>'seq'),
+        'reply-by:' || (target->>'conversation_id') || ':' || (target->>'seq')
+      )
+      AND importance = 'important'
+      AND title = 'Agent reply needed'
+      AND body = 'Open Straylight to continue an agent conversation.'
+    )
+    OR (
+      event_key = 'message-system:' || (target->>'conversation_id') || ':' || (target->>'seq')
+      AND importance = 'normal'
+      AND title = 'New agent message'
+      AND body = 'Open Straylight to view the conversation.'
+    )
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM straylight.messaging_message_index AS message
+    WHERE message.user_id = notifications.user_id
+      AND message.conversation_id::text = notifications.target->>'conversation_id'
+      AND message.seq::text = notifications.target->>'seq'
+  )
+);
+
+CREATE POLICY messaging_notification_deliveries_insert
+ON straylight.notification_deliveries
+FOR INSERT TO app_rw
+WITH CHECK (
+  user_id = straylight_auth.current_user_id()
+  AND straylight_auth.context_is_valid()
+  AND straylight_auth.has_capability('message.write')
+  AND EXISTS (
+    SELECT 1
+    FROM straylight.notifications AS notification
+    WHERE notification.user_id = notification_deliveries.user_id
+      AND notification.id = notification_deliveries.notification_id
+      AND notification.producer_credential_id = straylight_auth.current_credential_id()
+      AND notification.target->>'type' = 'conversation'
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM straylight.notification_installations AS installation
+    WHERE installation.user_id = notification_deliveries.user_id
+      AND installation.id = notification_deliveries.installation_id
+      AND installation.enabled
+      AND installation.revoked_at IS NULL
+  )
+  AND (
+    (state = 'queued' AND last_error_code IS NULL)
+    OR (state = 'suppressed' AND last_error_code = 'transport_disabled')
+  )
+);
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   straylight.messaging_agents,
   straylight.messaging_credential_bindings,
