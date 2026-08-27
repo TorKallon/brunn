@@ -398,13 +398,13 @@ async fn assert_schema_contract(pool: &PgPool) {
 
     let foreign_keys = sqlx::query(
         r#"
-        SELECT class.relname,pg_get_constraintdef(constraint.oid) AS definition
-        FROM pg_constraint AS constraint
-        JOIN pg_class AS class ON class.oid=constraint.conrelid
+        SELECT class.relname,pg_get_constraintdef(constraint_row.oid) AS definition
+        FROM pg_constraint AS constraint_row
+        JOIN pg_class AS class ON class.oid=constraint_row.conrelid
         JOIN pg_namespace AS namespace ON namespace.oid=class.relnamespace
         WHERE namespace.nspname='straylight'
           AND class.relname=ANY($1)
-          AND constraint.contype='f'
+          AND constraint_row.contype='f'
         "#,
     )
     .bind(MESSAGING_TABLES.map(str::to_owned).to_vec())
@@ -517,10 +517,10 @@ async fn assert_schema_contract(pool: &PgPool) {
 #[tokio::test]
 async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     let migration =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations/0072_agent_messaging.sql");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations/0073_agent_messaging.sql");
     assert!(
         migration.is_file(),
-        "missing 0072 agent-messaging database surface: {}",
+        "missing 0073 agent-messaging database surface: {}",
         migration.display()
     );
 
@@ -530,12 +530,7 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     assert_schema_contract(&pool).await;
 
     let writer = insert_principal(&pool, "writer", &["message.read", "message.write"]).await;
-    let neighbor = insert_principal(
-        &pool,
-        "neighbor",
-        &["message.read", "message.write"],
-    )
-    .await;
+    let neighbor = insert_principal(&pool, "neighbor", &["message.read", "message.write"]).await;
     insert_principal(
         &pool,
         "task-regression",
@@ -551,10 +546,7 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     )
     .await
     .expect_err("unapproved messaging capability must remain fail closed");
-    assert_eq!(
-        database_code(&unknown_capability).as_deref(),
-        Some("23514")
-    );
+    assert_eq!(database_code(&unknown_capability).as_deref(), Some("23514"));
 
     let own_conversation_id = Uuid::now_v7();
     let own_entry = insert_canonical_entry_as(&pool, &writer, own_conversation_id).await;
@@ -584,12 +576,11 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     };
 
     let mut read_tx = begin_as_app_rw(&pool, &same_user_reader.auth).await;
-    let visible_paths = sqlx::query_scalar::<_, String>(
-        "SELECT path FROM straylight.entries ORDER BY path",
-    )
-    .fetch_all(&mut *read_tx)
-    .await
-    .expect("message.read lists its canonical conversation entries");
+    let visible_paths =
+        sqlx::query_scalar::<_, String>("SELECT path FROM straylight.entries ORDER BY path")
+            .fetch_all(&mut *read_tx)
+            .await
+            .expect("message.read lists its canonical conversation entries");
     assert_eq!(visible_paths, vec![own_entry.path.clone()]);
     read_tx.rollback().await.expect("end messaging read check");
 

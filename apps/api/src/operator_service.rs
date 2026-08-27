@@ -32,6 +32,8 @@ const OWNER_CAPABILITIES: &[&str] = &[
     "task.read",
     "task.write",
     "integration.manage",
+    "message.read",
+    "message.write",
     "admin",
 ];
 
