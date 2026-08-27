@@ -11,7 +11,7 @@ use axum::{
     http::{Method, Request, StatusCode, header},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -387,6 +387,42 @@ async fn insert_delivery(
     (notification_id, delivery_id, client_installation_id)
 }
 
+async fn insert_installation_for_principal(
+    pool: &PgPool,
+    principal: &PrincipalFixture,
+    label: &str,
+) {
+    let installation_id = Uuid::now_v7();
+    let client_installation_id = Uuid::now_v7();
+    let key = [23_u8; 32];
+    let (ciphertext, nonce) = encryption_fixture(&key, principal.user_id, client_installation_id);
+
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.notification_installations (
+          id,user_id,client_installation_id,registered_by_credential_id,
+          platform,environment,app_id,token_ciphertext,token_nonce,
+          token_hash,preview,enabled
+        ) VALUES (
+          $1,$2,$3,$4,'ios','development',$5,$6,$7,$8,'generic',true
+        )
+        "#,
+    )
+    .bind(installation_id)
+    .bind(principal.user_id)
+    .bind(client_installation_id)
+    .bind(principal.auth.credential_id.0)
+    .bind(APP_ID)
+    .bind(ciphertext)
+    .bind(nonce)
+    .bind(hex::encode(Sha256::digest(
+        format!("messaging-notification-installation:{label}:{client_installation_id}").as_bytes(),
+    )))
+    .execute(pool)
+    .await
+    .expect("insert messaging notification installation");
+}
+
 async fn process_one(pool: &PgPool) -> ApnsRequest {
     let provider = Arc::new(FakeProvider::accepting());
     let encoded_key = STANDARD.encode([23_u8; 32]);
@@ -431,6 +467,33 @@ async fn conversation_notification_target_is_typed_and_fails_closed() {
     .expect_err("conversation ids must be canonical UUIDv7 values");
     assert_invalid_request(error);
 
+    let uppercase_id =
+        conversation_target(json!(conversation_id.to_string().to_ascii_uppercase()), 1);
+    let error = notification_service::publish(
+        axum::extract::State(state.clone()),
+        Extension(principal.auth.clone()),
+        Json(publish_request(
+            format!("conversation-target-uppercase:{}", Uuid::now_v7()),
+            uppercase_id,
+        )),
+    )
+    .await
+    .expect_err("uppercase UUIDv7 values are not canonical conversation ids");
+    assert_invalid_request(error);
+
+    let unhyphenated_id = conversation_target(json!(conversation_id.simple().to_string()), 1);
+    let error = notification_service::publish(
+        axum::extract::State(state.clone()),
+        Extension(principal.auth.clone()),
+        Json(publish_request(
+            format!("conversation-target-unhyphenated:{}", Uuid::now_v7()),
+            unhyphenated_id,
+        )),
+    )
+    .await
+    .expect_err("unhyphenated UUIDv7 values are not canonical conversation ids");
+    assert_invalid_request(error);
+
     let invalid_seq = conversation_target(json!(conversation_id), 0);
     let error = notification_service::publish(
         axum::extract::State(state.clone()),
@@ -471,7 +534,7 @@ async fn conversation_apns_is_generic_prefetchable_and_conversation_collapsed() 
         return;
     };
     let conversation_id = Uuid::now_v7();
-    insert_delivery(
+    let (notification_id, delivery_id, _) = insert_delivery(
         &pool,
         json!({
             "type": "conversation",
@@ -489,12 +552,73 @@ async fn conversation_apns_is_generic_prefetchable_and_conversation_collapsed() 
         format!("straylight://conversation/{conversation_id}?seq=17")
     );
     assert_eq!(request.collapse_id, conversation_id.to_string());
-    assert_eq!(request.payload["aps"]["content-available"], 1);
-    assert_eq!(request.payload["aps"]["alert"]["title"], "Straylight");
-    assert!(request.payload.get("title").is_none());
-    assert!(request.payload.get("body").is_none());
+    assert_eq!(
+        request.payload,
+        json!({
+            "aps": {
+                "alert": {
+                    "title": "Straylight",
+                    "body": "A new agent message is available."
+                },
+                "content-available": 1
+            },
+            "schema": "straylight-push@v1",
+            "notification_ref": format!("notification:{}", notification_id.simple()),
+            "delivery_ref": format!("delivery:{}", delivery_id.simple()),
+            "straylight_route": format!(
+                "straylight://conversation/{conversation_id}?seq=17"
+            )
+        })
+    );
     let serialized = serde_json::to_string(&request.payload).expect("serialize APNs payload");
     assert!(!serialized.contains("conversation-secret"));
+}
+
+#[tokio::test]
+async fn invalid_stored_conversation_target_uses_private_notification_fallback() {
+    let Some((_database_url, pool)) = connect_pool().await else {
+        return;
+    };
+    let conversation_id = Uuid::now_v7();
+    let (notification_id, delivery_id, _) = insert_delivery(
+        &pool,
+        json!({
+            "type": "conversation",
+            "conversation_id": conversation_id.to_string().to_ascii_uppercase(),
+            "seq": 17
+        }),
+        "operational",
+        "invalid-conversation-secret",
+    )
+    .await;
+    let request = process_one(&pool).await;
+    let fallback_route = format!(
+        "straylight://notification/{}?delivery={}",
+        notification_id.simple(),
+        delivery_id.simple()
+    );
+
+    assert_eq!(
+        request.collapse_id,
+        format!("notification-{}", notification_id.simple())
+    );
+    assert_eq!(
+        request.payload,
+        json!({
+            "aps": {
+                "alert": {
+                    "title": "Straylight",
+                    "body": "Straylight has an operational alert."
+                }
+            },
+            "schema": "straylight-push@v1",
+            "notification_ref": format!("notification:{}", notification_id.simple()),
+            "delivery_ref": format!("delivery:{}", delivery_id.simple()),
+            "straylight_route": fallback_route
+        })
+    );
+    let serialized = serde_json::to_string(&request.payload).expect("serialize fallback payload");
+    assert!(!serialized.contains("invalid-conversation-secret"));
 }
 
 #[tokio::test]
@@ -503,7 +627,7 @@ async fn existing_notification_and_task_apns_contracts_are_unchanged() {
         return;
     };
     let task_id = Uuid::now_v7();
-    let (task_notification_id, _task_delivery_id, _) = insert_delivery(
+    let (task_notification_id, task_delivery_id, _) = insert_delivery(
         &pool,
         json!({"type": "task", "task_ref": task_id.to_string()}),
         "task_guard",
@@ -512,21 +636,23 @@ async fn existing_notification_and_task_apns_contracts_are_unchanged() {
     .await;
     let task_request = process_one(&pool).await;
     assert_eq!(
-        task_request.payload["straylight_route"],
-        format!("straylight://task/{task_id}")
-    );
-    assert_eq!(
         task_request.collapse_id,
         format!("notification-{}", task_notification_id.simple())
     );
-    assert!(
-        task_request.payload["aps"]
-            .get("content-available")
-            .is_none()
-    );
     assert_eq!(
-        task_request.payload["aps"]["alert"]["body"],
-        "A new Straylight alert is available."
+        task_request.payload,
+        json!({
+            "aps": {
+                "alert": {
+                    "title": "Straylight",
+                    "body": "A new Straylight alert is available."
+                }
+            },
+            "schema": "straylight-push@v1",
+            "notification_ref": format!("notification:{}", task_notification_id.simple()),
+            "delivery_ref": format!("delivery:{}", task_delivery_id.simple()),
+            "straylight_route": format!("straylight://task/{task_id}")
+        })
     );
 
     let (notification_id, delivery_id, _) = insert_delivery(
@@ -538,23 +664,28 @@ async fn existing_notification_and_task_apns_contracts_are_unchanged() {
     .await;
     let notification_request = process_one(&pool).await;
     assert_eq!(
-        notification_request.payload["straylight_route"],
-        format!(
-            "straylight://notification/{}?delivery={}",
-            notification_id.simple(),
-            delivery_id.simple()
-        )
-    );
-    assert_eq!(
         notification_request.collapse_id,
         format!("notification-{}", notification_id.simple())
     );
-    assert!(
-        notification_request.payload["aps"]
-            .get("content-available")
-            .is_none()
+    assert_eq!(
+        notification_request.payload,
+        json!({
+            "aps": {
+                "alert": {
+                    "title": "Straylight",
+                    "body": "A new Straylight alert is available."
+                }
+            },
+            "schema": "straylight-push@v1",
+            "notification_ref": format!("notification:{}", notification_id.simple()),
+            "delivery_ref": format!("delivery:{}", delivery_id.simple()),
+            "straylight_route": format!(
+                "straylight://notification/{}?delivery={}",
+                notification_id.simple(),
+                delivery_id.simple()
+            )
+        })
     );
-    assert_eq!(notification_request.payload["schema"], "straylight-push@v1");
 }
 
 async fn messaging_app(state: AppState, auth: AuthContext) -> Router {
@@ -587,6 +718,146 @@ async fn request_json(app: &Router, method: Method, uri: &str, body: Value) -> (
         .to_bytes();
     let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, body)
+}
+
+async fn send_owner_participant_message(
+    state: AppState,
+    principal: &PrincipalFixture,
+    key_suffix: &str,
+) -> (Uuid, i64) {
+    let app = messaging_app(state, principal.auth.clone()).await;
+    let (status, body) = request_json(
+        &app,
+        Method::POST,
+        "/workspace/messaging/conversations",
+        json!({
+            "participants": ["owner"],
+            "subject": format!("Quiet hours {key_suffix}")
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "create owner conversation");
+    let conversation_id = body
+        .pointer("/data/conversation_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .expect("owner conversation id");
+
+    let (status, body) = request_json(
+        &app,
+        Method::POST,
+        &format!("/workspace/messaging/conversations/{conversation_id}/messages"),
+        json!({
+            "client_key": format!("0000000000000000000000000{key_suffix}"),
+            "kind": "text",
+            "body_md": "A private message body that must not affect delivery timing."
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "send owner conversation message");
+    let seq = body
+        .pointer("/data/seq")
+        .and_then(Value::as_i64)
+        .expect("owner conversation message sequence");
+    (conversation_id, seq)
+}
+
+async fn delivery_times(
+    pool: &PgPool,
+    user_id: Uuid,
+    conversation_id: Uuid,
+    seq: i64,
+) -> (chrono::DateTime<Utc>, chrono::DateTime<Utc>) {
+    sqlx::query_as(
+        r#"
+        SELECT notification.occurred_at,delivery.available_at
+        FROM straylight.notifications AS notification
+        JOIN straylight.notification_deliveries AS delivery
+          ON delivery.user_id=notification.user_id
+         AND delivery.notification_id=notification.id
+        WHERE notification.user_id=$1 AND notification.event_key=$2
+        "#,
+    )
+    .bind(user_id)
+    .bind(format!("message:{conversation_id}:{seq}"))
+    .fetch_one(pool)
+    .await
+    .expect("read messaging notification delivery timing")
+}
+
+#[tokio::test]
+async fn messaging_delivery_defers_to_quiet_end_without_override() {
+    let Some((database_url, pool)) = connect_pool().await else {
+        return;
+    };
+    let state = connect_state(&database_url, true).await;
+    let principal = insert_principal(&pool, "quiet-hours-delayed").await;
+    insert_installation_for_principal(&pool, &principal, "quiet-hours-delayed").await;
+    let database_now = sqlx::query_scalar::<_, chrono::DateTime<Utc>>("SELECT clock_timestamp()")
+        .fetch_one(&pool)
+        .await
+        .expect("read database time for quiet-hours fixture");
+    let quiet_start = (database_now - chrono::Duration::hours(1)).time();
+    let quiet_end = (database_now + chrono::Duration::hours(1)).time();
+    sqlx::query(
+        r#"
+        UPDATE straylight.task_settings
+        SET timezone='UTC',quiet_hours_start=$2,quiet_hours_end=$3,
+            quiet_override_enabled=true,quiet_override_within_hours=168
+        WHERE user_id=$1
+        "#,
+    )
+    .bind(principal.user_id)
+    .bind(quiet_start)
+    .bind(quiet_end)
+    .execute(&pool)
+    .await
+    .expect("configure in-window messaging quiet hours");
+
+    let (conversation_id, seq) = send_owner_participant_message(state, &principal, "3").await;
+    let (occurred_at, available_at) =
+        delivery_times(&pool, principal.user_id, conversation_id, seq).await;
+    let end_date = if quiet_start > quiet_end && occurred_at.time() >= quiet_start {
+        occurred_at.date_naive() + chrono::Duration::days(1)
+    } else {
+        occurred_at.date_naive()
+    };
+    let expected_quiet_end = Utc.from_utc_datetime(&end_date.and_time(quiet_end));
+    assert_eq!(
+        available_at, expected_quiet_end,
+        "messaging never overrides quiet hours, even when task overrides are enabled"
+    );
+    assert!(available_at > occurred_at);
+}
+
+#[tokio::test]
+async fn messaging_delivery_is_immediate_when_quiet_hours_are_disabled() {
+    let Some((database_url, pool)) = connect_pool().await else {
+        return;
+    };
+    let state = connect_state(&database_url, true).await;
+    let principal = insert_principal(&pool, "quiet-hours-disabled").await;
+    insert_installation_for_principal(&pool, &principal, "quiet-hours-disabled").await;
+    sqlx::query(
+        r#"
+        UPDATE straylight.task_settings
+        SET timezone='UTC',quiet_hours_start='07:00',quiet_hours_end='07:00',
+            quiet_override_enabled=true,quiet_override_within_hours=168
+        WHERE user_id=$1
+        "#,
+    )
+    .bind(principal.user_id)
+    .execute(&pool)
+    .await
+    .expect("disable messaging quiet hours with an equal start and end");
+
+    let (conversation_id, seq) = send_owner_participant_message(state, &principal, "4").await;
+    let (occurred_at, available_at) =
+        delivery_times(&pool, principal.user_id, conversation_id, seq).await;
+    assert_eq!(
+        available_at, occurred_at,
+        "start == end disables quiet hours and preserves the message as_of"
+    );
 }
 
 async fn seed_due_question(
