@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { messagingChildEnvironment } from "./messaging-release-profile.mjs";
+
 const SCHEMA = "straylight-agent-first-tasks-gate12@v1";
 const EXPECTED_TASK_TOOLS = [
   "project.register",
@@ -54,6 +56,7 @@ try {
     args: [config.mcpEntry],
     env: {
       ...environment,
+      ...messagingChildEnvironment(process.env),
       STRAYLIGHT_API_URL: config.apiUrl.href,
       STRAYLIGHT_API_TOKEN: config.apiToken,
       STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT: "1",

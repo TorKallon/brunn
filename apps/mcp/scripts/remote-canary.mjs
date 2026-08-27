@@ -6,6 +6,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
+import { expectedRemoteToolNames } from "./messaging-release-profile.mjs";
+
 const baseUrl = new URL(process.env.STRAYLIGHT_REMOTE_URL ?? "https://straylight.rourkem.com/");
 const resourceUrl = new URL("/mcp", baseUrl);
 const upstreamToken = requiredEnvironment("STRAYLIGHT_REMOTE_TOKEN");
@@ -70,7 +72,7 @@ try {
   await client.connect(transport);
   const listed = await client.listTools();
   const toolNames = listed.tools.map((tool) => tool.name).sort();
-  assert.deepEqual(toolNames, [
+  assert.deepEqual(toolNames, expectedRemoteToolNames([
     "asset.list",
     "asset.metadata",
     "briefing.dedupe",
@@ -103,7 +105,7 @@ try {
     "task.settings",
     "task.sync_status",
     "task.update",
-  ]);
+  ], process.env));
 
   const opened = toolBody(await client.callTool({
     name: "memory.open",
