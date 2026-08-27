@@ -53,6 +53,7 @@ services:
       STRAYLIGHT_ENV: production
       STRAYLIGHT_LEGACY_API_ENABLED: ${STRAYLIGHT_LEGACY_API_ENABLED:-false}
       STRAYLIGHT_EVALUATION_API_ENABLED: "false"
+      STRAYLIGHT_MESSAGING_ENABLED: ${STRAYLIGHT_MESSAGING_ENABLED:-false}
       DD_ENV: production
       DD_VERSION: ${STRAYLIGHT_RELEASE_REVISION:-unreleased}
       DATABASE_URL_RW: ""
@@ -166,6 +167,8 @@ services:
   mcp:
     build: !reset null
     image: ${STRAYLIGHT_MCP_IMAGE:-straylight-mcp:release-blocked}
+    environment:
+      STRAYLIGHT_MESSAGING_ENABLED: ${STRAYLIGHT_MESSAGING_ENABLED:-false}
 
   datadog-agent:
     environment:

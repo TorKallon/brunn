@@ -194,6 +194,42 @@ class ProductionContractTests(unittest.TestCase):
                 self.compose["services"][service]["environment"],
             )
 
+    def test_messaging_kill_switch_defaults_off_across_release_surfaces(self):
+        for rendered in [self.compose, self.managed_compose]:
+            for service in ["api", "worker"]:
+                self.assertEqual(
+                    "false",
+                    rendered["services"][service]["environment"][
+                        "STRAYLIGHT_MESSAGING_ENABLED"
+                    ],
+                    service,
+                )
+        self.assertEqual(
+            "false",
+            self.compose["services"]["mcp"]["environment"][
+                "STRAYLIGHT_MESSAGING_ENABLED"
+            ],
+        )
+
+        for filename in [
+            ".env.example",
+            "production.env.example",
+            "production.managed-s3.env.example",
+        ]:
+            values = {}
+            for line in (ROOT / filename).read_text().splitlines():
+                if "=" not in line or line.startswith("#"):
+                    continue
+                key, value = line.split("=", 1)
+                values[key] = value
+            self.assertEqual("false", values["STRAYLIGHT_MESSAGING_ENABLED"], filename)
+
+        validator = (ROOT / "scripts/validate-production-config.sh").read_text()
+        self.assertIn(
+            "STRAYLIGHT_MESSAGING_ENABLED must be true or false",
+            validator,
+        )
+
     def test_runtime_services_have_explicit_limits(self):
         for service in [
             "db",

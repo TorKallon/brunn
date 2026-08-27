@@ -42,6 +42,7 @@ const releaseRuntime = {
   STRAYLIGHT_SEARCH_TOP1_HYDRATION: preserve(),
   STRAYLIGHT_SEMANTIC_LANE: preserve(),
   STRAYLIGHT_TODOIST_SYNC_ENABLED: preserve(),
+  STRAYLIGHT_MESSAGING_ENABLED: preserve(),
   STRAYLIGHT_SEMANTIC_DEADLINE_MS: "2500",
   STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS: "5000",
   STRAYLIGHT_SEMANTIC_QUERY_CONCURRENCY: "8",
@@ -192,6 +193,8 @@ const worker = service("worker", {
     // worker cannot drift to a separate preserved kill-switch value.
     STRAYLIGHT_TODOIST_SYNC_ENABLED:
       api.env.STRAYLIGHT_TODOIST_SYNC_ENABLED,
+    STRAYLIGHT_MESSAGING_ENABLED:
+      api.env.STRAYLIGHT_MESSAGING_ENABLED,
     DATABASE_URL_ADMIN: db.env.DATABASE_URL_ADMIN,
     DATABASE_URL_RW: db.env.DATABASE_URL_RW,
     DATABASE_URL_RO: db.env.DATABASE_URL_RO,
@@ -239,6 +242,7 @@ const mcp = service("mcp", {
     PORT: "8080",
     STRAYLIGHT_API_URL: "http://api.railway.internal:8080",
     STRAYLIGHT_MCP_PUBLIC_URL: "https://straylight.rourkem.com",
+    STRAYLIGHT_MESSAGING_ENABLED: api.env.STRAYLIGHT_MESSAGING_ENABLED,
     STRAYLIGHT_MCP_SEALING_KEY: preserve(),
     STRAYLIGHT_BUILD_REVISION: preserve(),
   },

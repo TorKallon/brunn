@@ -113,6 +113,17 @@ case "$apns_delivery_enabled" in
     ;;
 esac
 
+messaging_enabled=$(read_value STRAYLIGHT_MESSAGING_ENABLED)
+messaging_enabled=${messaging_enabled:-false}
+case "$messaging_enabled" in
+  true|false)
+    ;;
+  *)
+    echo "STRAYLIGHT_MESSAGING_ENABLED must be true or false" >&2
+    exit 1
+    ;;
+esac
+
 for apns_id_name in STRAYLIGHT_APNS_TEAM_ID STRAYLIGHT_APNS_KEY_ID; do
   apns_id=$(require_value "$apns_id_name")
   case "$apns_id" in

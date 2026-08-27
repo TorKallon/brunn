@@ -225,6 +225,31 @@ class RailwayContractTests(unittest.TestCase):
             worker_block,
         )
 
+    def test_messaging_kill_switch_is_shared_by_api_worker_and_mcp(self):
+        api_block = RAILWAY.split('const api = service("api"', 1)[1].split(
+            'const worker = service("worker"', 1
+        )[0]
+        worker_block = RAILWAY.split('const worker = service("worker"', 1)[1].split(
+            'const mcp = service("mcp"', 1
+        )[0]
+        mcp_block = RAILWAY.split('const mcp = service("mcp"', 1)[1].split(
+            'const web = service("web"', 1
+        )[0]
+        self.assertEqual(
+            1,
+            RAILWAY.count("STRAYLIGHT_MESSAGING_ENABLED: preserve()"),
+        )
+        self.assertIn("...releaseRuntime", api_block)
+        self.assertIn(
+            "STRAYLIGHT_MESSAGING_ENABLED:\n"
+            "      api.env.STRAYLIGHT_MESSAGING_ENABLED",
+            worker_block,
+        )
+        self.assertIn(
+            "STRAYLIGHT_MESSAGING_ENABLED: api.env.STRAYLIGHT_MESSAGING_ENABLED",
+            mcp_block,
+        )
+
     def test_browser_auth_has_a_small_rate_limited_proxy_boundary(self):
         self.assertIn(
             "zone=straylight_auth_limit:1m rate=2r/s",
