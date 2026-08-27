@@ -744,7 +744,7 @@ mod tests {
 
     #[test]
     fn managed_conversation_exact_read_limit_is_narrow() {
-        let conversation_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let conversation_id = Uuid::parse_str("018f0000-0000-7000-8000-000000000010").unwrap();
         let mut managed = manifest_entry(1, true);
         managed.path = messaging_protocol::conversation_path(conversation_id);
         managed.size_bytes = (MAX_EXACT_TEXT_READ_CHARS + 1) as u64;

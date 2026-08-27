@@ -2602,8 +2602,8 @@ mod tests {
 
     #[test]
     fn managed_conversations_import_parent_first_without_reordering_inventory() {
-        let child_id = Uuid::parse_str("00000000-0000-4000-8000-000000000001").unwrap();
-        let parent_id = Uuid::parse_str("ffffffff-ffff-4fff-bfff-ffffffffffff").unwrap();
+        let child_id = Uuid::parse_str("018f0000-0001-7000-8000-000000000002").unwrap();
+        let parent_id = Uuid::parse_str("018f0000-0000-7000-8000-000000000001").unwrap();
         let child = conversation_entry(child_id, Some(parent_id));
         let parent = conversation_entry(parent_id, None);
         let ordinary = InventoryEntry {
