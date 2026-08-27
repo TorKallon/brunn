@@ -116,15 +116,17 @@ function syncResponse(
   options: {
     messages?: typeof attentionMessage[];
     exactConversation?: MessagingConversation;
+    cursor?: number;
+    hasMore?: boolean;
   } = {},
 ) {
   return {
     status: "complete",
     data: {
       status: "complete",
-      cursor: 7,
+      cursor: options.cursor ?? 7,
       resume_cursor: null,
-      has_more: false,
+      has_more: options.hasMore ?? false,
       messages: options.messages ?? [],
       conversations: options.exactConversation
         ? [options.exactConversation]
@@ -192,7 +194,7 @@ function installMessagingRoutes(
       data: {
         items: [
           {
-            id: "019f9000-0000-7000-8000-000000000010",
+            id: "credential:019f9000-0000-7000-8000-000000000010",
             name: "Echo replacement",
             access: "read_write",
             scope_ids: ["scope:root"],
@@ -249,6 +251,106 @@ describe("Agents page", () => {
       rules: { "color-contrast": { enabled: false } },
     });
     expect(accessibility.violations).toEqual([]);
+  });
+
+  it("follows inbox and thread cursors through the current head", async () => {
+    const inboxCursors: string[] = [];
+    const threadCursors: string[] = [];
+    const newestMessage = {
+      ...attentionMessage,
+      seq: 5,
+      message_id: "019f9000-0000-7000-8000-000000000005",
+      body_md: "The newest cursor is visible.",
+      sync_cursor: 8,
+    };
+    const refreshedMessage = {
+      ...newestMessage,
+      seq: 6,
+      message_id: "019f9000-0000-7000-8000-000000000006",
+      body_md: "The next poll starts at the saved cursor.",
+      sync_cursor: 9,
+    };
+    installMessagingRoutes({
+      "GET /api/v1/workspace/messaging/sync": (request: Request) => {
+        const query = new URL(request.url).searchParams;
+        if (query.has("conversation_id")) {
+          const afterSeq = query.get("after_seq") ?? "0";
+          threadCursors.push(afterSeq);
+          if (afterSeq === "0") {
+            return syncResponse({
+              messages: [attentionMessage],
+              exactConversation: conversations[1],
+              cursor: 7,
+              hasMore: true,
+            });
+          }
+          return afterSeq === "4"
+            ? syncResponse({
+                messages: [newestMessage],
+                exactConversation: {
+                  ...conversations[1],
+                  last_seq: 5,
+                  latest_sync_cursor: 8,
+                },
+                cursor: 8,
+              })
+            : syncResponse({
+                messages: [refreshedMessage],
+                exactConversation: {
+                  ...conversations[1],
+                  last_seq: 6,
+                  latest_sync_cursor: 9,
+                },
+                cursor: 9,
+              });
+        }
+        const cursor = query.get("cursor") ?? "0";
+        inboxCursors.push(cursor);
+        if (cursor === "0") {
+          return syncResponse({ cursor: 7, hasMore: true });
+        }
+        return cursor === "7"
+          ? syncResponse({
+              cursor: 8,
+              exactConversation: {
+                ...conversations[1],
+                last_seq: 5,
+                latest_sync_cursor: 8,
+              },
+            })
+          : syncResponse({
+              cursor: 9,
+              exactConversation: {
+                ...conversations[1],
+                last_seq: 6,
+                latest_sync_cursor: 9,
+              },
+            });
+      },
+    });
+    renderAgents();
+
+    await waitFor(() => {
+      expect(screen.getByText("The newest cursor is visible.")).toBeInTheDocument();
+      expect(inboxCursors).toContain("7");
+      expect(threadCursors).toContain("4");
+    });
+    const initialInboxZeroCalls = inboxCursors.filter((cursor) => cursor === "0").length;
+    const initialThreadZeroCalls = threadCursors.filter((cursor) => cursor === "0").length;
+    await userEvent.setup().click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("The next poll starts at the saved cursor."),
+      ).toBeInTheDocument();
+      expect(inboxCursors).toContain("8");
+      expect(threadCursors).toContain("5");
+    });
+    expect(inboxCursors.filter((cursor) => cursor === "0")).toHaveLength(
+      initialInboxZeroCalls,
+    );
+    expect(threadCursors.filter((cursor) => cursor === "0")).toHaveLength(
+      initialThreadZeroCalls,
+    );
   });
 
   it("keeps the same client key when an ambiguous send is retried", async () => {
@@ -359,7 +461,7 @@ describe("Agents page", () => {
     const row = screen.getByRole("group", { name: "Echo settings" });
     await user.selectOptions(
       within(row).getByRole("combobox", { name: "Credential" }),
-      "019f9000-0000-7000-8000-000000000010",
+      "credential:019f9000-0000-7000-8000-000000000010",
     );
     await user.click(within(row).getByRole("button", { name: "Apply binding" }));
     await waitFor(() =>

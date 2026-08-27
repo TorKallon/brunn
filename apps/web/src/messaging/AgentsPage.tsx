@@ -1,9 +1,4 @@
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, MessageCircle, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/StateViews";
@@ -30,10 +25,56 @@ import { NewConversationPicker } from "./NewConversationPicker";
 import type {
   CreateAgentInput,
   MessagingConversation,
+  MessagingSyncData,
   SendMessageInput,
   UpdateAgentInput,
 } from "./types";
 import "./messaging.css";
+
+const MAX_SYNC_PAGES_PER_REFRESH = 100;
+
+async function drainSync(
+  api: ReturnType<typeof createMessagingApiClient>,
+  input: { conversationId?: string },
+  start: number,
+): Promise<MessagingSyncData[]> {
+  const pages: MessagingSyncData[] = [];
+  let position = start;
+  for (let pageNumber = 0; pageNumber < MAX_SYNC_PAGES_PER_REFRESH; pageNumber += 1) {
+    const response = await api.sync(
+      input.conversationId
+        ? { conversationId: input.conversationId, afterSeq: position, limit: 200 }
+        : { cursor: position, limit: 200 },
+    );
+    const page = response.data;
+    pages.push(page);
+    if (!page.has_more) return pages;
+    const nextPosition = input.conversationId
+      ? (page.messages.at(-1)?.seq ?? position)
+      : page.cursor;
+    if (nextPosition <= position) {
+      throw new Error("Messaging cursor did not advance");
+    }
+    position = nextPosition;
+  }
+  throw new Error("Messaging sync exceeded its bounded catch-up window");
+}
+
+function mergeSyncSnapshot(
+  current: MessagingSyncData | null,
+  pages: MessagingSyncData[],
+  includeMessages: boolean,
+): MessagingSyncData | null {
+  const latest = pages.at(-1);
+  if (!latest) return current;
+  const combined = current ? [current, ...pages] : pages;
+  return {
+    ...latest,
+    messages: includeMessages ? mergeMessages(combined) : [],
+    conversations: mergeConversations(combined),
+    unread: Object.assign({}, ...combined.map((page) => page.unread)),
+  };
+}
 
 function credentialItems(
   envelope:
@@ -51,45 +92,75 @@ export function AgentsPage() {
   const queryClient = useQueryClient();
   const [chosenConversationId, setChosenConversationId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [inboxSnapshot, setInboxSnapshot] = useState<MessagingSyncData | null>(null);
+  const [threadSnapshot, setThreadSnapshot] = useState<{
+    conversationId: string;
+    data: MessagingSyncData;
+  } | null>(null);
+  const inboxCursor = useRef(0);
+  const threadCursors = useRef(new Map<string, number>());
   const markedRead = useRef(new Map<string, number>());
   const capabilities = current.data.capabilities;
   const canRead = hasCapability(capabilities, "message.read");
   const canWrite = hasCapability(capabilities, "message.write");
   const canManage = hasCapability(capabilities, "credential:manage");
 
-  const inboxQuery = useInfiniteQuery({
+  const inboxQuery = useQuery({
     queryKey: ["messaging", "inbox"],
-    queryFn: ({ pageParam }: { pageParam: number }) =>
-      messagingApi.sync({ cursor: pageParam, limit: 200 }),
-    initialPageParam: 0,
-    getNextPageParam: (page) =>
-      page.data.has_more ? page.data.cursor : undefined,
+    queryFn: () => drainSync(messagingApi, {}, inboxCursor.current),
     enabled: canRead,
     refetchInterval: 5_000,
   });
-  const inboxPages = inboxQuery.data?.pages.map((page) => page.data) ?? [];
+  useEffect(() => {
+    const pages = inboxQuery.data;
+    if (!pages) return;
+    const latest = pages.at(-1);
+    if (!latest || latest.cursor < inboxCursor.current) return;
+    inboxCursor.current = latest.cursor;
+    setInboxSnapshot((current) => mergeSyncSnapshot(current, pages, false));
+  }, [inboxQuery.data]);
+  const inboxPages = inboxSnapshot ? [inboxSnapshot] : [];
   const conversations = mergeConversations(inboxPages);
   const inboxPresence = inboxPages.at(-1)?.presence ?? [];
   const selectedConversationId =
     chosenConversationId ?? conversations[0]?.conversation_id ?? null;
 
-  const threadQuery = useInfiniteQuery({
+  const threadQuery = useQuery({
     queryKey: ["messaging", "thread", selectedConversationId],
-    queryFn: ({ pageParam }: { pageParam: number }) =>
-      messagingApi.sync({
-        conversationId: selectedConversationId ?? undefined,
-        afterSeq: pageParam,
-        limit: 200,
-      }),
-    initialPageParam: 0,
-    getNextPageParam: (page) => {
-      if (!page.data.has_more) return undefined;
-      return page.data.messages.at(-1)?.seq;
+    queryFn: () => {
+      if (!selectedConversationId) return Promise.resolve([]);
+      return drainSync(
+        messagingApi,
+        { conversationId: selectedConversationId },
+        threadCursors.current.get(selectedConversationId) ?? 0,
+      );
     },
     enabled: canRead && selectedConversationId !== null,
     refetchInterval: 2_500,
   });
-  const threadPages = threadQuery.data?.pages.map((page) => page.data) ?? [];
+  useEffect(() => {
+    if (!selectedConversationId || !threadQuery.data) return;
+    const pages = threadQuery.data;
+    const lastSeq = pages
+      .flatMap((page) => page.messages)
+      .reduce((maximum, message) => Math.max(maximum, message.seq), 0);
+    const currentCursor = threadCursors.current.get(selectedConversationId) ?? 0;
+    if (lastSeq < currentCursor) return;
+    threadCursors.current.set(selectedConversationId, Math.max(currentCursor, lastSeq));
+    setThreadSnapshot((current) => ({
+      conversationId: selectedConversationId,
+      data:
+        mergeSyncSnapshot(
+          current?.conversationId === selectedConversationId ? current.data : null,
+          pages,
+          true,
+        ) ?? pages.at(-1)!,
+    }));
+  }, [selectedConversationId, threadQuery.data]);
+  const threadPages =
+    threadSnapshot?.conversationId === selectedConversationId
+      ? [threadSnapshot.data]
+      : [];
   const messages = mergeMessages(threadPages);
   const exactConversation = threadPages
     .flatMap((page) => page.conversations)
@@ -301,16 +372,6 @@ export function AgentsPage() {
               </li>
             ))}
           </ul>
-          {inboxQuery.hasNextPage ? (
-            <button
-              className="button secondary messaging-load-more"
-              type="button"
-              disabled={inboxQuery.isFetchingNextPage}
-              onClick={() => void inboxQuery.fetchNextPage()}
-            >
-              {inboxQuery.isFetchingNextPage ? "Loading…" : "Load more conversations"}
-            </button>
-          ) : null}
         </section>
 
         {selectedConversation ? (
@@ -321,9 +382,9 @@ export function AgentsPage() {
             agents={agents}
             canWrite={canWrite}
             loading={threadQuery.isLoading}
-            hasMore={Boolean(threadQuery.hasNextPage)}
-            loadingMore={threadQuery.isFetchingNextPage}
-            onLoadMore={() => void threadQuery.fetchNextPage()}
+            hasMore={false}
+            loadingMore={false}
+            onLoadMore={() => undefined}
             onSend={sendMessage}
           />
         ) : selectedConversationId ? (

@@ -191,7 +191,11 @@ export function createMessagingApiClient(): MessagingApi {
       request<CredentialBindingData>(
         `/agents/${encodeURIComponent(agentId)}/credential`,
         "PUT",
-        { credential_id: credentialId },
+        {
+          credential_id: credentialId?.startsWith("credential:")
+            ? credentialId.slice("credential:".length)
+            : credentialId,
+        },
       ),
   };
 }
