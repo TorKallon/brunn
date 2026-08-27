@@ -37,9 +37,11 @@ export/import, account deletion, and exact reads remain existing-core behavior.
 
 The ordinary workspace limit remains 4 MiB. A worst-case conversation is more
 than 8 MiB (`500 × 16 KiB` plus framing), so only the managed conversation
-write/import/exact-read path gets a 12 MiB ceiling. The generic workspace write
-API never receives that exception. A boundary test fills 500 maximum-size
-messages and proves ordinary writes are still capped at 4 MiB.
+write/import/exact-read path gets a 12 MiB ceiling. With the messaging gate on,
+the outer workspace-write route accepts enough bytes to reach the canonical
+parser; ordinary Markdown still fails at 4 MiB and only a fully validated
+conversation receives the semantic exception. A boundary test fills 500
+maximum-size messages and proves the ordinary limit is unchanged.
 
 ## One additive migration
 
@@ -60,6 +62,15 @@ behavior, row-level security enabled and forced, and policies rooted in
 | `messaging_participants` | Principal role and durable `last_read_seq`; the owner is inserted as observer for agent-to-agent conversations |
 | `messaging_message_index` | Rebuildable message fields, body/refs, sender-scoped client key and request hash, owning conversation for reply references, reply deadline/handled marker, and sync cursor |
 | `messaging_sync_state` | One monotonic cursor counter per user |
+
+The portable `conversation_id` is the UUIDv7 encoded in the canonical path,
+header, and projection. The workspace `entry_id` is a separate tenant-local
+UUIDv7. Reusing the portable id as the globally unique workspace entry primary
+key was rejected after the two-tenant Gate 12e run demonstrated that the
+second import collides before tenant-scoped RLS can apply. Keeping the existing
+workspace primary key and separating these identities is smaller than another
+migration, preserves byte-exact portability, and lets each tenant retain normal
+entry ownership and history.
 
 The critical uniques are `(user_id, conversation_id, seq)`,
 `(user_id, from_agent_id, client_key)`, one credential binding, and the one
