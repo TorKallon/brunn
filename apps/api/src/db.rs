@@ -290,7 +290,7 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
         return Ok(());
     };
 
-    let write_capabilities = dev_write_capabilities();
+    let write_capabilities = dev_write_capabilities(config.messaging_enabled);
     let (user_id, _, scope_id, _): (Uuid, Uuid, Uuid, Uuid) =
         sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
             .bind(&config.dev_user_ref)
@@ -302,7 +302,7 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
             .await?;
 
     if let Some(read_only_token) = &config.dev_read_only_token {
-        let read_capabilities = dev_read_capabilities();
+        let read_capabilities = dev_read_capabilities(config.messaging_enabled);
         let _: (Uuid, Uuid, Uuid, Uuid) =
             sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
                 .bind(&config.dev_user_ref)
@@ -318,8 +318,8 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
     Ok(())
 }
 
-fn dev_write_capabilities() -> Vec<&'static str> {
-    vec![
+fn dev_write_capabilities(messaging_enabled: bool) -> Vec<&'static str> {
+    let mut capabilities = vec![
         "open",
         "query",
         "read",
@@ -340,14 +340,16 @@ fn dev_write_capabilities() -> Vec<&'static str> {
         "task.read",
         "task.write",
         "integration.manage",
-        "message.read",
-        "message.write",
         "admin",
-    ]
+    ];
+    if messaging_enabled {
+        capabilities.extend(["message.read", "message.write"]);
+    }
+    capabilities
 }
 
-fn dev_read_capabilities() -> Vec<&'static str> {
-    vec![
+fn dev_read_capabilities(messaging_enabled: bool) -> Vec<&'static str> {
+    let mut capabilities = vec![
         "open",
         "query",
         "read",
@@ -355,8 +357,11 @@ fn dev_read_capabilities() -> Vec<&'static str> {
         "verify",
         "status",
         "task.read",
-        "message.read",
-    ]
+    ];
+    if messaging_enabled {
+        capabilities.push("message.read");
+    }
+    capabilities
 }
 
 async fn ensure_initial_manifest_from_pool(
@@ -467,12 +472,19 @@ mod tests {
     }
 
     #[test]
-    fn dev_credentials_match_messaging_access_templates() {
-        let read_write = dev_write_capabilities();
-        assert!(read_write.contains(&"message.read"));
-        assert!(read_write.contains(&"message.write"));
-        let read_only = dev_read_capabilities();
-        assert!(read_only.contains(&"message.read"));
-        assert!(!read_only.contains(&"message.write"));
+    fn dev_credentials_add_messaging_capabilities_only_when_enabled() {
+        let read_write_off = dev_write_capabilities(false);
+        assert!(!read_write_off.contains(&"message.read"));
+        assert!(!read_write_off.contains(&"message.write"));
+        let read_only_off = dev_read_capabilities(false);
+        assert!(!read_only_off.contains(&"message.read"));
+        assert!(!read_only_off.contains(&"message.write"));
+
+        let read_write_on = dev_write_capabilities(true);
+        assert!(read_write_on.contains(&"message.read"));
+        assert!(read_write_on.contains(&"message.write"));
+        let read_only_on = dev_read_capabilities(true);
+        assert!(read_only_on.contains(&"message.read"));
+        assert!(!read_only_on.contains(&"message.write"));
     }
 }
