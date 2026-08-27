@@ -21,16 +21,6 @@ ALTER TABLE straylight.api_credentials
 ALTER TABLE straylight.api_credentials
   DROP CONSTRAINT IF EXISTS api_credentials_owner_full_capabilities_check;
 
-UPDATE straylight.api_credentials
-SET capabilities = capabilities || ARRAY['message.read']::text[]
-WHERE capabilities @> ARRAY['read']::text[]
-  AND NOT capabilities @> ARRAY['message.read']::text[];
-
-UPDATE straylight.api_credentials
-SET capabilities = capabilities || ARRAY['message.write']::text[]
-WHERE capabilities @> ARRAY['read', 'save']::text[]
-  AND NOT capabilities @> ARRAY['message.write']::text[];
-
 ALTER TABLE straylight.api_credentials
   ADD CONSTRAINT api_credentials_owner_full_capabilities_check CHECK (
     NOT capabilities @> ARRAY['credential:manage']::text[]
@@ -40,7 +30,6 @@ ALTER TABLE straylight.api_credentials
       'credential:manage', 'notification:publish', 'notification:manage',
       'secret:read', 'secret:write',
       'task.read', 'task.write', 'integration.manage',
-      'message.read', 'message.write',
       'admin'
     ]::text[]
   );
