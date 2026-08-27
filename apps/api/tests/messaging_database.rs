@@ -252,20 +252,22 @@ async fn insert_canonical_entry_as(
     .execute(&mut *tx)
     .await
     .expect("message.write inserts a typed conversation version");
-    sqlx::query(
+    let generation = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO straylight.workspace_changes (
           user_id,entry_id,entry_version,operation,path,content_sha256
         ) VALUES ($1,$2,1,'create',$3,$4)
+        RETURNING generation
         "#,
     )
     .bind(principal.user_id)
     .bind(entry_id)
     .bind(&path)
     .bind(&content_sha256)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await
-    .expect("message.write emits a canonical conversation workspace change");
+    .expect("message.write emits and returns a canonical conversation workspace change");
+    assert!(generation > 0, "workspace generation is positive");
     tx.commit()
         .await
         .expect("commit canonical conversation entry fixture");

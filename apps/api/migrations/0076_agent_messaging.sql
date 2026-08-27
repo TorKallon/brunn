@@ -1020,6 +1020,18 @@ WITH CHECK (
   )
 );
 
+-- INSERT ... RETURNING is also subject to SELECT policy evaluation. Keep the
+-- read side as narrow as the managed conversation namespace so a
+-- message-only credential can atomically obtain the generation it just
+-- emitted without gaining ordinary workspace change-feed access.
+CREATE POLICY messaging_workspace_changes_select ON straylight.workspace_changes
+FOR SELECT TO app_rw,app_ro
+USING (
+  straylight_auth.can_access_user(user_id)
+  AND straylight_auth.has_any_capability(ARRAY['message.read', 'message.write', 'admin'])
+  AND path ~ '^\.straylight/conversations/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.md$'
+);
+
 -- A message send owns its generic conversation alert as one atomic side
 -- effect. This does not grant message writers the general notification
 -- publisher: only a typed target backed by the just-written conversation
