@@ -10,6 +10,7 @@ use axum::{
     routing::{get, patch, post, put},
 };
 use chrono::{DateTime, Utc};
+use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -25,7 +26,9 @@ use crate::{
         ConversationStatus, MessageKind, MessageRef, SendMessageInput,
     },
     models::{Capability, CredentialId, ResponseStatus, UserId},
+    notification_service::{self, NotificationTarget, PublishAccess, PublishRequest},
     simple_core::WorkspaceEnvelope,
+    task_guard,
 };
 
 const MAX_SYNC_MESSAGES: i64 = 200;
@@ -3590,11 +3593,6 @@ async fn publish_conversation_notification_in_tx(
         }
     };
     let event_key = event_key_override.unwrap_or(&derived_event_key);
-    let target = json!({
-        "type": "conversation",
-        "conversation_id": conversation_id,
-        "seq": seq
-    });
     let (title, body, importance) = if matches!(event_type, "needs-human" | "reply-by") {
         (
             "Agent reply needed",
@@ -3608,95 +3606,59 @@ async fn publish_conversation_notification_in_tx(
             "normal",
         )
     };
-    let request_hash = hex::encode(Sha256::digest(serde_json::to_vec(&json!({
-        "event_key": event_key,
-        "kind": "operational",
-        "importance": importance,
-        "title": title,
-        "body": body,
-        "target": target
-    }))?));
-    let notification_id = Uuid::now_v7();
-    let inserted = sqlx::query(
+    let settings = sqlx::query(
         r#"
-        INSERT INTO straylight.notifications (
-          id,user_id,producer_credential_id,event_key,request_hash,
-          correlation_id,kind,importance,title,body,source,target,
-          occurred_at,expires_at
-        ) VALUES (
-          $1,$2,$3,$4,$5,$4,'operational',$6,$7,$8,NULL,$9,$10,
-          $10 + interval '24 hours'
-        )
-        ON CONFLICT (user_id,event_key) DO NOTHING
+        SELECT timezone,quiet_hours_start,quiet_hours_end
+        FROM straylight.task_settings
+        WHERE user_id=$1
         "#,
     )
-    .bind(notification_id)
     .bind(auth.user_id.0)
-    .bind(auth.credential_id.0)
-    .bind(&event_key)
-    .bind(&request_hash)
-    .bind(importance)
-    .bind(title)
-    .bind(body)
-    .bind(target)
-    .bind(occurred_at)
-    .execute(&mut **tx)
-    .await?
-    .rows_affected()
-        == 1;
-    let existing = sqlx::query_as::<_, (Uuid, String)>(
-        "SELECT id,request_hash FROM straylight.notifications WHERE user_id=$1 AND event_key=$2",
-    )
-    .bind(auth.user_id.0)
-    .bind(&event_key)
     .fetch_optional(&mut **tx)
     .await?;
-    let Some((resolved_id, existing_hash)) = existing else {
-        return Err(ApiError::conflict(
-            "notification_event_key_conflict",
-            "the event key was already used with different notification content",
-            json!({"event_key": event_key}),
+    let Some(settings) = settings else {
+        return Err(ApiError::Internal(
+            "messaging notification settings are missing".to_owned(),
         ));
     };
-    if existing_hash != request_hash {
-        return Err(ApiError::conflict(
-            "notification_event_key_conflict",
-            "the event key was already used with different notification content",
-            json!({"event_key": event_key}),
-        ));
-    }
-    if inserted {
-        sqlx::query(
-            r#"
-            INSERT INTO straylight.notification_deliveries (
-              user_id,notification_id,installation_id,state,last_error_code
-            )
-            SELECT $1,$2,installation.id,$3,$4
-            FROM straylight.notification_installations AS installation
-            WHERE installation.user_id=$1
-              AND installation.enabled AND installation.revoked_at IS NULL
-            ON CONFLICT (user_id,notification_id,installation_id) DO NOTHING
-            "#,
-        )
-        .bind(auth.user_id.0)
-        .bind(resolved_id)
-        .bind(if state.config.apns_delivery_enabled {
-            "queued"
-        } else {
-            "suppressed"
-        })
-        .bind(if state.config.apns_delivery_enabled {
-            None::<&str>
-        } else {
-            Some("transport_disabled")
-        })
-        .execute(&mut **tx)
-        .await?;
-    }
+    let timezone = settings
+        .try_get::<String, _>("timezone")?
+        .parse::<Tz>()
+        .map_err(|_| ApiError::Internal("messaging notification timezone is invalid".to_owned()))?;
+    let available_at = task_guard::delivery_available_at_without_override(
+        occurred_at,
+        timezone,
+        settings.try_get("quiet_hours_start")?,
+        settings.try_get("quiet_hours_end")?,
+    )?;
+    let request = PublishRequest {
+        event_key: event_key.to_owned(),
+        correlation_id: event_key.to_owned(),
+        kind: "operational".to_owned(),
+        importance: importance.to_owned(),
+        title: title.to_owned(),
+        body: body.to_owned(),
+        source: None,
+        target: NotificationTarget::Conversation {
+            conversation_id: conversation_id.to_string(),
+            seq,
+        },
+        occurred_at: Some(occurred_at),
+        expires_at: None,
+    };
+    let result = notification_service::publish_in_tx(
+        tx,
+        state,
+        auth,
+        &request,
+        PublishAccess::InternalMessaging,
+        Some(available_at),
+    )
+    .await?;
     metrics::counter!(
         "messaging.notification.publish",
         "event" => event_type.to_owned(),
-        "result" => if inserted { "created" } else { "duplicate" }
+        "result" => if result.inserted { "created" } else { "duplicate" }
     )
     .increment(1);
     Ok(())

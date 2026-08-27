@@ -447,10 +447,24 @@ fn delivery_available_at(
     if can_break_quiet {
         return Ok(as_of);
     }
-    let local = as_of.with_timezone(&settings.timezone);
+    delivery_available_at_without_override(
+        as_of,
+        settings.timezone,
+        settings.quiet_hours_start,
+        settings.quiet_hours_end,
+    )
+}
+
+pub(crate) fn delivery_available_at_without_override(
+    as_of: DateTime<Utc>,
+    timezone: Tz,
+    quiet_hours_start: NaiveTime,
+    quiet_hours_end: NaiveTime,
+) -> ApiResult<DateTime<Utc>> {
+    let local = as_of.with_timezone(&timezone);
     let time = local.time();
-    let start = settings.quiet_hours_start;
-    let end = settings.quiet_hours_end;
+    let start = quiet_hours_start;
+    let end = quiet_hours_end;
     let quiet = if start == end {
         false
     } else if start < end {
@@ -466,7 +480,7 @@ fn delivery_available_at(
     } else {
         local.date_naive()
     };
-    resolve_local(settings.timezone, end_date.and_time(end))
+    resolve_local(timezone, end_date.and_time(end))
 }
 
 fn resolve_local(timezone: Tz, local: chrono::NaiveDateTime) -> ApiResult<DateTime<Utc>> {

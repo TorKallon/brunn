@@ -508,6 +508,19 @@ async fn conversation_notification_target_is_typed_and_fails_closed() {
     assert_invalid_request(error);
 
     let valid_target = conversation_target(json!(conversation_id), 1);
+    let gate_off_state = connect_state(&database_url, false).await;
+    let error = notification_service::publish(
+        axum::extract::State(gate_off_state),
+        Extension(principal.auth.clone()),
+        Json(publish_request(
+            format!("conversation-target-gate-off:{}", Uuid::now_v7()),
+            valid_target.clone(),
+        )),
+    )
+    .await
+    .expect_err("conversation targets stay unavailable through public publish with messaging off");
+    assert_invalid_request(error);
+
     let response = notification_service::publish(
         axum::extract::State(state),
         Extension(principal.auth),

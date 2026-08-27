@@ -14,7 +14,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -86,6 +86,10 @@ pub enum NotificationTarget {
     Task {
         task_ref: String,
     },
+    Conversation {
+        conversation_id: String,
+        seq: i64,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -142,6 +146,19 @@ pub struct NotificationView {
 pub struct PublishResponse {
     pub notification: NotificationView,
     pub replayed: bool,
+    pub delivery_count: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PublishAccess {
+    Public,
+    InternalMessaging,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PublishTxResult {
+    pub notification_id: Uuid,
+    pub inserted: bool,
     pub delivery_count: usize,
 }
 
@@ -215,7 +232,48 @@ pub async fn publish(
     require_publish(&auth)?;
     auth.require(Capability::Read)?;
     let request = normalize_publish(request);
+    if !state.config.messaging_enabled
+        && matches!(request.target, NotificationTarget::Conversation { .. })
+    {
+        return Err(ApiError::invalid(
+            "conversation notification targets are unavailable while messaging is disabled",
+        ));
+    }
     validate_publish(&request)?;
+    let mut tx = state.begin_write(&auth).await?;
+    let result = publish_in_tx(
+        &mut tx,
+        &state,
+        &auth,
+        &request,
+        PublishAccess::Public,
+        None,
+    )
+    .await?;
+    tx.commit().await?;
+    let notification = load_notification(&state, &auth, result.notification_id).await?;
+    metrics::counter!(
+        "notifications.publish",
+        "result" => if result.inserted { "created" } else { "replayed" },
+        "kind" => request.kind
+    )
+    .increment(1);
+    Ok(Json(PublishResponse {
+        notification,
+        replayed: !result.inserted,
+        delivery_count: result.delivery_count,
+    }))
+}
+
+pub(crate) async fn publish_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    state: &AppState,
+    auth: &AuthContext,
+    request: &PublishRequest,
+    access: PublishAccess,
+    delivery_available_at: Option<DateTime<Utc>>,
+) -> ApiResult<PublishTxResult> {
+    validate_publish_for_access(request, access)?;
     let request_hash = canonical_request_hash(&request)?;
     let occurred_at = request.occurred_at.unwrap_or_else(Utc::now);
     let expires_at = effective_notification_expiry(occurred_at, request.expires_at);
@@ -226,7 +284,6 @@ pub async fn publish(
         .transpose()?;
     let target = serde_json::to_value(&request.target)?;
     let notification_id = Uuid::now_v7();
-    let mut tx = state.begin_write(&auth).await?;
     let inserted = sqlx::query(
         r#"
         INSERT INTO straylight.notifications (
@@ -251,18 +308,25 @@ pub async fn publish(
     .bind(target)
     .bind(occurred_at)
     .bind(expires_at)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?
     .rows_affected()
         == 1;
 
-    let (resolved_id, existing_hash): (Uuid, String) = sqlx::query_as(
+    let existing = sqlx::query_as::<_, (Uuid, String)>(
         "SELECT id,request_hash FROM straylight.notifications WHERE user_id=$1 AND event_key=$2",
     )
     .bind(auth.user_id.0)
     .bind(request.event_key.trim())
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await?;
+    let Some((resolved_id, existing_hash)) = existing else {
+        return Err(ApiError::conflict(
+            "notification_event_key_conflict",
+            "the event key was already used with different notification content",
+            json!({"event_key": request.event_key.trim()}),
+        ));
+    };
     if existing_hash != request_hash {
         return Err(ApiError::conflict(
             "notification_event_key_conflict",
@@ -274,9 +338,9 @@ pub async fn publish(
         sqlx::query(
             r#"
             INSERT INTO straylight.notification_deliveries (
-              user_id,notification_id,installation_id,state,last_error_code
+              user_id,notification_id,installation_id,state,last_error_code,available_at
             )
-            SELECT $1,$2,installation.id,$3,$4
+            SELECT $1,$2,installation.id,$3,$4,COALESCE($5,clock_timestamp())
             FROM straylight.notification_installations AS installation
             WHERE installation.user_id=$1
               AND installation.enabled
@@ -296,7 +360,8 @@ pub async fn publish(
         } else {
             Some("transport_disabled")
         })
-        .execute(&mut *tx)
+        .bind(delivery_available_at)
+        .execute(&mut **tx)
         .await?
         .rows_affected();
     }
@@ -305,21 +370,13 @@ pub async fn publish(
     )
     .bind(auth.user_id.0)
     .bind(resolved_id)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await? as usize;
-    tx.commit().await?;
-    let notification = load_notification(&state, &auth, resolved_id).await?;
-    metrics::counter!(
-        "notifications.publish",
-        "result" => if inserted { "created" } else { "replayed" },
-        "kind" => request.kind
-    )
-    .increment(1);
-    Ok(Json(PublishResponse {
-        notification,
-        replayed: !inserted,
+    Ok(PublishTxResult {
+        notification_id: resolved_id,
+        inserted,
         delivery_count,
-    }))
+    })
 }
 
 pub async fn list(
@@ -724,12 +781,25 @@ fn require_manage(auth: &AuthContext) -> ApiResult<()> {
 }
 
 fn validate_publish(request: &PublishRequest) -> ApiResult<()> {
+    validate_publish_for_access(request, PublishAccess::Public)
+}
+
+fn validate_publish_for_access(request: &PublishRequest, access: PublishAccess) -> ApiResult<()> {
     validate_text(&request.event_key, 200, "event_key")?;
     if request.event_key.starts_with("task-deadline:")
         || request.event_key.starts_with("task-cost:")
     {
         return Err(ApiError::invalid(
             "task guard event-key namespaces are reserved for the internal scheduler",
+        ));
+    }
+    if access == PublishAccess::Public
+        && ["message:", "message-system:", "needs-human:", "reply-by:"]
+            .iter()
+            .any(|prefix| request.event_key.starts_with(prefix))
+    {
+        return Err(ApiError::invalid(
+            "messaging event-key namespaces are reserved for the internal messaging service",
         ));
     }
     validate_text(&request.correlation_id, 200, "correlation_id")?;
@@ -767,6 +837,17 @@ fn validate_publish(request: &PublishRequest) -> ApiResult<()> {
             return Err(ApiError::invalid(
                 "task notification targets are reserved for the internal scheduler",
             ));
+        }
+        NotificationTarget::Conversation {
+            conversation_id,
+            seq,
+        } => {
+            parse_canonical_conversation_id(conversation_id)?;
+            if *seq <= 0 {
+                return Err(ApiError::invalid(
+                    "target.seq must be a positive message sequence",
+                ));
+            }
         }
         NotificationTarget::Notification | NotificationTarget::Today => {}
     }
@@ -828,6 +909,7 @@ fn normalize_publish(mut request: PublishRequest) -> PublishRequest {
             *entry_ref = entry_ref.trim().to_owned();
         }
         NotificationTarget::Task { .. }
+        | NotificationTarget::Conversation { .. }
         | NotificationTarget::Notification
         | NotificationTarget::Today => {}
     }
@@ -1485,13 +1567,14 @@ pub async fn process_next_on_pool(
             return Ok(true);
         }
     };
+    let push_target = resolve_push_target(&delivery.target);
     let request = ApnsRequest {
         device_token,
         environment: delivery.environment.clone(),
         app_id: delivery.app_id.clone(),
-        payload: push_payload(&delivery),
+        payload: push_payload(&delivery, &push_target),
         apns_id: delivery.id,
-        collapse_id: apns_collapse_id(delivery.notification_id),
+        collapse_id: push_collapse_id(&delivery, &push_target),
         expiration: delivery.expires_at,
     };
     match provider.send(request).await {
@@ -1637,35 +1720,91 @@ async fn claim_delivery(pool: &PgPool) -> ApiResult<Option<ClaimedDelivery>> {
     .transpose()
 }
 
-fn push_payload(delivery: &ClaimedDelivery) -> Value {
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ResolvedPushTarget {
+    Conversation { conversation_id: Uuid, seq: i64 },
+    Task { task_ref: String },
+    Ordinary,
+    Malformed,
+}
+
+fn resolve_push_target(target: &Value) -> ResolvedPushTarget {
+    match serde_json::from_value::<NotificationTarget>(target.clone()) {
+        Ok(NotificationTarget::Conversation {
+            conversation_id,
+            seq,
+        }) => match parse_canonical_conversation_id(&conversation_id) {
+            Ok(conversation_id) if seq > 0 => ResolvedPushTarget::Conversation {
+                conversation_id,
+                seq,
+            },
+            _ => ResolvedPushTarget::Malformed,
+        },
+        Ok(NotificationTarget::Task { task_ref }) => match parse_canonical_task_ref(&task_ref) {
+            Ok(_) => ResolvedPushTarget::Task { task_ref },
+            Err(_) => ResolvedPushTarget::Malformed,
+        },
+        Ok(
+            NotificationTarget::Notification
+            | NotificationTarget::Today
+            | NotificationTarget::Briefing { .. }
+            | NotificationTarget::Entry { .. },
+        ) => ResolvedPushTarget::Ordinary,
+        Err(_) => ResolvedPushTarget::Malformed,
+    }
+}
+
+fn push_payload(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> Value {
     let notification_ref = format_ref("notification", delivery.notification_id);
     let delivery_ref = format_ref("delivery", delivery.id);
+    let mut aps = json!({
+        "alert": {
+            "title": "Straylight",
+            "body": push_body(delivery, target)
+        }
+    });
+    if matches!(target, ResolvedPushTarget::Conversation { .. }) {
+        aps["content-available"] = json!(1);
+    }
     json!({
-        "aps": {
-            "alert": {
-                "title": "Straylight",
-                "body": generic_push_body(&delivery.kind)
-            }
-        },
+        "aps": aps,
         "schema": "straylight-push@v1",
         "notification_ref": notification_ref,
         "delivery_ref": delivery_ref,
-        "straylight_route": push_route(delivery)
+        "straylight_route": push_route(delivery, target)
     })
 }
 
-fn push_route(delivery: &ClaimedDelivery) -> String {
-    match serde_json::from_value::<NotificationTarget>(delivery.target.clone()) {
-        Ok(NotificationTarget::Task { task_ref })
-            if parse_canonical_task_ref(&task_ref).is_ok() =>
-        {
-            format!("straylight://task/{task_ref}")
-        }
+fn push_route(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String {
+    match target {
+        ResolvedPushTarget::Conversation {
+            conversation_id,
+            seq,
+        } => format!("straylight://conversation/{conversation_id}?seq={seq}"),
+        ResolvedPushTarget::Task { task_ref } => format!("straylight://task/{task_ref}"),
         _ => format!(
             "straylight://notification/{}?delivery={}",
             delivery.notification_id.simple(),
             delivery.id.simple()
         ),
+    }
+}
+
+fn push_collapse_id(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String {
+    match target {
+        ResolvedPushTarget::Conversation {
+            conversation_id, ..
+        } => conversation_id.to_string(),
+        _ => apns_collapse_id(delivery.notification_id),
+    }
+}
+
+fn push_body(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String {
+    match target {
+        ResolvedPushTarget::Conversation { .. } => "A new agent message is available.".to_owned(),
+        ResolvedPushTarget::Task { .. }
+        | ResolvedPushTarget::Ordinary
+        | ResolvedPushTarget::Malformed => generic_push_body(&delivery.kind).to_owned(),
     }
 }
 
@@ -1687,6 +1826,17 @@ fn parse_canonical_task_ref(value: &str) -> ApiResult<Uuid> {
         ));
     }
     Ok(task_id)
+}
+
+fn parse_canonical_conversation_id(value: &str) -> ApiResult<Uuid> {
+    let conversation_id = Uuid::parse_str(value)
+        .map_err(|_| ApiError::invalid("target.conversation_id must be a canonical UUIDv7"))?;
+    if value != conversation_id.to_string() || conversation_id.get_version_num() != 7 {
+        return Err(ApiError::invalid(
+            "target.conversation_id must be a canonical lowercase hyphenated UUIDv7",
+        ));
+    }
+    Ok(conversation_id)
 }
 
 async fn record_acceptance(
@@ -1898,6 +2048,15 @@ mod tests {
     }
 
     #[test]
+    fn public_publish_cannot_preempt_messaging_event_keys() {
+        for prefix in ["message", "message-system", "needs-human", "reply-by"] {
+            let mut request = fixture();
+            request.event_key = format!("{prefix}:{}:1", Uuid::now_v7());
+            assert!(validate_publish(&request).is_err());
+        }
+    }
+
+    #[test]
     fn public_publish_cannot_create_task_target_notifications() {
         let mut request = fixture();
         request.event_key = format!("operational:{}", Uuid::now_v7());
@@ -1990,7 +2149,8 @@ mod tests {
             token_nonce: Vec::new(),
             expires_at: None,
         };
-        let payload = push_payload(&delivery);
+        let target = resolve_push_target(&delivery.target);
+        let payload = push_payload(&delivery, &target);
         assert_eq!(payload["schema"], "straylight-push@v1");
         assert_eq!(payload["aps"]["alert"]["title"], "Straylight");
         assert!(payload.get("title").is_none());
@@ -2039,7 +2199,8 @@ mod tests {
             token_nonce: Vec::new(),
             expires_at: None,
         };
-        let payload = push_payload(&delivery);
+        let target = resolve_push_target(&delivery.target);
+        let payload = push_payload(&delivery, &target);
         assert_eq!(
             payload["straylight_route"],
             format!("straylight://task/{task_id}")
