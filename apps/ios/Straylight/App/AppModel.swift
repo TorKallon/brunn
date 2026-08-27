@@ -43,6 +43,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var currentCredentialID: String?
     @Published private(set) var readOnlyCredential = false
     @Published private(set) var canManageNotifications = false
+    @Published private(set) var canWriteTasks = false
+    @Published private(set) var hasStoredDeviceTaskCredential = false
+    @Published private(set) var deviceTaskAccessMessage: String?
+    @Published private(set) var isConfiguringDeviceTaskAccess = false
     @Published private(set) var isDemo = false
     @Published private(set) var latestBriefing: BriefingEditionData?
     @Published private(set) var cachedAt: Date?
@@ -73,6 +77,19 @@ final class AppModel: ObservableObject {
     @Published private(set) var searchMessage: String?
     @Published private(set) var isSearching = false
     @Published private(set) var tasks: [TaskItem] = []
+    @Published private(set) var urgentTasks: [AgentTaskCandidate] = []
+    @Published private(set) var nextTasks: [AgentTaskCandidate] = []
+    @Published private(set) var doneToday: AgentTaskDoneSummaryData?
+    @Published private(set) var taskContexts: [AgentTaskContext] = []
+    @Published private(set) var selectedTaskContexts: Set<String> = []
+    @Published private(set) var taskProjects: [AgentTaskProject] = []
+    @Published var selectedProjectState: AgentTaskProjectStateData?
+    @Published private(set) var taskNextRemaining = 0
+    @Published private(set) var taskBacklogTotal = 0
+    @Published private(set) var taskMessage: String?
+    @Published private(set) var isRefreshingTasks = false
+    @Published private(set) var mutatingTaskRefs: Set<String> = []
+    @Published var presentedTask: AgentTaskDetail?
     @Published private(set) var alerts: [AlertItem] = []
     @Published var selectedTab: AppTab = .dashboard
     @Published var focusedBriefingItemID: String?
@@ -86,6 +103,7 @@ final class AppModel: ObservableObject {
     let api: StraylightAPI
     private let credentialStore: any CredentialStoring
     private let briefingCache: BriefingCache
+    private let taskSurfaceCache: TaskSurfaceCache
     private let bootstrapValidationTimeout: Duration
     private let storedSessionChecker: StoredSessionChecker
     private let bootstrapIdentityLoader: BootstrapIdentityLoader
@@ -104,6 +122,7 @@ final class AppModel: ObservableObject {
         api: StraylightAPI = StraylightAPI(),
         credentialStore: any CredentialStoring = KeychainCredentialStore(),
         briefingCache: BriefingCache = BriefingCache(),
+        taskSurfaceCache: TaskSurfaceCache = TaskSurfaceCache(),
         bootstrapValidationTimeout: Duration = .seconds(6),
         storedSessionChecker: @escaping StoredSessionChecker = { api in
             api.hasAuthenticatedSession()
@@ -137,6 +156,7 @@ final class AppModel: ObservableObject {
         self.api = api
         self.credentialStore = credentialStore
         self.briefingCache = briefingCache
+        self.taskSurfaceCache = taskSurfaceCache
         self.bootstrapValidationTimeout = bootstrapValidationTimeout
         self.storedSessionChecker = storedSessionChecker
         self.bootstrapIdentityLoader = bootstrapIdentityLoader
@@ -148,6 +168,10 @@ final class AppModel: ObservableObject {
     }
 
     func bootstrap() async {
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-reset-task-contexts") {
+            UserDefaults.standard.removeObject(forKey: Self.taskContextsDefaultsKey)
+        }
+
         if ProcessInfo.processInfo.arguments.contains("--demo") {
             enterDemo()
             return
@@ -159,39 +183,60 @@ final class AppModel: ObservableObject {
         }
 
         invalidateDashboardContext()
-        try? credentialStore.delete()
         guard await storedSessionChecker(api) else {
             phase = .connectionRequired
             return
         }
 
+        let cachedTaskUserID = await loadLocallyBoundTaskSurface()
         await loadCachedBriefing()
-        if latestBriefing != nil {
-            user = UserSummary(id: "cached", displayName: "Owner")
+        let hasProtectedOfflineSurface = latestBriefing != nil || cachedTaskUserID != nil
+        if hasProtectedOfflineSurface {
+            user = UserSummary(id: cachedTaskUserID ?? "cached", displayName: "Owner")
             connectionValidated = false
             phase = .ready
-            connectionMessage = "Checking Straylight while the last protected briefing remains available."
+            connectionMessage = "Checking Straylight while the last protected Today view remains available."
             applyPendingRouteLocally()
         }
 
         do {
             let identity = try await loadBootstrapIdentity()
             accept(identity)
+            if await loadCachedTaskSurface(for: identity.user.id) {
+                await bindTaskSurfaceCache(to: identity.user.id)
+            }
+            await validateStoredDeviceTaskCredential()
             Task { await refreshDashboard() }
             Task { await refreshNotifications() }
+            Task { await refreshTaskSurface() }
             await resumePendingRoute()
             await refreshBriefing()
         } catch is BootstrapValidationError {
             connectionValidated = false
-            phase = .connectionRequired
-            connectionMessage = "The saved sign-in is taking too long to verify. Sign in again, or retry when connectivity returns."
+            if hasProtectedOfflineSurface {
+                phase = .ready
+                connectionMessage = "Showing the last protected Today view because the saved sign-in is taking too long to verify."
+                applyPendingRouteLocally()
+            } else {
+                phase = .connectionRequired
+                connectionMessage = "The saved sign-in is taking too long to verify. Sign in again, or retry when connectivity returns."
+            }
         } catch let error as StraylightAPIError where error.isUnauthorized {
             await api.clearAuthenticatedSession()
             do {
                 try await briefingCache.clear()
+                try await taskSurfaceCache.clear()
                 cacheSavedAt = nil
                 cachedAt = nil
                 latestBriefing = nil
+                urgentTasks = []
+                nextTasks = []
+                doneToday = nil
+                taskProjects = []
+                taskContexts = []
+                selectedTaskContexts = []
+                taskNextRemaining = 0
+                taskBacklogTotal = 0
             } catch {
                 phase = .failed("The expired sign-in was removed, but the protected cache could not be cleared. \(error.localizedDescription)")
                 return
@@ -200,11 +245,13 @@ final class AppModel: ObservableObject {
             phase = .connectionRequired
             connectionMessage = "Your session expired. Sign in again."
         } catch {
-            if latestBriefing != nil {
-                user = UserSummary(id: "cached", displayName: "Owner")
+            if hasProtectedOfflineSurface {
+                if user == nil {
+                    user = UserSummary(id: cachedTaskUserID ?? "cached", displayName: "Owner")
+                }
                 connectionValidated = false
                 phase = .ready
-                connectionMessage = "Showing the last protected briefing because Straylight could not be reached."
+                connectionMessage = "Showing the last protected Today view because Straylight could not be reached."
                 applyPendingRouteLocally()
             } else {
                 phase = .failed(error.localizedDescription)
@@ -225,9 +272,14 @@ final class AppModel: ObservableObject {
         do {
             let identity = try await loginLoader(api, email, password)
             accept(identity)
+            if await loadCachedTaskSurface(for: identity.user.id) {
+                await bindTaskSurfaceCache(to: identity.user.id)
+            }
+            await validateStoredDeviceTaskCredential()
             Task { await refreshDashboard() }
             Task { await refreshNotifications() }
             await loadCachedBriefing()
+            Task { await refreshTaskSurface() }
             await resumePendingRoute()
             await refreshBriefing()
         } catch {
@@ -247,9 +299,24 @@ final class AppModel: ObservableObject {
         user = UserSummary(id: "user:demo", displayName: "Rourke")
         currentCredentialID = "credential:demo-iphone"
         canManageNotifications = true
+        canWriteTasks = !ProcessInfo.processInfo.arguments.contains("--ui-test-task-read-only")
+        hasStoredDeviceTaskCredential = false
         dashboard = SampleData.dashboard
         latestBriefing = SampleData.briefing
         tasks = SampleData.tasks
+        urgentTasks = ProcessInfo.processInfo.arguments.contains("--ui-test-task-empty-urgent")
+            ? []
+            : SampleData.agentUrgentTasks
+        nextTasks = SampleData.agentNextTasks
+        doneToday = SampleData.agentDoneToday
+        taskContexts = ProcessInfo.processInfo.arguments.contains("--ui-test-task-crowded-contexts")
+            ? SampleData.agentTaskCrowdedContexts
+            : SampleData.agentTaskContexts
+        selectedTaskContexts = ["phone", "online"]
+        taskProjects = SampleData.agentTaskProjects
+        taskNextRemaining = 7
+        taskBacklogTotal = 18
+        taskMessage = nil
         alerts = SampleData.alerts
         briefingHistory = SampleData.briefingHistory
         canLoadMoreBriefings = false
@@ -270,15 +337,48 @@ final class AppModel: ObservableObject {
         if let pendingRoute {
             self.pendingRoute = nil
             applyLocalRoute(pendingRoute)
+            if case let .task(reference) = pendingRoute {
+                presentedTask = SampleData.agentTaskDetail(reference: reference)
+            }
         }
     }
 
     func disconnect() async {
+        if !isDemo {
+            let pendingCredentialRef = Self.pendingDeviceCredentialRef()
+            let credential: DeviceTaskCredential?
+            do {
+                credential = try credentialStore.load()
+            } catch {
+                guard pendingCredentialRef != nil else {
+                    canWriteTasks = false
+                    canManageNotifications = false
+                    hasStoredDeviceTaskCredential = true
+                    privacyMessage = "Disconnect stopped because the protected device credential could not be read for server revocation. Retry after unlocking this iPhone."
+                    return
+                }
+                credential = nil
+            }
+            let references = Set([credential?.credentialRef, pendingCredentialRef].compactMap { $0 })
+            for reference in references {
+                do {
+                    _ = try await api.revokeCredential(reference: reference)
+                } catch {
+                    canWriteTasks = false
+                    canManageNotifications = false
+                    hasStoredDeviceTaskCredential = true
+                    privacyMessage = "Disconnect stopped because device task access could not be revoked on Straylight. The protected Keychain credential remains locally disabled; retry while online."
+                    return
+                }
+            }
+        }
         try? await api.logout()
         await api.clearAuthenticatedSession()
         do {
             try credentialStore.delete()
+            Self.clearPendingDeviceCredentialRef()
             try await briefingCache.clear()
+            try await taskSurfaceCache.clear()
         } catch {
             privacyMessage = "Disconnect is incomplete: private local data could not be removed. \(error.localizedDescription) Retry before considering this iPhone disconnected."
             return
@@ -287,6 +387,9 @@ final class AppModel: ObservableObject {
         user = nil
         currentCredentialID = nil
         canManageNotifications = false
+        canWriteTasks = false
+        hasStoredDeviceTaskCredential = false
+        deviceTaskAccessMessage = nil
         latestBriefing = nil
         briefingHistory = []
         canLoadMoreBriefings = false
@@ -301,6 +404,18 @@ final class AppModel: ObservableObject {
         notificationMessage = nil
         presentedNotification = nil
         tasks = []
+        urgentTasks = []
+        nextTasks = []
+        doneToday = nil
+        taskContexts = []
+        selectedTaskContexts = []
+        taskProjects = []
+        selectedProjectState = nil
+        taskNextRemaining = 0
+        taskBacklogTotal = 0
+        taskMessage = nil
+        mutatingTaskRefs = []
+        presentedTask = nil
         alerts = []
         searchResults = []
         searchContextGeneration &+= 1
@@ -353,6 +468,599 @@ final class AppModel: ObservableObject {
         } catch {
             privacyMessage = "The protected briefing cache could not be removed. \(error.localizedDescription)"
         }
+    }
+
+    func bootstrapDeviceTaskAccess() async {
+        guard !isDemo,
+              connectionValidated,
+              !hasStoredDeviceTaskCredential,
+              !isConfiguringDeviceTaskAccess
+        else { return }
+        isConfiguringDeviceTaskAccess = true
+        defer { isConfiguringDeviceTaskAccess = false }
+        var createdCredentialRef: String?
+        do {
+            if Self.pendingDeviceCredentialRef() != nil {
+                hasStoredDeviceTaskCredential = true
+                deviceTaskAccessMessage = "Pending device access must be revoked before a replacement can be created."
+                return
+            }
+            let existingCredential: DeviceTaskCredential?
+            do {
+                existingCredential = try credentialStore.load()
+            } catch {
+                hasStoredDeviceTaskCredential = true
+                deviceTaskAccessMessage = "The protected device credential could not be read. Unlock this iPhone and retry revocation before creating replacement access."
+                return
+            }
+            if existingCredential != nil {
+                hasStoredDeviceTaskCredential = true
+                deviceTaskAccessMessage = "Existing device access must be revoked before a replacement can be created."
+                return
+            }
+            hasStoredDeviceTaskCredential = false
+            var oneTimeResponse: DeviceTaskCredentialBootstrapResponse? =
+                try await api.bootstrapDeviceTaskCredential()
+            createdCredentialRef = oneTimeResponse?.id
+            guard oneTimeResponse?.access == "ios_tasks",
+                  Self.hasExactDeviceTaskCapabilities(oneTimeResponse?.capabilities ?? []),
+                  oneTimeResponse?.id.hasPrefix("credential:") == true,
+                  oneTimeResponse?.token.isEmpty == false,
+                  let credentialRef = oneTimeResponse?.id
+            else {
+                throw StraylightAPIError.invalidResponse
+            }
+            var oneTimeToken = oneTimeResponse?.token ?? ""
+            oneTimeResponse = nil
+            defer { oneTimeToken.removeAll(keepingCapacity: false) }
+            let identity = try await api.deviceCredentialIdentity(
+                bearerToken: oneTimeToken
+            )
+            guard identity.user.id == user?.id,
+                  identity.credentialID == credentialRef,
+                  Self.hasExactDeviceTaskCapabilities(identity.capabilities)
+            else {
+                throw StraylightAPIError.invalidResponse
+            }
+            try credentialStore.save(DeviceTaskCredential(
+                credentialRef: credentialRef,
+                token: oneTimeToken
+            ))
+            hasStoredDeviceTaskCredential = true
+            canWriteTasks = true
+            canManageNotifications = true
+            deviceTaskAccessMessage = "Device task access is ready."
+        } catch {
+            var revocationUnconfirmed = false
+            if let createdCredentialRef {
+                do {
+                    _ = try await api.revokeCredential(reference: createdCredentialRef)
+                    try credentialStore.delete()
+                    Self.clearPendingDeviceCredentialRef()
+                    hasStoredDeviceTaskCredential = false
+                } catch {
+                    revocationUnconfirmed = true
+                    Self.retainPendingDeviceCredentialRef(createdCredentialRef)
+                    do {
+                        try credentialStore.save(DeviceTaskCredential(
+                            credentialRef: createdCredentialRef,
+                            token: ""
+                        ))
+                        hasStoredDeviceTaskCredential = true
+                    } catch {
+                        hasStoredDeviceTaskCredential = true
+                    }
+                }
+            }
+            canWriteTasks = false
+            canManageNotifications = false
+            deviceTaskAccessMessage = revocationUnconfirmed
+                ? "Device task access failed after issuance, and automatic revocation could not be confirmed. Revoke “iOS task access” from the web before retrying."
+                : "Device task access could not be created. \(error.localizedDescription)"
+        }
+    }
+
+    func revokeDeviceTaskAccess() async -> Bool {
+        guard !isDemo else { return true }
+        do {
+            let credential = try credentialStore.load()
+            let references = Set([
+                credential?.credentialRef,
+                Self.pendingDeviceCredentialRef(),
+            ].compactMap { $0 })
+            for reference in references {
+                _ = try await api.revokeCredential(reference: reference)
+            }
+            try credentialStore.delete()
+            Self.clearPendingDeviceCredentialRef()
+            hasStoredDeviceTaskCredential = false
+            canWriteTasks = false
+            canManageNotifications = false
+            deviceTaskAccessMessage = "Device task access was revoked."
+            return true
+        } catch {
+            canWriteTasks = false
+            canManageNotifications = false
+            hasStoredDeviceTaskCredential = true
+            deviceTaskAccessMessage = "Revocation could not be confirmed. The local credential remains protected and disabled."
+            return false
+        }
+    }
+
+    func deviceTaskBearer() -> String? {
+        guard canWriteTasks || canManageNotifications else { return nil }
+        guard let token = try? credentialStore.load()?.token, !token.isEmpty else { return nil }
+        return token
+    }
+
+    private func validateStoredDeviceTaskCredential() async {
+        canWriteTasks = false
+        canManageNotifications = false
+        if let pendingCredentialRef = Self.pendingDeviceCredentialRef() {
+            hasStoredDeviceTaskCredential = true
+            do {
+                _ = try await api.revokeCredential(reference: pendingCredentialRef)
+                try credentialStore.delete()
+                Self.clearPendingDeviceCredentialRef()
+                hasStoredDeviceTaskCredential = false
+                deviceTaskAccessMessage = "Pending device access was revoked and removed."
+            } catch {
+                deviceTaskAccessMessage = "Pending device access remains disabled because server revocation could not be confirmed."
+            }
+            return
+        }
+        let credential: DeviceTaskCredential?
+        do {
+            credential = try credentialStore.load()
+        } catch {
+            hasStoredDeviceTaskCredential = true
+            deviceTaskAccessMessage = "The protected device credential could not be read. Unlock this iPhone and retry before creating replacement access."
+            return
+        }
+        guard let credential else {
+            hasStoredDeviceTaskCredential = false
+            return
+        }
+        hasStoredDeviceTaskCredential = true
+        if credential.token.isEmpty {
+            do {
+                _ = try await api.revokeCredential(reference: credential.credentialRef)
+                try credentialStore.delete()
+                hasStoredDeviceTaskCredential = false
+                deviceTaskAccessMessage = "Pending device access was revoked and removed."
+            } catch {
+                deviceTaskAccessMessage = "Pending device access remains disabled because server revocation could not be confirmed."
+            }
+            return
+        }
+        do {
+            let identity = try await api.deviceCredentialIdentity(
+                bearerToken: credential.token
+            )
+            guard identity.user.id == user?.id,
+                  identity.credentialID == credential.credentialRef,
+                  Self.hasExactDeviceTaskCapabilities(identity.capabilities)
+            else {
+                do {
+                    _ = try await api.revokeCredential(reference: credential.credentialRef)
+                    try credentialStore.delete()
+                    hasStoredDeviceTaskCredential = false
+                    deviceTaskAccessMessage = "The saved device credential did not match this account or was not least-privilege, so it was revoked and removed."
+                } catch {
+                    deviceTaskAccessMessage = "The saved device credential did not match this account or was not least-privilege. It remains protected but disabled because server revocation could not be confirmed."
+                }
+                return
+            }
+            canWriteTasks = true
+            canManageNotifications = true
+            deviceTaskAccessMessage = nil
+        } catch let error as StraylightAPIError where error.isUnauthorized {
+            do {
+                _ = try await api.revokeCredential(reference: credential.credentialRef)
+                try credentialStore.delete()
+                hasStoredDeviceTaskCredential = false
+                deviceTaskAccessMessage = "Device task access expired and was removed. Set it up again."
+            } catch {
+                deviceTaskAccessMessage = "Device task access is invalid and disabled; server revocation could not be confirmed."
+            }
+        } catch {
+            deviceTaskAccessMessage = "Device task access could not be verified; mutations remain disabled."
+        }
+    }
+
+    private func loadLocallyBoundTaskSurface() async -> String? {
+        do {
+            guard let sessionFingerprint = await api.authenticatedSessionFingerprint(),
+                  let userID = try await taskSurfaceCache.boundUserID(
+                      matching: sessionFingerprint
+                  )
+            else { return nil }
+            guard await loadCachedTaskSurface(for: userID) else {
+                try? await taskSurfaceCache.clear()
+                return nil
+            }
+            return userID
+        } catch {
+            clearTaskSurfacePresentation()
+            try? await taskSurfaceCache.clear()
+            taskMessage = "The protected Today task cache could not be verified and was removed."
+            return nil
+        }
+    }
+
+    @discardableResult
+    private func loadCachedTaskSurface(for userID: String) async -> Bool {
+        do {
+            guard let cached = try await taskSurfaceCache.load() else { return false }
+            guard cached.userID == userID else {
+                clearTaskSurfacePresentation()
+                try await taskSurfaceCache.clear()
+                taskMessage = "A protected Today cache for another account was removed."
+                return false
+            }
+            urgentTasks = cached.urgent
+            nextTasks = cached.next
+            doneToday = cached.doneToday
+            taskProjects = cached.projects
+            taskContexts = cached.contexts
+            selectedTaskContexts = Set(cached.selectedContexts)
+            taskNextRemaining = cached.nextRemaining
+            taskBacklogTotal = cached.backlogTotal
+            return true
+        } catch {
+            clearTaskSurfacePresentation()
+            try? await taskSurfaceCache.clear()
+            taskMessage = "The protected Today task cache could not be verified and was removed."
+            return false
+        }
+    }
+
+    private func bindTaskSurfaceCache(to userID: String) async {
+        do {
+            guard let sessionFingerprint = await api.authenticatedSessionFingerprint() else {
+                throw StraylightAPIError.notConnected
+            }
+            try await taskSurfaceCache.bind(
+                to: userID,
+                sessionFingerprint: sessionFingerprint
+            )
+        } catch {
+            taskMessage = taskMessage
+                ?? "Today is available, but its protected account binding could not be saved for offline launch."
+        }
+    }
+
+    func refreshTaskSurface() async {
+        guard !isDemo,
+              phase == .ready,
+              connectionValidated,
+              !isRefreshingTasks
+        else { return }
+        isRefreshingTasks = true
+        defer { isRefreshingTasks = false }
+
+        do {
+            let contextResponse = try await api.taskContexts()
+            taskContexts = contextResponse.data.contexts.filter { !$0.archived }
+            let validSlugs = Set(taskContexts.map(\.slug))
+            let stored = Self.persistedTaskContexts().filter(validSlugs.contains)
+            if !stored.isEmpty || UserDefaults.standard.object(forKey: Self.taskContextsDefaultsKey) != nil {
+                selectedTaskContexts = Set(stored)
+            } else {
+                let defaults = contextResponse.data.surfaceDefaults["ios"]?.contextsAvailable
+                    ?? ["phone", "online"]
+                selectedTaskContexts = Set(defaults.filter(validSlugs.contains))
+            }
+
+            let selected = selectedTaskContexts.sorted()
+            async let urgentResponse = api.taskCandidates(
+                view: .urgent,
+                contextsAvailable: selected
+            )
+            async let nextResponse = api.taskCandidates(
+                view: .next,
+                limit: 17,
+                contextsAvailable: selected
+            )
+            async let doneResponse = api.taskDoneSummary(limit: 25)
+            async let projectResponse = api.taskProjects()
+
+            let (urgent, next, done, projects) = try await (
+                urgentResponse,
+                nextResponse,
+                doneResponse,
+                projectResponse
+            )
+            urgentTasks = urgent.data.items
+            nextTasks = next.data.items
+            doneToday = done.data
+            taskProjects = projects.data.projects
+            taskNextRemaining = next.data.nextRemaining
+            taskBacklogTotal = next.data.backlogTotal
+            taskMessage = nil
+            try await saveTaskSurfaceCache()
+        } catch {
+            taskMessage = "Tasks could not refresh. The last protected Today set remains visible."
+        }
+    }
+
+    func toggleTaskContext(_ slug: String) async {
+        guard taskContexts.contains(where: { $0.slug == slug }) else { return }
+        if selectedTaskContexts.contains(slug) {
+            selectedTaskContexts.remove(slug)
+        } else {
+            selectedTaskContexts.insert(slug)
+        }
+        UserDefaults.standard.set(
+            selectedTaskContexts.sorted(),
+            forKey: Self.taskContextsDefaultsKey
+        )
+        if isDemo {
+            taskMessage = nil
+        } else {
+            await refreshTaskSurface()
+        }
+    }
+
+    @discardableResult
+    func performTaskAction(
+        _ candidate: AgentTaskCandidate,
+        operation: AgentTaskUpdateOperation
+    ) async -> Bool {
+        guard canWriteTasks else {
+            taskMessage = "View only — this credential does not have task.write."
+            return false
+        }
+        guard isDemo || connectionValidated else {
+            taskMessage = "Reconnect before changing a task. Offline changes are not queued."
+            return false
+        }
+        guard !mutatingTaskRefs.contains(candidate.taskRef) else { return false }
+
+        let oldUrgent = urgentTasks
+        let oldNext = nextTasks
+        let removesFromToday: Bool
+        switch operation {
+        case .complete, .snooze, .snoozeUntil, .waitOn:
+            removesFromToday = true
+        default:
+            removesFromToday = false
+        }
+        if removesFromToday {
+            urgentTasks.removeAll { $0.taskRef == candidate.taskRef }
+            nextTasks.removeAll { $0.taskRef == candidate.taskRef }
+        }
+        mutatingTaskRefs.insert(candidate.taskRef)
+        defer { mutatingTaskRefs.remove(candidate.taskRef) }
+
+        if isDemo {
+            applyDemoTaskAction(candidate, operation: operation)
+            taskMessage = nil
+            return true
+        }
+
+        do {
+            guard let bearerToken = deviceTaskBearer() else {
+                throw StraylightAPIError.notConnected
+            }
+            let response = try await api.updateTask(
+                reference: candidate.taskRef,
+                request: AgentTaskUpdateRequest(
+                    expectedVersion: candidate.version,
+                    operation: operation
+                ),
+                bearerToken: bearerToken
+            )
+            if presentedTask?.taskRef == candidate.taskRef {
+                presentedTask = response.task
+            }
+            if let doneTodayCount = response.doneTodayCount,
+               let current = doneToday
+            {
+                doneToday = AgentTaskDoneSummaryData(
+                    from: current.from,
+                    through: current.through,
+                    timezone: current.timezone,
+                    asOf: current.asOf,
+                    count: doneTodayCount,
+                    doneTodayCount: doneTodayCount,
+                    items: current.items,
+                    nextCursor: current.nextCursor
+                )
+            }
+            taskMessage = nil
+            await refreshTaskSurface()
+            return true
+        } catch let error as StraylightAPIError {
+            urgentTasks = oldUrgent
+            nextTasks = oldNext
+            if error.isUnauthorized {
+                canWriteTasks = false
+                canManageNotifications = false
+                await validateStoredDeviceTaskCredential()
+                taskMessage = "Device task access is no longer valid. Set it up again before changing tasks."
+            } else if case let .server(status, _, _) = error, status == 409 {
+                presentedTask = try? await api.task(reference: candidate.taskRef)
+                taskMessage = "This task changed elsewhere. Its current version has been reloaded."
+            } else {
+                taskMessage = error.localizedDescription
+            }
+            return false
+        } catch {
+            urgentTasks = oldUrgent
+            nextTasks = oldNext
+            taskMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func openTask(reference: String) async {
+        guard let canonical = TaskReference.canonical(reference) else {
+            taskMessage = "The task link was invalid."
+            return
+        }
+        selectedTab = .today
+        if isDemo {
+            presentedTask = SampleData.agentTaskDetail(reference: canonical)
+            return
+        }
+        guard connectionValidated else {
+            pendingRoute = .task(reference: canonical)
+            return
+        }
+        do {
+            presentedTask = try await api.task(reference: canonical)
+            taskMessage = nil
+        } catch {
+            taskMessage = "The linked task could not be loaded. \(error.localizedDescription)"
+        }
+    }
+
+    func loadProject(_ project: AgentTaskProject) async {
+        if isDemo {
+            selectedProjectState = SampleData.agentProjectState(project)
+            return
+        }
+        do {
+            selectedProjectState = try await api.taskProjectState(slug: project.slug)
+            taskMessage = nil
+        } catch {
+            taskMessage = "Project state could not be loaded."
+        }
+    }
+
+    func setProjectInterest(_ interest: String) async {
+        guard canWriteTasks else {
+            taskMessage = "View only — task.write is required to change project interest."
+            return
+        }
+        guard let state = selectedProjectState else { return }
+        if isDemo {
+            taskMessage = nil
+            return
+        }
+        do {
+            guard let bearerToken = deviceTaskBearer() else {
+                throw StraylightAPIError.notConnected
+            }
+            try await api.setTaskProjectInterest(
+                slug: state.project.slug,
+                interest: interest,
+                expectedVersion: state.project.version,
+                bearerToken: bearerToken
+            )
+            if let project = taskProjects.first(where: { $0.slug == state.project.slug }) {
+                await loadProject(project)
+            }
+            await refreshTaskSurface()
+        } catch let error as StraylightAPIError where error.isUnauthorized {
+            canWriteTasks = false
+            canManageNotifications = false
+            await validateStoredDeviceTaskCredential()
+            taskMessage = "Device task access is no longer valid. Set it up again before changing project interest."
+        } catch {
+            taskMessage = "Project interest changed elsewhere. Refresh and try again."
+            await refreshTaskSurface()
+        }
+    }
+
+    private func applyDemoTaskAction(
+        _ candidate: AgentTaskCandidate,
+        operation: AgentTaskUpdateOperation
+    ) {
+        switch operation {
+        case .complete:
+            let now = ISO8601DateFormatter().string(from: .now)
+            let item = AgentTaskDoneItem(
+                taskRef: candidate.taskRef,
+                entryRef: candidate.entryRef,
+                version: candidate.version + 1,
+                title: candidate.title,
+                doneAt: now,
+                completedVia: "ios"
+            )
+            let current = doneToday ?? SampleData.agentDoneToday
+            doneToday = AgentTaskDoneSummaryData(
+                from: current.from,
+                through: current.through,
+                timezone: current.timezone,
+                asOf: now,
+                count: current.count + 1,
+                doneTodayCount: current.doneTodayCount + 1,
+                items: [item] + current.items,
+                nextCursor: nil
+            )
+        case .pinToday, .unpin:
+            let pinned = operation == .pinToday
+            let updated = AgentTaskCandidate(
+                taskRef: candidate.taskRef,
+                entryRef: candidate.entryRef,
+                version: candidate.version + 1,
+                title: candidate.title,
+                status: candidate.status,
+                project: candidate.project,
+                requiredContexts: candidate.requiredContexts,
+                tier: candidate.tier,
+                reason: candidate.reason,
+                provenanceMarkers: candidate.provenanceMarkers,
+                pinned: pinned
+            )
+            urgentTasks = urgentTasks.map { $0.taskRef == candidate.taskRef ? updated : $0 }
+            nextTasks = nextTasks.map { $0.taskRef == candidate.taskRef ? updated : $0 }
+        default:
+            break
+        }
+    }
+
+    private func saveTaskSurfaceCache() async throws {
+        guard let userID = user?.id,
+              let sessionFingerprint = await api.authenticatedSessionFingerprint()
+        else { throw StraylightAPIError.notConnected }
+        try await taskSurfaceCache.save(CachedTaskSurface(
+            userID: userID,
+            savedAt: .now,
+            urgent: urgentTasks,
+            next: nextTasks,
+            doneToday: doneToday,
+            projects: taskProjects,
+            contexts: taskContexts,
+            selectedContexts: selectedTaskContexts.sorted(),
+            nextRemaining: taskNextRemaining,
+            backlogTotal: taskBacklogTotal
+        ), sessionFingerprint: sessionFingerprint)
+    }
+
+    private static let taskContextsDefaultsKey = "straylight.task-contexts.ios"
+    private static var pendingDeviceCredentialRefKey: String {
+        let namespace = ProcessInfo.processInfo.environment["STRAYLIGHT_CREDENTIAL_NAMESPACE"]
+            .flatMap { $0.isEmpty ? nil : $0 }
+        let base = "straylight.pending-device-task-credential-ref.v1"
+        return namespace.map { "\(base).\($0)" } ?? base
+    }
+    private static let deviceTaskCapabilities: Set<String> = [
+        "task.write",
+        "notification:manage",
+    ]
+
+    private static func hasExactDeviceTaskCapabilities(_ capabilities: [String]) -> Bool {
+        capabilities.count == deviceTaskCapabilities.count
+            && Set(capabilities) == deviceTaskCapabilities
+    }
+
+    private static func pendingDeviceCredentialRef() -> String? {
+        UserDefaults.standard.string(forKey: pendingDeviceCredentialRefKey)
+    }
+
+    private static func retainPendingDeviceCredentialRef(_ reference: String) {
+        UserDefaults.standard.set(reference, forKey: pendingDeviceCredentialRefKey)
+    }
+
+    private static func clearPendingDeviceCredentialRef() {
+        UserDefaults.standard.removeObject(forKey: pendingDeviceCredentialRefKey)
+    }
+
+    private static func persistedTaskContexts() -> [String] {
+        UserDefaults.standard.stringArray(forKey: taskContextsDefaultsKey) ?? []
     }
 
     func refreshBriefing() async {
@@ -656,6 +1364,15 @@ final class AppModel: ObservableObject {
             }
         case .entry:
             return
+        case .task:
+            guard let taskRef = notification.target.taskRef,
+                  TaskReference.canonical(taskRef) != nil
+            else {
+                notificationMessage = "This alert has an invalid task target."
+                return
+            }
+            presentedNotification = nil
+            await openTask(reference: taskRef)
         }
     }
 
@@ -913,8 +1630,10 @@ final class AppModel: ObservableObject {
 
         applyLocalRoute(route)
         switch route {
-        case .today, .task:
+        case .today:
             return
+        case let .task(reference):
+            await openTask(reference: reference)
         case let .notification(notificationRef, deliveryRef):
             await openNotification(reference: notificationRef, deliveryRef: deliveryRef)
         case let .briefing(date, edition, _):
@@ -933,18 +1652,40 @@ final class AppModel: ObservableObject {
     }
 
     private func accept(_ identity: MeData) {
+        let previousUserID = user?.id
         invalidateDashboardContext()
         isDemo = false
         user = identity.user
         currentCredentialID = identity.credentialID
         readOnlyCredential = identity.readOnly
-        canManageNotifications = identity.capabilities.contains("notification:manage")
-            || identity.capabilities.contains("admin")
+        // Cookie sessions are the read/login channel only. Device mutations
+        // remain disabled until the separate least-privilege bearer validates.
+        canWriteTasks = false
+        canManageNotifications = false
         connectionValidated = true
         phase = .ready
+        if let previousUserID, previousUserID != identity.user.id {
+            clearTaskSurfacePresentation()
+        }
         tasks = []
         alerts = []
         connectionMessage = nil
+    }
+
+    private func clearTaskSurfacePresentation() {
+        tasks = []
+        urgentTasks = []
+        nextTasks = []
+        doneToday = nil
+        taskContexts = []
+        selectedTaskContexts = []
+        taskProjects = []
+        selectedProjectState = nil
+        taskNextRemaining = 0
+        taskBacklogTotal = 0
+        taskMessage = nil
+        mutatingTaskRefs = []
+        presentedTask = nil
     }
 
     private func invalidateDashboardContext() {

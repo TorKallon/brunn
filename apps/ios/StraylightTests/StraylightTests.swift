@@ -38,7 +38,7 @@ final class StraylightTests: XCTestCase {
         await model.bootstrap()
 
         XCTAssertEqual(model.phase, .connectionRequired)
-        XCTAssertTrue(credentialStore.wasDeleted)
+        XCTAssertFalse(credentialStore.wasDeleted)
         XCTAssertTrue(model.connectionMessage?.contains("taking too long") == true)
     }
 
@@ -56,6 +56,258 @@ final class StraylightTests: XCTestCase {
         XCTAssertEqual(model.latestBriefing?.briefing?.schema, "briefing.v1")
         XCTAssertFalse(model.tasks.isEmpty)
         XCTAssertFalse(model.alerts.isEmpty)
+    }
+
+    func testProtectedTaskSurfaceCacheRoundTripsOnlyBoundedSurfaceData() async throws {
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("today-tasks.json")
+        defer {
+            try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
+        }
+        let cache = TaskSurfaceCache(fileURL: cacheURL)
+        let value = CachedTaskSurface(
+            userID: "user:one",
+            savedAt: Date(timeIntervalSince1970: 1_788_000_000),
+            urgent: SampleData.agentUrgentTasks,
+            next: Array(SampleData.agentNextTasks.prefix(7)),
+            doneToday: SampleData.agentDoneToday,
+            projects: SampleData.agentTaskProjects,
+            contexts: SampleData.agentTaskContexts,
+            selectedContexts: ["online", "phone"],
+            nextRemaining: 7,
+            backlogTotal: 18
+        )
+
+        let sessionFingerprint = "sha256:" + String(repeating: "a", count: 64)
+        try await cache.save(value, sessionFingerprint: sessionFingerprint)
+        let restored = try await cache.load()
+        XCTAssertEqual(restored, value)
+        let boundUserID = try await cache.boundUserID(matching: sessionFingerprint)
+        XCTAssertEqual(boundUserID, "user:one")
+        try await cache.clear()
+        let cleared = try await cache.load()
+        XCTAssertNil(cleared)
+        let clearedBinding = try await cache.boundUserID(matching: sessionFingerprint)
+        XCTAssertNil(clearedBinding)
+    }
+
+    @MainActor
+    func testColdBootstrapInstantPaintsSameAccountTaskCacheBeforeNetworkAndRetainsItOnTimeout() async throws {
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("today-tasks.json")
+        defer {
+            try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
+        }
+        let host = "cold-cache-\(UUID().uuidString.lowercased()).straylight.test"
+        let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
+        let cookieStorage = HTTPCookieStorage.shared
+        let sessionCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "straylight_session",
+            .value: "same-account-session",
+            .secure: "TRUE",
+        ]))
+        cookieStorage.setCookie(sessionCookie)
+        defer { cookieStorage.deleteCookie(sessionCookie) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = cookieStorage
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage
+        )
+        let currentSessionFingerprint = await api.authenticatedSessionFingerprint()
+        let sessionFingerprint = try XCTUnwrap(currentSessionFingerprint)
+        let cache = TaskSurfaceCache(fileURL: cacheURL)
+        try await cache.save(CachedTaskSurface(
+            userID: "user:one",
+            savedAt: .now,
+            urgent: SampleData.agentUrgentTasks,
+            next: SampleData.agentNextTasks,
+            doneToday: SampleData.agentDoneToday,
+            projects: SampleData.agentTaskProjects,
+            contexts: SampleData.agentTaskContexts,
+            selectedContexts: ["online", "phone"],
+            nextRemaining: 7,
+            backlogTotal: 18
+        ), sessionFingerprint: sessionFingerprint)
+        let model = AppModel(
+            api: api,
+            credentialStore: TestCredentialStore(token: nil),
+            taskSurfaceCache: cache,
+            bootstrapValidationTimeout: .milliseconds(80),
+            storedSessionChecker: { _ in true },
+            bootstrapIdentityLoader: { _ in
+                try await Task.sleep(for: .seconds(30))
+                return Self.readOnlyIdentity
+            },
+            dashboardLoader: { _, _ in SampleData.dashboard },
+            notificationListLoader: { _, _ in
+                NotificationListResponse(items: [], nextCursor: nil, unreadCount: 0)
+            }
+        )
+
+        let bootstrap = Task { await model.bootstrap() }
+        for _ in 0 ..< 50 where model.urgentTasks.isEmpty || model.nextTasks.isEmpty {
+            try await Task.sleep(for: .milliseconds(2))
+        }
+
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertFalse(model.connectionValidated)
+        XCTAssertEqual(model.user?.id, "user:one")
+        XCTAssertEqual(model.urgentTasks, SampleData.agentUrgentTasks)
+        XCTAssertEqual(model.nextTasks, SampleData.agentNextTasks)
+
+        await bootstrap.value
+
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertFalse(model.connectionValidated)
+        XCTAssertEqual(model.user?.id, "user:one")
+        XCTAssertEqual(model.urgentTasks, SampleData.agentUrgentTasks)
+        XCTAssertEqual(model.nextTasks, SampleData.agentNextTasks)
+        XCTAssertTrue(model.connectionMessage?.contains("last protected Today view") == true)
+    }
+
+    @MainActor
+    func testColdBootstrapNeverPaintsPriorAccountCacheAfterSessionCookieChanges() async throws {
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("today-tasks.json")
+        defer {
+            try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
+        }
+        let host = "cache-switch-\(UUID().uuidString.lowercased()).straylight.test"
+        let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
+        let cookieStorage = HTTPCookieStorage.shared
+        let accountACookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "straylight_session",
+            .value: "account-a-session",
+            .secure: "TRUE",
+        ]))
+        let accountBCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "straylight_session",
+            .value: "account-b-session",
+            .secure: "TRUE",
+        ]))
+        cookieStorage.setCookie(accountACookie)
+        defer {
+            cookieStorage.deleteCookie(accountACookie)
+            cookieStorage.deleteCookie(accountBCookie)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = cookieStorage
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage
+        )
+        let currentAccountAFingerprint = await api.authenticatedSessionFingerprint()
+        let accountAFingerprint = try XCTUnwrap(currentAccountAFingerprint)
+        let cache = TaskSurfaceCache(fileURL: cacheURL)
+        try await cache.save(CachedTaskSurface(
+            userID: "user:account-a",
+            savedAt: .now,
+            urgent: SampleData.agentUrgentTasks,
+            next: SampleData.agentNextTasks,
+            doneToday: SampleData.agentDoneToday,
+            projects: SampleData.agentTaskProjects,
+            contexts: SampleData.agentTaskContexts,
+            selectedContexts: ["online", "phone"],
+            nextRemaining: 7,
+            backlogTotal: 18
+        ), sessionFingerprint: accountAFingerprint)
+
+        // Reproduce termination after login has persisted account B's cookie
+        // but before AppModel.accept(B) can clear account A's presentation.
+        cookieStorage.deleteCookie(accountACookie)
+        cookieStorage.setCookie(accountBCookie)
+        let model = AppModel(
+            api: api,
+            credentialStore: TestCredentialStore(token: nil),
+            taskSurfaceCache: cache,
+            bootstrapValidationTimeout: .milliseconds(50),
+            storedSessionChecker: { _ in true },
+            bootstrapIdentityLoader: { _ in
+                try await Task.sleep(for: .seconds(30))
+                return Self.readOnlyIdentity
+            }
+        )
+
+        await model.bootstrap()
+
+        XCTAssertEqual(model.phase, .connectionRequired)
+        XCTAssertFalse(model.connectionValidated)
+        XCTAssertNil(model.user)
+        XCTAssertTrue(model.urgentTasks.isEmpty)
+        XCTAssertTrue(model.nextTasks.isEmpty)
+        let cachedAfterSwitch = try await cache.load()
+        XCTAssertNil(cachedAfterSwitch)
+        let currentAccountBFingerprint = await api.authenticatedSessionFingerprint()
+        let accountBFingerprint = try XCTUnwrap(currentAccountBFingerprint)
+        let boundUserAfterSwitch = try await cache.boundUserID(
+            matching: accountBFingerprint
+        )
+        XCTAssertNil(boundUserAfterSwitch)
+    }
+
+    @MainActor
+    func testTaskCacheFromAnotherAccountIsClearedBeforePresentation() async throws {
+        let cacheURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("today-tasks.json")
+        defer {
+            try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
+        }
+        let cache = TaskSurfaceCache(fileURL: cacheURL)
+        try await cache.save(CachedTaskSurface(
+            userID: "user:account-a",
+            savedAt: .now,
+            urgent: SampleData.agentUrgentTasks,
+            next: SampleData.agentNextTasks,
+            doneToday: SampleData.agentDoneToday,
+            projects: SampleData.agentTaskProjects,
+            contexts: SampleData.agentTaskContexts,
+            selectedContexts: ["online", "phone"],
+            nextRemaining: 7,
+            backlogTotal: 18
+        ), sessionFingerprint: "sha256:" + String(repeating: "a", count: 64))
+        let accountB = MeData(
+            user: UserSummary(id: "user:account-b", displayName: "Account B"),
+            credentialID: "credential:web-account-b",
+            capabilities: ["task.read"],
+            readOnly: true
+        )
+        let model = AppModel(
+            api: Self.offlineAPI(),
+            credentialStore: TestCredentialStore(token: nil),
+            taskSurfaceCache: cache,
+            loginLoader: { _, _, _ in accountB },
+            dashboardLoader: { _, _ in SampleData.dashboard },
+            notificationListLoader: { _, _ in
+                NotificationListResponse(items: [], nextCursor: nil, unreadCount: 0)
+            }
+        )
+
+        await model.connect(email: "account-b@example.test", password: "password")
+
+        XCTAssertEqual(model.user?.id, "user:account-b")
+        XCTAssertTrue(model.urgentTasks.isEmpty)
+        XCTAssertTrue(model.nextTasks.isEmpty)
+        XCTAssertTrue(model.taskProjects.isEmpty)
+        XCTAssertTrue(model.taskContexts.isEmpty)
+        let cachedAfterSwitch = try await cache.load()
+        XCTAssertNil(cachedAfterSwitch)
+        let bindingAfterSwitch = try await cache.boundUserID(
+            matching: "sha256:" + String(repeating: "a", count: 64)
+        )
+        XCTAssertNil(bindingAfterSwitch)
     }
 
     @MainActor
@@ -115,7 +367,10 @@ final class StraylightTests: XCTestCase {
         }
         let model = AppModel(
             api: Self.offlineAPI(),
-            credentialStore: TestCredentialStore(token: "sl_valid"),
+            // This test isolates dashboard generation invalidation. A saved
+            // narrow credential would correctly make disconnect stop until
+            // server revocation can be confirmed.
+            credentialStore: TestCredentialStore(token: nil),
             briefingCache: BriefingCache(fileURL: cacheURL),
             storedSessionChecker: { _ in true },
             bootstrapIdentityLoader: { _ in Self.readOnlyIdentity },
@@ -189,6 +444,18 @@ final class StraylightTests: XCTestCase {
     }
 
     @MainActor
+    func testPendingTaskRouteLoadsDetailAfterColdDemoBootstrap() async {
+        let taskRef = "019f8800-0000-7000-8000-000000000002"
+        let model = AppModel()
+
+        await model.handle(.task(reference: taskRef))
+        model.enterDemo()
+
+        XCTAssertEqual(model.selectedTab, .today)
+        XCTAssertEqual(model.presentedTask?.taskRef, taskRef)
+    }
+
+    @MainActor
     func testPasswordLoginAcceptsOwnerSession() async {
         let owner = MeData(
             user: UserSummary(id: "user:one", displayName: "Owner"),
@@ -215,10 +482,11 @@ final class StraylightTests: XCTestCase {
         XCTAssertEqual(model.user, owner.user)
         XCTAssertEqual(model.currentCredentialID, owner.credentialID)
         XCTAssertTrue(model.connectionValidated)
-        XCTAssertTrue(model.canManageNotifications)
+        XCTAssertFalse(model.canManageNotifications)
+        XCTAssertFalse(model.canWriteTasks)
     }
 
-    func testNotificationMutationsUseAccountSessionAndCSRF() async throws {
+    func testNotificationInstallationUsesNarrowBearerWhileReceiptsUseCookieSession() async throws {
         let host = "notification-\(UUID().uuidString.lowercased()).straylight.test"
         let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
         let cookieStorage = HTTPCookieStorage.shared
@@ -248,6 +516,11 @@ final class StraylightTests: XCTestCase {
         let recorder = NotificationRequestRecorder()
         NotificationRequestURLProtocol.handler = { request in
             recorder.append(request)
+            if request.httpMethod == "GET" {
+                return StubbedHTTPResponse(json: #"""
+                {"status":"complete","data":{"view":"next","as_of":"2026-08-27T12:00:00Z","contexts_available":["phone"],"items":[],"urgent_total":0,"next_remaining":0,"backlog_total":0,"next_cursor":null}}
+                """#)
+            }
             if request.httpMethod == "PUT" {
                 return StubbedHTTPResponse(json: #"""
                 {"installation_ref":"installation:11111111111111111111111111111111","status":"active","updated_at":"2026-08-02T20:00:00Z"}
@@ -269,13 +542,19 @@ final class StraylightTests: XCTestCase {
 
         let hasSession = await api.hasAuthenticatedSession()
         XCTAssertTrue(hasSession)
+        _ = try await api.taskCandidates(
+            view: .next,
+            limit: 5,
+            contextsAvailable: ["phone"]
+        )
         _ = try await api.upsertNotificationInstallation(
             installationID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
             request: NotificationInstallationRequest(
                 environment: "development",
                 appID: "com.rourkem.straylight",
                 deviceToken: "00ff"
-            )
+            ),
+            bearerToken: "narrow-device-token"
         )
         _ = try await api.recordNotificationReceipt(
             notificationRef: "notification:11111111111111111111111111111111",
@@ -284,20 +563,24 @@ final class StraylightTests: XCTestCase {
         )
 
         let requests = recorder.snapshot()
-        XCTAssertEqual(requests.map(\.httpMethod), ["PUT", "POST"])
-        XCTAssertTrue(requests.allSatisfy {
-            $0.value(forHTTPHeaderField: "X-CSRF-Token") == "csrf-secret"
-        })
-        XCTAssertTrue(requests.allSatisfy {
-            $0.value(forHTTPHeaderField: "Authorization") == nil
-        })
-        XCTAssertTrue(requests.allSatisfy {
-            $0.value(forHTTPHeaderField: "Cookie")?.contains(
-                "straylight_session=session-secret"
-            ) == true
-        })
+        XCTAssertEqual(requests.map(\.httpMethod), ["GET", "PUT", "POST"])
+        XCTAssertNil(requests[0].value(forHTTPHeaderField: "Authorization"))
+        XCTAssertTrue(requests[0].value(forHTTPHeaderField: "Cookie")?.contains(
+            "straylight_session=session-secret"
+        ) == true)
         XCTAssertEqual(
-            requests.first?.url?.path,
+            requests[1].value(forHTTPHeaderField: "Authorization"),
+            "Bearer narrow-device-token"
+        )
+        XCTAssertNil(requests[1].value(forHTTPHeaderField: "Cookie"))
+        XCTAssertNil(requests[1].value(forHTTPHeaderField: "X-CSRF-Token"))
+        XCTAssertNil(requests.last?.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "X-CSRF-Token"), "csrf-secret")
+        XCTAssertTrue(requests.last?.value(forHTTPHeaderField: "Cookie")?.contains(
+            "straylight_session=session-secret"
+        ) == true)
+        XCTAssertEqual(
+            requests[1].url?.path,
             "/api/v1/workspace/notification-installations/11111111-1111-1111-1111-111111111111"
         )
         XCTAssertEqual(
@@ -313,6 +596,356 @@ final class StraylightTests: XCTestCase {
             receiptObject["delivery_ref"] as? String,
             "delivery:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         )
+    }
+
+    func testTaskMutationUsesBearerWithoutCookieOrCSRF() async throws {
+        let host = "task-auth-\(UUID().uuidString.lowercased()).straylight.test"
+        let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
+        let cookieStorage = HTTPCookieStorage.shared
+        let sessionCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "straylight_session",
+            .value: "must-not-leak",
+            .secure: "TRUE",
+        ]))
+        let csrfCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "straylight_csrf",
+            .value: "must-not-leak",
+            .secure: "TRUE",
+        ]))
+        cookieStorage.setCookie(sessionCookie)
+        cookieStorage.setCookie(csrfCookie)
+        defer {
+            cookieStorage.deleteCookie(sessionCookie)
+            cookieStorage.deleteCookie(csrfCookie)
+            NotificationRequestURLProtocol.handler = nil
+        }
+
+        let recorder = NotificationRequestRecorder()
+        let taskRef = "019f8800-0000-7000-8000-000000000001"
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            return StubbedHTTPResponse(json: #"""
+            {"status":"committed","data":{"task":{"task_ref":"019f8800-0000-7000-8000-000000000001","entry_ref":"entry:one","version":2,"title":"Done","status":"done","task":{"id":"019f8800-0000-7000-8000-000000000001","title":"Done"},"created_at":"2026-08-27T12:00:00Z","updated_at":"2026-08-27T12:01:00Z"},"action":"complete","correction_ref":null,"done_today_count":1,"next_occurrence_task_ref":null,"replayed":false}}
+            """#)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        configuration.httpCookieStorage = cookieStorage
+        configuration.httpShouldSetCookies = true
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage
+        )
+
+        _ = try await api.updateTask(
+            reference: taskRef,
+            request: AgentTaskUpdateRequest(
+                expectedVersion: 1,
+                idempotencyKey: "ios:test:auth",
+                operation: .complete
+            ),
+            bearerToken: "exact-narrow-token"
+        )
+
+        let request = try XCTUnwrap(recorder.snapshot().first)
+        XCTAssertEqual(request.httpMethod, "PATCH")
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Authorization"),
+            "Bearer exact-narrow-token"
+        )
+        XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+        XCTAssertNil(request.value(forHTTPHeaderField: "X-CSRF-Token"))
+    }
+
+    func testDeviceTaskCredentialBootstrapUsesOwnerCookieThenValidatesBearerAndRevokesWithCookie() async throws {
+        let host = "device-bootstrap-\(UUID().uuidString.lowercased()).straylight.test"
+        let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
+        let cookieStorage = HTTPCookieStorage.shared
+        let sessionCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "straylight_session",
+            .value: "owner-session",
+            .secure: "TRUE",
+        ]))
+        let csrfCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "straylight_csrf",
+            .value: "owner-csrf",
+            .secure: "TRUE",
+        ]))
+        cookieStorage.setCookie(sessionCookie)
+        cookieStorage.setCookie(csrfCookie)
+        defer {
+            cookieStorage.deleteCookie(sessionCookie)
+            cookieStorage.deleteCookie(csrfCookie)
+            NotificationRequestURLProtocol.handler = nil
+        }
+
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            switch request.httpMethod {
+            case "POST":
+                return StubbedHTTPResponse(json: #"""
+                {"id":"credential:11111111-1111-4111-8111-111111111111","access":"ios_tasks","capabilities":["task.write","notification:manage"],"token":"one-time-narrow-token"}
+                """#)
+            case "GET":
+                return StubbedHTTPResponse(json: #"""
+                {"user":{"id":"user:one","display_name":"Owner"},"credential_id":"credential:11111111-1111-4111-8111-111111111111","capabilities":["notification:manage","task.write"],"read_only":false}
+                """#)
+            default:
+                return StubbedHTTPResponse(json: #"""
+                {"id":"credential:11111111-1111-4111-8111-111111111111","status":"revoked","revoked_at":"2026-08-27T12:00:00Z"}
+                """#)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        configuration.httpCookieStorage = cookieStorage
+        configuration.httpShouldSetCookies = true
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage
+        )
+
+        let issued = try await api.bootstrapDeviceTaskCredential()
+        _ = try await api.deviceCredentialIdentity(bearerToken: issued.token)
+        _ = try await api.revokeCredential(reference: issued.id)
+
+        let requests = recorder.snapshot()
+        XCTAssertEqual(requests.map(\.httpMethod), ["POST", "GET", "DELETE"])
+        let createBody = try XCTUnwrap(requests[0].httpBody)
+        let create = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: createBody) as? [String: String]
+        )
+        XCTAssertEqual(create, [
+            "name": "iOS task access",
+            "access": "ios_tasks",
+        ])
+        XCTAssertNil(requests[0].value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(requests[0].value(forHTTPHeaderField: "X-CSRF-Token"), "owner-csrf")
+        XCTAssertTrue(requests[0].value(forHTTPHeaderField: "Cookie")?.contains(
+            "straylight_session=owner-session"
+        ) == true)
+
+        XCTAssertEqual(
+            requests[1].value(forHTTPHeaderField: "Authorization"),
+            "Bearer one-time-narrow-token"
+        )
+        XCTAssertNil(requests[1].value(forHTTPHeaderField: "Cookie"))
+        XCTAssertNil(requests[1].value(forHTTPHeaderField: "X-CSRF-Token"))
+
+        XCTAssertNil(requests[2].value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(requests[2].value(forHTTPHeaderField: "X-CSRF-Token"), "owner-csrf")
+        XCTAssertTrue(requests[2].value(forHTTPHeaderField: "Cookie")?.contains(
+            "straylight_session=owner-session"
+        ) == true)
+        XCTAssertEqual(
+            requests[2].url?.path,
+            "/api/v1/credentials/credential:11111111-1111-4111-8111-111111111111"
+        )
+    }
+
+    @MainActor
+    func testPostIssueKeychainFailureRevokesServerCredentialAndFailsClosed() async throws {
+        let baseURL = try XCTUnwrap(URL(string: "https://bootstrap-lifecycle.straylight.test/api/v1"))
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            switch (request.httpMethod, request.url?.path) {
+            case ("POST", "/api/v1/credentials"):
+                return StubbedHTTPResponse(json: #"""
+                {"id":"credential:22222222-2222-4222-8222-222222222222","access":"ios_tasks","capabilities":["task.write","notification:manage"],"token":"issued-once"}
+                """#)
+            case ("GET", "/api/v1/me"):
+                return StubbedHTTPResponse(json: #"""
+                {"user":{"id":"user:one","display_name":"Owner"},"credential_id":"credential:22222222-2222-4222-8222-222222222222","capabilities":["task.write","notification:manage"],"read_only":false}
+                """#)
+            case ("DELETE", "/api/v1/credentials/credential:22222222-2222-4222-8222-222222222222"):
+                return StubbedHTTPResponse(json: #"""
+                {"id":"credential:22222222-2222-4222-8222-222222222222","status":"revoked","revoked_at":"2026-08-27T12:00:00Z"}
+                """#)
+            default:
+                return StubbedHTTPResponse(
+                    statusCode: 503,
+                    json: #"{"error":{"code":"test_background_request","message":"not part of lifecycle test"}}"#
+                )
+            }
+        }
+        defer { NotificationRequestURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration)
+        )
+        let store = TestCredentialStore(token: nil, saveError: .forced)
+        let owner = MeData(
+            user: UserSummary(id: "user:one", displayName: "Owner"),
+            credentialID: "credential:web-owner",
+            capabilities: ["credential:manage", "admin", "task.read"],
+            readOnly: false
+        )
+        let model = AppModel(
+            api: api,
+            credentialStore: store,
+            loginLoader: { _, _, _ in owner },
+            dashboardLoader: { _, _ in SampleData.dashboard },
+            notificationListLoader: { _, _ in
+                NotificationListResponse(items: [], nextCursor: nil, unreadCount: 0)
+            }
+        )
+
+        await model.connect(email: "owner@example.test", password: "password")
+        await model.bootstrapDeviceTaskAccess()
+
+        let lifecycle = recorder.snapshot().filter {
+            $0.url?.path == "/api/v1/credentials"
+                || $0.url?.path == "/api/v1/me"
+                || $0.url?.path.contains("credential:22222222") == true
+        }
+        XCTAssertEqual(lifecycle.map(\.httpMethod), ["POST", "GET", "DELETE"])
+        XCTAssertFalse(model.canWriteTasks)
+        XCTAssertFalse(model.canManageNotifications)
+        XCTAssertFalse(model.hasStoredDeviceTaskCredential)
+        XCTAssertTrue(store.wasDeleted)
+    }
+
+    @MainActor
+    func testDisconnectStopsBeforeLogoutOrLocalDeleteWhenNarrowRevocationFails() async throws {
+        let baseURL = try XCTUnwrap(URL(string: "https://disconnect-lifecycle.straylight.test/api/v1"))
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            if request.httpMethod == "GET", request.url?.path == "/api/v1/me" {
+                return StubbedHTTPResponse(json: #"""
+                {"user":{"id":"user:one","display_name":"Owner"},"credential_id":"credential:33333333-3333-4333-8333-333333333333","capabilities":["notification:manage","task.write"],"read_only":false}
+                """#)
+            }
+            return StubbedHTTPResponse(
+                statusCode: 503,
+                json: #"{"error":{"code":"revocation_unavailable","message":"retry online"}}"#
+            )
+        }
+        defer { NotificationRequestURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration)
+        )
+        let store = TestCredentialStore(
+            credential: DeviceTaskCredential(
+                credentialRef: "credential:33333333-3333-4333-8333-333333333333",
+                token: "protected-narrow-token"
+            )
+        )
+        let owner = MeData(
+            user: UserSummary(id: "user:one", displayName: "Owner"),
+            credentialID: "credential:web-owner",
+            capabilities: ["credential:manage", "admin", "task.read"],
+            readOnly: false
+        )
+        let model = AppModel(
+            api: api,
+            credentialStore: store,
+            loginLoader: { _, _, _ in owner },
+            dashboardLoader: { _, _ in SampleData.dashboard },
+            notificationListLoader: { _, _ in
+                NotificationListResponse(items: [], nextCursor: nil, unreadCount: 0)
+            }
+        )
+
+        await model.connect(email: "owner@example.test", password: "password")
+        XCTAssertTrue(model.canWriteTasks)
+        await model.disconnect()
+
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertFalse(model.canWriteTasks)
+        XCTAssertTrue(model.hasStoredDeviceTaskCredential)
+        XCTAssertFalse(store.wasDeleted)
+        XCTAssertTrue(model.privacyMessage?.contains("Disconnect stopped") == true)
+        XCTAssertFalse(recorder.snapshot().contains { $0.url?.path == "/api/v1/auth/logout" })
+    }
+
+    @MainActor
+    func testStoredDeviceCredentialFromAnotherAccountNeverEnablesMutations() async throws {
+        let credentialRef = "credential:44444444-4444-4444-8444-444444444444"
+        let baseURL = try XCTUnwrap(URL(string: "https://account-switch.straylight.test/api/v1"))
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            if request.httpMethod == "GET", request.url?.path == "/api/v1/me" {
+                return StubbedHTTPResponse(json: #"""
+                {"user":{"id":"user:account-a","display_name":"Account A"},"credential_id":"credential:44444444-4444-4444-8444-444444444444","capabilities":["task.write","notification:manage"],"read_only":false}
+                """#)
+            }
+            if request.httpMethod == "DELETE",
+               request.url?.path == "/api/v1/credentials/\(credentialRef)"
+            {
+                return StubbedHTTPResponse(
+                    statusCode: 403,
+                    json: #"{"error":{"code":"credential_scope_mismatch","message":"credential belongs to another account"}}"#
+                )
+            }
+            return StubbedHTTPResponse(
+                statusCode: 503,
+                json: #"{"error":{"code":"test_background_request","message":"not part of account-switch test"}}"#
+            )
+        }
+        defer { NotificationRequestURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration)
+        )
+        let store = TestCredentialStore(credential: DeviceTaskCredential(
+            credentialRef: credentialRef,
+            token: "account-a-narrow-token"
+        ))
+        let accountB = MeData(
+            user: UserSummary(id: "user:account-b", displayName: "Account B"),
+            credentialID: "credential:web-account-b",
+            capabilities: ["credential:manage", "admin", "task.read"],
+            readOnly: false
+        )
+        let model = AppModel(
+            api: api,
+            credentialStore: store,
+            loginLoader: { _, _, _ in accountB },
+            dashboardLoader: { _, _ in SampleData.dashboard },
+            notificationListLoader: { _, _ in
+                NotificationListResponse(items: [], nextCursor: nil, unreadCount: 0)
+            }
+        )
+
+        await model.connect(email: "account-b@example.test", password: "password")
+
+        XCTAssertEqual(model.user?.id, "user:account-b")
+        XCTAssertFalse(model.canWriteTasks)
+        XCTAssertFalse(model.canManageNotifications)
+        XCTAssertTrue(model.hasStoredDeviceTaskCredential)
+        XCTAssertFalse(store.wasDeleted)
+        XCTAssertTrue(model.deviceTaskAccessMessage?.contains("did not match this account") == true)
+        let lifecycle = recorder.snapshot().filter {
+            $0.url?.path == "/api/v1/me"
+                || $0.url?.path == "/api/v1/credentials/\(credentialRef)"
+        }
+        XCTAssertEqual(lifecycle.map(\.httpMethod), ["GET", "DELETE"])
+        XCTAssertEqual(
+            lifecycle.first?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer account-a-narrow-token"
+        )
+        XCTAssertNil(lifecycle.last?.value(forHTTPHeaderField: "Authorization"))
     }
 
     private static let readOnlyIdentity = MeData(
@@ -874,25 +1507,60 @@ final class StraylightTests: XCTestCase {
 
 @MainActor
 private final class TestCredentialStore: CredentialStoring {
-    private var token: String?
+    private var credential: DeviceTaskCredential?
     private(set) var wasDeleted = false
+    private let loadError: TestCredentialStoreError?
+    private let saveError: TestCredentialStoreError?
+    private let deleteError: TestCredentialStoreError?
 
-    init(token: String?) {
-        self.token = token
+    init(
+        token: String?,
+        loadError: TestCredentialStoreError? = nil,
+        saveError: TestCredentialStoreError? = nil,
+        deleteError: TestCredentialStoreError? = nil
+    ) {
+        credential = token.map {
+            DeviceTaskCredential(
+                credentialRef: "credential:11111111-1111-1111-1111-111111111111",
+                token: $0
+            )
+        }
+        self.loadError = loadError
+        self.saveError = saveError
+        self.deleteError = deleteError
     }
 
-    func load() throws -> String? {
-        token
+    init(
+        credential: DeviceTaskCredential,
+        loadError: TestCredentialStoreError? = nil,
+        saveError: TestCredentialStoreError? = nil,
+        deleteError: TestCredentialStoreError? = nil
+    ) {
+        self.credential = credential
+        self.loadError = loadError
+        self.saveError = saveError
+        self.deleteError = deleteError
     }
 
-    func save(_ token: String) throws {
-        self.token = token
+    func load() throws -> DeviceTaskCredential? {
+        if let loadError { throw loadError }
+        return credential
+    }
+
+    func save(_ credential: DeviceTaskCredential) throws {
+        if let saveError { throw saveError }
+        self.credential = credential
     }
 
     func delete() throws {
+        if let deleteError { throw deleteError }
         wasDeleted = true
-        token = nil
+        credential = nil
     }
+}
+
+private enum TestCredentialStoreError: Error {
+    case forced
 }
 
 private actor CallCounter {

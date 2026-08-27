@@ -39,10 +39,27 @@ public enum AppRoute: Hashable, Sendable {
                 deliveryRef: deliveryRef
             )
         case "task" where path.count == 1:
-            self = .task(reference: path[0])
+            guard let reference = TaskReference.canonical(path[0]) else { return nil }
+            self = .task(reference: reference)
         default:
             return nil
         }
+    }
+}
+
+public enum TaskReference {
+    public static func canonical(_ value: String) -> String? {
+        guard value.count == 36,
+              value == value.lowercased(),
+              value.utf8.enumerated().allSatisfy({ index, byte in
+                  if [8, 13, 18, 23].contains(index) { return byte == 45 }
+                  return (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
+              }),
+              value[value.index(value.startIndex, offsetBy: 14)] == "7",
+              "89ab".contains(value[value.index(value.startIndex, offsetBy: 19)]),
+              UUID(uuidString: value) != nil
+        else { return nil }
+        return value
     }
 }
 

@@ -3,6 +3,36 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var moreTapCount = 0
+    @State private var showsBoundedList = false
+    @State private var snoozeCandidate: AgentTaskCandidate?
+    @State private var snoozeDate = Date.now.addingTimeInterval(86_400)
+    @State private var waitCandidate: AgentTaskCandidate?
+    @State private var waitingOn = ""
+
+    private var projection: AgentTaskTodayProjection {
+        AgentTaskTodayProjection.bounded(
+            urgent: model.urgentTasks,
+            next: model.nextTasks,
+            contextsAvailable: model.selectedTaskContexts,
+            baseLimit: 5 + (moreTapCount * 5),
+            pinAllowance: 2
+        )
+    }
+
+    private var matchingFetchedTasks: [AgentTaskCandidate] {
+        (model.urgentTasks + model.nextTasks)
+            .uniqued(by: \.taskRef)
+            .filter { Set($0.requiredContexts).isSubset(of: model.selectedTaskContexts) }
+    }
+
+    private var remainingReadyCount: Int {
+        model.taskNextRemaining + max(matchingFetchedTasks.count - projection.all.count, 0)
+    }
+
+    private var boundedListTasks: [AgentTaskCandidate] {
+        Array(matchingFetchedTasks.prefix(25))
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -11,6 +41,40 @@ struct TodayView: View {
                     if let message = model.connectionMessage, !model.isDemo {
                         ConnectionBanner(message: message, isDemo: model.isDemo)
                     }
+
+                    AgentTaskTodaySurface(
+                        projection: projection,
+                        contexts: model.taskContexts,
+                        selectedContexts: model.selectedTaskContexts,
+                        doneToday: model.doneToday,
+                        projects: model.taskProjects,
+                        canWrite: model.canWriteTasks,
+                        isRefreshing: model.isRefreshingTasks,
+                        mutatingRefs: model.mutatingTaskRefs,
+                        message: model.taskMessage,
+                        moreTapCount: moreTapCount,
+                        nextRemaining: remainingReadyCount,
+                        toggleContext: { slug in
+                            Task { await model.toggleTaskContext(slug) }
+                        },
+                        complete: complete,
+                        open: { candidate in
+                            Task { await model.openTask(reference: candidate.taskRef) }
+                        },
+                        action: perform,
+                        pickSnooze: { candidate in
+                            snoozeCandidate = candidate
+                            snoozeDate = .now.addingTimeInterval(86_400)
+                        },
+                        waitOn: { candidate in
+                            waitCandidate = candidate
+                            waitingOn = ""
+                        },
+                        more: showMore,
+                        openProject: { project in
+                            Task { await model.loadProject(project) }
+                        }
+                    )
 
                     if let briefing = model.latestBriefing {
                         BriefingReader(
@@ -30,8 +94,10 @@ struct TodayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.top, 16)
-                .padding(.bottom, 32)
+                    .padding(.bottom, 32)
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("today-scroll")
             .background(StraylightTheme.canvas)
             .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.inline)
@@ -41,6 +107,7 @@ struct TodayView: View {
                 }
             }
             .refreshable {
+                await model.refreshTaskSurface()
                 await model.refreshBriefing()
             }
             .overlay {
@@ -57,6 +124,114 @@ struct TodayView: View {
             .onChange(of: model.focusedBriefingItemID) { _, _ in
                 scrollToFocusedItem(using: proxy)
             }
+            .sheet(item: $model.presentedTask) { task in
+                AgentTaskDetailView(task: task)
+                    .environmentObject(model)
+            }
+            .sheet(isPresented: $showsBoundedList) {
+                NavigationStack {
+                    AgentTaskBoundedList(
+                        tasks: boundedListTasks,
+                        canWrite: model.canWriteTasks,
+                        complete: complete,
+                        open: { candidate in
+                            showsBoundedList = false
+                            Task { await model.openTask(reference: candidate.taskRef) }
+                        }
+                    )
+                }
+            }
+            .sheet(item: $snoozeCandidate) { candidate in
+                NavigationStack {
+                    Form {
+                        DatePicker(
+                            "Ready again",
+                            selection: $snoozeDate,
+                            in: Date.now...,
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                    }
+                    .navigationTitle("Snooze task")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { snoozeCandidate = nil }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Snooze") {
+                                let formatter = ISO8601DateFormatter()
+                                Task {
+                                    _ = await model.performTaskAction(
+                                        candidate,
+                                        operation: .snoozeUntil(formatter.string(from: snoozeDate))
+                                    )
+                                    snoozeCandidate = nil
+                                }
+                            }
+                        }
+                    }
+                }
+                .presentationDetents([.medium])
+            }
+            .sheet(item: $waitCandidate) { candidate in
+                NavigationStack {
+                    Form {
+                        TextField("Who or what are you waiting on?", text: $waitingOn)
+                            .accessibilityIdentifier("task-wait-on-input")
+                    }
+                    .navigationTitle("Wait on")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { waitCandidate = nil }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                Task {
+                                    _ = await model.performTaskAction(
+                                        candidate,
+                                        operation: .waitOn(waitingOn.trimmingCharacters(in: .whitespacesAndNewlines))
+                                    )
+                                    waitCandidate = nil
+                                }
+                            }
+                            .disabled(waitingOn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                }
+                .presentationDetents([.medium])
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { model.selectedProjectState != nil },
+                    set: { if !$0 { model.selectedProjectState = nil } }
+                )
+            ) {
+                if let state = model.selectedProjectState {
+                    NavigationStack {
+                        AgentTaskProjectDetailView(state: state)
+                            .environmentObject(model)
+                    }
+                }
+            }
+        }
+    }
+
+    private func complete(_ candidate: AgentTaskCandidate) {
+        Task {
+            if await model.performTaskAction(candidate, operation: .complete) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
+        }
+    }
+
+    private func perform(_ candidate: AgentTaskCandidate, _ operation: AgentTaskUpdateOperation) {
+        Task { _ = await model.performTaskAction(candidate, operation: operation) }
+    }
+
+    private func showMore() {
+        if moreTapCount < 2 {
+            moreTapCount += 1
+        } else {
+            showsBoundedList = true
         }
     }
 
@@ -72,6 +247,732 @@ struct TodayView: View {
                 }
             }
         }
+    }
+}
+
+private extension Array {
+    func uniqued<Key: Hashable>(by keyPath: KeyPath<Element, Key>) -> [Element] {
+        var seen = Set<Key>()
+        return filter { seen.insert($0[keyPath: keyPath]).inserted }
+    }
+}
+
+private struct AgentTaskTodaySurface: View {
+    let projection: AgentTaskTodayProjection
+    let contexts: [AgentTaskContext]
+    let selectedContexts: Set<String>
+    let doneToday: AgentTaskDoneSummaryData?
+    let projects: [AgentTaskProject]
+    let canWrite: Bool
+    let isRefreshing: Bool
+    let mutatingRefs: Set<String>
+    let message: String?
+    let moreTapCount: Int
+    let nextRemaining: Int
+    let toggleContext: (String) -> Void
+    let complete: (AgentTaskCandidate) -> Void
+    let open: (AgentTaskCandidate) -> Void
+    let action: (AgentTaskCandidate, AgentTaskUpdateOperation) -> Void
+    let pickSnooze: (AgentTaskCandidate) -> Void
+    let waitOn: (AgentTaskCandidate) -> Void
+    let more: () -> Void
+    let openProject: (AgentTaskProject) -> Void
+
+    @State private var doneExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if !contexts.isEmpty {
+                contextSelector
+            }
+
+            if !canWrite {
+                Label(
+                    "View only · secure task access in Settings to complete or defer",
+                    systemImage: "lock"
+                )
+                .font(.footnote)
+                .foregroundStyle(StraylightTheme.amber)
+                .padding(11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(StraylightTheme.line, lineWidth: 1)
+                }
+                .accessibilityIdentifier("task-view-only")
+            }
+
+            if let message {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(StraylightTheme.amber)
+                    .accessibilityIdentifier("task-message")
+            }
+
+            if !projection.urgent.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    TaskSectionHeader(
+                        title: "URGENT",
+                        count: projection.urgent.count,
+                        tint: StraylightTheme.red
+                    )
+                    ForEach(projection.urgent) { candidate in
+                        actionRow(candidate)
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("task-urgent")
+            } else {
+                Label("Nothing urgent", systemImage: "checkmark.shield")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(StraylightTheme.success)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .accessibilityIdentifier("task-urgent-empty")
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    TaskSectionHeader(
+                        title: "NEXT 5",
+                        count: projection.next.count,
+                        tint: StraylightTheme.signal
+                    )
+                    Spacer()
+                    if isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Refreshing tasks")
+                    }
+                }
+
+                if projection.next.isEmpty {
+                    Text("No ready tasks match these contexts.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                        .accessibilityIdentifier("task-next-empty")
+                } else {
+                    ForEach(projection.next) { candidate in
+                        actionRow(candidate)
+                    }
+                }
+
+                if nextRemaining > 0 || moreTapCount > 0 {
+                    Button(action: more) {
+                        Label(
+                            moreTapCount < 2 ? "5 more" : "Open bounded list",
+                            systemImage: moreTapCount < 2 ? "plus" : "list.bullet"
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("task-five-more")
+                }
+
+                Text("\(max(nextRemaining, 0)) more ready · \(nextRemaining == 0 ? "Today is clear" : "backlog stays hidden")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("task-remaining-count")
+            }
+            .padding(12)
+            .background(.background, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(StraylightTheme.line, lineWidth: 1)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("task-next-card")
+
+            if let doneToday {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        doneExpanded.toggle()
+                    } label: {
+                        HStack {
+                            Label("Done today", systemImage: "checkmark.circle.fill")
+                                .font(.headline)
+                                .foregroundStyle(StraylightTheme.success)
+                            Spacer()
+                            Text("\(doneToday.doneTodayCount)")
+                                .font(.headline.monospacedDigit())
+                                .foregroundStyle(StraylightTheme.success)
+                            Image(systemName: "chevron.down")
+                                .font(.caption.bold())
+                                .rotationEffect(.degrees(doneExpanded ? 180 : 0))
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("task-done-today")
+
+                    if doneExpanded {
+                        ForEach(doneToday.items.prefix(25)) { item in
+                            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(StraylightTheme.success)
+                                    .accessibilityHidden(true)
+                                Text(item.title)
+                                    .font(.subheadline)
+                                    .foregroundStyle(StraylightTheme.ink)
+                                Spacer(minLength: 0)
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(StraylightTheme.success.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(StraylightTheme.success.opacity(0.30), lineWidth: 1)
+                }
+            }
+
+            if !projects.isEmpty {
+                VStack(alignment: .leading, spacing: 9) {
+                    TaskSectionHeader(
+                        title: "PROJECTS",
+                        count: projects.count,
+                        tint: StraylightTheme.pulse
+                    )
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(projects.prefix(10)) { project in
+                                Button {
+                                    openProject(project)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        Text(project.title)
+                                            .font(.headline)
+                                            .foregroundStyle(StraylightTheme.ink)
+                                            .lineLimit(2)
+                                        Text("\(project.openTaskCount) open")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        StatusPill(
+                                            text: project.interest.uppercased(),
+                                            color: project.interest == "hot" ? StraylightTheme.amber : StraylightTheme.pulse
+                                        )
+                                    }
+                                    .padding(12)
+                                    .frame(width: 172, alignment: .leading)
+                                    .frame(minHeight: 112, alignment: .leading)
+                                    .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(StraylightTheme.line, lineWidth: 1)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("task-project-\(project.slug)")
+                            }
+                        }
+                    }
+                }
+                .accessibilityIdentifier("task-projects")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("agent-task-today")
+    }
+
+    private var contextSelector: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TaskSectionHeader(
+                title: "CONTEXTS",
+                count: selectedContexts.count,
+                tint: StraylightTheme.pulse
+            )
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 104), spacing: 8)],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                ForEach(contexts) { context in
+                    let selected = selectedContexts.contains(context.slug)
+                    Button {
+                        toggleContext(context.slug)
+                    } label: {
+                        Text(context.displayName)
+                            .font(.caption.weight(.semibold))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 11)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .background(
+                                selected ? StraylightTheme.signal.opacity(0.16) : Color.clear,
+                                in: Capsule()
+                            )
+                            .overlay {
+                                Capsule().stroke(
+                                    selected ? StraylightTheme.signal : StraylightTheme.line,
+                                    lineWidth: 1
+                                )
+                            }
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(selected ? StraylightTheme.signal : StraylightTheme.ink)
+                    .accessibilityLabel("\(context.displayName) context, \(selected ? "available" : "unavailable")")
+                    .accessibilityIdentifier("task-context-\(context.slug)")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("task-contexts")
+        }
+        .padding(12)
+        .background(.background, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(StraylightTheme.line, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("task-contexts-card")
+    }
+
+    @ViewBuilder
+    private func actionRow(_ candidate: AgentTaskCandidate) -> some View {
+        let row = AgentTaskCandidateRow(
+            candidate: candidate,
+            canWrite: canWrite,
+            isMutating: mutatingRefs.contains(candidate.taskRef),
+            complete: { complete(candidate) },
+            open: { open(candidate) }
+        )
+        if canWrite {
+            row.contextMenu {
+                Button("Tomorrow", systemImage: "sunrise") {
+                    action(candidate, .snooze(days: 1))
+                }
+                Button("3 days", systemImage: "calendar.badge.clock") {
+                    action(candidate, .snooze(days: 3))
+                }
+                Button("Next week", systemImage: "calendar") {
+                    action(candidate, .snooze(days: 7))
+                }
+                Button("Pick snooze date…", systemImage: "calendar.badge.plus") {
+                    pickSnooze(candidate)
+                }
+                Button("Wait on…", systemImage: "hourglass") {
+                    waitOn(candidate)
+                }
+                Button(
+                    candidate.pinned ? "Unpin from Today" : "Pin to Today",
+                    systemImage: candidate.pinned ? "pin.slash" : "pin"
+                ) {
+                    action(candidate, candidate.pinned ? .unpin : .pinToday)
+                }
+                if candidate.tier == 1 && candidate.hasInferredProvenance {
+                    Button("Confirm hard deadline", systemImage: "checkmark.seal") {
+                        action(candidate, .confirmHard)
+                    }
+                    Button("Make it a soft due date", systemImage: "calendar.badge.minus") {
+                        action(candidate, .downgradeToSoft)
+                    }
+                }
+            }
+        } else {
+            row
+        }
+    }
+}
+
+private struct TaskSectionHeader: View {
+    let title: String
+    let count: Int
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(tint)
+                .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.caption.weight(.bold))
+                .tracking(0.6)
+                .foregroundStyle(tint)
+            Text("\(count)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct AgentTaskCandidateRow: View {
+    let candidate: AgentTaskCandidate
+    let canWrite: Bool
+    let isMutating: Bool
+    let complete: () -> Void
+    let open: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Button(action: complete) {
+                Group {
+                    if isMutating {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: canWrite ? "circle" : "lock.circle")
+                            .font(.title3)
+                    }
+                }
+                .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(canWrite ? StraylightTheme.success : .secondary)
+            .disabled(!canWrite || isMutating)
+            .accessibilityLabel(canWrite ? "Complete \(candidate.title)" : "View only")
+            .accessibilityIdentifier("task-complete-\(candidate.taskRef)")
+
+            Button(action: open) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(candidate.title)
+                            .font(.headline)
+                            .foregroundStyle(StraylightTheme.ink)
+                            .multilineTextAlignment(.leading)
+                        if candidate.pinned {
+                            Image(systemName: "pin.fill")
+                                .font(.caption)
+                                .foregroundStyle(StraylightTheme.pulse)
+                                .accessibilityLabel("Pinned")
+                        }
+                        if candidate.hasInferredProvenance {
+                            Image(systemName: "wand.and.stars")
+                                .font(.caption)
+                                .foregroundStyle(StraylightTheme.amber)
+                                .accessibilityLabel("Inferred")
+                        }
+                    }
+                    if let project = candidate.project {
+                        Text(project)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(StraylightTheme.pulse)
+                    }
+                    Text(candidate.reason)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(candidate.title). \(candidate.reason)")
+            .accessibilityIdentifier("task-row-\(candidate.taskRef)")
+        }
+        .padding(10)
+        .background(.background, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(StraylightTheme.line, lineWidth: 1)
+        }
+    }
+}
+
+private struct AgentTaskBoundedList: View {
+    let tasks: [AgentTaskCandidate]
+    let canWrite: Bool
+    let complete: (AgentTaskCandidate) -> Void
+    let open: (AgentTaskCandidate) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List(tasks.prefix(25)) { candidate in
+            AgentTaskCandidateRow(
+                candidate: candidate,
+                canWrite: canWrite,
+                isMutating: false,
+                complete: { complete(candidate) },
+                open: { open(candidate) }
+            )
+        }
+        .navigationTitle("Ready tasks")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Text("Bounded to 25 ready tasks · the full backlog is not shown on iPhone")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(10)
+                .frame(maxWidth: .infinity)
+                .background(.regularMaterial)
+        }
+        .accessibilityIdentifier("task-bounded-list")
+    }
+}
+
+private struct AgentTaskDetailView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let task: AgentTaskDetail
+    @State private var correctedTitle: String
+
+    init(task: AgentTaskDetail) {
+        self.task = task
+        _correctedTitle = State(initialValue: task.title)
+    }
+
+    private var candidate: AgentTaskCandidate {
+        AgentTaskCandidate(
+            taskRef: task.taskRef,
+            entryRef: task.entryRef,
+            version: task.version,
+            title: task.title,
+            status: task.status,
+            project: task.task.project?.value,
+            requiredContexts: task.task.requiredContexts?.value ?? [],
+            tier: task.task.hardDue == nil ? 5 : 1,
+            reason: task.task.hardDue == nil ? "Task detail" : "Hard deadline",
+            provenanceMarkers: task.task.hardDue?.source == "owner" ? [] : [task.task.hardDue?.source ?? "derived"],
+            pinned: task.task.todayPin != nil
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        StatusPill(
+                            text: task.status.rawValue.uppercased(),
+                            color: task.status == .done ? StraylightTheme.success : StraylightTheme.pulse
+                        )
+                        if task.task.hardDue?.source != nil,
+                           task.task.hardDue?.source != "owner"
+                        {
+                            StatusPill(text: "INFERRED", color: StraylightTheme.amber, symbol: "wand.and.stars")
+                        }
+                    }
+
+                    Text(task.title)
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(StraylightTheme.ink)
+                        .accessibilityIdentifier("task-detail-title")
+
+                    if let notes = task.task.notes {
+                        SafeMarkdownText(markdown: notes.value)
+                            .font(.body)
+                        SourceLine(source: notes.source)
+                    }
+                    if let project = task.task.project {
+                        LabeledContent("Project", value: project.value)
+                        SourceLine(source: project.source)
+                    }
+                    if let hardDue = task.task.hardDue {
+                        LabeledContent("Hard deadline", value: hardDue.value)
+                        SourceLine(source: hardDue.source)
+                    }
+                    if let contexts = task.task.requiredContexts, !contexts.value.isEmpty {
+                        LabeledContent("Contexts", value: contexts.value.joined(separator: ", "))
+                        SourceLine(source: contexts.source)
+                    }
+
+                    if model.canWriteTasks, task.status == .open || task.status == .waiting {
+                        Button {
+                            Task {
+                                if await model.performTaskAction(candidate, operation: .complete) {
+                                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                    dismiss()
+                                }
+                            }
+                        } label: {
+                            Label("Complete", systemImage: "checkmark.circle.fill")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(StraylightTheme.success)
+                        .accessibilityIdentifier("task-detail-complete")
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Correct title")
+                                .font(.headline)
+                            TextField("Task title", text: $correctedTitle)
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("task-correct-title")
+                            Button("Save correction") {
+                                Task {
+                                    _ = await model.performTaskAction(
+                                        candidate,
+                                        operation: .correct(
+                                            field: "title",
+                                            value: .string(correctedTitle.trimmingCharacters(in: .whitespacesAndNewlines)),
+                                            note: "Owner correction on iOS"
+                                        )
+                                    )
+                                }
+                            }
+                            .disabled(
+                                correctedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    || correctedTitle == task.title
+                            )
+                            .accessibilityIdentifier("task-save-correction")
+                        }
+                        .padding(12)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(StraylightTheme.line, lineWidth: 1)
+                        }
+
+                        if task.task.hardDue?.source != nil,
+                           task.task.hardDue?.source != "owner"
+                        {
+                            HStack {
+                                Button("Confirm hard") {
+                                    Task { _ = await model.performTaskAction(candidate, operation: .confirmHard) }
+                                }
+                                Button("Make soft") {
+                                    Task { _ = await model.performTaskAction(candidate, operation: .downgradeToSoft) }
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    } else if !model.canWriteTasks {
+                        Label("View only · task.write is not present", systemImage: "lock")
+                            .font(.footnote)
+                            .foregroundStyle(StraylightTheme.amber)
+                            .accessibilityIdentifier("task-detail-view-only")
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(StraylightTheme.canvas)
+            .navigationTitle("Task")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .accessibilityIdentifier("task-detail-close")
+                }
+            }
+            .accessibilityIdentifier("task-detail")
+        }
+    }
+}
+
+private struct SourceLine: View {
+    let source: String
+
+    var body: some View {
+        Label(
+            source == "owner" ? "Set by you" : "Inferred by \(source)",
+            systemImage: source == "owner" ? "person.crop.circle" : "wand.and.stars"
+        )
+        .font(.caption)
+        .foregroundStyle(source == "owner" ? .secondary : StraylightTheme.amber)
+    }
+}
+
+private struct AgentTaskProjectDetailView: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let state: AgentTaskProjectStateData
+
+    private var taskProjection: AgentTaskProjectProjection {
+        .bounded(next: state.next, waiting: state.waiting)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(state.project.title)
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(StraylightTheme.ink)
+                HStack {
+                    StatusPill(text: state.project.interest.uppercased(), color: StraylightTheme.pulse)
+                    Text("\(state.urgentCount) urgent · \(state.parkedCount) parked")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let checkpoint = state.checkpoint {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Latest checkpoint")
+                            .font(.headline)
+                        if let objective = checkpoint.state?.objective {
+                            Text(objective).font(.body)
+                        }
+                        ForEach(checkpoint.state?.currentState?.lines ?? [], id: \.self) {
+                            Label($0, systemImage: "circle.fill")
+                                .font(.subheadline)
+                        }
+                        ForEach(checkpoint.state?.nextActions?.lines ?? [], id: \.self) {
+                            Label($0, systemImage: "arrow.right")
+                                .font(.subheadline)
+                        }
+                    }
+                    .padding(12)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8).stroke(StraylightTheme.line, lineWidth: 1)
+                    }
+                }
+
+                if !taskProjection.next.isEmpty {
+                    Text("Next 3").font(.headline)
+                    ForEach(taskProjection.next) { candidate in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.title).font(.subheadline.weight(.semibold))
+                            Text(candidate.reason).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("task-project-next-\(candidate.taskRef)")
+                    }
+                }
+
+                if !taskProjection.waiting.isEmpty {
+                    Text("Waiting on").font(.headline)
+                    ForEach(taskProjection.waiting) { item in
+                        LabeledContent(item.title, value: "\(item.ageDays)d")
+                            .accessibilityIdentifier("task-project-waiting-\(item.taskRef)")
+                    }
+                }
+
+                if state.next.count + state.waiting.count > taskProjection.taskCount {
+                    Text("\(state.next.count + state.waiting.count - taskProjection.taskCount) more tasks stay in the project backlog")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("task-project-remaining")
+                }
+
+                if model.canWriteTasks {
+                    HStack {
+                        ForEach(["hot", "normal", "parked"], id: \.self) { interest in
+                            if interest == state.project.interest {
+                                Button(interest.capitalized) {
+                                    Task { await model.setProjectInterest(interest) }
+                                }
+                                .buttonStyle(.borderedProminent)
+                            } else {
+                                Button(interest.capitalized) {
+                                    Task { await model.setProjectInterest(interest) }
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("task-project-interest")
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(StraylightTheme.canvas)
+        .navigationTitle("Project")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+        .accessibilityIdentifier("task-project-detail")
     }
 }
 

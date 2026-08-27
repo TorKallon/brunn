@@ -1,6 +1,7 @@
 import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { DefinitionList, Page, PageHeader, Section } from "../components/Page";
+import { TaskSettingsPanels } from "../components/TaskSettingsPanels";
 import {
   type Appearance,
   readAppearance,
@@ -87,6 +88,8 @@ export function SettingsPage() {
           Appearance is saved in this browser and applies immediately.
         </p>
       </Section>
+
+      <TaskSettingsPanels />
     </Page>
   );
 }

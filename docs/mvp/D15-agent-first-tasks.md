@@ -1,6 +1,6 @@
 # D15 — Agent-first Tasks
 
-Status: Accepted for implementation — measured storage choice complete; build in progress
+Status: Implemented — release requires all owner-approved gates 1–12
 Date: 2026-08-27
 Depends on: D12, D13, notifications, documents, and the secret vault
 Gated by: all twelve gates in the owner-approved 2026-08-26 task specification

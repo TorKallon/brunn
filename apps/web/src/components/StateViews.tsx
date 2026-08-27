@@ -17,7 +17,17 @@ export function toneForStatus(status?: string): Tone {
   if (!status) return "neutral";
   const normalized = status.toLowerCase();
   if (
-    ["complete", "healthy", "ready", "active", "passed", "supported", "committed"].includes(
+    [
+      "complete",
+      "done",
+      "success",
+      "healthy",
+      "ready",
+      "active",
+      "passed",
+      "supported",
+      "committed",
+    ].includes(
       normalized,
     )
   )

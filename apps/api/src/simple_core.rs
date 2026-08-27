@@ -10725,7 +10725,7 @@ mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn checkpoint_attempt(
+    async fn checkpoint_attempt_with_auth(
         pool: &sqlx::PgPool,
         user_id: Uuid,
         key: &str,
@@ -10734,8 +10734,13 @@ mod tests {
         path: &str,
         pinned_generation: i64,
         prepared: PreparedMarkdown,
+        auth: Option<&AuthContext>,
     ) -> ApiResult<Value> {
         let mut tx = pool.begin().await?;
+        let credential_id = auth.map(|auth| auth.credential_id.0);
+        if let Some(auth) = auth {
+            set_context(&mut tx, auth).await?;
+        }
         lock_checkpoint_idempotency(&mut tx, user_id, key).await?;
         if let Some(receipt) =
             replay_checkpoint_receipt_in_tx(&mut tx, user_id, key, request_hash).await?
@@ -10746,7 +10751,7 @@ mod tests {
         let result = commit_checkpoint_in_tx(
             &mut tx,
             user_id,
-            None,
+            credential_id,
             key,
             request_hash,
             checkpoint_ref,
@@ -10758,6 +10763,31 @@ mod tests {
         .await?;
         tx.commit().await?;
         Ok(result.receipt)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn checkpoint_attempt(
+        pool: &sqlx::PgPool,
+        user_id: Uuid,
+        key: &str,
+        request_hash: &str,
+        checkpoint_ref: &str,
+        path: &str,
+        pinned_generation: i64,
+        prepared: PreparedMarkdown,
+    ) -> ApiResult<Value> {
+        checkpoint_attempt_with_auth(
+            pool,
+            user_id,
+            key,
+            request_hash,
+            checkpoint_ref,
+            path,
+            pinned_generation,
+            prepared,
+            None,
+        )
+        .await
     }
 
     #[tokio::test]
@@ -11401,6 +11431,31 @@ mod tests {
         .expect("insert task storage credential");
         sqlx::query(
             r#"
+            INSERT INTO straylight.credential_scope_grants (
+              credential_id,user_id,scope_id
+            )
+            SELECT $1,$2,id
+            FROM straylight.scopes
+            WHERE user_id=$2 AND scope_ref='scope:root'
+            "#,
+        )
+        .bind(credential_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("grant task storage credential root scope");
+        let checkpoint_auth = AuthContext {
+            credential_id: CredentialId(credential_id),
+            user_id: UserId(user_id),
+            capabilities: ["task.read", "task.write"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            scope_refs: vec!["scope:root".to_owned()],
+            read_only: false,
+        };
+        sqlx::query(
+            r#"
             INSERT INTO straylight.task_projects (
               user_id,slug,title,hub_path,repo_path,created_by
             ) VALUES (
@@ -11638,7 +11693,7 @@ mod tests {
         let (explicit_key, explicit_hash) = validate_checkpoint_request(&explicit_request).unwrap();
         let (explicit_ref, explicit_path, explicit_prepared) =
             prepared_checkpoint_fixture(&explicit_request, &explicit_key, &explicit_hash, 2);
-        checkpoint_attempt(
+        checkpoint_attempt_with_auth(
             &pool,
             user_id,
             &explicit_key,
@@ -11647,6 +11702,7 @@ mod tests {
             &explicit_path,
             2,
             explicit_prepared,
+            Some(&checkpoint_auth),
         )
         .await
         .expect("write project-explicit checkpoint");
@@ -11713,7 +11769,7 @@ mod tests {
         let (fallback_key, fallback_hash) = validate_checkpoint_request(&fallback_request).unwrap();
         let (fallback_ref, fallback_path, fallback_prepared) =
             prepared_checkpoint_fixture(&fallback_request, &fallback_key, &fallback_hash, 3);
-        checkpoint_attempt(
+        checkpoint_attempt_with_auth(
             &pool,
             user_id,
             &fallback_key,
@@ -11722,6 +11778,7 @@ mod tests {
             &fallback_path,
             3,
             fallback_prepared,
+            Some(&checkpoint_auth),
         )
         .await
         .expect("write path-fallback checkpoint");

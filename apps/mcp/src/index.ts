@@ -852,7 +852,8 @@ registerJsonTool(
   "Return deterministic ranked tasks with reasons and provenance markers using context AND semantics. "
   + "Defaults to the bounded next five; next accepts at most 25. Urgent returns every visible tier-1/2 "
   + "task and must not be given a limit. Triage is bounded to ten. Use all only for an explicit owner request, "
-  + "with deliberate_all=true and cursor pagination. as_of exists for deterministic testing; otherwise omit it.",
+  + "with deliberate_all=true and cursor pagination. The status, context, date_type, and source filters are "
+  + "valid only with view=all. as_of exists for deterministic testing; otherwise omit it.",
   {
     view: z.enum(["next", "urgent", "triage", "all"]).default("next"),
     limit: z.number().int().min(1).max(25).optional().describe(
@@ -862,6 +863,18 @@ registerJsonTool(
       "Every required context must be present. Omit or pass [] when no context is available.",
     ),
     project: taskSlug.optional(),
+    context: contextSlug.optional().describe(
+      "Exact required-context slug filter. Valid only with view=all.",
+    ),
+    status: z.enum(["all", "open", "waiting", "done", "dropped"]).optional().describe(
+      "Exact task status filter, or all. Valid only with view=all.",
+    ),
+    date_type: z.enum(["all", "hard", "cost", "soft", "none"]).optional().describe(
+      "Filter by projected hard, cost, soft, or no date/cost signal, or all. Valid only with view=all.",
+    ),
+    source: z.enum(["all", "owner", "agent", "derived", "todoist"]).optional().describe(
+      "Filter by any matching provenance source family, or all. Valid only with view=all.",
+    ),
     include_waiting: z.boolean().default(false),
     include_parked: z.boolean().default(false),
     as_of: rfc3339Timestamp.optional().describe(
@@ -879,6 +892,14 @@ registerJsonTool(
     if (input.view !== "all" && input.deliberate_all !== undefined) {
       throw new Error("deliberate_all is valid only with view=all");
     }
+    if (
+      input.view !== "all"
+      && [input.status, input.context, input.date_type, input.source].some(
+        (value) => value !== undefined,
+      )
+    ) {
+      throw new Error("status, context, date_type, and source are valid only with view=all");
+    }
     if (input.view === "urgent" && input.limit !== undefined) {
       throw new Error("urgent is unbounded across visible tier-1/2 tasks; omit limit");
     }
@@ -892,6 +913,10 @@ registerJsonTool(
       query.append("contexts_available", context);
     }
     appendQuery(query, "project", input.project);
+    appendQuery(query, "context", input.context);
+    appendQuery(query, "status", input.status);
+    appendQuery(query, "date_type", input.date_type);
+    appendQuery(query, "source", input.source);
     query.set("include_waiting", String(input.include_waiting));
     query.set("include_parked", String(input.include_parked));
     appendQuery(query, "as_of", input.as_of);

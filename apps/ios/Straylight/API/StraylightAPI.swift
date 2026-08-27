@@ -1,10 +1,19 @@
+import CryptoKit
 import Foundation
 
 public struct StraylightAPIConfiguration: Sendable, Equatable {
     public let baseURL: URL
 
-    public init(baseURL: URL = URL(string: "https://straylight.rourkem.com/api/v1")!) {
+    public init(baseURL: URL? = nil) {
+#if DEBUG
+        let testOverride = ProcessInfo.processInfo.environment["STRAYLIGHT_API_BASE_URL"]
+            .flatMap(URL.init(string:))
+#else
+        let testOverride: URL? = nil
+#endif
         self.baseURL = baseURL
+            ?? testOverride
+            ?? URL(string: "https://straylight.rourkem.com/api/v1")!
     }
 }
 
@@ -81,6 +90,18 @@ public actor StraylightAPI {
         cookiesForServer().contains { Self.sessionCookieNames.contains($0.name) }
     }
 
+    public func authenticatedSessionFingerprint() -> String? {
+        let sessionCookies = cookiesForServer()
+            .filter { Self.sessionCookieNames.contains($0.name) }
+            .sorted { $0.name < $1.name }
+        guard !sessionCookies.isEmpty else { return nil }
+        let material = sessionCookies.map {
+            [$0.name, $0.value].joined(separator: "\u{1f}")
+        }.joined(separator: "\u{1e}")
+        let digest = SHA256.hash(data: Data(material.utf8))
+        return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
     public func clearAuthenticatedSession() {
         for cookie in cookiesForServer()
             where Self.sessionCookieNames.contains(cookie.name)
@@ -121,6 +142,26 @@ public actor StraylightAPI {
 
     public func me() async throws -> MeData {
         try await get(path: "me")
+    }
+
+    public func deviceCredentialIdentity(bearerToken: String) async throws -> MeData {
+        try await get(
+            path: "me",
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
+    }
+
+    public func bootstrapDeviceTaskCredential() async throws -> DeviceTaskCredentialBootstrapResponse {
+        struct Request: Encodable, Sendable {
+            let name = "iOS task access"
+            let access = "ios_tasks"
+        }
+        return try await post(path: "credentials", body: Request())
+    }
+
+    public func revokeCredential(reference: String) async throws -> CredentialRevocationResponse {
+        try await delete(path: "credentials/\(reference)")
     }
 
     public func dashboard(
@@ -203,6 +244,110 @@ public actor StraylightAPI {
         return response.notification
     }
 
+    public func taskCandidates(
+        view: AgentTaskView,
+        limit: Int? = nil,
+        contextsAvailable: [String] = []
+    ) async throws -> WorkspaceEnvelope<AgentTaskCandidatesData> {
+        var queryItems = [URLQueryItem(name: "view", value: view.rawValue)]
+        if let limit {
+            queryItems.append(URLQueryItem(name: "limit", value: String(min(max(limit, 1), 25))))
+        }
+        queryItems.append(contentsOf: contextsAvailable.map {
+            URLQueryItem(name: "contexts_available", value: $0)
+        })
+        return try await get(path: "workspace/tasks/candidates", queryItems: queryItems)
+    }
+
+    public func task(reference: String) async throws -> AgentTaskDetail {
+        let response: WorkspaceEnvelope<AgentTaskDetailData> = try await get(
+            path: Self.taskPath(reference: reference)
+        )
+        return response.data.task
+    }
+
+    public func updateTask(
+        reference: String,
+        request: AgentTaskUpdateRequest,
+        bearerToken: String
+    ) async throws -> AgentTaskUpdateData {
+        let response: WorkspaceEnvelope<AgentTaskUpdateData> = try await patch(
+            path: Self.taskPath(reference: reference),
+            body: request,
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
+        return response.data
+    }
+
+    public func taskDoneSummary(
+        limit: Int = 25
+    ) async throws -> WorkspaceEnvelope<AgentTaskDoneSummaryData> {
+        try await get(
+            path: "workspace/tasks/done-summary",
+            queryItems: [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 25)))]
+        )
+    }
+
+    public func taskContexts() async throws -> WorkspaceEnvelope<AgentTaskContextListData> {
+        try await get(
+            path: "workspace/contexts",
+            queryItems: [
+                URLQueryItem(name: "include_archived", value: "false"),
+                URLQueryItem(name: "limit", value: "100"),
+            ]
+        )
+    }
+
+    public func taskProjects() async throws -> WorkspaceEnvelope<AgentTaskProjectListData> {
+        try await get(
+            path: "workspace/projects",
+            queryItems: [URLQueryItem(name: "limit", value: "100")]
+        )
+    }
+
+    public func taskProjectState(slug: String) async throws -> AgentTaskProjectStateData {
+        let response: WorkspaceEnvelope<AgentTaskProjectStateData> = try await get(
+            path: "workspace/projects/\(slug)/state"
+        )
+        return response.data
+    }
+
+    public func setTaskProjectInterest(
+        slug: String,
+        interest: String,
+        expectedVersion: Int,
+        bearerToken: String
+    ) async throws {
+        struct Request: Encodable, Sendable {
+            let interest: String
+            let expectedVersion: Int
+            let source: String
+            let idempotencyKey: String
+
+            enum CodingKeys: String, CodingKey {
+                case interest
+                case expectedVersion = "expected_version"
+                case source
+                case idempotencyKey = "idempotency_key"
+            }
+        }
+        struct IgnoredResponse: Decodable, Sendable {}
+
+        let request = Request(
+            interest: interest,
+            expectedVersion: expectedVersion,
+            source: "owner",
+            idempotencyKey: "ios-project-interest-\(UUID().uuidString.lowercased())"
+        )
+        let _: WorkspaceEnvelope<IgnoredResponse> = try await put(
+            path: "workspace/projects/\(slug)/interest",
+            body: request,
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
+    }
+
     public func recordNotificationReceipt(
         notificationRef: String,
         kind: NotificationReceiptKind,
@@ -216,18 +361,26 @@ public actor StraylightAPI {
 
     public func upsertNotificationInstallation(
         installationID: UUID,
-        request: NotificationInstallationRequest
+        request: NotificationInstallationRequest,
+        bearerToken: String
     ) async throws -> NotificationInstallationResponse {
         try await put(
             path: Self.notificationInstallationPath(installationID: installationID),
-            body: request
+            body: request,
+            bearerToken: bearerToken,
+            sendCookies: false
         )
     }
 
     public func revokeNotificationInstallation(
-        installationID: UUID
+        installationID: UUID,
+        bearerToken: String
     ) async throws -> NotificationInstallationResponse {
-        try await delete(path: Self.notificationInstallationPath(installationID: installationID))
+        try await delete(
+            path: Self.notificationInstallationPath(installationID: installationID),
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
     }
 
     public func search(
@@ -281,65 +434,119 @@ public actor StraylightAPI {
         "workspace/notification-installations/\(installationID.uuidString.lowercased())"
     }
 
+    public nonisolated static func taskPath(reference: String) -> String {
+        "workspace/tasks/\(reference)"
+    }
+
     private func get<Response: Decodable & Sendable>(
         path: String,
-        queryItems: [URLQueryItem] = []
+        queryItems: [URLQueryItem] = [],
+        bearerToken: String? = nil,
+        sendCookies: Bool = true
     ) async throws -> Response {
-        try await request(path: path, queryItems: queryItems, method: "GET", body: nil)
+        try await request(
+            path: path,
+            queryItems: queryItems,
+            method: "GET",
+            body: nil,
+            bearerToken: bearerToken,
+            sendCookies: sendCookies
+        )
     }
 
     private func post<Response: Decodable & Sendable>(
         path: String,
-        body: some Encodable & Sendable
+        body: some Encodable & Sendable,
+        bearerToken: String? = nil,
+        sendCookies: Bool = true
     ) async throws -> Response {
         let encoder = JSONEncoder()
         return try await request(
             path: path,
             queryItems: [],
             method: "POST",
-            body: encoder.encode(body)
+            body: encoder.encode(body),
+            bearerToken: bearerToken,
+            sendCookies: sendCookies
         )
     }
 
     private func put<Response: Decodable & Sendable>(
         path: String,
-        body: some Encodable & Sendable
+        body: some Encodable & Sendable,
+        bearerToken: String? = nil,
+        sendCookies: Bool = true
     ) async throws -> Response {
         let encoder = JSONEncoder()
         return try await request(
             path: path,
             queryItems: [],
             method: "PUT",
-            body: encoder.encode(body)
+            body: encoder.encode(body),
+            bearerToken: bearerToken,
+            sendCookies: sendCookies
+        )
+    }
+
+    private func patch<Response: Decodable & Sendable>(
+        path: String,
+        body: some Encodable & Sendable,
+        bearerToken: String? = nil,
+        sendCookies: Bool = true
+    ) async throws -> Response {
+        let encoder = JSONEncoder()
+        return try await request(
+            path: path,
+            queryItems: [],
+            method: "PATCH",
+            body: encoder.encode(body),
+            bearerToken: bearerToken,
+            sendCookies: sendCookies
         )
     }
 
     private func delete<Response: Decodable & Sendable>(
-        path: String
+        path: String,
+        bearerToken: String? = nil,
+        sendCookies: Bool = true
     ) async throws -> Response {
-        try await request(path: path, queryItems: [], method: "DELETE", body: nil)
+        try await request(
+            path: path,
+            queryItems: [],
+            method: "DELETE",
+            body: nil,
+            bearerToken: bearerToken,
+            sendCookies: sendCookies
+        )
     }
 
     private func request<Response: Decodable & Sendable>(
         path: String,
         queryItems: [URLQueryItem],
         method: String,
-        body: Data?
+        body: Data?,
+        bearerToken: String? = nil,
+        sendCookies: Bool = true
     ) async throws -> Response {
         let url = try makeURL(path: path, queryItems: queryItems)
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.httpBody = body
+        request.httpShouldHandleCookies = sendCookies
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let cookieHeader = HTTPCookie.requestHeaderFields(
+        if sendCookies, let cookieHeader = HTTPCookie.requestHeaderFields(
             with: cookiesForServer()
         )["Cookie"] {
             request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         }
+        if let bearerToken {
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        }
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        if !["GET", "HEAD", "OPTIONS"].contains(method.uppercased()),
+        if sendCookies,
+           !["GET", "HEAD", "OPTIONS"].contains(method.uppercased()),
            let csrfToken = csrfToken()
         {
             request.setValue(csrfToken, forHTTPHeaderField: "X-CSRF-Token")

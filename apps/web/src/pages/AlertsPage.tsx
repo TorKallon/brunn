@@ -322,6 +322,24 @@ function NotificationTargetAction({ notification }: { notification: Notification
       </section>
     );
   }
+  if (target.type === "task") {
+    return (
+      <section className="alert-target-card">
+        <CircleAlert size={21} aria-hidden="true" />
+        <div>
+          <strong>Task</strong>
+          <span>Open the authenticated task detail and current actions.</span>
+        </div>
+        <Link
+          className="button primary"
+          to="/tasks/$taskRef"
+          params={{ taskRef: target.task_ref }}
+        >
+          Open task
+        </Link>
+      </section>
+    );
+  }
   return <EntryTarget target={target} />;
 }
 

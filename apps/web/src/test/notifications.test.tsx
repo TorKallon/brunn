@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { NotificationItem } from "../lib/types";
 import { briefingEditionFixture, briefingListFixture } from "./briefingFixtures";
 import { installApiMock, renderApp } from "./renderApp";
+import { nextCandidates, taskDetail } from "./taskFixtures";
 
 const notificationRef = "notification:019f8800000070008000000000000001";
 const deliveryRef = "delivery:019f8800000070008000000000000002";
@@ -189,6 +190,45 @@ describe("durable alert inbox", () => {
     expect(readBody).toEqual({
       requests: [{ ref: entryAlert.target.entry_ref, view: "full" }],
     });
+  });
+
+  it("opens a typed task notification target on the authenticated task route", async () => {
+    const taskAlert = {
+      ...briefingAlert,
+      notification_ref: "notification:019f8800000070008000000000000007",
+      kind: "operational",
+      title: "A hard deadline is approaching",
+      target: {
+        type: "task",
+        task_ref: nextCandidates[0].task_ref,
+      },
+      source: {
+        type: "task",
+        ref: nextCandidates[0].entry_ref,
+        version_ref: `${nextCandidates[0].entry_ref}@3`,
+      },
+      deliveries: [],
+      opened_at: "2026-08-27T11:00:00Z",
+    } satisfies NotificationItem;
+    const encodedRef = encodeURIComponent(taskAlert.notification_ref);
+    installApiMock({
+      [`GET /api/v1/workspace/notifications/${encodedRef}`]: {
+        notification: taskAlert,
+      },
+      [`GET /api/v1/workspace/tasks/${nextCandidates[0].task_ref}`]: {
+        status: "complete",
+        data: taskDetail,
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/alerts/${taskAlert.notification_ref}`);
+
+    const target = await screen.findByRole("link", { name: "Open task" });
+    expect(target).toHaveAttribute("href", `/tasks/${nextCandidates[0].task_ref}`);
+    await user.click(target);
+    expect(
+      await screen.findByRole("heading", { name: nextCandidates[0].title }),
+    ).toBeInTheDocument();
   });
 
   it("carries a briefing item target through the route and opens that item", async () => {

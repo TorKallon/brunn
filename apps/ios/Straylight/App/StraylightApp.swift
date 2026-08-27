@@ -25,7 +25,8 @@ struct StraylightApp: App {
                     }
                     await notifications.synchronizeInstallation(
                         using: model.api,
-                        canManageNotifications: model.canManageNotifications
+                        canManageNotifications: model.canManageNotifications,
+                        bearerToken: model.deviceTaskBearer()
                     )
                 }
                 .onOpenURL { url in
@@ -49,7 +50,8 @@ struct StraylightApp: App {
                         }
                         await notifications.synchronizeInstallation(
                             using: model.api,
-                            canManageNotifications: model.canManageNotifications
+                            canManageNotifications: model.canManageNotifications,
+                            bearerToken: model.deviceTaskBearer()
                         )
                         await model.refreshDashboardIfNeeded()
                         await model.refreshNotifications()
@@ -62,7 +64,8 @@ struct StraylightApp: App {
                     Task {
                         await notifications.synchronizeInstallation(
                             using: model.api,
-                            canManageNotifications: model.canManageNotifications
+                            canManageNotifications: model.canManageNotifications,
+                            bearerToken: model.deviceTaskBearer()
                         )
                     }
                 }

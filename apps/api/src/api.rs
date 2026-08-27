@@ -60,6 +60,10 @@ pub fn router(state: AppState) -> Router {
             get(task_service::get_task_settings).put(task_service::update_task_settings),
         )
         .route(
+            "/workspace/tasks/guard/status",
+            get(task_service::task_guard_status),
+        )
+        .route(
             "/workspace/tasks/{task_ref}",
             get(task_service::get_task).patch(task_service::update_task),
         )

@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { vi } from "vitest";
 import { StraylightApp } from "../App";
 import { createTestRouter } from "../router";
+import { defaultTaskRoutes } from "./taskFixtures";
 
 interface MockResponse {
   status?: number;
@@ -52,6 +53,9 @@ export const defaultMe = {
       "stage",
       "dream",
       "credential:manage",
+      "task.read",
+      "task.write",
+      "integration.manage",
     ],
     read_only: false,
     freshness: {
@@ -233,6 +237,7 @@ export function installApiMock(routes: Record<string, MockRoute> = {}) {
         },
       },
     },
+    ...defaultTaskRoutes(),
     ...routes,
   };
 

@@ -9,6 +9,11 @@ import {
 } from "./briefingFixtures";
 import { publishedDocumentFixture } from "./documentFixtures";
 import { installApiMock, renderApp } from "./renderApp";
+import {
+  nextCandidates,
+  taskDetail,
+  taskProjectState,
+} from "./taskFixtures";
 
 
 async function expectNoAutomatedViolations(container: HTMLElement) {
@@ -67,6 +72,7 @@ describe("accessibility contracts", () => {
     expect(
       await screen.findByRole("navigation", { name: "Dashboard shortcuts" }),
     ).toBeInTheDocument();
+    expect(await screen.findByText("Urgent task 1")).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });
 
@@ -75,6 +81,45 @@ describe("accessibility contracts", () => {
     const { container } = renderApp("/settings", "read-write-token");
     expect(
       await screen.findByRole("heading", { name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Task operations" })).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("has no automated violations on the deliberate task list", async () => {
+    installApiMock();
+    const { container } = renderApp("/tasks", "read-write-token");
+    expect(await screen.findByText("Next task 1")).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("has no automated violations on task detail", async () => {
+    installApiMock({
+      [`GET /api/v1/workspace/tasks/${nextCandidates[0].task_ref}`]: {
+        status: "complete",
+        data: taskDetail,
+      },
+    });
+    const { container } = renderApp(
+      `/tasks/${nextCandidates[0].task_ref}`,
+      "read-write-token",
+    );
+    expect(
+      await screen.findByRole("heading", { name: nextCandidates[0].title }),
+    ).toBeInTheDocument();
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("has no automated violations on project state", async () => {
+    installApiMock({
+      "GET /api/v1/workspace/projects/straylight/state": {
+        status: "complete",
+        data: taskProjectState,
+      },
+    });
+    const { container } = renderApp("/projects/straylight", "read-write-token");
+    expect(
+      await screen.findByRole("heading", { name: "Straylight" }),
     ).toBeInTheDocument();
     await expectNoAutomatedViolations(container);
   });

@@ -535,6 +535,121 @@ async fn task_guard_time_travel_dedupes_routes_and_delays_inferred_quiet_deliver
     .await
     .expect("count fail-closed reserved event key");
     assert_eq!(reserved_count, 1);
+    let failed_state = sqlx::query(
+        "SELECT last_outcome,last_error_code FROM straylight.task_guard_state WHERE user_id=$1",
+    )
+    .bind(owner.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read content-free failed guard state");
+    assert_eq!(
+        failed_state
+            .get::<Option<String>, _>("last_outcome")
+            .as_deref(),
+        Some("failed")
+    );
+    assert_eq!(
+        failed_state
+            .get::<Option<String>, _>("last_error_code")
+            .as_deref(),
+        Some("task_guard_database")
+    );
+}
+
+#[tokio::test]
+async fn task_guard_state_is_seeded_content_free_and_rls_isolated() {
+    let Some(pool) = connect_test_pool().await else {
+        return;
+    };
+    let owner_a = insert_owner(&pool, "state-a").await;
+    let owner_b = insert_owner(&pool, "state-b").await;
+    let columns = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema='straylight' AND table_name='task_guard_state'
+        ORDER BY ordinal_position
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("list guard state columns");
+    assert_eq!(
+        columns,
+        [
+            "user_id",
+            "last_run_at",
+            "last_outcome",
+            "last_error_code",
+            "next_run_at",
+            "updated_at",
+        ]
+    );
+    let seeded = sqlx::query_scalar::<_, i64>(
+        "SELECT count(*) FROM straylight.task_guard_state WHERE user_id=ANY($1)",
+    )
+    .bind(vec![owner_a.user_id, owner_b.user_id])
+    .fetch_one(&pool)
+    .await
+    .expect("count seeded guard state");
+    assert_eq!(seeded, 2);
+
+    task_guard::run_on_pool(&pool, Utc::now(), false)
+        .await
+        .expect("record successful guard run");
+    let state = sqlx::query(
+        "SELECT last_run_at,last_outcome,last_error_code,next_run_at FROM straylight.task_guard_state WHERE user_id=$1",
+    )
+    .bind(owner_a.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read successful guard state");
+    assert!(
+        state
+            .get::<Option<DateTime<Utc>>, _>("last_run_at")
+            .is_some()
+    );
+    assert_eq!(
+        state.get::<Option<String>, _>("last_outcome").as_deref(),
+        Some("success")
+    );
+    assert_eq!(state.get::<Option<String>, _>("last_error_code"), None);
+    assert!(
+        state
+            .get::<Option<DateTime<Utc>>, _>("next_run_at")
+            .is_some()
+    );
+
+    let mut own_tx = begin_as_app_rw(&pool, &owner_a.auth).await;
+    let visible = sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_id FROM straylight.task_guard_state ORDER BY user_id",
+    )
+    .fetch_all(&mut *own_tx)
+    .await
+    .expect("task reader sees guard status");
+    assert_eq!(visible, [owner_a.user_id]);
+    own_tx.rollback().await.unwrap();
+
+    let mut no_task_read = owner_a.auth.clone();
+    no_task_read.capabilities.remove("task.read");
+    no_task_read.capabilities.remove("admin");
+    let mut denied_tx = begin_as_app_rw(&pool, &no_task_read).await;
+    let hidden = sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_id FROM straylight.task_guard_state WHERE user_id=$1",
+    )
+    .bind(owner_a.user_id)
+    .fetch_optional(&mut *denied_tx)
+    .await
+    .expect("non-task principal sees no guard state");
+    assert_eq!(hidden, None);
+    let write = sqlx::query(
+        "UPDATE straylight.task_guard_state SET last_outcome='failed' WHERE user_id=$1",
+    )
+    .bind(owner_a.user_id)
+    .execute(&mut *denied_tx)
+    .await
+    .expect_err("application roles cannot write guard state");
+    assert_eq!(database_code(&write).as_deref(), Some("42501"));
+    denied_tx.rollback().await.unwrap();
 }
 
 #[tokio::test]

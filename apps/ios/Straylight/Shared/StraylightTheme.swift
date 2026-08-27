@@ -32,6 +32,8 @@ enum StraylightTheme {
     static let ink = dynamic(light: 0x1B2130, dark: 0xE7EDF9)
     static let amber = dynamic(light: 0x8B5B09, dark: 0xD9A251)
     static let red = dynamic(light: 0xAC3B47, dark: 0xE08894)
+    /// Completion/status ramp. Brand blue must never communicate success.
+    static let success = dynamic(light: 0x177A4F, dark: 0x66C695)
     /// Night chrome for brand surfaces (matches LaunchBackground).
     static let night = dynamic(light: 0x06152C, dark: 0x030B18)
     static let canvas = Color(uiColor: .secondarySystemBackground)

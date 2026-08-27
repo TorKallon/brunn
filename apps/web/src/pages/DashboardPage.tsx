@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { Page } from "../components/Page";
+import { TaskDashboard } from "../components/TaskDashboard";
 import {
   ErrorState,
   LoadingState,
@@ -85,6 +86,8 @@ export function DashboardPage() {
           Search memory
         </Link>
       </nav>
+
+      <TaskDashboard />
 
       {dashboardQuery.isPending ? (
         <LoadingState label="Loading workspace overview" />

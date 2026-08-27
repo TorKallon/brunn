@@ -97,6 +97,552 @@ public struct MeData: Codable, Sendable, Equatable {
     }
 }
 
+public struct DeviceTaskCredentialBootstrapResponse: Codable, Sendable, Equatable {
+    public let id: String
+    public let access: String
+    public let capabilities: [String]
+    public let token: String
+}
+
+public struct CredentialRevocationResponse: Codable, Sendable, Equatable {
+    public let id: String
+    public let status: String
+    public let revokedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case revokedAt = "revoked_at"
+    }
+}
+
+// MARK: - Agent-first tasks
+
+public enum AgentTaskStatus: String, Codable, Sendable, Equatable {
+    case open
+    case waiting
+    case done
+    case dropped
+}
+
+public enum AgentTaskView: String, Codable, Sendable, Equatable {
+    case urgent
+    case next
+    case triage
+    case all
+}
+
+public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
+    public let taskRef: String
+    public let entryRef: String
+    public let version: Int
+    public let title: String
+    public let status: AgentTaskStatus
+    public let project: String?
+    public let requiredContexts: [String]
+    public let tier: Int
+    public let reason: String
+    public let provenanceMarkers: [String]
+    public let pinned: Bool
+
+    public var id: String { taskRef }
+    public var hasInferredProvenance: Bool { !provenanceMarkers.isEmpty }
+
+    public init(
+        taskRef: String,
+        entryRef: String,
+        version: Int,
+        title: String,
+        status: AgentTaskStatus = .open,
+        project: String? = nil,
+        requiredContexts: [String] = [],
+        tier: Int,
+        reason: String,
+        provenanceMarkers: [String] = [],
+        pinned: Bool = false
+    ) {
+        self.taskRef = taskRef
+        self.entryRef = entryRef
+        self.version = version
+        self.title = title
+        self.status = status
+        self.project = project
+        self.requiredContexts = requiredContexts
+        self.tier = tier
+        self.reason = reason
+        self.provenanceMarkers = provenanceMarkers
+        self.pinned = pinned
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case taskRef = "task_ref"
+        case entryRef = "entry_ref"
+        case version
+        case title
+        case status
+        case project
+        case requiredContexts = "required_contexts"
+        case tier
+        case reason
+        case provenanceMarkers = "provenance_markers"
+        case pinned
+    }
+}
+
+public struct AgentTaskCandidatesData: Codable, Sendable, Equatable {
+    public let view: AgentTaskView
+    public let asOf: String
+    public let contextsAvailable: [String]
+    public let items: [AgentTaskCandidate]
+    public let urgentTotal: Int
+    public let nextRemaining: Int
+    public let backlogTotal: Int
+    public let nextCursor: String?
+
+    public init(
+        view: AgentTaskView,
+        asOf: String,
+        contextsAvailable: [String],
+        items: [AgentTaskCandidate],
+        urgentTotal: Int,
+        nextRemaining: Int,
+        backlogTotal: Int,
+        nextCursor: String? = nil
+    ) {
+        self.view = view
+        self.asOf = asOf
+        self.contextsAvailable = contextsAvailable
+        self.items = items
+        self.urgentTotal = urgentTotal
+        self.nextRemaining = nextRemaining
+        self.backlogTotal = backlogTotal
+        self.nextCursor = nextCursor
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case view
+        case asOf = "as_of"
+        case contextsAvailable = "contexts_available"
+        case items
+        case urgentTotal = "urgent_total"
+        case nextRemaining = "next_remaining"
+        case backlogTotal = "backlog_total"
+        case nextCursor = "next_cursor"
+    }
+}
+
+public struct AgentTaskSourcedValue<Value: Codable & Sendable & Equatable>: Codable, Sendable, Equatable {
+    public let value: Value
+    public let source: String
+    public let setAt: String
+    public let note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case value
+        case source
+        case setAt = "set_at"
+        case note
+    }
+}
+
+public struct AgentTaskDocument: Codable, Sendable, Equatable {
+    public let id: String
+    public let title: String
+    public let status: AgentTaskSourcedValue<String>?
+    public let notes: AgentTaskSourcedValue<String>?
+    public let project: AgentTaskSourcedValue<String>?
+    public let readyAt: AgentTaskSourcedValue<String>?
+    public let softDue: AgentTaskSourcedValue<String>?
+    public let hardDue: AgentTaskSourcedValue<String>?
+    public let requiredContexts: AgentTaskSourcedValue<[String]>?
+    public let estimateMinutes: AgentTaskSourcedValue<Int>?
+    public let todayPin: AgentTaskSourcedValue<String>?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case status
+        case notes
+        case project
+        case readyAt = "ready_at"
+        case softDue = "soft_due"
+        case hardDue = "hard_due"
+        case requiredContexts = "required_contexts"
+        case estimateMinutes = "estimate_minutes"
+        case todayPin = "today_pin"
+    }
+}
+
+public struct AgentTaskDetail: Identifiable, Codable, Sendable, Equatable {
+    public let taskRef: String
+    public let entryRef: String
+    public let version: Int
+    public let title: String
+    public let status: AgentTaskStatus
+    public let task: AgentTaskDocument
+    public let createdAt: String
+    public let updatedAt: String
+
+    public var id: String { taskRef }
+
+    enum CodingKeys: String, CodingKey {
+        case taskRef = "task_ref"
+        case entryRef = "entry_ref"
+        case version
+        case title
+        case status
+        case task
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+public struct AgentTaskDetailData: Codable, Sendable, Equatable {
+    public let task: AgentTaskDetail
+}
+
+public struct AgentTaskUpdateData: Codable, Sendable, Equatable {
+    public let task: AgentTaskDetail
+    public let action: String
+    public let correctionRef: String?
+    public let doneTodayCount: Int?
+    public let nextOccurrenceTaskRef: String?
+    public let replayed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case task
+        case action
+        case correctionRef = "correction_ref"
+        case doneTodayCount = "done_today_count"
+        case nextOccurrenceTaskRef = "next_occurrence_task_ref"
+        case replayed
+    }
+}
+
+public struct AgentTaskDoneItem: Identifiable, Codable, Sendable, Equatable {
+    public let taskRef: String
+    public let entryRef: String
+    public let version: Int
+    public let title: String
+    public let doneAt: String
+    public let completedVia: String?
+
+    public var id: String { taskRef }
+
+    enum CodingKeys: String, CodingKey {
+        case taskRef = "task_ref"
+        case entryRef = "entry_ref"
+        case version
+        case title
+        case doneAt = "done_at"
+        case completedVia = "completed_via"
+    }
+}
+
+public struct AgentTaskDoneSummaryData: Codable, Sendable, Equatable {
+    public let from: String
+    public let through: String
+    public let timezone: String
+    public let asOf: String
+    public let count: Int
+    public let doneTodayCount: Int
+    public let items: [AgentTaskDoneItem]
+    public let nextCursor: String?
+
+    enum CodingKeys: String, CodingKey {
+        case from
+        case through
+        case timezone
+        case asOf = "as_of"
+        case count
+        case doneTodayCount = "done_today_count"
+        case items
+        case nextCursor = "next_cursor"
+    }
+}
+
+public struct AgentTaskContext: Identifiable, Codable, Sendable, Equatable {
+    public let slug: String
+    public let displayName: String
+    public let aliases: [String]
+    public let description: String?
+    public let archived: Bool
+    public let createdBy: String
+    public let version: Int
+    public let activeTaskCount: Int
+
+    public var id: String { slug }
+
+    enum CodingKeys: String, CodingKey {
+        case slug
+        case displayName = "display_name"
+        case aliases
+        case description
+        case archived
+        case createdBy = "created_by"
+        case version
+        case activeTaskCount = "active_task_count"
+    }
+}
+
+public struct AgentTaskSurfaceDefault: Codable, Sendable, Equatable {
+    public let contextsAvailable: [String]
+    public let version: Int
+
+    enum CodingKeys: String, CodingKey {
+        case contextsAvailable = "contexts_available"
+        case version
+    }
+}
+
+public struct AgentTaskContextListData: Codable, Sendable, Equatable {
+    public let contexts: [AgentTaskContext]
+    public let surfaceDefaults: [String: AgentTaskSurfaceDefault]
+
+    enum CodingKeys: String, CodingKey {
+        case contexts
+        case surfaceDefaults = "surface_defaults"
+    }
+}
+
+public struct AgentTaskProject: Identifiable, Codable, Sendable, Equatable {
+    public let slug: String
+    public let title: String
+    public let interest: String
+    public let lastActivityAt: String?
+    public let openTaskCount: Int
+    public let lastCheckpointAt: String?
+    public let version: Int
+
+    public var id: String { slug }
+
+    enum CodingKeys: String, CodingKey {
+        case slug
+        case title
+        case interest
+        case lastActivityAt = "last_activity_at"
+        case openTaskCount = "open_task_count"
+        case lastCheckpointAt = "last_checkpoint_at"
+        case version
+    }
+}
+
+public struct AgentTaskProjectListData: Codable, Sendable, Equatable {
+    public let projects: [AgentTaskProject]
+    public let asOf: String
+
+    enum CodingKeys: String, CodingKey {
+        case projects
+        case asOf = "as_of"
+    }
+}
+
+public enum AgentTaskTextList: Codable, Sendable, Equatable {
+    case text(String)
+    case list([String])
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let text = try? container.decode(String.self) {
+            self = .text(text)
+        } else {
+            self = .list(try container.decode([String].self))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .text(text): try container.encode(text)
+        case let .list(items): try container.encode(items)
+        }
+    }
+
+    public var lines: [String] {
+        switch self {
+        case let .text(text): [text]
+        case let .list(items): items
+        }
+    }
+}
+
+public struct AgentTaskCheckpointState: Codable, Sendable, Equatable {
+    public let objective: String?
+    public let currentState: AgentTaskTextList?
+    public let nextActions: AgentTaskTextList?
+    public let openQuestions: AgentTaskTextList?
+
+    enum CodingKeys: String, CodingKey {
+        case objective
+        case currentState = "current_state"
+        case nextActions = "next_actions"
+        case openQuestions = "open_questions"
+    }
+}
+
+public struct AgentTaskProjectCheckpoint: Codable, Sendable, Equatable {
+    public let checkpointAt: String
+    public let state: AgentTaskCheckpointState?
+
+    enum CodingKeys: String, CodingKey {
+        case checkpointAt = "checkpoint_at"
+        case state
+    }
+}
+
+public struct AgentTaskWaitingItem: Identifiable, Codable, Sendable, Equatable {
+    public let taskRef: String
+    public let title: String
+    public let since: String
+    public let ageDays: Int
+
+    public var id: String { taskRef }
+
+    enum CodingKeys: String, CodingKey {
+        case taskRef = "task_ref"
+        case title
+        case since
+        case ageDays = "age_days"
+    }
+}
+
+public struct AgentTaskProjectStateData: Codable, Sendable, Equatable {
+    public struct Project: Codable, Sendable, Equatable {
+        public let slug: String
+        public let title: String
+        public let interest: String
+        public let lastActivityAt: String?
+        public let version: Int
+
+        enum CodingKeys: String, CodingKey {
+            case slug
+            case title
+            case interest
+            case lastActivityAt = "last_activity_at"
+            case version
+        }
+    }
+
+    public let project: Project
+    public let checkpoint: AgentTaskProjectCheckpoint?
+    public let urgentCount: Int
+    public let next: [AgentTaskCandidate]
+    public let waiting: [AgentTaskWaitingItem]
+    public let waitingTotal: Int
+    public let waitingRemaining: Int
+    public let parkedCount: Int
+    public let asOf: String
+
+    enum CodingKeys: String, CodingKey {
+        case project
+        case checkpoint
+        case urgentCount = "urgent_count"
+        case next
+        case waiting
+        case waitingTotal = "waiting_total"
+        case waitingRemaining = "waiting_remaining"
+        case parkedCount = "parked_count"
+        case asOf = "as_of"
+    }
+}
+
+public enum AgentTaskCorrectionValue: Sendable, Equatable, Encodable {
+    case string(String)
+    case strings([String])
+    case integer(Int)
+    case null
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .string(value): try container.encode(value)
+        case let .strings(value): try container.encode(value)
+        case let .integer(value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+}
+
+public enum AgentTaskUpdateOperation: Sendable, Equatable, Encodable {
+    case complete
+    case snooze(days: Int)
+    case snoozeUntil(String)
+    case waitOn(String)
+    case pinToday
+    case unpin
+    case confirmHard
+    case downgradeToSoft
+    case correct(field: String, value: AgentTaskCorrectionValue, note: String?)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case source
+        case completedVia = "completed_via"
+        case days
+        case until
+        case whoOrWhat = "who_or_what"
+        case field
+        case value
+        case note
+        case reason
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode("owner", forKey: .source)
+        switch self {
+        case .complete:
+            try container.encode("complete", forKey: .type)
+            try container.encode("ios", forKey: .completedVia)
+        case let .snooze(days):
+            try container.encode("snooze", forKey: .type)
+            try container.encode(days, forKey: .days)
+        case let .snoozeUntil(until):
+            try container.encode("snooze", forKey: .type)
+            try container.encode(until, forKey: .until)
+        case let .waitOn(value):
+            try container.encode("wait_on", forKey: .type)
+            try container.encode(value, forKey: .whoOrWhat)
+        case .pinToday:
+            try container.encode("pin_today", forKey: .type)
+        case .unpin:
+            try container.encode("unpin", forKey: .type)
+        case .confirmHard:
+            try container.encode("confirm_hard", forKey: .type)
+        case .downgradeToSoft:
+            try container.encode("downgrade_to_soft", forKey: .type)
+        case let .correct(field, value, note):
+            try container.encode("correct", forKey: .type)
+            try container.encode(field, forKey: .field)
+            try container.encode(value, forKey: .value)
+            try container.encodeIfPresent(note, forKey: .note)
+            try container.encode("Corrected on iOS", forKey: .reason)
+        }
+    }
+}
+
+public struct AgentTaskUpdateRequest: Encodable, Sendable, Equatable {
+    public let expectedVersion: Int
+    public let idempotencyKey: String
+    public let operation: AgentTaskUpdateOperation
+
+    public init(
+        expectedVersion: Int,
+        idempotencyKey: String = "ios-task-\(UUID().uuidString.lowercased())",
+        operation: AgentTaskUpdateOperation
+    ) {
+        self.expectedVersion = expectedVersion
+        self.idempotencyKey = idempotencyKey
+        self.operation = operation
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case expectedVersion = "expected_version"
+        case idempotencyKey = "idempotency_key"
+        case operation
+    }
+}
+
 public struct WorkspaceDashboardData: Codable, Sendable, Equatable {
     public let generatedAt: String
     public let timezone: String

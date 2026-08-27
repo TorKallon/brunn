@@ -3,9 +3,14 @@ import Security
 
 @MainActor
 protocol CredentialStoring: AnyObject {
-    func load() throws -> String?
-    func save(_ token: String) throws
+    func load() throws -> DeviceTaskCredential?
+    func save(_ credential: DeviceTaskCredential) throws
     func delete() throws
+}
+
+struct DeviceTaskCredential: Codable, Sendable, Equatable {
+    let credentialRef: String
+    let token: String
 }
 
 enum KeychainCredentialError: Error, LocalizedError {
@@ -25,9 +30,28 @@ enum KeychainCredentialError: Error, LocalizedError {
 @MainActor
 final class KeychainCredentialStore: CredentialStoring {
     private let service = "com.rourkem.straylight.api"
-    private let account = "owner-alpha-read-only"
+    private let account: String
+    private let removesLegacyCredential: Bool
 
-    func load() throws -> String? {
+    init() {
+#if DEBUG
+        if let namespace = ProcessInfo.processInfo.environment["STRAYLIGHT_CREDENTIAL_NAMESPACE"],
+           !namespace.isEmpty
+        {
+            account = "ios-task-device-v1-\(namespace)"
+            removesLegacyCredential = false
+        } else {
+            account = "ios-task-device-v1"
+            removesLegacyCredential = true
+        }
+#else
+        account = "ios-task-device-v1"
+        removesLegacyCredential = true
+#endif
+    }
+
+    func load() throws -> DeviceTaskCredential? {
+        try removeLegacyCredentialIfNeeded()
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -43,16 +67,17 @@ final class KeychainCredentialStore: CredentialStoring {
         }
         guard
             let data = result as? Data,
-            let token = String(data: data, encoding: .utf8),
-            !token.isEmpty
+            let credential = try? JSONDecoder().decode(DeviceTaskCredential.self, from: data),
+            !credential.credentialRef.isEmpty
         else {
             throw KeychainCredentialError.invalidData
         }
-        return token
+        return credential
     }
 
-    func save(_ token: String) throws {
-        let data = Data(token.utf8)
+    func save(_ credential: DeviceTaskCredential) throws {
+        try removeLegacyCredentialIfNeeded()
+        let data = try JSONEncoder().encode(credential)
         let baseQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -78,10 +103,24 @@ final class KeychainCredentialStore: CredentialStoring {
     }
 
     func delete() throws {
+        try removeLegacyCredentialIfNeeded()
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainCredentialError.unexpectedStatus(status)
+        }
+    }
+
+    private func removeLegacyCredentialIfNeeded() throws {
+        guard removesLegacyCredential else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: "owner-alpha-read-only",
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {

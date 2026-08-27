@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
@@ -61,7 +62,10 @@ pub struct TaskSnapshot {
     pub id: Uuid,
     pub title: String,
     pub status: TaskStatus,
+    pub status_source: String,
     pub created_at: DateTime<Utc>,
+    pub done_at: Option<DateTime<Utc>>,
+    pub dropped_at: Option<DateTime<Utc>>,
     pub ready_at: Option<Sourced<DateTime<Utc>>>,
     pub soft_due: Option<Sourced<NaiveDate>>,
     pub hard_due: Option<Sourced<DateTime<Utc>>>,
@@ -185,16 +189,8 @@ pub fn rank_all_tasks(
     request: &CandidateRequest,
     settings: &EngineSettings,
 ) -> RankedTasks {
-    let backlog_total = tasks
-        .iter()
-        .filter(|task| matches!(task.status, TaskStatus::Open | TaskStatus::Waiting))
-        .count();
-    let mut evaluated = tasks
-        .iter()
-        .filter(|task| is_visible(task, request))
-        .map(|task| evaluate(task, request.as_of, settings))
-        .collect::<Vec<_>>();
-    evaluated.sort_by(compare_ranked);
+    let evaluated = evaluate_all_sorted(tasks, request, settings);
+    let backlog_total = evaluated.len();
     let urgent_total = evaluated.iter().filter(|item| item.tier <= 2).count();
     let next_remaining = evaluated
         .len()
@@ -208,6 +204,63 @@ pub fn rank_all_tasks(
         next_remaining,
         backlog_total,
     }
+}
+
+/// Page the complete deterministic order while materializing public response
+/// objects only for the requested page. `None` means that a supplied cursor is
+/// not present in the filtered result set.
+pub fn rank_all_tasks_page(
+    tasks: &[TaskSnapshot],
+    request: &CandidateRequest,
+    settings: &EngineSettings,
+    cursor: Option<Uuid>,
+) -> Option<(RankedTasks, Option<Uuid>)> {
+    let evaluated = evaluate_all_sorted(tasks, request, settings);
+    let backlog_total = evaluated.len();
+    let urgent_total = evaluated.iter().filter(|item| item.tier <= 2).count();
+    let start = match cursor {
+        Some(cursor) => evaluated
+            .iter()
+            .position(|item| item.task.id == cursor)
+            .map(|index| index + 1)?,
+        None => 0,
+    };
+    let end = (start + request.limit.min(MAX_NEXT_LIMIT)).min(backlog_total);
+    let next_cursor = (end < backlog_total && end > start).then(|| evaluated[end - 1].task.id);
+    let items = evaluated
+        .into_iter()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .map(EvaluatedTask::into_public)
+        .collect();
+    Some((
+        RankedTasks {
+            items,
+            urgent_total,
+            next_remaining: backlog_total.saturating_sub(end),
+            backlog_total,
+        },
+        next_cursor,
+    ))
+}
+
+fn evaluate_all_sorted<'a>(
+    tasks: &'a [TaskSnapshot],
+    request: &CandidateRequest,
+    settings: &EngineSettings,
+) -> Vec<EvaluatedTask<'a>> {
+    let mut evaluated = tasks
+        .iter()
+        .filter(|task| is_deliberate_all_visible(task, request))
+        .map(|task| evaluate_for_deliberate_all(task, request.as_of, settings))
+        .collect::<Vec<_>>();
+    evaluated.sort_by(compare_ranked);
+    evaluated
+}
+
+fn is_deliberate_all_visible(task: &TaskSnapshot, request: &CandidateRequest) -> bool {
+    let waiting = task.waiting || task.status == TaskStatus::Waiting;
+    (!waiting || request.include_waiting) && (!task.parked || request.include_parked)
 }
 
 pub fn snooze_transition(current_count: u32) -> (u32, bool) {
@@ -246,7 +299,7 @@ fn is_visible(task: &TaskSnapshot, request: &CandidateRequest) -> bool {
 struct EvaluatedTask<'a> {
     task: &'a TaskSnapshot,
     tier: u8,
-    reason: String,
+    reason: Cow<'static, str>,
     provenance_markers: Vec<String>,
     pinned: bool,
     order: TierOrder,
@@ -258,7 +311,7 @@ impl EvaluatedTask<'_> {
             id: self.task.id,
             title: self.task.title.clone(),
             tier: self.tier,
-            reason: self.reason,
+            reason: self.reason.into_owned(),
             provenance_markers: self.provenance_markers,
             pinned: self.pinned,
         }
@@ -284,6 +337,31 @@ enum TierOrder {
         last_activity: Option<DateTime<Utc>>,
     },
     Fallback,
+    Terminal {
+        at: Option<DateTime<Utc>>,
+    },
+}
+
+fn evaluate_for_deliberate_all<'a>(
+    task: &'a TaskSnapshot,
+    as_of: DateTime<Utc>,
+    settings: &EngineSettings,
+) -> EvaluatedTask<'a> {
+    let (tier, reason, at) = match task.status {
+        TaskStatus::Done => (6, "Completed", task.done_at),
+        TaskStatus::Dropped => (7, "Dropped", task.dropped_at),
+        TaskStatus::Open | TaskStatus::Waiting => return evaluate(task, as_of, settings),
+    };
+    let mut provenance_markers = Vec::new();
+    add_marker(&mut provenance_markers, &task.status_source);
+    EvaluatedTask {
+        task,
+        tier,
+        reason: Cow::Borrowed(reason),
+        provenance_markers,
+        pinned: false,
+        order: TierOrder::Terminal { at },
+    }
 }
 
 fn evaluate<'a>(
@@ -316,7 +394,7 @@ fn pressure(
     task: &TaskSnapshot,
     as_of: DateTime<Utc>,
     settings: &EngineSettings,
-) -> (u8, String, Vec<String>, TierOrder) {
+) -> (u8, Cow<'static, str>, Vec<String>, TierOrder) {
     if let Some(hard_due) = task.hard_due.as_ref() {
         let lead_days = task
             .hard_due_lead_days
@@ -333,7 +411,7 @@ fn pressure(
             let reason = hard_reason(hard_due.value, as_of, !markers.is_empty());
             return (
                 1,
-                reason,
+                reason.into(),
                 markers,
                 TierOrder::Hard {
                     due: hard_due.value,
@@ -373,7 +451,7 @@ fn pressure(
                 add_marker(&mut markers, &cost.source);
                 return (
                     2,
-                    reason,
+                    reason.into(),
                     markers,
                     TierOrder::NumericCost {
                         daily_numerator,
@@ -388,7 +466,12 @@ fn pressure(
                 let reason = format!("costing money{} since {}", marker, format_date(*since));
                 let mut markers = Vec::new();
                 add_marker(&mut markers, &cost.source);
-                return (2, reason, markers, TierOrder::FlagCost { since: *since });
+                return (
+                    2,
+                    reason.into(),
+                    markers,
+                    TierOrder::FlagCost { since: *since },
+                );
             }
             CostOfDelay::Rate { .. } | CostOfDelay::Flag { .. } => {}
         }
@@ -415,7 +498,7 @@ fn pressure(
             };
             return (
                 3,
-                reason,
+                reason.into(),
                 markers,
                 TierOrder::Soft {
                     due: soft_due.value,
@@ -429,10 +512,14 @@ fn pressure(
         if let Some(project) = task.project.as_ref() {
             add_marker(&mut markers, &project.source);
         }
-        let marker = if markers.is_empty() { "" } else { " (est.)" };
+        let reason = if markers.is_empty() {
+            Cow::Borrowed("active project")
+        } else {
+            Cow::Borrowed("active project (est.)")
+        };
         return (
             4,
-            format!("active project{marker}"),
+            reason,
             markers,
             TierOrder::Hot {
                 last_activity: task.project_last_activity,
@@ -442,7 +529,7 @@ fn pressure(
 
     (
         5,
-        format!("ready since {}", format_date(task.created_at.date_naive())),
+        format!("ready since {}", format_date(task.created_at.date_naive())).into(),
         Vec::new(),
         TierOrder::Fallback,
     )
@@ -491,6 +578,9 @@ fn compare_tier_order(left: &TierOrder, right: &TierOrder) -> Ordering {
             },
         ) => compare_optional_recency(*left, *right),
         (TierOrder::Fallback, TierOrder::Fallback) => Ordering::Equal,
+        (TierOrder::Terminal { at: left }, TierOrder::Terminal { at: right }) => {
+            compare_optional_recency(*left, *right)
+        }
         _ => Ordering::Equal,
     }
 }
@@ -598,7 +688,10 @@ mod tests {
             id: Uuid::from_u128(id),
             title: title.to_owned(),
             status: TaskStatus::Open,
+            status_source: "owner".to_owned(),
             created_at: instant(created_day, 0),
+            done_at: None,
+            dropped_at: None,
             ready_at: None,
             soft_due: None,
             hard_due: None,
@@ -703,9 +796,56 @@ mod tests {
         let request = request(TaskView::All, as_of, 25);
         let bounded = rank_tasks(&tasks, &request, &EngineSettings::default());
         let full = rank_all_tasks(&tasks, &request, &EngineSettings::default());
+        let (first_page, first_cursor) =
+            rank_all_tasks_page(&tasks, &request, &EngineSettings::default(), None).unwrap();
+        let (second_page, _) =
+            rank_all_tasks_page(&tasks, &request, &EngineSettings::default(), first_cursor)
+                .unwrap();
         assert_eq!(bounded.items.len(), 25);
         assert_eq!(full.items.len(), 60);
         assert_eq!(bounded.items, full.items[..25]);
+        assert_eq!(first_page.items, full.items[..25]);
+        assert_eq!(first_page.backlog_total, 60);
+        assert_eq!(first_page.next_remaining, 35);
+        assert_eq!(first_cursor, Some(full.items[24].id));
+        assert_eq!(second_page.items, full.items[25..50]);
+        assert_eq!(second_page.next_remaining, 10);
+        assert!(
+            rank_all_tasks_page(
+                &tasks,
+                &request,
+                &EngineSettings::default(),
+                Some(Uuid::max())
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn deliberate_all_includes_terminal_history_with_honest_reasons() {
+        let as_of = instant(27, 12);
+        let open = task(1, "open", 1);
+        let mut done = task(2, "done", 2);
+        done.status = TaskStatus::Done;
+        let mut dropped = task(3, "dropped", 3);
+        dropped.status = TaskStatus::Dropped;
+        let ranked = rank_all_tasks(
+            &[dropped, done, open],
+            &request(TaskView::All, as_of, 25),
+            &EngineSettings::default(),
+        );
+        assert_eq!(
+            ranked
+                .items
+                .iter()
+                .map(|item| (item.title.as_str(), item.reason.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("open", "ready since Aug 1"),
+                ("done", "Completed"),
+                ("dropped", "Dropped"),
+            ]
+        );
     }
 
     #[test]

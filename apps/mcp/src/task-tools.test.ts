@@ -135,7 +135,35 @@ test("both MCP profiles expose the exact public task surface with safe annotatio
       assert.match(candidates?.description ?? "", /defaults? to.*next.*five/i);
       assert.match(candidates?.description ?? "", /AND semantics/i);
       assert.match(candidates?.description ?? "", /all.*explicit owner request/i);
+      assert.match(candidates?.description ?? "", /status.*context.*date_type.*source/i);
+      assert.match(candidates?.description ?? "", /only.*view=all/i);
       assert.match(candidates?.description ?? "", /as_of.*deterministic testing/i);
+      const candidateProperties = candidates?.inputSchema.properties as Record<
+        string,
+        { enum?: string[]; pattern?: string }
+      > | undefined;
+      assert.deepEqual(candidateProperties?.status?.enum, [
+        "all",
+        "open",
+        "waiting",
+        "done",
+        "dropped",
+      ]);
+      assert.deepEqual(candidateProperties?.date_type?.enum, [
+        "all",
+        "hard",
+        "cost",
+        "soft",
+        "none",
+      ]);
+      assert.deepEqual(candidateProperties?.source?.enum, [
+        "all",
+        "owner",
+        "agent",
+        "derived",
+        "todoist",
+      ]);
+      assert.equal(candidateProperties?.context?.pattern, "^[a-z0-9]+(?:-[a-z0-9]+)*$");
 
       const contexts = byName.get("task.contexts");
       assert.match(contexts?.description ?? "", /suggested_existing/);
@@ -448,6 +476,34 @@ test("candidate pagination accepts only raw task refs", async () => {
   }
 });
 
+test("deliberate all candidate filters use the frozen backend query contract", async () => {
+  const calls: RecordedCall[] = [];
+  const { client, close } = await connectedPair(calls);
+  try {
+    await callOk(client, "task.candidates", {
+      view: "all",
+      deliberate_all: true,
+      limit: 25,
+      project: "straylight",
+      context: "phone",
+      status: "done",
+      date_type: "hard",
+      source: "agent",
+      include_waiting: true,
+      include_parked: true,
+      as_of: asOf,
+      cursor: taskRef,
+    });
+    assert.deepEqual(calls, [{
+      url: "https://api.invalid/v1/workspace/tasks/candidates?view=all&limit=25&project=straylight&context=phone&status=done&date_type=hard&source=agent&include_waiting=true&include_parked=true&as_of=2026-08-27T16%3A00%3A00-07%3A00&cursor=019f8800-0000-7000-8000-000000000001&deliberate_all=true",
+      method: "GET",
+      body: undefined,
+    }]);
+  } finally {
+    await close();
+  }
+});
+
 test("task.settings and project tools map get and optimistic mutations exactly", async () => {
   const calls: RecordedCall[] = [];
   const { client, close } = await connectedPair(calls);
@@ -571,6 +627,26 @@ test("task tool validation fails closed before HTTP for ambiguous or unsafe requ
     for (const fixture of [
       { name: "task.candidates", arguments: { view: "all" } },
       { name: "task.candidates", arguments: { view: "next", limit: 26 } },
+      { name: "task.candidates", arguments: { view: "next", status: "open" } },
+      { name: "task.candidates", arguments: { view: "urgent", context: "phone" } },
+      { name: "task.candidates", arguments: { view: "triage", date_type: "hard" } },
+      { name: "task.candidates", arguments: { view: "next", source: "owner" } },
+      {
+        name: "task.candidates",
+        arguments: { view: "all", deliberate_all: true, status: "ready" },
+      },
+      {
+        name: "task.candidates",
+        arguments: { view: "all", deliberate_all: true, context: "Phone" },
+      },
+      {
+        name: "task.candidates",
+        arguments: { view: "all", deliberate_all: true, date_type: "due" },
+      },
+      {
+        name: "task.candidates",
+        arguments: { view: "all", deliberate_all: true, source: "inferred" },
+      },
       {
         name: "task.candidates",
         arguments: { view: "all", deliberate_all: true, cursor: `task:${taskRef}` },

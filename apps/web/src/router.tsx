@@ -20,6 +20,9 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { ExplorePage } from "./pages/ExplorePage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { ProjectDetailPage } from "./pages/ProjectDetailPage";
+import { TaskDetailPage } from "./pages/TaskDetailPage";
+import { TasksPage } from "./pages/TasksPage";
 import { TopicsPage } from "./pages/TopicsPage";
 import { WorkPage } from "./pages/WorkPage";
 import { ForgotPasswordPage, LoginPage, ResetPasswordPage } from "./pages/AuthPages";
@@ -88,6 +91,21 @@ const dashboardRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/dashboard",
   component: DashboardPage,
+});
+const tasksRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/tasks",
+  component: TasksPage,
+});
+const taskDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/tasks/$taskRef",
+  component: TaskDetailPage,
+});
+const projectDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/projects/$slug",
+  component: ProjectDetailPage,
 });
 const workRoute = createRoute({ getParentRoute: () => protectedRoute, path: "/work", component: WorkPage });
 const briefingsRoute = createRoute({
@@ -201,6 +219,9 @@ const routeTree = rootRoute.addChildren([
   protectedRoute.addChildren([
     indexRoute,
     dashboardRoute,
+    tasksRoute,
+    taskDetailRoute,
+    projectDetailRoute,
     alertsRoute,
     alertDetailRoute,
     briefingsRoute,

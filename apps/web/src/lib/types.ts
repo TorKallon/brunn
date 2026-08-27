@@ -96,6 +96,256 @@ export interface MeData {
   freshness?: Freshness;
 }
 
+export type TaskStatus = "open" | "waiting" | "done" | "dropped";
+export type TaskView = "urgent" | "next" | "triage" | "all";
+export type TaskDateTypeFilter = "all" | "hard" | "cost" | "soft" | "none";
+export type TaskSourceFilter = "all" | "owner" | "agent" | "derived" | "todoist";
+
+export interface TaskCandidate {
+  task_ref: string;
+  entry_ref: string;
+  version: number;
+  title: string;
+  status: TaskStatus;
+  project?: string | null;
+  required_contexts: string[];
+  tier: number;
+  reason: string;
+  provenance_markers: string[];
+  pinned: boolean;
+}
+
+export interface TaskCandidatesQuery {
+  view?: TaskView;
+  limit?: number;
+  contexts_available?: string[];
+  project?: string;
+  context?: string;
+  status?: "all" | TaskStatus;
+  date_type?: TaskDateTypeFilter;
+  source?: TaskSourceFilter;
+  include_waiting?: boolean;
+  include_parked?: boolean;
+  deliberate_all?: boolean;
+  as_of?: string;
+  cursor?: string;
+}
+
+export interface TaskCandidatesData {
+  view: TaskView;
+  as_of: string;
+  contexts_available: string[];
+  items: TaskCandidate[];
+  urgent_total: number;
+  next_remaining: number;
+  backlog_total: number;
+  next_cursor?: string | null;
+  filters?: {
+    status: "all" | TaskStatus;
+    project?: string | null;
+    context?: string | null;
+    date_type: TaskDateTypeFilter;
+    source: TaskSourceFilter;
+    include_waiting: boolean;
+    include_parked: boolean;
+  };
+}
+
+export interface SourcedTaskValue<T = JsonValue> {
+  value: T;
+  source: string;
+  set_at: string;
+  note?: string | null;
+}
+
+export interface TaskDetail {
+  task_ref: string;
+  entry_ref: string;
+  version: number;
+  title: string;
+  status: TaskStatus;
+  task: Record<string, JsonValue>;
+  provenance: Record<string, JsonValue>;
+  source_timestamps: Record<string, JsonValue>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskDetailData {
+  task: TaskDetail;
+}
+
+export interface TaskUpdateData {
+  task: TaskDetail;
+  action: string;
+  correction_ref?: string | null;
+  done_today_count?: number | null;
+  next_occurrence_task_ref?: string | null;
+  replayed: boolean;
+}
+
+export interface TaskCaptureReceiptItem {
+  client_ref?: string | null;
+  task_ref: string;
+  entry_ref: string;
+  version: number;
+  title: string;
+  enrichment?: Record<string, JsonValue>;
+  context_suggestions?: JsonValue[];
+}
+
+export interface TaskCaptureData {
+  items: TaskCaptureReceiptItem[];
+  suggested_existing?: JsonValue[];
+  replayed: boolean;
+}
+
+export interface TaskDoneItem {
+  task_ref: string;
+  entry_ref: string;
+  version: number;
+  title: string;
+  done_at: string;
+  completed_via?: string | null;
+}
+
+export interface TaskDoneSummaryData {
+  from: string;
+  through: string;
+  timezone: string;
+  as_of: string;
+  count: number;
+  done_today_count: number;
+  items: TaskDoneItem[];
+  next_cursor?: string | null;
+}
+
+export interface TaskContext {
+  slug: string;
+  display_name: string;
+  aliases: string[];
+  description?: string | null;
+  archived: boolean;
+  created_by: string;
+  version: number;
+  active_task_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskSurfaceDefault {
+  contexts_available: string[];
+  version: number;
+  updated_at?: string;
+}
+
+export interface TaskContextListData {
+  contexts: TaskContext[];
+  surface_defaults: Record<string, TaskSurfaceDefault>;
+  next_cursor?: string | null;
+}
+
+export interface TaskSettings {
+  timezone: string;
+  hard_lead_days: number;
+  hard_second_lead_hours: number;
+  due_day_local_time: string;
+  soft_window_days: number;
+  triage_after_days: number;
+  waiting_followup_days: number;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  quiet_override_enabled: boolean;
+  quiet_override_within_hours: number;
+  surface_defaults: Record<string, TaskSurfaceDefault>;
+  version: number;
+  updated_at: string;
+}
+
+export interface TaskSettingsData {
+  settings: TaskSettings;
+}
+
+export interface TaskProject {
+  slug: string;
+  title: string;
+  description?: string | null;
+  aliases: string[];
+  hub_path?: string | null;
+  repo_path?: string | null;
+  interest: "hot" | "normal" | "parked";
+  interest_override?: string | null;
+  interest_set_by?: string | null;
+  interest_set_at?: string | null;
+  last_activity_at?: string | null;
+  archived: boolean;
+  open_task_count: number;
+  last_checkpoint_at?: string | null;
+  version: number;
+  created_by: string;
+}
+
+export interface TaskProjectListData {
+  projects: TaskProject[];
+  as_of: string;
+  next_cursor?: string | null;
+}
+
+export interface ProjectCheckpointState {
+  objective?: string;
+  current_state?: string | string[];
+  next_actions?: string | string[];
+  open_questions?: string | string[];
+}
+
+export interface TaskProjectStateData {
+  project: Pick<TaskProject, "slug" | "title" | "interest" | "last_activity_at" | "version">;
+  checkpoint?: {
+    entry_ref: string;
+    version: number;
+    attribution: string;
+    matched_path?: string | null;
+    checkpoint_at: string;
+    linked_at: string;
+    state?: ProjectCheckpointState | null;
+  } | null;
+  urgent_count: number;
+  next: TaskCandidate[];
+  waiting: Array<{
+    task_ref: string;
+    title: string;
+    waiting_on?: { who_or_what?: string; since?: string; check_back_at?: string | null } | null;
+    since: string;
+    age_days: number;
+  }>;
+  waiting_total: number;
+  waiting_remaining: number;
+  parked_count: number;
+  rollups: { open: number; waiting: number; done: number; dropped: number };
+  as_of: string;
+}
+
+export interface TodoistStatusData {
+  environment_enabled: boolean;
+  saved_mode: "off" | "import_once" | "pull";
+  effective_mode: "off" | "import_once" | "pull";
+  token_configured: boolean;
+  configuration_generation: number;
+  last_run_at?: string | null;
+  last_outcome?: string | null;
+  last_error_code?: string | null;
+  next_run_at?: string | null;
+}
+
+export interface TaskGuardStatusData {
+  environment_enabled: boolean;
+  effective_enabled: boolean;
+  last_run_at?: string | null;
+  last_outcome?: string | null;
+  last_error_code?: string | null;
+  next_run_at?: string | null;
+}
+
 export interface GoalSummary {
   id?: string;
   title: string;
@@ -747,6 +997,7 @@ export type NotificationTarget =
       edition: string;
       item_id?: string | null;
     }
+  | { type: "task"; task_ref: string }
   | { type: "entry"; entry_ref: string };
 
 export type NotificationDeliveryState =

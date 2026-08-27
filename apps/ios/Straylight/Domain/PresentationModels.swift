@@ -35,6 +35,79 @@ public struct TaskItem: Identifiable, Codable, Sendable, Equatable {
     }
 }
 
+public struct AgentTaskTodayProjection: Sendable, Equatable {
+    public let urgent: [AgentTaskCandidate]
+    public let next: [AgentTaskCandidate]
+
+    public var all: [AgentTaskCandidate] { urgent + next }
+
+    public static func bounded(
+        urgent: [AgentTaskCandidate],
+        next: [AgentTaskCandidate],
+        contextsAvailable: Set<String>,
+        baseLimit: Int = 5,
+        pinAllowance: Int = 2
+    ) -> AgentTaskTodayProjection {
+        let matches: (AgentTaskCandidate) -> Bool = { candidate in
+            Set(candidate.requiredContexts).isSubset(of: contextsAvailable)
+        }
+        let filteredUrgent = urgent.filter(matches)
+        let filteredNext = next.filter(matches)
+        var seen = Set<String>()
+
+        let ordered = (filteredUrgent + filteredNext).filter { seen.insert($0.taskRef).inserted }
+        let pins = Array(ordered.filter(\.pinned).prefix(max(pinAllowance, 0)))
+        let regular = Array(ordered.filter { !$0.pinned }.prefix(max(baseLimit, 0)))
+        let selectedIDs = Set((pins + regular).map(\.taskRef))
+
+        // Preserve each server-defined order and never render a task twice,
+        // including a malformed duplicate inside either server list.
+        var renderedIDs = Set<String>()
+        let projectedUrgent = filteredUrgent.filter {
+            selectedIDs.contains($0.taskRef) && renderedIDs.insert($0.taskRef).inserted
+        }
+        let projectedNext = filteredNext.filter {
+            selectedIDs.contains($0.taskRef) && renderedIDs.insert($0.taskRef).inserted
+        }
+        return AgentTaskTodayProjection(urgent: projectedUrgent, next: projectedNext)
+    }
+}
+
+public struct AgentTaskProjectProjection: Sendable, Equatable {
+    public let next: [AgentTaskCandidate]
+    public let waiting: [AgentTaskWaitingItem]
+
+    public var taskCount: Int { next.count + waiting.count }
+
+    public static func bounded(
+        next: [AgentTaskCandidate],
+        waiting: [AgentTaskWaitingItem],
+        limit: Int = 5,
+        nextLimit: Int = 3
+    ) -> AgentTaskProjectProjection {
+        let budget = max(limit, 0)
+        var seen = Set<String>()
+        var projectedNext: [AgentTaskCandidate] = []
+        let nextBudget = min(max(nextLimit, 0), budget)
+        for candidate in next where projectedNext.count < nextBudget {
+            if seen.insert(candidate.taskRef).inserted {
+                projectedNext.append(candidate)
+            }
+        }
+        let waitingBudget = max(budget - projectedNext.count, 0)
+        var projectedWaiting: [AgentTaskWaitingItem] = []
+        for item in waiting where projectedWaiting.count < waitingBudget {
+            if seen.insert(item.taskRef).inserted {
+                projectedWaiting.append(item)
+            }
+        }
+        return AgentTaskProjectProjection(
+            next: projectedNext,
+            waiting: projectedWaiting
+        )
+    }
+}
+
 public enum AlertKind: String, Codable, Sendable {
     case new
     case update

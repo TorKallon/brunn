@@ -364,6 +364,233 @@ enum SampleData {
         ),
     ]
 
+    static let agentUrgentTasks: [AgentTaskCandidate] = [
+        agentCandidate(
+            1,
+            title: "Downgrade the Charlemagne machine",
+            project: "charlemagne",
+            contexts: ["online"],
+            tier: 2,
+            reason: "~$12/day (est.) since Aug 12, ~$180 so far",
+            inferred: true
+        ),
+        agentCandidate(
+            2,
+            title: "Renew the signing certificate",
+            project: "straylight",
+            contexts: ["online", "phone"],
+            tier: 1,
+            reason: "hard deadline in 2 days (est.)",
+            inferred: true
+        ),
+    ]
+
+    static let agentNextTasks: [AgentTaskCandidate] = [
+        agentCandidate(
+            3,
+            title: "Call the pharmacy about the refill",
+            project: "health",
+            contexts: ["phone"],
+            tier: 3,
+            reason: "should do by Fri",
+            pinned: true
+        ),
+        agentUrgentTasks[0],
+        agentUrgentTasks[1],
+        agentCandidate(
+            4,
+            title: "Retire the Metis index generator",
+            project: "metis",
+            contexts: ["home", "online"],
+            tier: 4,
+            reason: "active project"
+        ),
+        agentCandidate(
+            5,
+            title: "Reauthorize the Google integrations",
+            project: "operations",
+            contexts: ["online"],
+            tier: 5,
+            reason: "ready since Aug 12"
+        ),
+        agentCandidate(
+            6,
+            title: "Supersede the stale hub status",
+            project: "straylight",
+            contexts: ["online"],
+            tier: 5,
+            reason: "ready since Aug 18"
+        ),
+        agentCandidate(
+            7,
+            title: "Pick up the repaired ski boot",
+            project: "personal",
+            contexts: ["errands"],
+            tier: 5,
+            reason: "ready since Aug 20"
+        ),
+        agentCandidate(
+            8,
+            title: "Review the Nyx backup report",
+            project: "operations",
+            contexts: ["home", "online"],
+            tier: 5,
+            reason: "ready since Aug 21"
+        ),
+        agentCandidate(
+            9,
+            title: "Send the contractor follow-up",
+            project: "home",
+            contexts: ["phone"],
+            tier: 5,
+            reason: "ready since Aug 22"
+        ),
+        agentCandidate(
+            10,
+            title: "Read the queue incident summary",
+            project: "straylight",
+            contexts: ["online"],
+            tier: 5,
+            reason: "ready since Aug 23"
+        ),
+    ]
+
+    static let agentTaskContexts: [AgentTaskContext] = [
+        AgentTaskContext(slug: "phone", displayName: "Phone", aliases: [], description: nil, archived: false, createdBy: "owner", version: 1, activeTaskCount: 3),
+        AgentTaskContext(slug: "home", displayName: "Home", aliases: [], description: nil, archived: false, createdBy: "owner", version: 1, activeTaskCount: 2),
+        AgentTaskContext(slug: "errands", displayName: "Errands", aliases: [], description: nil, archived: false, createdBy: "owner", version: 1, activeTaskCount: 1),
+        AgentTaskContext(slug: "quick", displayName: "Quick", aliases: [], description: nil, archived: false, createdBy: "owner", version: 1, activeTaskCount: 2),
+        AgentTaskContext(slug: "online", displayName: "Online", aliases: [], description: nil, archived: false, createdBy: "owner", version: 1, activeTaskCount: 8),
+    ]
+
+    static let agentTaskCrowdedContexts: [AgentTaskContext] = [
+        AgentTaskContext(
+            slug: "gate-12-workspace",
+            displayName: "Merged Gate 12 workspace",
+            aliases: [],
+            description: nil,
+            archived: false,
+            createdBy: "owner",
+            version: 1,
+            activeTaskCount: 0
+        ),
+    ] + agentTaskContexts
+
+    static let agentDoneToday = AgentTaskDoneSummaryData(
+        from: "2026-08-27",
+        through: "2026-08-27",
+        timezone: "America/Los_Angeles",
+        asOf: "2026-08-27T06:00:00-07:00",
+        count: 2,
+        doneTodayCount: 2,
+        items: [
+            AgentTaskDoneItem(
+                taskRef: "019f8800-0000-7000-8000-000000000011",
+                entryRef: "entry:demo-task-11",
+                version: 2,
+                title: "Check the overnight deploy",
+                doneAt: "2026-08-27T05:20:00-07:00",
+                completedVia: "agent:codex"
+            ),
+            AgentTaskDoneItem(
+                taskRef: "019f8800-0000-7000-8000-000000000012",
+                entryRef: "entry:demo-task-12",
+                version: 3,
+                title: "Archive the old port note",
+                doneAt: "2026-08-27T05:05:00-07:00",
+                completedVia: "web"
+            ),
+        ],
+        nextCursor: nil
+    )
+
+    static let agentTaskProjects: [AgentTaskProject] = [
+        AgentTaskProject(slug: "straylight", title: "Straylight", interest: "hot", lastActivityAt: "2026-08-27T05:45:00-07:00", openTaskCount: 4, lastCheckpointAt: "2026-08-27T05:40:00-07:00", version: 3),
+        AgentTaskProject(slug: "charlemagne", title: "Charlemagne", interest: "hot", lastActivityAt: "2026-08-26T19:00:00-07:00", openTaskCount: 1, lastCheckpointAt: "2026-08-26T18:00:00-07:00", version: 2),
+        AgentTaskProject(slug: "metis", title: "Metis", interest: "normal", lastActivityAt: "2026-08-20T12:00:00-07:00", openTaskCount: 1, lastCheckpointAt: "2026-08-20T12:00:00-07:00", version: 1),
+    ]
+
+    static func agentTaskDetail(reference: String) -> AgentTaskDetail? {
+        guard let candidate = (agentUrgentTasks + agentNextTasks).first(where: {
+            $0.taskRef == reference
+        }) else { return nil }
+        let now = "2026-08-27T05:00:00-07:00"
+        return AgentTaskDetail(
+            taskRef: candidate.taskRef,
+            entryRef: candidate.entryRef,
+            version: candidate.version,
+            title: candidate.title,
+            status: candidate.status,
+            task: AgentTaskDocument(
+                id: candidate.taskRef,
+                title: candidate.title,
+                status: AgentTaskSourcedValue(value: candidate.status.rawValue, source: "derived", setAt: now, note: nil),
+                notes: AgentTaskSourcedValue(value: "Source-backed demo task with revision-safe actions.", source: "agent:codex", setAt: now, note: nil),
+                project: candidate.project.map { AgentTaskSourcedValue(value: $0, source: "agent:codex", setAt: now, note: nil) },
+                readyAt: nil,
+                softDue: nil,
+                hardDue: candidate.tier == 1 ? AgentTaskSourcedValue(value: "2026-08-29T09:00:00-07:00", source: "agent:codex", setAt: now, note: nil) : nil,
+                requiredContexts: AgentTaskSourcedValue(value: candidate.requiredContexts, source: "agent:codex", setAt: now, note: nil),
+                estimateMinutes: AgentTaskSourcedValue(value: 15, source: "agent:codex", setAt: now, note: nil),
+                todayPin: candidate.pinned ? AgentTaskSourcedValue(value: "2026-08-27", source: "owner", setAt: now, note: nil) : nil
+            ),
+            createdAt: now,
+            updatedAt: now
+        )
+    }
+
+    static func agentProjectState(_ project: AgentTaskProject) -> AgentTaskProjectStateData {
+        AgentTaskProjectStateData(
+            project: .init(
+                slug: project.slug,
+                title: project.title,
+                interest: project.interest,
+                lastActivityAt: project.lastActivityAt,
+                version: project.version
+            ),
+            checkpoint: AgentTaskProjectCheckpoint(
+                checkpointAt: project.lastCheckpointAt ?? "2026-08-27T05:00:00-07:00",
+                state: AgentTaskCheckpointState(
+                    objective: "Ship the current project milestone safely.",
+                    currentState: .list(["Implementation is active", "The latest focused gates are green"]),
+                    nextActions: .list(["Run the remaining end-to-end check", "Publish the durable handoff"]),
+                    openQuestions: .list(["Whether the device canary is connected"])
+                )
+            ),
+            urgentCount: agentUrgentTasks.filter { $0.project == project.slug }.count,
+            next: Array(agentNextTasks.filter { $0.project == project.slug }.prefix(3)),
+            waiting: [],
+            waitingTotal: 0,
+            waitingRemaining: 0,
+            parkedCount: 0,
+            asOf: "2026-08-27T06:00:00-07:00"
+        )
+    }
+
+    private static func agentCandidate(
+        _ suffix: Int,
+        title: String,
+        project: String,
+        contexts: [String],
+        tier: Int,
+        reason: String,
+        inferred: Bool = false,
+        pinned: Bool = false
+    ) -> AgentTaskCandidate {
+        AgentTaskCandidate(
+            taskRef: String(format: "019f8800-0000-7000-8000-%012d", suffix),
+            entryRef: "entry:demo-task-\(suffix)",
+            version: 1,
+            title: title,
+            project: project,
+            requiredContexts: contexts,
+            tier: tier,
+            reason: reason,
+            provenanceMarkers: inferred ? ["agent:codex"] : [],
+            pinned: pinned
+        )
+    }
+
     static let alerts: [AlertItem] = [
         AlertItem(
             id: "demo-alert-1",

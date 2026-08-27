@@ -44,6 +44,7 @@ public enum StraylightNotificationTargetType: String, Codable, Sendable, Equatab
     case today
     case briefing
     case entry
+    case task
 }
 
 public struct StraylightNotificationTarget: Codable, Sendable, Equatable {
@@ -52,19 +53,22 @@ public struct StraylightNotificationTarget: Codable, Sendable, Equatable {
     public let edition: String?
     public let itemID: String?
     public let entryRef: String?
+    public let taskRef: String?
 
     public init(
         type: StraylightNotificationTargetType,
         date: String? = nil,
         edition: String? = nil,
         itemID: String? = nil,
-        entryRef: String? = nil
+        entryRef: String? = nil,
+        taskRef: String? = nil
     ) {
         self.type = type
         self.date = date
         self.edition = edition
         self.itemID = itemID
         self.entryRef = entryRef
+        self.taskRef = taskRef
     }
 
     enum CodingKeys: String, CodingKey {
@@ -73,6 +77,7 @@ public struct StraylightNotificationTarget: Codable, Sendable, Equatable {
         case edition
         case itemID = "item_id"
         case entryRef = "entry_ref"
+        case taskRef = "task_ref"
     }
 }
 

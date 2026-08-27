@@ -296,13 +296,13 @@ private struct AlertDetailView: View {
         switch current.target.type {
         case .notification:
             EmptyView()
-        case .today, .briefing:
+        case .today, .briefing, .task:
             Button {
                 Task { await model.openNotificationTarget(current) }
             } label: {
                 Label(
-                    current.target.type == .briefing ? "Open exact briefing" : "Open Today",
-                    systemImage: current.target.type == .briefing ? "sunrise" : "calendar"
+                    targetActionLabel,
+                    systemImage: targetActionSymbol
                 )
                 .frame(maxWidth: .infinity, minHeight: 44)
             }
@@ -317,6 +317,22 @@ private struct AlertDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("alert-target-action")
+        }
+    }
+
+    private var targetActionLabel: String {
+        switch current.target.type {
+        case .briefing: "Open exact briefing"
+        case .task: "Open task"
+        default: "Open Today"
+        }
+    }
+
+    private var targetActionSymbol: String {
+        switch current.target.type {
+        case .briefing: "sunrise"
+        case .task: "checkmark.circle"
+        default: "calendar"
         }
     }
 }

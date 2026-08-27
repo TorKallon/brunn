@@ -38,6 +38,67 @@ struct MoreView: View {
                 LabeledContent("Access", value: accessLabel)
             }
 
+            Section {
+                LabeledContent(
+                    "Status",
+                    value: model.canWriteTasks ? "Connected" : "View only"
+                )
+                if model.canWriteTasks {
+                    Label("task.write + notification.manage only", systemImage: "checkmark.shield")
+                        .font(.footnote)
+                        .foregroundStyle(StraylightTheme.success)
+                    Button("Revoke device task access", role: .destructive) {
+                        Task {
+                            if model.canManageNotifications {
+                                _ = await notifications.revokeInstallation(
+                                    using: model.api,
+                                    canManageNotifications: true,
+                                    bearerToken: model.deviceTaskBearer()
+                                )
+                            }
+                            _ = await model.revokeDeviceTaskAccess()
+                        }
+                    }
+                    .accessibilityIdentifier("device-task-access-revoke")
+                } else if model.hasStoredDeviceTaskCredential, !model.isDemo {
+                    Label("Protected credential disabled", systemImage: "exclamationmark.shield")
+                        .font(.footnote)
+                        .foregroundStyle(StraylightTheme.amber)
+                    Button("Retry server revocation", role: .destructive) {
+                        Task { _ = await model.revokeDeviceTaskAccess() }
+                    }
+                    .accessibilityIdentifier("device-task-access-retry-revoke")
+                } else if !model.isDemo {
+                    Button {
+                        Task {
+                            await model.bootstrapDeviceTaskAccess()
+                            await notifications.synchronizeInstallation(
+                                using: model.api,
+                                canManageNotifications: model.canManageNotifications,
+                                bearerToken: model.deviceTaskBearer()
+                            )
+                        }
+                    } label: {
+                        if model.isConfiguringDeviceTaskAccess {
+                            ProgressView("Securing device access…")
+                        } else {
+                            Label("Secure device task access", systemImage: "key.viewfinder")
+                        }
+                    }
+                    .disabled(!model.connectionValidated || model.isConfiguringDeviceTaskAccess)
+                    .accessibilityIdentifier("device-task-access-bootstrap")
+                }
+                if let message = model.deviceTaskAccessMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(model.canWriteTasks ? StraylightTheme.success : StraylightTheme.amber)
+                }
+            } header: {
+                Text("Device task access")
+            } footer: {
+                Text("Creates a one-time opaque credential and stores it in this iPhone's protected Keychain. It cannot read workspace content or manage credentials, and its token is never displayed.")
+            }
+
             Section("Notifications") {
                 LabeledContent("Permission", value: notifications.permissionState.label)
                 LabeledContent("Installation", value: notifications.registrationState.label)
@@ -67,7 +128,8 @@ struct MoreView: View {
                         Task {
                             _ = await notifications.revokeInstallation(
                                 using: model.api,
-                                canManageNotifications: model.canManageNotifications
+                                canManageNotifications: model.canManageNotifications,
+                                bearerToken: model.deviceTaskBearer()
                             )
                         }
                     }
@@ -99,9 +161,11 @@ struct MoreView: View {
                         if !model.isDemo, model.canManageNotifications {
                             let revoked = await notifications.revokeInstallation(
                                 using: model.api,
-                                canManageNotifications: model.canManageNotifications
+                                canManageNotifications: model.canManageNotifications,
+                                bearerToken: model.deviceTaskBearer()
                             )
                             guard revoked else { return }
+                            guard await model.revokeDeviceTaskAccess() else { return }
                         }
                         await model.disconnect()
                     }
@@ -167,7 +231,8 @@ private struct NotificationPrimerView: View {
                         await notifications.requestPermission()
                         await notifications.synchronizeInstallation(
                             using: model.api,
-                            canManageNotifications: model.canManageNotifications
+                            canManageNotifications: model.canManageNotifications,
+                            bearerToken: model.deviceTaskBearer()
                         )
                         if notifications.permissionState != .unknown {
                             dismiss()

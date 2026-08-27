@@ -90,9 +90,10 @@ final class NotificationCoordinator: ObservableObject {
 
     func synchronizeInstallation(
         using api: StraylightAPI,
-        canManageNotifications: Bool
+        canManageNotifications: Bool,
+        bearerToken: String?
     ) async {
-        guard canManageNotifications else { return }
+        guard canManageNotifications, let bearerToken else { return }
         guard registrationState != .registering, let pendingDeviceToken else { return }
         await refreshAuthorizationStatus()
         guard permissionState == .enabled || permissionState == .provisional else { return }
@@ -110,7 +111,8 @@ final class NotificationCoordinator: ObservableObject {
                     environment: environment,
                     appID: appID,
                     deviceToken: pendingDeviceToken.map { String(format: "%02x", $0) }.joined()
-                )
+                ),
+                bearerToken: bearerToken
             )
             self.pendingDeviceToken = nil
             hasPendingDeviceToken = false
@@ -125,13 +127,20 @@ final class NotificationCoordinator: ObservableObject {
 
     func revokeInstallation(
         using api: StraylightAPI,
-        canManageNotifications: Bool
+        canManageNotifications: Bool,
+        bearerToken: String?
     ) async -> Bool {
-        guard canManageNotifications, registrationState != .revoking else { return false }
+        guard canManageNotifications,
+              let bearerToken,
+              registrationState != .revoking
+        else { return false }
         let previousState = registrationState
         registrationState = .revoking
         do {
-            _ = try await api.revokeNotificationInstallation(installationID: installationID)
+            _ = try await api.revokeNotificationInstallation(
+                installationID: installationID,
+                bearerToken: bearerToken
+            )
             registrationState = .notRegistered
             lastRegisteredAt = nil
             lastError = nil
@@ -182,13 +191,19 @@ enum NotificationRouteParser {
             PushReference.isDelivery(deliveryRef),
             let rawRoute = userInfo["straylight_route"] as? String,
             let url = URL(string: rawRoute),
-            case let .notification(routeNotificationRef, routeDeliveryRef) = AppRoute(url: url),
-            routeNotificationRef == notificationRef,
-            routeDeliveryRef == deliveryRef
+            let route = AppRoute(url: url)
         else {
             return nil
         }
-        return .notification(notificationRef: notificationRef, deliveryRef: deliveryRef)
+        switch route {
+        case let .notification(routeNotificationRef, routeDeliveryRef)
+            where routeNotificationRef == notificationRef && routeDeliveryRef == deliveryRef:
+            return route
+        case .task:
+            return route
+        default:
+            return nil
+        }
     }
 }
 

@@ -761,4 +761,158 @@ final class CoreContractTests: XCTestCase {
         XCTAssertNil(object["itemID"])
         XCTAssertNil(object["topicSlug"])
     }
+
+    func testTaskRouteRequiresCanonicalLowercaseUUIDv7() throws {
+        let valid = "019f8800-0000-7000-8000-000000000001"
+        XCTAssertEqual(
+            AppRoute(url: try XCTUnwrap(URL(string: "straylight://task/\(valid)"))),
+            .task(reference: valid)
+        )
+        XCTAssertNil(AppRoute(url: try XCTUnwrap(URL(string: "straylight://task/\(valid.uppercased())"))))
+        XCTAssertNil(AppRoute(url: try XCTUnwrap(URL(string: "straylight://task/019f8800-0000-4000-8000-000000000001"))))
+        XCTAssertNil(AppRoute(url: try XCTUnwrap(URL(string: "straylight://task/task:\(valid)"))))
+    }
+
+    func testTodayProjectionIsUniqueBoundedAndUsesContextANDSemantics() {
+        func candidate(
+            _ suffix: Int,
+            contexts: [String] = [],
+            pinned: Bool = false
+        ) -> AgentTaskCandidate {
+            AgentTaskCandidate(
+                taskRef: String(format: "019f8800-0000-7000-8000-%012d", suffix),
+                entryRef: "entry:\(suffix)",
+                version: 1,
+                title: "Task \(suffix)",
+                requiredContexts: contexts,
+                tier: suffix <= 2 ? 1 : 5,
+                reason: "deterministic",
+                pinned: pinned
+            )
+        }
+        let urgent = [candidate(1), candidate(1), candidate(2)]
+        let next = urgent + [
+            candidate(3, pinned: true),
+            candidate(4, pinned: true),
+            candidate(5),
+            candidate(6),
+            candidate(7),
+            candidate(8),
+            candidate(9, contexts: ["home", "online"]),
+        ]
+
+        let projection = AgentTaskTodayProjection.bounded(
+            urgent: urgent,
+            next: next,
+            contextsAvailable: ["phone", "online"]
+        )
+
+        XCTAssertLessThanOrEqual(projection.all.count, 7)
+        XCTAssertEqual(Set(projection.all.map(\.taskRef)).count, projection.all.count)
+        XCTAssertFalse(projection.all.contains { $0.title == "Task 9" })
+        XCTAssertEqual(projection.all.filter(\.pinned).count, 2)
+
+        let emptyUrgent = AgentTaskTodayProjection.bounded(
+            urgent: [],
+            next: next,
+            contextsAvailable: ["phone", "online"]
+        )
+        XCTAssertTrue(emptyUrgent.urgent.isEmpty)
+        XCTAssertFalse(emptyUrgent.next.isEmpty)
+    }
+
+    func testProjectProjectionUsesOneUniqueFiveTaskBudget() {
+        func candidate(_ suffix: Int) -> AgentTaskCandidate {
+            AgentTaskCandidate(
+                taskRef: String(format: "019f8800-0000-7000-8000-%012d", suffix),
+                entryRef: "entry:\(suffix)",
+                version: 1,
+                title: "Task \(suffix)",
+                tier: 5,
+                reason: "project order"
+            )
+        }
+        func waiting(_ suffix: Int) -> AgentTaskWaitingItem {
+            AgentTaskWaitingItem(
+                taskRef: String(format: "019f8800-0000-7000-8000-%012d", suffix),
+                title: "Waiting \(suffix)",
+                since: "2026-08-20T12:00:00Z",
+                ageDays: 7
+            )
+        }
+
+        let projection = AgentTaskProjectProjection.bounded(
+            next: [candidate(1), candidate(2), candidate(3), candidate(4)],
+            waiting: [waiting(3), waiting(5), waiting(6), waiting(7), waiting(8)]
+        )
+
+        XCTAssertEqual(projection.next.count, 3)
+        XCTAssertEqual(projection.waiting.count, 2)
+        XCTAssertEqual(projection.taskCount, 5)
+        XCTAssertEqual(
+            Set((projection.next.map(\.taskRef) + projection.waiting.map(\.taskRef))).count,
+            projection.taskCount
+        )
+    }
+
+    func testTaskCandidateAndTypedNotificationTargetDecodeExactWireShape() throws {
+        let json = #"""
+        {
+          "status":"complete",
+          "data":{
+            "view":"next",
+            "as_of":"2026-08-27T12:00:00Z",
+            "contexts_available":["phone","online"],
+            "items":[{
+              "task_ref":"019f8800-0000-7000-8000-000000000001",
+              "entry_ref":"entry:one",
+              "version":3,
+              "title":"Call the pharmacy",
+              "status":"open",
+              "project":"health",
+              "required_contexts":["phone"],
+              "tier":3,
+              "reason":"should do by Fri (est.)",
+              "provenance_markers":["agent:aether"],
+              "pinned":false
+            }],
+            "urgent_total":0,
+            "next_remaining":8,
+            "backlog_total":19,
+            "next_cursor":null
+          }
+        }
+        """#.data(using: .utf8)!
+        let envelope = try JSONDecoder().decode(
+            WorkspaceEnvelope<AgentTaskCandidatesData>.self,
+            from: json
+        )
+        XCTAssertEqual(envelope.data.items.first?.project, "health")
+        XCTAssertEqual(envelope.data.items.first?.hasInferredProvenance, true)
+        XCTAssertEqual(envelope.data.nextRemaining, 8)
+
+        let targetJSON = #"""
+        {"type":"task","task_ref":"019f8800-0000-7000-8000-000000000001"}
+        """#.data(using: .utf8)!
+        let target = try JSONDecoder().decode(StraylightNotificationTarget.self, from: targetJSON)
+        XCTAssertEqual(target.type, .task)
+        XCTAssertEqual(target.taskRef, "019f8800-0000-7000-8000-000000000001")
+    }
+
+    func testTaskUpdateEncodesCASOwnerSourceAndIOSCompletion() throws {
+        let request = AgentTaskUpdateRequest(
+            expectedVersion: 7,
+            idempotencyKey: "ios:test:complete",
+            operation: .complete
+        )
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        )
+        let operation = try XCTUnwrap(object["operation"] as? [String: Any])
+        XCTAssertEqual(object["expected_version"] as? Int, 7)
+        XCTAssertEqual(object["idempotency_key"] as? String, "ios:test:complete")
+        XCTAssertEqual(operation["type"] as? String, "complete")
+        XCTAssertEqual(operation["source"] as? String, "owner")
+        XCTAssertEqual(operation["completed_via"] as? String, "ios")
+    }
 }

@@ -919,18 +919,35 @@ pub async fn create_credential(
     request: &Value,
 ) -> ApiResult<Value> {
     auth.require(Capability::CredentialManage)?;
-    let name = request
+    let requested_name = request
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or("")
         .trim();
-    if name.is_empty() || name.len() > 120 {
+    if requested_name.is_empty() || requested_name.len() > 120 {
         return Err(ApiError::invalid(
             "credential name must contain 1 to 120 characters",
         ));
     }
     let (access, capabilities) =
         credential_template(request.get("access").and_then(Value::as_str))?;
+    if access == "ios_tasks" {
+        auth.require(Capability::Admin)?;
+    }
+    let name = if access == "ios_tasks" {
+        let device_name = requested_name
+            .strip_prefix("iOS Tasks — ")
+            .unwrap_or(requested_name);
+        let label = format!("iOS Tasks — {device_name}");
+        if label.len() > 120 {
+            return Err(ApiError::invalid(
+                "credential name including the iOS Tasks prefix must be at most 120 characters",
+            ));
+        }
+        label
+    } else {
+        requested_name.to_owned()
+    };
     let requested_scopes = request
         .get("scope_ids")
         .and_then(Value::as_array)
@@ -971,7 +988,7 @@ pub async fn create_credential(
     let credential_id =
         sqlx::query_scalar::<_, Uuid>("SELECT straylight_auth.issue_credential($1,$2,$3,$4,$5)")
             .bind(auth.user_id.0)
-            .bind(name)
+            .bind(&name)
             .bind(token_hash)
             .bind(&capabilities)
             .bind(&scope_refs)
@@ -1024,6 +1041,7 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "task.write",
             ],
         )),
+        "ios_tasks" => Ok(("ios_tasks", vec!["task.write", "notification:manage"])),
         "owner" => Ok((
             "owner",
             vec![
@@ -1051,7 +1069,7 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
             ],
         )),
         _ => Err(ApiError::invalid(
-            "credential access must be read_only, read_write, or owner",
+            "credential access must be read_only, read_write, ios_tasks, or owner",
         )),
     }
 }
@@ -1460,7 +1478,14 @@ fn credential_row_value(row: sqlx::postgres::PgRow) -> ApiResult<Value> {
 }
 
 fn credential_access_label(capabilities: &[String]) -> &'static str {
-    if capabilities
+    if capabilities.len() == 2
+        && capabilities.iter().any(|value| value == "task.write")
+        && capabilities
+            .iter()
+            .any(|value| value == "notification:manage")
+    {
+        "ios_tasks"
+    } else if capabilities
         .iter()
         .any(|value| value == "credential:manage")
     {
@@ -1502,6 +1527,30 @@ mod credential_tests {
         assert!(capabilities.contains(&"task.write"));
         assert!(capabilities.contains(&"integration.manage"));
         assert!(capabilities.contains(&"admin"));
+    }
+
+    #[test]
+    fn ios_tasks_template_is_exactly_narrow_and_inventory_preserves_its_access() {
+        let (access, capabilities) =
+            credential_template(Some("ios_tasks")).expect("iOS task template");
+        assert_eq!(access, "ios_tasks");
+        assert_eq!(capabilities, ["task.write", "notification:manage"]);
+        for forbidden in [
+            "task.read",
+            "save",
+            "checkpoint",
+            "secret:read",
+            "secret:write",
+            "admin",
+            "integration.manage",
+        ] {
+            assert!(!capabilities.contains(&forbidden), "unexpected {forbidden}");
+        }
+        let stored = capabilities
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(credential_access_label(&stored), "ios_tasks");
     }
 
     #[test]

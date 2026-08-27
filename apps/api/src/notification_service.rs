@@ -763,8 +763,10 @@ fn validate_publish(request: &PublishRequest) -> ApiResult<()> {
         NotificationTarget::Entry { entry_ref } => {
             validate_text(entry_ref, 500, "target.entry_ref")?;
         }
-        NotificationTarget::Task { task_ref } => {
-            parse_canonical_task_ref(task_ref)?;
+        NotificationTarget::Task { .. } => {
+            return Err(ApiError::invalid(
+                "task notification targets are reserved for the internal scheduler",
+            ));
         }
         NotificationTarget::Notification | NotificationTarget::Today => {}
     }
@@ -1896,6 +1898,16 @@ mod tests {
     }
 
     #[test]
+    fn public_publish_cannot_create_task_target_notifications() {
+        let mut request = fixture();
+        request.event_key = format!("operational:{}", Uuid::now_v7());
+        request.target = NotificationTarget::Task {
+            task_ref: Uuid::now_v7().to_string(),
+        };
+        assert!(validate_publish(&request).is_err());
+    }
+
+    #[test]
     fn notification_expiry_defaults_to_one_day_and_is_bounded() {
         let occurred_at = DateTime::parse_from_rfc3339("2026-08-03T12:00:00Z")
             .unwrap()
@@ -2052,7 +2064,7 @@ mod tests {
         request.target = NotificationTarget::Task {
             task_ref: task_id.to_string(),
         };
-        assert!(validate_publish(&request).is_ok());
+        assert!(validate_publish(&request).is_err());
     }
 
     #[test]

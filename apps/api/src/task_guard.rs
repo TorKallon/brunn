@@ -108,6 +108,26 @@ pub async fn run_on_pool(
     as_of: DateTime<Utc>,
     delivery_enabled: bool,
 ) -> ApiResult<TaskGuardRunReport> {
+    let result = run_on_pool_inner(pool, as_of, delivery_enabled).await;
+    let recorded_at = Utc::now();
+    match result {
+        Ok(report) => {
+            record_guard_outcome(pool, recorded_at, "success", None).await?;
+            Ok(report)
+        }
+        Err(error) => {
+            let error_code = guard_error_code(&error);
+            let _ = record_guard_outcome(pool, recorded_at, "failed", Some(error_code)).await;
+            Err(error)
+        }
+    }
+}
+
+async fn run_on_pool_inner(
+    pool: &PgPool,
+    as_of: DateTime<Utc>,
+    delivery_enabled: bool,
+) -> ApiResult<TaskGuardRunReport> {
     let candidates = load_candidates(pool, as_of).await?;
     let mut report = TaskGuardRunReport {
         as_of,
@@ -165,6 +185,43 @@ pub async fn run_on_pool(
     )
     .increment(report.events.iter().filter(|event| event.inserted).count() as u64);
     Ok(report)
+}
+
+fn guard_error_code(error: &ApiError) -> &'static str {
+    match error {
+        ApiError::Public { code, .. } => code,
+        ApiError::Database(_) => "task_guard_database",
+        ApiError::Migration(_) => "task_guard_migration",
+        ApiError::Json(_) => "task_guard_json",
+        ApiError::Internal(_) => "task_guard_internal",
+    }
+}
+
+async fn record_guard_outcome(
+    pool: &PgPool,
+    recorded_at: DateTime<Utc>,
+    outcome: &str,
+    error_code: Option<&str>,
+) -> ApiResult<()> {
+    let next_run_at = recorded_at
+        + chrono::Duration::from_std(TASK_GUARD_SCHEDULER_INTERVAL)
+            .map_err(|_| ApiError::Internal("task guard interval is invalid".to_owned()))?;
+    sqlx::query(
+        r#"
+        UPDATE straylight.task_guard_state AS state
+        SET last_run_at=$1,last_outcome=$2,last_error_code=$3,
+            next_run_at=$4,updated_at=clock_timestamp()
+        FROM straylight.users AS account
+        WHERE account.id=state.user_id AND account.account_status='active'
+        "#,
+    )
+    .bind(recorded_at)
+    .bind(outcome)
+    .bind(error_code)
+    .bind(next_run_at)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 async fn load_candidates(pool: &PgPool, as_of: DateTime<Utc>) -> ApiResult<Vec<GuardCandidate>> {

@@ -159,7 +159,7 @@ Infrastructure — no reasoning-quality risk (code, no experiment gate):
 | [D08](mvp/D08-legacy-freeze-and-deletion.md) | Legacy freeze and eventual deletion | Simplified production route and import proof pass; destructive legacy-code deletion remains a future restore-backed change | The environment-blocked drill does not block this direct cutover, but recovery tooling remains |
 | [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — safe subset not started | Deferred lexical consolidation rejected by [E05](mvp/E05-lexical-consolidation-guard.md) and closed |
 | [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Railway/import/web/client/backfill/worker/publication gates passed; restore exception recorded | Railway is the only production target |
-| [D15](mvp/D15-agent-first-tasks.md) | Agent-first tasks | Accepted for implementation — measured storage choice complete; build in progress | Deterministic bounded surfaces; gates 1–12 required before release |
+| [D15](mvp/D15-agent-first-tasks.md) | Agent-first tasks | Implemented — release requires all owner-approved gates 1–12 | Deterministic bounded surfaces; gates 1–12 required before release |
 
 Features — flag + experiment gated:
 

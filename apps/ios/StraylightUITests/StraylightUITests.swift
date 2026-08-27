@@ -314,8 +314,178 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
+    func testAgentFirstTasksDemoCoversBoundedActionsContextsAndColdRoute() throws {
+        let app = launchDemo(extraArguments: ["--ui-test-task-crowded-contexts"])
+        openToday(in: app)
+
+        XCTAssertTrue(element("agent-task-today", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("task-urgent", in: app).exists)
+        XCTAssertTrue(element("task-next-card", in: app).exists)
+        XCTAssertTrue(element("task-done-today", in: app).exists)
+        XCTAssertFalse(element("task-view-only", in: app).exists)
+        XCTAssertLessThanOrEqual(taskRows(in: app).count, 7)
+        XCTAssertTrue(
+            element(
+                "task-complete-019f8800-0000-7000-8000-000000000001",
+                in: app
+            ).waitForExistence(timeout: 2),
+            "The Urgent container must preserve each task-specific action identifier."
+        )
+
+        let completionRef = "019f8800-0000-7000-8000-000000000003"
+        let complete = element("task-complete-\(completionRef)", in: app)
+        XCTAssertTrue(complete.waitForExistence(timeout: 2))
+        XCTAssertTrue(complete.isEnabled)
+        complete.tap()
+        XCTAssertTrue(element("task-row-\(completionRef)", in: app).waitForNonExistence(timeout: 2))
+
+        let snoozeRef = "019f8800-0000-7000-8000-000000000005"
+        let snoozeRow = element("task-row-\(snoozeRef)", in: app)
+        XCTAssertTrue(snoozeRow.waitForExistence(timeout: 2))
+        snoozeRow.press(forDuration: 1.0)
+        let threeDays = app.buttons["3 days"]
+        XCTAssertTrue(threeDays.waitForExistence(timeout: 2))
+        threeDays.tap()
+        XCTAssertTrue(snoozeRow.waitForNonExistence(timeout: 2))
+
+        let filteredRef = "019f8800-0000-7000-8000-000000000006"
+        XCTAssertTrue(element("task-row-\(filteredRef)", in: app).waitForExistence(timeout: 2))
+        tapContextChip(
+            app.buttons.matching(identifier: "task-context-online").firstMatch,
+            in: app
+        )
+        XCTAssertTrue(element("task-row-\(filteredRef)", in: app).waitForNonExistence(timeout: 2))
+
+        app.terminate()
+        let routeRef = "019f8800-0000-7000-8000-000000000002"
+        app.open(try XCTUnwrap(URL(string: "straylight://task/\(routeRef)")))
+        XCTAssertTrue(element("task-detail", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("task-detail-title", in: app).exists)
+    }
+
+    @MainActor
+    func testAgentFirstTasksEmptyUrgentAndViewOnlyStates() {
+        let emptyApp = launchDemo(extraArguments: ["--ui-test-task-empty-urgent"])
+        openToday(in: emptyApp)
+        XCTAssertTrue(element("task-urgent-empty", in: emptyApp).waitForExistence(timeout: 3))
+        XCTAssertFalse(element("task-urgent", in: emptyApp).exists)
+        XCTAssertLessThanOrEqual(taskRows(in: emptyApp).count, 7)
+        emptyApp.terminate()
+
+        let viewOnlyApp = launchDemo(extraArguments: ["--ui-test-task-read-only"])
+        openToday(in: viewOnlyApp)
+        XCTAssertTrue(element("task-view-only", in: viewOnlyApp).waitForExistence(timeout: 3))
+        let complete = element(
+            "task-complete-019f8800-0000-7000-8000-000000000003",
+            in: viewOnlyApp
+        )
+        XCTAssertTrue(complete.waitForExistence(timeout: 2))
+        XCTAssertFalse(complete.isEnabled)
+    }
+
+    @MainActor
+    func testGate12DAgentFirstTasksAgainstDisposableStack() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let email = environment["STRAYLIGHT_E2E_OWNER_EMAIL"],
+              let password = environment["STRAYLIGHT_E2E_OWNER_PASSWORD"],
+              let completeRef = environment["STRAYLIGHT_E2E_COMPLETE_TASK_REF"],
+              let snoozeRef = environment["STRAYLIGHT_E2E_SNOOZE_TASK_REF"],
+              let routeRef = environment["STRAYLIGHT_E2E_ROUTE_TASK_REF"]
+        else {
+            throw XCTSkip("Disposable-stack owner credentials and seeded task refs were not supplied.")
+        }
+        let baseURL = environment["STRAYLIGHT_E2E_API_BASE_URL"]
+            ?? "http://127.0.0.1:18111/v1"
+        let context = environment["STRAYLIGHT_E2E_FILTER_CONTEXT"] ?? "phone"
+        let filteredRef = environment["STRAYLIGHT_E2E_FILTERED_TASK_REF"] ?? snoozeRef
+
+        let app = XCUIApplication()
+        let localeArguments = [
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL",
+        ]
+        app.launchArguments = [
+            "--ui-test-connection-required",
+            "--ui-test-reset-task-contexts",
+        ] + localeArguments
+        app.launchEnvironment["TZ"] = "America/Los_Angeles"
+        app.launchEnvironment["STRAYLIGHT_API_BASE_URL"] = baseURL
+        app.launchEnvironment["STRAYLIGHT_CREDENTIAL_NAMESPACE"] =
+            "gate12d-\(UUID().uuidString.lowercased())"
+        app.open(try XCTUnwrap(URL(string: "straylight://task/\(routeRef)")))
+
+        let emailField = app.textFields["login-email"]
+        XCTAssertTrue(emailField.waitForExistence(timeout: 5))
+        emailField.tap()
+        emailField.typeText(email)
+        let passwordField = app.secureTextFields["login-password"]
+        passwordField.tap()
+        passwordField.typeText(password)
+        app.buttons["Sign in"].tap()
+        XCTAssertTrue(element("task-detail", in: app).waitForExistence(timeout: 12))
+        XCTAssertTrue(element("task-detail-title", in: app).exists)
+        XCTAssertTrue(element("task-detail-view-only", in: app).exists)
+        app.terminate()
+        app.launchArguments = ["--ui-test-reset-task-contexts"] + localeArguments
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10))
+
+        openToday(in: app)
+        XCTAssertTrue(element("agent-task-today", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(element("task-urgent", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(element("task-next-card", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(element("task-done-today", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(element("task-view-only", in: app).exists)
+        XCTAssertLessThanOrEqual(taskRows(in: app).count, 7)
+        let viewOnlyComplete = element("task-complete-\(completeRef)", in: app)
+        XCTAssertTrue(viewOnlyComplete.waitForExistence(timeout: 5))
+        XCTAssertFalse(viewOnlyComplete.isEnabled)
+
+        let contextChip = app.buttons
+            .matching(identifier: "task-context-\(context)")
+            .firstMatch
+        let contextFilteredRow = element("task-row-\(filteredRef)", in: app)
+        XCTAssertTrue(contextChip.waitForExistence(timeout: 3))
+        XCTAssertTrue(contextFilteredRow.waitForExistence(timeout: 3))
+        tapContextChip(contextChip, in: app)
+        XCTAssertTrue(contextFilteredRow.waitForNonExistence(timeout: 5))
+        tapContextChip(contextChip, in: app)
+        XCTAssertTrue(contextFilteredRow.waitForExistence(timeout: 8))
+
+        app.tabBars.buttons["Settings"].tap()
+        let bootstrap = element("device-task-access-bootstrap", in: app)
+        scroll(bootstrap, intoViewIn: app)
+        bootstrap.tap()
+        let revoke = element("device-task-access-revoke", in: app)
+        XCTAssertTrue(revoke.waitForExistence(timeout: 10))
+
+        app.tabBars.buttons["Today"].tap()
+        let writableComplete = element("task-complete-\(completeRef)", in: app)
+        XCTAssertTrue(writableComplete.waitForExistence(timeout: 8))
+        XCTAssertTrue(writableComplete.isEnabled)
+        writableComplete.tap()
+        XCTAssertTrue(element("task-row-\(completeRef)", in: app).waitForNonExistence(timeout: 8))
+
+        let snoozeRow = element("task-row-\(snoozeRef)", in: app)
+        XCTAssertTrue(snoozeRow.waitForExistence(timeout: 8))
+        snoozeRow.press(forDuration: 1.0)
+        let tomorrow = app.buttons["Tomorrow"]
+        XCTAssertTrue(tomorrow.waitForExistence(timeout: 3))
+        tomorrow.tap()
+        XCTAssertTrue(snoozeRow.waitForNonExistence(timeout: 8))
+
+        app.tabBars.buttons["Settings"].tap()
+        let finalRevoke = element("device-task-access-revoke", in: app)
+        scroll(finalRevoke, intoViewIn: app)
+        finalRevoke.tap()
+        XCTAssertTrue(element("device-task-access-bootstrap", in: app).waitForExistence(timeout: 8))
+    }
+
+    @MainActor
     private func launchDemo(
-        contentSizeCategory: String = "UICTContentSizeCategoryL"
+        contentSizeCategory: String = "UICTContentSizeCategoryL",
+        extraArguments: [String] = []
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -323,7 +493,7 @@ final class StraylightUITests: XCTestCase {
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US",
             "-UIPreferredContentSizeCategoryName", contentSizeCategory,
-        ]
+        ] + extraArguments
         app.launchEnvironment["TZ"] = "America/Los_Angeles"
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
@@ -348,6 +518,13 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
+    private func taskRows(in app: XCUIApplication) -> XCUIElementQuery {
+        app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "task-row-")
+        )
+    }
+
+    @MainActor
     private func scroll(
         _ element: XCUIElement,
         intoViewIn app: XCUIApplication,
@@ -358,6 +535,28 @@ final class StraylightUITests: XCTestCase {
             app.swipeUp()
         }
         XCTAssertTrue(element.isHittable, "Element never became hittable.", file: file, line: line)
+    }
+
+    @MainActor
+    private func tapContextChip(
+        _ chip: XCUIElement,
+        in app: XCUIApplication,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            chip.waitForExistence(timeout: 3),
+            "Context chip does not exist.",
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            chip.isHittable,
+            "Context chip is not directly tappable.",
+            file: file,
+            line: line
+        )
+        chip.tap()
     }
 
     @MainActor

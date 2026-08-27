@@ -36,6 +36,18 @@ import type {
   SessionSummary,
   SourceRecord,
   StageReceipt,
+  TaskCandidatesData,
+  TaskCandidatesQuery,
+  TaskCaptureData,
+  TaskContextListData,
+  TaskDetailData,
+  TaskDoneSummaryData,
+  TaskGuardStatusData,
+  TaskProjectListData,
+  TaskProjectStateData,
+  TaskSettingsData,
+  TaskUpdateData,
+  TodoistStatusData,
   VerificationResult,
   WorkspaceBinary,
   WorkspaceBinaryListData,
@@ -149,6 +161,34 @@ export interface StraylightApi {
     offset?: number,
     limit?: number,
   ): Promise<ApiEnvelope<WorkspaceJobsData>>;
+  taskCandidates(query?: TaskCandidatesQuery): Promise<ApiEnvelope<TaskCandidatesData>>;
+  taskDoneSummary(query?: {
+    from?: string;
+    through?: string;
+    as_of?: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<ApiEnvelope<TaskDoneSummaryData>>;
+  taskGet(taskRef: string): Promise<ApiEnvelope<TaskDetailData>>;
+  taskCapture(payload: JsonObject): Promise<ApiEnvelope<TaskCaptureData>>;
+  taskUpdate(taskRef: string, payload: JsonObject): Promise<ApiEnvelope<TaskUpdateData>>;
+  taskContexts(includeArchived?: boolean): Promise<ApiEnvelope<TaskContextListData>>;
+  taskContextCreate(payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
+  taskContextsMerge(payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
+  taskContextArchive(slug: string, payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
+  taskContextsSetAvailable(
+    surface: string,
+    payload: JsonObject,
+  ): Promise<ApiEnvelope<JsonValue>>;
+  taskProjects(): Promise<ApiEnvelope<TaskProjectListData>>;
+  taskProjectState(slug: string): Promise<ApiEnvelope<TaskProjectStateData>>;
+  taskProjectSetInterest(slug: string, payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
+  taskSettings(): Promise<ApiEnvelope<TaskSettingsData>>;
+  taskSettingsUpdate(payload: JsonObject): Promise<ApiEnvelope<TaskSettingsData>>;
+  taskGuardStatus(): Promise<ApiEnvelope<TaskGuardStatusData>>;
+  todoistStatus(): Promise<ApiEnvelope<TodoistStatusData>>;
+  todoistConfigure(payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
+  todoistPull(payload: JsonObject): Promise<ApiEnvelope<JsonValue>>;
   workspaceDream(
     payload: JsonObject,
   ): Promise<ApiEnvelope<WorkspaceDreamReceipt>>;
@@ -293,6 +333,10 @@ export function createApiClient(): StraylightApi {
             ? JSON.stringify(payload)
             : undefined,
     });
+  const put = <T>(path: string, payload: JsonObject) =>
+    request<T>(path, { method: "PUT", body: JSON.stringify(payload) });
+  const patch = <T>(path: string, payload: JsonObject) =>
+    request<T>(path, { method: "PATCH", body: JSON.stringify(payload) });
   const del = <T>(path: string) => request<T>(path, { method: "DELETE" });
 
   async function download(
@@ -472,6 +516,84 @@ export function createApiClient(): StraylightApi {
       if (status) query.set("status", status);
       return get<WorkspaceJobsData>(`/workspace/jobs?${query.toString()}`);
     },
+    taskCandidates: (input = {}) => {
+      const query = new URLSearchParams();
+      if (input.view) query.set("view", input.view);
+      if (input.limit !== undefined) query.set("limit", String(input.limit));
+      for (const context of input.contexts_available ?? []) {
+        query.append("contexts_available", context);
+      }
+      if (input.project) query.set("project", input.project);
+      if (input.context) query.set("context", input.context);
+      if (input.status) query.set("status", input.status);
+      if (input.date_type) query.set("date_type", input.date_type);
+      if (input.source) query.set("source", input.source);
+      if (input.include_waiting !== undefined) {
+        query.set("include_waiting", String(input.include_waiting));
+      }
+      if (input.include_parked !== undefined) {
+        query.set("include_parked", String(input.include_parked));
+      }
+      if (input.deliberate_all !== undefined) {
+        query.set("deliberate_all", String(input.deliberate_all));
+      }
+      if (input.as_of) query.set("as_of", input.as_of);
+      if (input.cursor) query.set("cursor", input.cursor);
+      const suffix = query.size ? `?${query.toString()}` : "";
+      return get<TaskCandidatesData>(`/workspace/tasks/candidates${suffix}`);
+    },
+    taskDoneSummary: (input = {}) => {
+      const query = new URLSearchParams();
+      if (input.from) query.set("from", input.from);
+      if (input.through) query.set("through", input.through);
+      if (input.as_of) query.set("as_of", input.as_of);
+      if (input.limit !== undefined) query.set("limit", String(input.limit));
+      if (input.cursor) query.set("cursor", input.cursor);
+      const suffix = query.size ? `?${query.toString()}` : "";
+      return get<TaskDoneSummaryData>(`/workspace/tasks/done-summary${suffix}`);
+    },
+    taskGet: (taskRef) =>
+      get<TaskDetailData>(`/workspace/tasks/${encodeURIComponent(taskRef)}`),
+    taskCapture: (payload) => post<TaskCaptureData>("/workspace/tasks/capture", payload),
+    taskUpdate: (taskRef, payload) =>
+      patch<TaskUpdateData>(`/workspace/tasks/${encodeURIComponent(taskRef)}`, payload),
+    taskContexts: (includeArchived = false) => {
+      const query = new URLSearchParams({
+        include_archived: String(includeArchived),
+        limit: "100",
+      });
+      return get<TaskContextListData>(`/workspace/contexts?${query.toString()}`);
+    },
+    taskContextCreate: (payload) => post<JsonValue>("/workspace/contexts", payload),
+    taskContextsMerge: (payload) => post<JsonValue>("/workspace/contexts/merge", payload),
+    taskContextArchive: (slug, payload) =>
+      patch<JsonValue>(`/workspace/contexts/${encodeURIComponent(slug)}`, payload),
+    taskContextsSetAvailable: (surface, payload) =>
+      put<JsonValue>(
+        `/workspace/contexts/available/${encodeURIComponent(surface)}`,
+        payload,
+      ),
+    taskProjects: () => get<TaskProjectListData>("/workspace/projects?limit=100"),
+    taskProjectState: (slug) =>
+      get<TaskProjectStateData>(
+        `/workspace/projects/${encodeURIComponent(slug)}/state`,
+      ),
+    taskProjectSetInterest: (slug, payload) =>
+      put<JsonValue>(
+        `/workspace/projects/${encodeURIComponent(slug)}/interest`,
+        payload,
+      ),
+    taskSettings: () => get<TaskSettingsData>("/workspace/tasks/settings"),
+    taskSettingsUpdate: (payload) =>
+      put<TaskSettingsData>("/workspace/tasks/settings", payload),
+    taskGuardStatus: () =>
+      get<TaskGuardStatusData>("/workspace/tasks/guard/status"),
+    todoistStatus: () =>
+      get<TodoistStatusData>("/workspace/integrations/todoist/status"),
+    todoistConfigure: (payload) =>
+      put<JsonValue>("/workspace/integrations/todoist/config", payload),
+    todoistPull: (payload) =>
+      post<JsonValue>("/workspace/integrations/todoist/pull", payload),
     workspaceDream: (payload) =>
       post<WorkspaceDreamReceipt>("/workspace/dreams", payload),
     briefingsList: (limit = 14, afterPath) => {

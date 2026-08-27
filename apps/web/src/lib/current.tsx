@@ -36,3 +36,7 @@ export function useReadOnly(): boolean {
       ),
   );
 }
+
+export function useCapability(capability: string): boolean {
+  return Boolean(useCurrent().data.capabilities?.includes(capability));
+}

@@ -2489,7 +2489,8 @@ fn validate_action_state(operation: &UpdateOperation, status: &str) -> ApiResult
     let allowed = match operation {
         UpdateOperation::Correct { .. } => true,
         UpdateOperation::Reopen { .. } => status != "open",
-        UpdateOperation::Complete { .. } | UpdateOperation::Drop { .. } => !terminal,
+        UpdateOperation::Complete { .. } => !terminal,
+        UpdateOperation::Drop { .. } => status != "dropped",
         UpdateOperation::Snooze { .. }
         | UpdateOperation::WaitOn { .. }
         | UpdateOperation::Unpark { .. }
@@ -3104,7 +3105,20 @@ pub(crate) async fn update_task(
                 now,
                 None,
             )?;
-            direct_task_object_mut(&mut metadata)?.insert("dropped_at".to_owned(), json!(now));
+            if current_status == "done" {
+                push_sourced_change(
+                    &mut metadata,
+                    &mut corrections,
+                    "completed_via",
+                    Value::Null,
+                    &source,
+                    now,
+                    Some("completed task explicitly dropped"),
+                )?;
+            }
+            let task = direct_task_object_mut(&mut metadata)?;
+            task.remove("done_at");
+            task.insert("dropped_at".to_owned(), json!(now));
             ("drop", "explicit drop")
         }
         UpdateOperation::WaitOn {
@@ -3355,11 +3369,86 @@ struct CandidateQuery {
     limit: Option<usize>,
     contexts_available: BTreeSet<String>,
     project: Option<String>,
-    include_waiting: bool,
-    include_parked: bool,
+    context: Option<String>,
+    status: Option<AllStatusFilter>,
+    date_type: Option<AllDateTypeFilter>,
+    source: Option<AllSourceFilter>,
+    include_waiting: Option<bool>,
+    include_parked: Option<bool>,
     as_of: Option<DateTime<Utc>>,
     cursor: Option<Uuid>,
     deliberate_all: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AllStatusFilter {
+    All,
+    Open,
+    Waiting,
+    Done,
+    Dropped,
+}
+
+impl AllStatusFilter {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Open => "open",
+            Self::Waiting => "waiting",
+            Self::Done => "done",
+            Self::Dropped => "dropped",
+        }
+    }
+
+    fn exact_status(self) -> Option<&'static str> {
+        (self != Self::All).then(|| self.as_str())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AllDateTypeFilter {
+    All,
+    Hard,
+    Cost,
+    Soft,
+    None,
+}
+
+impl AllDateTypeFilter {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Hard => "hard",
+            Self::Cost => "cost",
+            Self::Soft => "soft",
+            Self::None => "none",
+        }
+    }
+
+    fn sql_value(self) -> Option<&'static str> {
+        (self != Self::All).then(|| self.as_str())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AllSourceFilter {
+    All,
+    Owner,
+    Agent,
+    Derived,
+    Todoist,
+}
+
+impl AllSourceFilter {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Owner => "owner",
+            Self::Agent => "agent",
+            Self::Derived => "derived",
+            Self::Todoist => "todoist",
+        }
+    }
 }
 
 /// Exact scalar projection query used by the deployed candidates handler.
@@ -3385,6 +3474,39 @@ WHERE task.user_id=$1 AND task.status IN ('open','waiting')
 ORDER BY task.created_at,task.task_id
 "#;
 
+/// The explicit backlog query is deliberately separate from the latency-gated
+/// bounded candidate query above. It projects terminal timestamps and applies
+/// list filters before Rust's sole ranking/cursor authority sees the rows.
+pub const TASK_ALL_PROJECTION_SQL: &str = r#"
+SELECT task.task_id,task.entry_id,task.entry_version,task.title,task.status,
+       task.ready_at,task.soft_due,task.hard_due,task.hard_due_lead_days,
+       task.cost_amount_cents,task.cost_period,task.cost_flag,task.cost_since,
+       task.required_contexts,task.project_slug,task.parked,task.today_pin,
+       task.triaged_at,task.done_at,task.dropped_at,task.created_at,
+       task.provenance,task.source_timestamps,
+       project.interest_override,project.interest_set_at,project.last_activity_at
+FROM straylight.task_index AS task
+LEFT JOIN straylight.task_projects AS project
+  ON project.user_id=task.user_id AND project.slug=task.project_slug
+WHERE task.user_id=$1
+  AND task.created_at <= $2::timestamptz
+  AND ($3::text IS NULL OR task.status=$3::text)
+  AND ($4::boolean OR task.status <> 'waiting')
+  AND ($5::boolean OR NOT task.parked)
+  AND ($6::text IS NULL OR task.project_slug=$6::text)
+  AND ($7::text IS NULL OR $7::text=ANY(task.required_contexts))
+  AND (
+    $8::text IS NULL
+    OR ($8::text='hard' AND task.hard_due IS NOT NULL)
+    OR ($8::text='cost' AND (task.cost_amount_cents IS NOT NULL OR task.cost_flag))
+    OR ($8::text='soft' AND task.soft_due IS NOT NULL)
+    OR ($8::text='none' AND task.hard_due IS NULL
+        AND task.cost_amount_cents IS NULL AND NOT task.cost_flag
+        AND task.soft_due IS NULL)
+  )
+ORDER BY task.created_at,task.task_id
+"#;
+
 fn parse_bool_query(name: &str, value: &str) -> ApiResult<bool> {
     match value {
         "true" => Ok(true),
@@ -3392,6 +3514,45 @@ fn parse_bool_query(name: &str, value: &str) -> ApiResult<bool> {
         _ => Err(ApiError::invalid(format!(
             "{name} query parameter must be true or false"
         ))),
+    }
+}
+
+fn parse_all_status(value: &str) -> ApiResult<AllStatusFilter> {
+    match value {
+        "all" => Ok(AllStatusFilter::All),
+        "open" => Ok(AllStatusFilter::Open),
+        "waiting" => Ok(AllStatusFilter::Waiting),
+        "done" => Ok(AllStatusFilter::Done),
+        "dropped" => Ok(AllStatusFilter::Dropped),
+        _ => Err(ApiError::invalid(
+            "status must be all, open, waiting, done, or dropped",
+        )),
+    }
+}
+
+fn parse_all_date_type(value: &str) -> ApiResult<AllDateTypeFilter> {
+    match value {
+        "all" => Ok(AllDateTypeFilter::All),
+        "hard" => Ok(AllDateTypeFilter::Hard),
+        "cost" => Ok(AllDateTypeFilter::Cost),
+        "soft" => Ok(AllDateTypeFilter::Soft),
+        "none" => Ok(AllDateTypeFilter::None),
+        _ => Err(ApiError::invalid(
+            "date_type must be all, hard, cost, soft, or none",
+        )),
+    }
+}
+
+fn parse_all_source(value: &str) -> ApiResult<AllSourceFilter> {
+    match value {
+        "all" => Ok(AllSourceFilter::All),
+        "owner" => Ok(AllSourceFilter::Owner),
+        "agent" => Ok(AllSourceFilter::Agent),
+        "derived" => Ok(AllSourceFilter::Derived),
+        "todoist" => Ok(AllSourceFilter::Todoist),
+        _ => Err(ApiError::invalid(
+            "source must be all, owner, agent, derived, or todoist",
+        )),
     }
 }
 
@@ -3417,10 +3578,24 @@ fn parse_candidate_query(raw: Option<&str>) -> ApiResult<CandidateQuery> {
                 parsed.contexts_available.insert(normalize_slug(&value)?);
             }
             "project" if parsed.project.is_none() => parsed.project = Some(value.into_owned()),
-            "include_waiting" => {
-                parsed.include_waiting = parse_bool_query("include_waiting", &value)?
+            "context" if parsed.context.is_none() => {
+                parsed.context = Some(normalize_slug(&value)?);
             }
-            "include_parked" => parsed.include_parked = parse_bool_query("include_parked", &value)?,
+            "status" if parsed.status.is_none() => {
+                parsed.status = Some(parse_all_status(&value)?);
+            }
+            "date_type" if parsed.date_type.is_none() => {
+                parsed.date_type = Some(parse_all_date_type(&value)?);
+            }
+            "source" if parsed.source.is_none() => {
+                parsed.source = Some(parse_all_source(&value)?);
+            }
+            "include_waiting" => {
+                parsed.include_waiting = Some(parse_bool_query("include_waiting", &value)?)
+            }
+            "include_parked" => {
+                parsed.include_parked = Some(parse_bool_query("include_parked", &value)?)
+            }
             "deliberate_all" => parsed.deliberate_all = parse_bool_query("deliberate_all", &value)?,
             "as_of" if parsed.as_of.is_none() => {
                 parsed.as_of = Some(
@@ -3442,6 +3617,16 @@ fn parse_candidate_query(raw: Option<&str>) -> ApiResult<CandidateQuery> {
     if parsed.contexts_available.len() > 20 {
         return Err(ApiError::invalid(
             "contexts_available accepts at most 20 values",
+        ));
+    }
+    if parsed.view.as_deref() != Some("all")
+        && (parsed.status.is_some()
+            || parsed.context.is_some()
+            || parsed.date_type.is_some()
+            || parsed.source.is_some())
+    {
+        return Err(ApiError::invalid(
+            "status, context, date_type, and source are supported only with deliberate view=all",
         ));
     }
     Ok(parsed)
@@ -3500,26 +3685,39 @@ fn projected_source<T>(
 fn snapshot_from_projection_row(
     row: &sqlx::postgres::PgRow,
     as_of: DateTime<Utc>,
+    include_terminal_history: bool,
 ) -> ApiResult<TaskSnapshot> {
+    // The deliberate-all query is latency-gated while decoding up to 2,000
+    // rows. PgRow's string index performs a hash-table lookup for every field;
+    // its fixed projection can use ordinals instead. Keep the bounded query on
+    // names so its established projection contract stays independent.
+    macro_rules! projection_get {
+        ($type:ty, $name:literal, $all_index:literal) => {{
+            if include_terminal_history {
+                row.get::<$type, _>($all_index)
+            } else {
+                row.get::<$type, _>($name)
+            }
+        }};
+    }
+
     // Decode each JSONB projection once. Re-decoding both objects for every
     // sourced field is material at the 2,000-task handler gate.
-    let provenance = row.get::<Value, _>("provenance");
-    let source_timestamps = row.get::<Value, _>("source_timestamps");
-    let hard_due_lead_days = row
-        .get::<Option<i32>, _>("hard_due_lead_days")
-        .map(i64::from);
-    let required_contexts = row.get::<Vec<String>, _>("required_contexts");
+    let provenance = projection_get!(Value, "provenance", 21);
+    let source_timestamps = projection_get!(Value, "source_timestamps", 22);
+    let hard_due_lead_days = projection_get!(Option<i32>, "hard_due_lead_days", 8).map(i64::from);
+    let required_contexts = projection_get!(Vec<String>, "required_contexts", 13);
     let required_contexts =
         if required_contexts.is_empty() && provenance.get("required_contexts").is_none() {
             None
         } else {
             Some(required_contexts)
         };
-    let cost_since = row.get::<Option<NaiveDate>, _>("cost_since");
+    let cost_since = projection_get!(Option<NaiveDate>, "cost_since", 12);
     let cost = match (
-        row.get::<Option<i64>, _>("cost_amount_cents"),
-        row.get::<Option<String>, _>("cost_period").as_deref(),
-        row.get::<bool, _>("cost_flag"),
+        projection_get!(Option<i64>, "cost_amount_cents", 9),
+        projection_get!(Option<String>, "cost_period", 10).as_deref(),
+        projection_get!(bool, "cost_flag", 11),
         cost_since,
     ) {
         (Some(amount_cents), Some("day"), _, Some(since)) => Some(CostOfDelay::Rate {
@@ -3548,33 +3746,51 @@ fn snapshot_from_projection_row(
             ));
         }
     };
-    let explicit_interest = row
-        .get::<Option<String>, _>("interest_override")
-        .zip(row.get::<Option<DateTime<Utc>>, _>("interest_set_at"));
-    let last_activity = row.get::<Option<DateTime<Utc>>, _>("last_activity_at");
-    let status = row.get::<String, _>("status");
+    let explicit_interest = projection_get!(Option<String>, "interest_override", 23).zip(
+        projection_get!(Option<DateTime<Utc>>, "interest_set_at", 24),
+    );
+    let last_activity = projection_get!(Option<DateTime<Utc>>, "last_activity_at", 25);
+    let status = projection_get!(String, "status", 4);
+    let terminal_history =
+        include_terminal_history && matches!(status.as_str(), "done" | "dropped");
+    let status_source = if terminal_history {
+        provenance
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("derived")
+            .to_owned()
+    } else {
+        String::new()
+    };
     Ok(TaskSnapshot {
-        id: row.get("task_id"),
-        title: row.get("title"),
+        id: projection_get!(Uuid, "task_id", 0),
+        title: projection_get!(String, "title", 3),
         status: task_status(&status)?,
-        created_at: row.get("created_at"),
+        status_source,
+        created_at: projection_get!(DateTime<Utc>, "created_at", 20),
+        done_at: (terminal_history && status == "done")
+            .then(|| row.get::<Option<DateTime<Utc>>, _>(18))
+            .flatten(),
+        dropped_at: (terminal_history && status == "dropped")
+            .then(|| row.get::<Option<DateTime<Utc>>, _>(19))
+            .flatten(),
         ready_at: projected_source(
             &provenance,
             &source_timestamps,
             "ready_at",
-            row.get("ready_at"),
+            projection_get!(Option<DateTime<Utc>>, "ready_at", 5),
         )?,
         soft_due: projected_source(
             &provenance,
             &source_timestamps,
             "soft_due",
-            row.get("soft_due"),
+            projection_get!(Option<NaiveDate>, "soft_due", 6),
         )?,
         hard_due: projected_source(
             &provenance,
             &source_timestamps,
             "hard_due",
-            row.get("hard_due"),
+            projection_get!(Option<DateTime<Utc>>, "hard_due", 7),
         )?,
         hard_due_lead_days: projected_source(
             &provenance,
@@ -3593,7 +3809,7 @@ fn snapshot_from_projection_row(
             &provenance,
             &source_timestamps,
             "project",
-            row.get("project_slug"),
+            projection_get!(Option<String>, "project_slug", 14),
         )?,
         project_interest: derive_project_interest(
             explicit_interest
@@ -3603,15 +3819,15 @@ fn snapshot_from_projection_row(
             as_of,
         ),
         project_last_activity: last_activity,
-        parked: row.get("parked"),
+        parked: projection_get!(bool, "parked", 15),
         waiting: status == "waiting",
         today_pin: projected_source(
             &provenance,
             &source_timestamps,
             "today_pin",
-            row.get("today_pin"),
+            projection_get!(Option<NaiveDate>, "today_pin", 16),
         )?,
-        triaged_at: row.get("triaged_at"),
+        triaged_at: projection_get!(Option<DateTime<Utc>>, "triaged_at", 17),
     })
 }
 
@@ -3622,6 +3838,13 @@ fn ranked_item_json(
     let row = details
         .get(&ranked.id)
         .ok_or_else(|| ApiError::Internal("ranked task detail is missing".to_owned()))?;
+    ranked_item_json_from_row(ranked, row)
+}
+
+fn ranked_item_json_from_row(
+    ranked: &task_engine::RankedTask,
+    row: &sqlx::postgres::PgRow,
+) -> ApiResult<Value> {
     let entry_id: Uuid = row.get("entry_id");
     Ok(json!({
         "task_ref": ranked.id,
@@ -3636,6 +3859,21 @@ fn ranked_item_json(
         "provenance_markers": ranked.provenance_markers,
         "pinned": ranked.pinned,
     }))
+}
+
+fn projection_source_matches(provenance: &Value, source: AllSourceFilter) -> bool {
+    let sources = provenance
+        .as_object()
+        .into_iter()
+        .flat_map(|object| object.values())
+        .filter_map(Value::as_str);
+    match source {
+        AllSourceFilter::All => true,
+        AllSourceFilter::Owner => sources.into_iter().any(|value| value == "owner"),
+        AllSourceFilter::Agent => sources.into_iter().any(|value| value.starts_with("agent:")),
+        AllSourceFilter::Derived => sources.into_iter().any(|value| value == "derived"),
+        AllSourceFilter::Todoist => sources.into_iter().any(|value| value == "todoist"),
+    }
 }
 
 pub(crate) async fn task_candidates(
@@ -3690,23 +3928,53 @@ pub(crate) async fn task_candidates(
         Some(project) => Some(resolve_project_in_tx(&mut tx, auth.user_id.0, project).await?),
         None => None,
     };
-    let rows = sqlx::query(TASK_CANDIDATE_PROJECTION_SQL)
-        .bind(auth.user_id.0)
-        .bind(query.include_waiting)
-        .bind(query.include_parked)
-        .bind(as_of)
-        .bind(&project)
-        .bind(query.contexts_available.iter().cloned().collect::<Vec<_>>())
-        .fetch_all(&mut *tx)
-        .await?;
-    let backlog_total = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.task_index WHERE user_id=$1 AND status IN ('open','waiting') AND ($2::text IS NULL OR project_slug=$2) AND created_at<=$3",
-    )
-    .bind(auth.user_id.0)
-    .bind(&project)
-    .bind(as_of)
-    .fetch_one(&mut *tx)
-    .await?;
+    let all_status = query.status.unwrap_or(AllStatusFilter::All);
+    let include_waiting = query.include_waiting.unwrap_or(false)
+        || (view == TaskView::All && all_status == AllStatusFilter::Waiting);
+    let include_parked = query.include_parked.unwrap_or(false);
+    let mut rows = if view == TaskView::All {
+        sqlx::query(TASK_ALL_PROJECTION_SQL)
+            .bind(auth.user_id.0)
+            .bind(as_of)
+            .bind(all_status.exact_status())
+            .bind(include_waiting)
+            .bind(include_parked)
+            .bind(&project)
+            .bind(&query.context)
+            .bind(query.date_type.and_then(AllDateTypeFilter::sql_value))
+            .fetch_all(&mut *tx)
+            .await?
+    } else {
+        sqlx::query(TASK_CANDIDATE_PROJECTION_SQL)
+            .bind(auth.user_id.0)
+            .bind(include_waiting)
+            .bind(include_parked)
+            .bind(as_of)
+            .bind(&project)
+            .bind(query.contexts_available.iter().cloned().collect::<Vec<_>>())
+            .fetch_all(&mut *tx)
+            .await?
+    };
+    if view == TaskView::All {
+        let source = query.source.unwrap_or(AllSourceFilter::All);
+        if source != AllSourceFilter::All {
+            rows.retain(|row| projection_source_matches(&row.get::<Value, _>(21), source));
+        }
+    }
+    let bounded_backlog_total = if view == TaskView::All {
+        None
+    } else {
+        Some(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM straylight.task_index WHERE user_id=$1 AND status IN ('open','waiting') AND ($2::text IS NULL OR project_slug=$2) AND created_at<=$3",
+            )
+            .bind(auth.user_id.0)
+            .bind(&project)
+            .bind(as_of)
+            .fetch_one(&mut *tx)
+            .await?,
+        )
+    };
     let settings = sqlx::query(
         "SELECT hard_lead_days,soft_window_days FROM straylight.task_settings WHERE user_id=$1",
     )
@@ -3718,10 +3986,17 @@ pub(crate) async fn task_candidates(
         soft_due_window_days: settings.get::<i32, _>("soft_window_days").into(),
     };
     let mut snapshots = Vec::with_capacity(rows.len());
-    let mut details = HashMap::with_capacity(rows.len());
+    let index_details = view != TaskView::All || query.cursor.is_some();
+    let mut details = if index_details {
+        HashMap::with_capacity(rows.len())
+    } else {
+        HashMap::new()
+    };
     for row in &rows {
-        let snapshot = snapshot_from_projection_row(row, as_of)?;
-        details.insert(snapshot.id, row);
+        let snapshot = snapshot_from_projection_row(row, as_of, view == TaskView::All)?;
+        if index_details {
+            details.insert(snapshot.id, row);
+        }
         snapshots.push(snapshot);
     }
     let effective_contexts = query.contexts_available.clone();
@@ -3729,53 +4004,83 @@ pub(crate) async fn task_candidates(
         view,
         limit,
         contexts_available: query.contexts_available,
-        include_waiting: query.include_waiting,
-        include_parked: query.include_parked,
+        include_waiting,
+        include_parked,
         as_of,
     };
-    let initial = if view == TaskView::All {
-        task_engine::rank_all_tasks(&snapshots, &engine_request, &engine_settings)
-    } else {
-        task_engine::rank_tasks(&snapshots, &engine_request, &engine_settings)
-    };
-    let (selected, next_cursor, next_remaining) = if view == TaskView::All {
-        let start = match query.cursor {
-            Some(cursor) => initial
-                .items
-                .iter()
-                .position(|item| item.id == cursor)
-                .map(|index| index + 1)
-                .ok_or_else(|| ApiError::invalid("candidate cursor is not in the result set"))?,
-            None => 0,
+    let (selected, next_cursor, next_remaining, backlog_total, urgent_total) =
+        if view == TaskView::All {
+            let (page, next_cursor) = task_engine::rank_all_tasks_page(
+                &snapshots,
+                &engine_request,
+                &engine_settings,
+                query.cursor,
+            )
+            .ok_or_else(|| ApiError::invalid("candidate cursor is not in the result set"))?;
+            (
+                page.items,
+                next_cursor,
+                page.next_remaining,
+                page.backlog_total as i64,
+                page.urgent_total,
+            )
+        } else {
+            let ranked = task_engine::rank_tasks(&snapshots, &engine_request, &engine_settings);
+            (
+                ranked.items,
+                None,
+                ranked.next_remaining,
+                bounded_backlog_total.expect("bounded backlog count is present"),
+                ranked.urgent_total,
+            )
         };
-        let end = (start + limit).min(initial.items.len());
-        let next = (end < initial.items.len() && end > start).then(|| initial.items[end - 1].id);
-        (
-            initial.items[start..end].to_vec(),
-            next,
-            initial.items.len().saturating_sub(end),
-        )
+    let items = if view == TaskView::All && !index_details {
+        selected
+            .iter()
+            .map(|item| {
+                let index = snapshots
+                    .iter()
+                    .position(|snapshot| snapshot.id == item.id)
+                    .ok_or_else(|| {
+                        ApiError::Internal("ranked task detail is missing".to_owned())
+                    })?;
+                ranked_item_json_from_row(item, &rows[index])
+            })
+            .collect::<ApiResult<Vec<_>>>()?
     } else {
-        (initial.items.clone(), None, initial.next_remaining)
+        selected
+            .iter()
+            .map(|item| ranked_item_json(item, &details))
+            .collect::<ApiResult<Vec<_>>>()?
     };
-    let items = selected
-        .iter()
-        .map(|item| ranked_item_json(item, &details))
-        .collect::<ApiResult<Vec<_>>>()?;
     tx.commit().await?;
-    Ok(envelope(
-        ResponseStatus::Complete,
-        json!({
-            "view": match view { TaskView::Urgent => "urgent", TaskView::Next => "next", TaskView::Triage => "triage", TaskView::All => "all" },
-            "as_of": as_of,
-            "contexts_available": effective_contexts,
-            "items": items,
-            "urgent_total": initial.urgent_total,
-            "next_remaining": next_remaining,
-            "backlog_total": backlog_total,
-            "next_cursor": next_cursor,
-        }),
-    ))
+    let mut data = json!({
+        "view": match view { TaskView::Urgent => "urgent", TaskView::Next => "next", TaskView::Triage => "triage", TaskView::All => "all" },
+        "as_of": as_of,
+        "contexts_available": effective_contexts,
+        "items": items,
+        "urgent_total": urgent_total,
+        "next_remaining": next_remaining,
+        "backlog_total": backlog_total,
+        "next_cursor": next_cursor,
+    });
+    if view == TaskView::All {
+        data.as_object_mut()
+            .expect("candidate response data is an object")
+            .insert(
+                "filters".to_owned(),
+                json!({
+                    "status": all_status.as_str(),
+                    "project": project,
+                    "context": query.context,
+                    "date_type": query.date_type.unwrap_or(AllDateTypeFilter::All).as_str(),
+                    "source": query.source.unwrap_or(AllSourceFilter::All).as_str(),
+                    "include_waiting": include_waiting,
+                    "include_parked": include_parked,
+                }),
+            );
+    }
+    Ok(envelope(ResponseStatus::Complete, data))
 }
 
 #[derive(Default)]
@@ -5317,7 +5622,7 @@ pub(crate) async fn project_state(
     .await?;
     let snapshots = rows
         .iter()
-        .map(|row| snapshot_from_projection_row(row, as_of))
+        .map(|row| snapshot_from_projection_row(row, as_of, false))
         .collect::<ApiResult<Vec<_>>>()?;
     let ranked = task_engine::rank_tasks(
         &snapshots,
@@ -5473,6 +5778,36 @@ pub(crate) async fn get_task_settings(
     Ok(envelope(
         ResponseStatus::Complete,
         json!({"settings":settings}),
+    ))
+}
+
+pub(crate) async fn task_guard_status(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
+    auth.require(Capability::TaskRead)?;
+    let mut tx = state.begin_read(&auth).await?;
+    let row = sqlx::query(
+        r#"
+        SELECT last_run_at,last_outcome,last_error_code,next_run_at
+        FROM straylight.task_guard_state
+        WHERE user_id=$1
+        "#,
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(envelope(
+        ResponseStatus::Complete,
+        json!({
+            "environment_enabled":true,
+            "effective_enabled":true,
+            "last_run_at":row.get::<Option<DateTime<Utc>>,_>("last_run_at"),
+            "last_outcome":row.get::<Option<String>,_>("last_outcome"),
+            "last_error_code":row.get::<Option<String>,_>("last_error_code"),
+            "next_run_at":row.get::<Option<DateTime<Utc>>,_>("next_run_at"),
+        }),
     ))
 }
 
@@ -7945,6 +8280,49 @@ mod tests {
     }
 
     #[test]
+    fn deliberate_all_filters_parse_strictly_and_non_all_rejects_them() {
+        assert!(
+            parse_candidate_query(Some(
+                "view=all&status=done&context=phone&date_type=hard&source=agent"
+            ))
+            .is_ok()
+        );
+        for query in [
+            "view=all&status=ready",
+            "view=all&date_type=due",
+            "view=all&source=inferred",
+            "view=all&context=phone&context=home",
+            "view=all&status=done&status=open",
+            "view=all&unknown=value",
+        ] {
+            assert!(parse_candidate_query(Some(query)).is_err(), "{query}");
+        }
+    }
+
+    #[test]
+    fn deliberate_all_source_filter_reads_projection_cells_and_allows_mixed_sources() {
+        let mixed = json!({
+            "status":"owner",
+            "hard_due":"agent:codex",
+            "required_contexts":"derived",
+            "project":"todoist",
+        });
+        for source in [
+            AllSourceFilter::Owner,
+            AllSourceFilter::Agent,
+            AllSourceFilter::Derived,
+            AllSourceFilter::Todoist,
+            AllSourceFilter::All,
+        ] {
+            assert!(projection_source_matches(&mixed, source));
+        }
+        assert!(!projection_source_matches(
+            &json!({}),
+            AllSourceFilter::Owner
+        ));
+    }
+
+    #[test]
     fn public_strings_and_portable_numeric_ranges_fail_closed() {
         let writer = auth(&["task.write"]);
         let capture = CaptureItem {
@@ -8024,6 +8402,9 @@ mod tests {
         assert!(validate_action_state(&reopen.operation, "done").is_ok());
         assert!(validate_action_state(&reopen.operation, "waiting").is_ok());
         assert!(validate_action_state(&reopen.operation, "open").is_err());
+        let drop=serde_json::from_value::<UpdateTaskRequest>(json!({"expected_version":2,"idempotency_key":"drop-done","operation":{"type":"drop","source":"agent:test","reason":"superseded"}})).unwrap();
+        assert!(validate_action_state(&drop.operation, "done").is_ok());
+        assert!(validate_action_state(&drop.operation, "dropped").is_err());
     }
 
     #[test]
