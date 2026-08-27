@@ -90,14 +90,26 @@ export function AgentsPage() {
   const coreApi = useApi();
   const messagingApi = useMemo(createMessagingApiClient, []);
   const queryClient = useQueryClient();
-  const [chosenConversationId, setChosenConversationId] = useState<string | null>(null);
+  const identityKey =
+    current.data.credential_id ??
+    current.data.user.email ??
+    current.data.user.username ??
+    current.data.user.display_name;
+  const [chosenConversation, setChosenConversation] = useState<{
+    identityKey: string;
+    conversationId: string;
+  } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [inboxSnapshot, setInboxSnapshot] = useState<MessagingSyncData | null>(null);
+  const [inboxSnapshot, setInboxSnapshot] = useState<{
+    identityKey: string;
+    data: MessagingSyncData;
+  } | null>(null);
   const [threadSnapshot, setThreadSnapshot] = useState<{
+    identityKey: string;
     conversationId: string;
     data: MessagingSyncData;
   } | null>(null);
-  const inboxCursor = useRef(0);
+  const inboxCursors = useRef(new Map<string, number>());
   const threadCursors = useRef(new Map<string, number>());
   const markedRead = useRef(new Map<string, number>());
   const capabilities = current.data.capabilities;
@@ -106,8 +118,9 @@ export function AgentsPage() {
   const canManage = hasCapability(capabilities, "credential:manage");
 
   const inboxQuery = useQuery({
-    queryKey: ["messaging", "inbox"],
-    queryFn: () => drainSync(messagingApi, {}, inboxCursor.current),
+    queryKey: ["messaging", "inbox", identityKey],
+    queryFn: () =>
+      drainSync(messagingApi, {}, inboxCursors.current.get(identityKey) ?? 0),
     enabled: canRead,
     refetchInterval: 5_000,
   });
@@ -115,24 +128,38 @@ export function AgentsPage() {
     const pages = inboxQuery.data;
     if (!pages) return;
     const latest = pages.at(-1);
-    if (!latest || latest.cursor < inboxCursor.current) return;
-    inboxCursor.current = latest.cursor;
-    setInboxSnapshot((current) => mergeSyncSnapshot(current, pages, false));
-  }, [inboxQuery.data]);
-  const inboxPages = inboxSnapshot ? [inboxSnapshot] : [];
+    const currentCursor = inboxCursors.current.get(identityKey) ?? 0;
+    if (!latest || latest.cursor < currentCursor) return;
+    inboxCursors.current.set(identityKey, latest.cursor);
+    setInboxSnapshot((current) => {
+      const data = mergeSyncSnapshot(
+        current?.identityKey === identityKey ? current.data : null,
+        pages,
+        false,
+      );
+      return data ? { identityKey, data } : current;
+    });
+  }, [identityKey, inboxQuery.data]);
+  const inboxPages =
+    inboxSnapshot?.identityKey === identityKey ? [inboxSnapshot.data] : [];
   const conversations = mergeConversations(inboxPages);
   const inboxPresence = inboxPages.at(-1)?.presence ?? [];
   const selectedConversationId =
-    chosenConversationId ?? conversations[0]?.conversation_id ?? null;
+    (chosenConversation?.identityKey === identityKey
+      ? chosenConversation.conversationId
+      : null) ?? conversations[0]?.conversation_id ?? null;
+  const threadCursorKey = selectedConversationId
+    ? `${identityKey}:${selectedConversationId}`
+    : identityKey;
 
   const threadQuery = useQuery({
-    queryKey: ["messaging", "thread", selectedConversationId],
+    queryKey: ["messaging", "thread", identityKey, selectedConversationId],
     queryFn: () => {
       if (!selectedConversationId) return Promise.resolve([]);
       return drainSync(
         messagingApi,
         { conversationId: selectedConversationId },
-        threadCursors.current.get(selectedConversationId) ?? 0,
+        threadCursors.current.get(threadCursorKey) ?? 0,
       );
     },
     enabled: canRead && selectedConversationId !== null,
@@ -144,21 +171,26 @@ export function AgentsPage() {
     const lastSeq = pages
       .flatMap((page) => page.messages)
       .reduce((maximum, message) => Math.max(maximum, message.seq), 0);
-    const currentCursor = threadCursors.current.get(selectedConversationId) ?? 0;
+    const currentCursor = threadCursors.current.get(threadCursorKey) ?? 0;
     if (lastSeq < currentCursor) return;
-    threadCursors.current.set(selectedConversationId, Math.max(currentCursor, lastSeq));
+    threadCursors.current.set(threadCursorKey, Math.max(currentCursor, lastSeq));
     setThreadSnapshot((current) => ({
+      identityKey,
       conversationId: selectedConversationId,
       data:
         mergeSyncSnapshot(
-          current?.conversationId === selectedConversationId ? current.data : null,
+          current?.identityKey === identityKey &&
+            current.conversationId === selectedConversationId
+            ? current.data
+            : null,
           pages,
           true,
         ) ?? pages.at(-1)!,
     }));
-  }, [selectedConversationId, threadQuery.data]);
+  }, [identityKey, selectedConversationId, threadCursorKey, threadQuery.data]);
   const threadPages =
-    threadSnapshot?.conversationId === selectedConversationId
+    threadSnapshot?.identityKey === identityKey &&
+    threadSnapshot.conversationId === selectedConversationId
       ? [threadSnapshot.data]
       : [];
   const messages = mergeMessages(threadPages);
@@ -172,14 +204,14 @@ export function AgentsPage() {
     );
 
   const registryQuery = useQuery({
-    queryKey: ["messaging", "agents"],
+    queryKey: ["messaging", "agents", identityKey],
     queryFn: () => messagingApi.listAgents(),
     enabled: canRead,
     refetchInterval: 15_000,
   });
   const agents = registryQuery.data?.data.agents ?? inboxPresence;
   const credentialsQuery = useQuery({
-    queryKey: ["credentials"],
+    queryKey: ["credentials", identityKey],
     queryFn: () => coreApi.credentials(),
     enabled: canRead && canManage,
   });
@@ -198,24 +230,25 @@ export function AgentsPage() {
   useEffect(() => {
     if (!canWrite || !selectedConversation || messages.length === 0) return;
     const lastSeq = messages.at(-1)?.seq ?? 0;
-    const alreadyMarked = markedRead.current.get(selectedConversation.conversation_id) ?? 0;
+    const readKey = `${identityKey}:${selectedConversation.conversation_id}`;
+    const alreadyMarked = markedRead.current.get(readKey) ?? 0;
     if (
       lastSeq <= selectedConversation.last_read_seq ||
       lastSeq <= alreadyMarked
     ) {
       return;
     }
-    markedRead.current.set(selectedConversation.conversation_id, lastSeq);
+    markedRead.current.set(readKey, lastSeq);
     readMutation.mutate(
       {
         conversationId: selectedConversation.conversation_id,
         lastReadSeq: lastSeq,
       },
       {
-        onError: () => markedRead.current.delete(selectedConversation.conversation_id),
+        onError: () => markedRead.current.delete(readKey),
       },
     );
-  }, [canWrite, messages, readMutation, selectedConversation]);
+  }, [canWrite, identityKey, messages, readMutation, selectedConversation]);
 
   async function refreshMessaging() {
     await Promise.all([
@@ -227,7 +260,10 @@ export function AgentsPage() {
 
   async function createConversation(participants: string[], subject?: string) {
     const response = await messagingApi.createConversation(participants, subject);
-    setChosenConversationId(response.data.conversation_id);
+    setChosenConversation({
+      identityKey,
+      conversationId: response.data.conversation_id,
+    });
     await refreshMessaging();
   }
 
@@ -235,7 +271,10 @@ export function AgentsPage() {
     if (!selectedConversationId) throw new Error("No conversation selected");
     const response = await messagingApi.sendMessage(selectedConversationId, input);
     if (response.data.continuation_id) {
-      setChosenConversationId(response.data.continuation_id);
+      setChosenConversation({
+        identityKey,
+        conversationId: response.data.continuation_id,
+      });
     }
     await refreshMessaging();
   }
@@ -349,7 +388,12 @@ export function AgentsPage() {
                       : undefined
                   }
                   aria-pressed={conversation.conversation_id === selectedConversationId}
-                  onClick={() => setChosenConversationId(conversation.conversation_id)}
+                  onClick={() =>
+                    setChosenConversation({
+                      identityKey,
+                      conversationId: conversation.conversation_id,
+                    })
+                  }
                 >
                   <span className="messaging-conversation-title">
                     <strong>{conversationTitle(conversation, agents)}</strong>

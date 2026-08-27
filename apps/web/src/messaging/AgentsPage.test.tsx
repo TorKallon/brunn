@@ -158,15 +158,21 @@ function renderAgents(me = messagingMe()) {
       mutations: { retry: false },
     },
   });
-  return render(
+  const renderTree = (current: ApiEnvelope<MeData>) => (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <CurrentProvider value={me}>
+        <CurrentProvider value={current}>
           <AgentsPage />
         </CurrentProvider>
       </AuthProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const view = render(renderTree(me));
+  return {
+    ...view,
+    rerenderCurrent: (current: ApiEnvelope<MeData>) =>
+      view.rerender(renderTree(current)),
+  };
 }
 
 function installMessagingRoutes(
@@ -404,6 +410,22 @@ describe("Agents page", () => {
     expect(await screen.findByText("Messaging is view only")).toBeInTheDocument();
     expect(await screen.findByRole("textbox", { name: "Message" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("never renders the previous credential's thread after identity changes", async () => {
+    installMessagingRoutes();
+    const view = renderAgents();
+
+    expect(
+      await screen.findByText("Should we ship the guarded route?"),
+    ).toBeInTheDocument();
+    const next = messagingMe();
+    next.data.credential_id = "credential:019f9000-0000-7000-8000-000000000099";
+    view.rerenderCurrent(next);
+
+    expect(
+      screen.queryByText("Should we ship the guarded route?"),
+    ).not.toBeInTheDocument();
   });
 
   it("creates a conversation from the picker without accepting sender identity", async () => {
