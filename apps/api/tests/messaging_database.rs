@@ -683,10 +683,10 @@ async fn assert_schema_contract(pool: &PgPool) {
 #[tokio::test]
 async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     let migration =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations/0075_agent_messaging.sql");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations/0076_agent_messaging.sql");
     assert!(
         migration.is_file(),
-        "missing 0075 agent-messaging database surface: {}",
+        "missing 0076 agent-messaging database surface: {}",
         migration.display()
     );
     let migration_sql = std::fs::read_to_string(&migration).expect("read messaging migration");

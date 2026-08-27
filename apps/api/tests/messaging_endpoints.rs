@@ -580,7 +580,7 @@ async fn messaging_routes_enforce_the_flag_identity_idempotency_sync_and_authori
         &messages_path,
         &fixture.agent_writer.token,
         json!({
-            "client_key": client_key('U'),
+            "client_key": client_key('N'),
             "kind": "question",
             "body_md": "Owner attention is required",
             "expects_reply": true

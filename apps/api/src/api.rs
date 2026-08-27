@@ -13,8 +13,8 @@ use tower_http::{
 
 use crate::{
     auth, briefing_service, dashboard_service, db::AppState, document_service, dreams,
-    eval_service, notification_service, request_context, secret_service, service, simple_core,
-    task_service, telemetry, web_auth,
+    eval_service, messaging_service, notification_service, request_context, secret_service,
+    service, simple_core, task_service, telemetry, web_auth,
 };
 
 pub fn router(state: AppState) -> Router {
@@ -25,6 +25,11 @@ pub fn router(state: AppState) -> Router {
         .iter()
         .filter_map(|origin| HeaderValue::from_str(origin).ok())
         .collect();
+    let workspace_write_body_limit = if state.config.messaging_enabled {
+        16 * 1024 * 1024
+    } else {
+        5 * 1024 * 1024
+    };
     let workspace_ordinary = Router::new()
         .route("/me", get(service::me))
         .route("/status", get(service::status))
@@ -33,7 +38,7 @@ pub fn router(state: AppState) -> Router {
         .route("/workspace/read", post(simple_core::read))
         .route(
             "/workspace/write",
-            post(simple_core::write).layer(DefaultBodyLimit::max(5 * 1024 * 1024)),
+            post(simple_core::write).layer(DefaultBodyLimit::max(workspace_write_body_limit)),
         )
         .route(
             "/workspace/capture",
@@ -261,6 +266,9 @@ pub fn router(state: AppState) -> Router {
             get(eval_service::get_evaluation_import),
         );
     let mut ordinary = workspace_ordinary;
+    if state.config.messaging_enabled {
+        ordinary = ordinary.merge(messaging_service::router());
+    }
     if state.config.legacy_api_enabled {
         ordinary = ordinary.merge(legacy_ordinary);
     }

@@ -1,4 +1,4 @@
--- Migration 0075: durable agent messaging. Canonical conversation state remains in versioned
+-- Migration 0076: durable agent messaging. Canonical conversation state remains in versioned
 -- workspace entries; the messaging tables are principals, bindings, compact
 -- coordination state, and one rebuildable message projection.
 
@@ -1086,13 +1086,25 @@ WITH CHECK (
       AND body = 'Open Straylight to view the conversation.'
     )
     OR (
-      event_key IN (
-        'needs-human:' || (target->>'conversation_id') || ':' || (target->>'seq'),
-        'reply-by:' || (target->>'conversation_id') || ':' || (target->>'seq')
-      )
+      event_key = 'needs-human:' || (target->>'conversation_id') || ':' || (target->>'seq')
       AND importance = 'important'
       AND title = 'Agent reply needed'
       AND body = 'Open Straylight to continue an agent conversation.'
+    )
+    OR (
+      event_key ~ '^reply-by:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[1-9][0-9]*$'
+      AND importance = 'important'
+      AND title = 'Agent reply needed'
+      AND body = 'Open Straylight to continue an agent conversation.'
+      AND EXISTS (
+        SELECT 1
+        FROM straylight.messaging_message_index AS system_message
+        WHERE system_message.user_id = notifications.user_id
+          AND system_message.conversation_id::text = notifications.target->>'conversation_id'
+          AND system_message.seq::text = notifications.target->>'seq'
+          AND system_message.kind = 'system'
+          AND system_message.system_key = notifications.event_key
+      )
     )
     OR (
       event_key = 'message-system:' || (target->>'conversation_id') || ':' || (target->>'seq')

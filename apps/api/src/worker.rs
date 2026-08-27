@@ -1,3 +1,4 @@
+use chrono::Utc;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -8,7 +9,8 @@ use crate::{
     account_worker,
     db::AppState,
     error::{ApiError, ApiResult},
-    notification_service, simple_worker, task_guard, telemetry, todoist_sync, upload_service,
+    messaging_service, notification_service, simple_worker, task_guard, telemetry, todoist_sync,
+    upload_service,
 };
 
 const ACCOUNT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
@@ -63,6 +65,9 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             };
             did_work |= todoist_did_work;
         }
+        if state.config.messaging_enabled {
+            did_work |= run_messaging_reply_by(&state, &mut cycle_failed).await;
+        }
         did_work |=
             run_notification_delivery(&state, notification_provider.as_ref(), &mut cycle_failed)
                 .await;
@@ -89,6 +94,18 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(BACKGROUND_WORK_PAUSE).await;
         } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+async fn run_messaging_reply_by(state: &AppState, cycle_failed: &mut bool) -> bool {
+    match messaging_service::process_due_reply_by(state, Utc::now()).await {
+        Ok(did_work) => did_work,
+        Err(_error) => {
+            metrics::counter!("worker.cycle.errors", "stage" => "messaging_reply_by").increment(1);
+            tracing::warn!("agent messaging reply deadline cycle failed");
+            *cycle_failed = true;
+            false
         }
     }
 }

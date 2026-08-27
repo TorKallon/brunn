@@ -43,7 +43,7 @@ messages and proves ordinary writes are still capped at 4 MiB.
 
 ## One additive migration
 
-Migration `0075_agent_messaging.sql` is the only planned migration. It follows
+Migration `0076_agent_messaging.sql` is the only planned migration. It follows
 the task run's 0071 storage plus claimed 0072 HTTP, 0073 guard, and 0074 Todoist
 migrations, and
 extends, never replaces, their capability
@@ -301,7 +301,7 @@ conversation ids, client keys, or credentials.
 | 6 — notifications | Event-key replay/conflict, generic body, typed target/route/collapse/content-available, observer filtering, quiet hours, existing ledger suite |
 | 7 — iOS | Store-first launch metric, durable offline outbox/relaunch/exactly-once reconnect, silent-push prefetch, cold deep link, view-only, 1,000-row scroll profile |
 | 8 — Web | Browser sign-in/list/open/send/echo and credential-binding sender change |
-| 9 — regressions | Gate-off HTTP 404/tool absence, unchanged old-tool snapshot, previous release against 0075, all old and landed-task suites/scenarios with flag off/on |
+| 9 — regressions | Gate-off HTTP 404/tool absence, unchanged old-tool snapshot, previous release against 0076, all old and landed-task suites/scenarios with flag off/on |
 | 10 — brand | Night Signal token, both-appearance contrast, keyboard, focus, reduced-motion, and status-ramp audits |
 | 11 — standard | Locked Cargo all-target check and API suites, isolated DB suites, MCP, production contracts, retrieval fingerprint, Web build/tests, iOS package/app tests, diff check, added-line secret scan |
 | 12 — real interfaces | One disposable API/worker/Postgres/object-store/MCP/Web/iOS stack, plus production smoke only after gates 1–11 |

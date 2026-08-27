@@ -673,13 +673,12 @@ class MessagingScenario:
                     "body_md": "Gate 12a unanswered worker deadline.",
                     "expects_reply": True,
                     "reply_by": (
-                        datetime.now(timezone.utc) + timedelta(minutes=5)
+                        datetime.now(timezone.utc) + timedelta(seconds=2)
                     ).isoformat().replace("+00:00", "Z"),
                 },
             )
             deadline_seq = require_field(deadline, "seq", int)
             before_expiry_notifications = self.notification_items()
-            self.expire_reply_by(conversation_id, deadline_seq)
             expiry_system = self.wait_for_worker_system(agent_b, conversation_id, deadline_seq)
             expiry_system_seq = require_field(expiry_system, "seq", int)
             if expiry_system_seq != deadline_seq + 1:
@@ -882,38 +881,6 @@ class MessagingScenario:
             raise ScenarioFailure("agent registry did not return the expected resident")
         return matches[0]
 
-    def expire_reply_by(self, conversation_id: str, seq: int) -> None:
-        canonical_uuid(conversation_id, "reply_by time-travel conversation id")
-        if not isinstance(seq, int) or isinstance(seq, bool) or seq <= 0:
-            raise ScenarioFailure("reply_by time-travel sequence is invalid")
-        changed = docker_psql(
-            self.args,
-            f"""
-            WITH changed AS (
-              UPDATE straylight.messaging_message_index AS message
-              SET reply_by=message.created_at + interval '1 millisecond'
-              WHERE message.conversation_id='{conversation_id}'::uuid
-                AND message.seq={seq}
-                AND message.kind='question'
-                AND message.expects_reply
-                AND message.reply_by IS NOT NULL
-                AND message.reply_by > clock_timestamp()
-                AND message.reply_by_handled_at IS NULL
-                AND message.created_at + interval '1 millisecond' <= clock_timestamp()
-                AND EXISTS (
-                  SELECT 1 FROM straylight.messaging_conversations AS conversation
-                  WHERE conversation.user_id=message.user_id
-                    AND conversation.conversation_id=message.conversation_id
-                    AND conversation.status <> 'closed'
-                )
-              RETURNING 1
-            ) SELECT count(*) FROM changed
-            """,
-            self.sanitizer,
-        )
-        if changed != "1":
-            raise ScenarioFailure("reply_by time travel did not update exactly one open question")
-
     def expire_presence(self, conversation_id: str, agent_id: str) -> None:
         canonical_uuid(conversation_id, "presence time-travel conversation id")
         require_agent_id(agent_id, "presence time-travel principal")
@@ -990,7 +957,10 @@ def static_preflight(source_root: Path) -> None:
     worker_source = (source_root / "apps/api/src/worker.rs").read_text(encoding="utf-8")
     echo_source = (source_root / "scripts/agent_messaging_echo.py").read_text(encoding="utf-8")
     missing_tools = {name for name in REQUIRED_MCP_TOOLS if f'"{name}"' not in mcp_source}
-    missing_route = '"/workspace/messaging' not in api_source
+    missing_route = not (
+        "messaging_service::router()" in api_source
+        and "messaging_enabled" in api_source
+    )
     failures: list[str] = []
     if missing_route:
         failures.append("HTTP route /v1/workspace/messaging")

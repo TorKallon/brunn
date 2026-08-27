@@ -618,6 +618,7 @@ async fn send_message(
             target_id,
             plan.user_seq,
             "message",
+            None,
             as_of,
         )
         .await?;
@@ -713,6 +714,7 @@ async fn send_message(
             notification_conversation,
             notification_seq,
             "needs-human",
+            None,
             as_of,
         )
         .await?;
@@ -2220,7 +2222,7 @@ async fn cancel_reply_deadlines_for_chain_in_tx(
           WHERE parent.user_id=$1
         ), canceled AS (
           UPDATE straylight.messaging_message_index AS message
-          SET reply_by_handled_at=$3
+          SET reply_by_handled_at=GREATEST($3,message.reply_by)
           FROM ancestors
           WHERE message.user_id=$1
             AND message.conversation_id=ancestors.conversation_id
@@ -2764,6 +2766,7 @@ async fn create_continuation_in_tx(
             continuation_id,
             1,
             "system",
+            None,
             as_of,
         )
         .await?;
@@ -2951,7 +2954,14 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
         write_canonical_conversation_in_tx(&mut tx, &auth, question_conversation_id).await?;
     }
     publish_conversation_notification_in_tx(
-        &mut tx, state, &auth, target_id, system_seq, "reply-by", as_of,
+        &mut tx,
+        state,
+        &auth,
+        target_id,
+        system_seq,
+        "reply-by",
+        Some(&event_key),
+        as_of,
     )
     .await?;
     tx.commit().await?;
@@ -3552,9 +3562,10 @@ async fn publish_conversation_notification_in_tx(
     conversation_id: Uuid,
     seq: i64,
     event_type: &str,
+    event_key_override: Option<&str>,
     occurred_at: DateTime<Utc>,
 ) -> ApiResult<()> {
-    let event_key = match event_type {
+    let derived_event_key = match event_type {
         "message" => format!("message:{conversation_id}:{seq}"),
         "needs-human" => format!("needs-human:{conversation_id}:{seq}"),
         "reply-by" => format!("reply-by:{conversation_id}:{seq}"),
@@ -3565,6 +3576,7 @@ async fn publish_conversation_notification_in_tx(
             ));
         }
     };
+    let event_key = event_key_override.unwrap_or(&derived_event_key);
     let target = json!({
         "type": "conversation",
         "conversation_id": conversation_id,

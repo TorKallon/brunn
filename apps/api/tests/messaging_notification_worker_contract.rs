@@ -590,7 +590,7 @@ async fn request_json(app: &Router, method: Method, uri: &str, body: Value) -> (
 }
 
 async fn seed_due_question(
-    pool: &PgPool,
+    _pool: &PgPool,
     state: AppState,
     principal: &PrincipalFixture,
     key_suffix: &str,
@@ -623,7 +623,7 @@ async fn seed_due_question(
             "kind": "question",
             "body_md": "Does the existing worker expire this question?",
             "expects_reply": true,
-            "reply_by": Utc::now() + chrono::Duration::minutes(1)
+            "reply_by": Utc::now() + chrono::Duration::seconds(1)
         }),
     )
     .await;
@@ -632,20 +632,6 @@ async fn seed_due_question(
         .pointer("/data/seq")
         .and_then(Value::as_i64)
         .expect("worker question sequence");
-    sqlx::query(
-        r#"
-        UPDATE straylight.messaging_message_index
-        SET created_at=clock_timestamp()-interval '2 seconds',
-            reply_by=clock_timestamp()-interval '1 second'
-        WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
-        "#,
-    )
-    .bind(principal.user_id)
-    .bind(conversation_id)
-    .bind(question_seq)
-    .execute(pool)
-    .await
-    .expect("make worker contract question due before its first cycle");
     (conversation_id, question_seq)
 }
 
@@ -677,7 +663,7 @@ async fn existing_worker_schedules_reply_by_only_when_messaging_is_enabled() {
     let (off_conversation, off_seq) =
         seed_due_question(&pool, state_off.clone(), &off_principal, "1").await;
     let off_worker = tokio::spawn(worker::run(state_off));
-    tokio::time::sleep(Duration::from_millis(900)).await;
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
     assert!(
         !handled_at(&pool, off_principal.user_id, off_conversation, off_seq).await,
         "the default-off gate keeps reply_by work unreachable"

@@ -10,7 +10,12 @@ use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use straylight::{AppState, Config, auth::hash_token, messaging_service, router};
+use straylight::{
+    AppState, Config,
+    auth::hash_token,
+    messaging_protocol::{self, MessageKind, SendMessageInput},
+    messaging_service, router,
+};
 
 const MESSAGING_ROOT: &str = "/v1/workspace/messaging";
 
@@ -295,6 +300,21 @@ async fn seed_messages(
         .iter()
         .map(|sender| (*sender).to_owned())
         .collect::<Vec<_>>();
+    let request_hashes = (0..count)
+        .map(|offset| {
+            let input = SendMessageInput {
+                client_key: client_key(start_seq + offset),
+                kind: MessageKind::Text,
+                body_md: "seed message".to_owned(),
+                refs: Vec::new(),
+                in_reply_to: None,
+                correlation_id: None,
+                expects_reply: false,
+                reply_by: None,
+            };
+            messaging_protocol::request_hash(conversation_id, &input)
+        })
+        .collect::<Vec<_>>();
     sqlx::query(
         r#"
         INSERT INTO straylight.messaging_message_index (
@@ -304,12 +324,12 @@ async fn seed_messages(
           sync_cursor,created_at
         )
         SELECT
-          $1,$2,$3 + seed.offset,gen_random_uuid(),
-          $5[((seed.offset % cardinality($5)) + 1)::integer],
-          lpad(($3 + seed.offset)::text,26,'0'),
-          NULL,repeat('a',64),'text','seed message','[]'::jsonb,
-          NULL,NULL,false,NULL,NULL,$6 + seed.offset + 1,$7
-        FROM generate_series(0::bigint,$4::bigint - 1) AS seed(offset)
+          $1,$2,$3 + seed.position_index,gen_random_uuid(),
+          $5[((seed.position_index % cardinality($5)) + 1)::integer],
+          lpad(($3 + seed.position_index)::text,26,'0'),
+          NULL,$8[(seed.position_index + 1)::integer],'text','seed message','[]'::jsonb,
+          NULL,NULL,false,NULL,NULL,$6 + seed.position_index + 1,$7
+        FROM generate_series(0::bigint,$4::bigint - 1) AS seed(position_index)
         "#,
     )
     .bind(user_id)
@@ -319,6 +339,7 @@ async fn seed_messages(
     .bind(senders)
     .bind(base_cursor)
     .bind(created_at)
+    .bind(request_hashes)
     .execute(&mut *tx)
     .await
     .expect("seed indexed conversation messages");
@@ -340,7 +361,8 @@ async fn seed_messages(
         r#"
         UPDATE straylight.messaging_conversations
         SET last_seq=$3,last_message_at=$4,agent_streak=$5,
-            latest_sync_cursor=$6,updated_at=clock_timestamp()
+            latest_sync_cursor=$6,created_at=LEAST(created_at,$4),
+            updated_at=clock_timestamp()
         WHERE user_id=$1 AND conversation_id=$2
         "#,
     )
@@ -1168,7 +1190,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
         "Reply racing its deadline",
     )
     .await;
-    let race_reply_by = Utc::now() + ChronoDuration::minutes(1);
+    let race_reply_by = Utc::now() + ChronoDuration::milliseconds(200);
     let race_question = request_json(
         &app,
         Method::POST,
@@ -1188,6 +1210,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
         .get("seq")
         .and_then(Value::as_i64)
         .expect("race question returns a sequence");
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let race_path = format!("{MESSAGING_ROOT}/conversations/{deadline_race_conversation}/messages");
     let race_reply = request_json(
         &app,
@@ -1201,8 +1224,7 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
             "in_reply_to": race_question_seq
         }),
     );
-    let race_expiry =
-        messaging_service::process_due_reply_by(&state, race_reply_by + ChronoDuration::seconds(1));
+    let race_expiry = messaging_service::process_due_reply_by(&state, Utc::now());
     let (race_reply, race_expiry) =
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             tokio::join!(race_reply, race_expiry)
