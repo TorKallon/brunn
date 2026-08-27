@@ -27,10 +27,22 @@ const EXISTING_LOCAL_TOOLS = [
   "memory.status",
   "memory.write",
   "notification.publish",
+  "project.list",
+  "project.register",
+  "project.set_interest",
+  "project.state",
   "secret.delete",
   "secret.get",
   "secret.list",
   "secret.put",
+  "task.candidates",
+  "task.capture",
+  "task.contexts",
+  "task.corrections",
+  "task.done_summary",
+  "task.settings",
+  "task.sync_status",
+  "task.update",
 ] as const;
 
 const EXISTING_REMOTE_TOOLS = EXISTING_LOCAL_TOOLS.filter(
@@ -48,8 +60,8 @@ const MESSAGING_TOOL_NAMES = [
 // These hashes bind both each pre-messaging tool name and its complete,
 // byte-exact description while keeping this regression snapshot readable.
 const EXISTING_DESCRIPTION_HASHES = {
-  local: "d4d39bd68b223a157d7591a9e7393a2c8a3f10f5cc65c0ee9574cf5a247a5424",
-  remote: "e3524f82fc1196b3d1d2ab2fc5f1ad362f41ce96338e6e44fdc51a103a04f3f5",
+  local: "ac95053e1033ec5ff8189081b9fd1e404def574149b726e2359772c82e8bc7b3",
+  remote: "dffb5adeb14fcfef33d52e33dc773ad3c1a7aef1bd1b37c29a875abbdb37ebf2",
 } as const;
 
 const MESSAGING_DESCRIPTIONS = {

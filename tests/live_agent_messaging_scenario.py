@@ -448,7 +448,12 @@ class MessagingScenario:
 
 
 def static_preflight(source_root: Path) -> None:
-    mcp_source = (source_root / "apps/mcp/src/index.ts").read_text(encoding="utf-8")
+    mcp_source = "\n".join(
+        (
+            (source_root / "apps/mcp/src/index.ts").read_text(encoding="utf-8"),
+            (source_root / "apps/mcp/src/messaging-tools.ts").read_text(encoding="utf-8"),
+        )
+    )
     api_source = (source_root / "apps/api/src/api.rs").read_text(encoding="utf-8")
     missing_tools = {name for name in REQUIRED_MCP_TOOLS if f'"{name}"' not in mcp_source}
     missing_route = '"/workspace/messaging' not in api_source

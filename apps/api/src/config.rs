@@ -84,6 +84,7 @@ pub struct Config {
     pub notification_token_encryption_key: Option<String>,
     pub secret_encryption_key: Option<String>,
     pub apns_delivery_enabled: bool,
+    pub messaging_enabled: bool,
     pub todoist_sync_enabled: bool,
     pub public_url: String,
     pub account_export_ttl: Duration,
@@ -305,6 +306,7 @@ impl Config {
             ])?,
             secret_encryption_key: first_env_or_file(&["STRAYLIGHT_SECRET_ENCRYPTION_KEY"])?,
             apns_delivery_enabled: env_parse("STRAYLIGHT_APNS_DELIVERY_ENABLED", "false")?,
+            messaging_enabled: env_parse("STRAYLIGHT_MESSAGING_ENABLED", "false")?,
             todoist_sync_enabled: env_parse("STRAYLIGHT_TODOIST_SYNC_ENABLED", "false")?,
             public_url: env_default("STRAYLIGHT_PUBLIC_URL", "https://straylight.rourkem.com")
                 .trim()
@@ -1073,6 +1075,7 @@ mod tests {
                 assert!(!config.verbatim_spans);
                 assert!(!config.supersession_demotion);
                 assert!(!config.intention_ledger);
+                assert!(!config.messaging_enabled);
                 assert_eq!(config.supersession_demotion_weight, 1.5);
                 assert!(!config.resume_deltas);
                 assert_eq!(config.semantic_deadline, Some(Duration::from_millis(2500)));

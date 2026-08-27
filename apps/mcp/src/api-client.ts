@@ -46,6 +46,7 @@ const TRANSIENT_NETWORK_CODES = new Set([
   "UND_ERR_HEADERS_TIMEOUT",
   "UND_ERR_SOCKET",
 ]);
+const MESSAGING_CLIENT_KEY = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
 const READ_ONLY_POST_PATHS = new Set([
   "/v1/memory/compute",
   "/v1/memory/open",
@@ -597,9 +598,15 @@ function requestRetryPolicy(
     && validIdempotencyIdentity(record.idempotency_key);
   const notificationIdentity = requestPath === "/v1/workspace/notifications/publish"
     && validIdempotencyIdentity(record.event_key);
+  const messagingIdentity = method === "POST"
+    && /^\/v1\/workspace\/messaging\/conversations\/[0-9a-f-]{36}\/messages$/iu.test(
+      requestPath,
+    )
+    && typeof record.client_key === "string"
+    && MESSAGING_CLIENT_KEY.test(record.client_key);
   return {
     mutation: true,
-    retryable: hasIdempotencyKey || notificationIdentity,
+    retryable: hasIdempotencyKey || notificationIdentity || messagingIdentity,
   };
 }
 

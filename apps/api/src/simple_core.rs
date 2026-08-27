@@ -5950,24 +5950,11 @@ pub(crate) async fn prepare_markdown(
     request: WriteRequest,
 ) -> ApiResult<PreparedMarkdown> {
     validate_path(&request.path)?;
-    if request.content.len() > MAX_WRITE_BYTES {
-        return Err(ApiError::public(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "entry_too_large",
-            "Markdown writes are limited to 4 MiB; use a binary entry and companion Markdown",
-        ));
-    }
     if request.media_type != "text/markdown" && request.media_type != "text/plain" {
         return Err(ApiError::invalid(
             "workspace.write accepts Markdown or plain text; upload other files as binaries",
         ));
     }
-    let normalized = normalize_document(&request.path, &request.content);
-    let frontmatter = if state.config.supersession_demotion || state.config.intention_ledger {
-        parse_frontmatter(&request.content)
-    } else {
-        DerivedFrontmatter::default()
-    };
     let mut metadata = match request.metadata {
         Value::Object(values) => values,
         Value::Null => serde_json::Map::new(),
@@ -5981,8 +5968,49 @@ pub(crate) async fn prepare_markdown(
         );
     }
     let metadata = Value::Object(metadata);
+    let conversation_candidate =
+        crate::messaging_protocol::is_conversation_candidate(&request.path, &metadata);
+    if conversation_candidate {
+        if request.content.len() > crate::messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES {
+            return Err(ApiError::public(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "conversation_entry_too_large",
+                "canonical conversation Markdown is limited to 12 MiB",
+            ));
+        }
+        if !crate::messaging_protocol::is_workspace_import(&metadata) {
+            return Err(ApiError::invalid(
+                "canonical conversation entries may be written only by workspace import",
+            ));
+        }
+    } else if request.content.len() > MAX_WRITE_BYTES {
+        return Err(ApiError::public(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "entry_too_large",
+            "Markdown writes are limited to 4 MiB; use a binary entry and companion Markdown",
+        ));
+    }
+    let conversation_entry_id = if conversation_candidate {
+        crate::messaging_protocol::validate_conversation_entry(
+            &request.path,
+            &metadata,
+            &request.content,
+        )
+        .map_err(|error| ApiError::invalid(error.to_string()))?
+        .map(|(header, _)| header.conversation_id)
+        .ok_or_else(|| ApiError::invalid("canonical conversation metadata is required"))?
+        .into()
+    } else {
+        None
+    };
+    let normalized = normalize_document(&request.path, &request.content);
+    let frontmatter = if state.config.supersession_demotion || state.config.intention_ledger {
+        parse_frontmatter(&request.content)
+    } else {
+        DerivedFrontmatter::default()
+    };
     let task_entry = crate::task_service::validate_task_entry(&request.path, &metadata)?;
-    let chunks = if task_entry {
+    let chunks = if task_entry || conversation_entry_id.is_some() {
         Vec::new()
     } else {
         normalized.chunks
@@ -5995,7 +6023,7 @@ pub(crate) async fn prepare_markdown(
         state.config.evaluation_api_enabled,
     )?;
     Ok(PreparedMarkdown {
-        entry_id_hint: None,
+        entry_id_hint: conversation_entry_id,
         path: request.path,
         title: normalized.title,
         content_sha256: normalized
@@ -6010,7 +6038,7 @@ pub(crate) async fn prepare_markdown(
         expected_version: request.expected_version,
         tier_a_history_stage,
         frontmatter,
-        force_new_version: task_entry,
+        force_new_version: task_entry || conversation_entry_id.is_some(),
     })
 }
 
@@ -6230,6 +6258,34 @@ pub(crate) async fn fetch_locked_markdown_entry(
     .await?)
 }
 
+async fn sync_managed_entry_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    entry_id: Uuid,
+    entry_version: i64,
+    path: &str,
+    metadata: &Value,
+) -> ApiResult<()> {
+    crate::task_service::sync_managed_entry_in_tx(
+        tx,
+        user_id,
+        entry_id,
+        entry_version,
+        path,
+        metadata,
+    )
+    .await?;
+    crate::messaging_service::sync_managed_entry_in_tx(
+        tx,
+        user_id,
+        entry_id,
+        entry_version,
+        path,
+        metadata,
+    )
+    .await
+}
+
 pub(crate) async fn upsert_markdown_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
@@ -6294,7 +6350,7 @@ pub(crate) async fn upsert_markdown_in_tx(
         let row = existing
             .as_ref()
             .expect("an idempotent Tier-A history target has an existing entry");
-        crate::task_service::sync_managed_entry_in_tx(
+        sync_managed_entry_in_tx(
             tx,
             user_id,
             row.get("id"),
@@ -6318,7 +6374,7 @@ pub(crate) async fn upsert_markdown_in_tx(
         if row.get::<String, _>("content_sha256") == prepared.content_sha256
             && row.get::<Option<DateTime<Utc>>, _>("deleted_at").is_none()
         {
-            crate::task_service::sync_managed_entry_in_tx(
+            sync_managed_entry_in_tx(
                 tx,
                 user_id,
                 row.get("id"),
@@ -6453,7 +6509,7 @@ pub(crate) async fn upsert_markdown_in_tx(
         } else {
             &current_metadata
         };
-        crate::task_service::sync_managed_entry_in_tx(
+        sync_managed_entry_in_tx(
             tx,
             user_id,
             row.get("id"),
@@ -6585,7 +6641,7 @@ pub(crate) async fn upsert_markdown_in_tx(
     } else {
         prepared.metadata.clone()
     };
-    crate::task_service::sync_managed_entry_in_tx(
+    sync_managed_entry_in_tx(
         tx,
         user_id,
         entry_id,

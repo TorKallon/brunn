@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { z } from "zod/v4";
 
 import { type ApiResponse, StraylightApiClient, StraylightApiError } from "./api-client.js";
+import { registerMessagingTools } from "./messaging-tools.js";
 import { compactReasoningResponse } from "./reasoning-view.js";
 
 const reference = z.string().min(1);
@@ -472,6 +473,7 @@ function createReadItem(maxChars: number) {
 export interface StraylightMcpServerOptions {
   surface?: "local" | "remote";
   includeStructuredContent?: boolean;
+  messagingEnabled?: boolean;
   maxReadChars?: number;
 }
 
@@ -482,6 +484,8 @@ export function createStraylightMcpServer(
   const surface = options.surface ?? "local";
   const includeStructuredContent = options.includeStructuredContent
     ?? process.env.STRAYLIGHT_MCP_INCLUDE_STRUCTURED_CONTENT === "1";
+  const messagingEnabled = options.messagingEnabled
+    ?? process.env.STRAYLIGHT_MESSAGING_ENABLED === "true";
   const maxReadChars = options.maxReadChars ?? (surface === "remote" ? 120_000 : 500_000);
   const server = new McpServer({
     name: "straylight",
@@ -1208,6 +1212,10 @@ registerJsonTool(
   },
   (input) => client.request("/v1/workspace/secrets/delete", input),
 );
+
+  if (messagingEnabled) {
+    registerMessagingTools(server, client, { includeStructuredContent });
+  }
 
   return server;
 }
