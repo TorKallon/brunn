@@ -159,6 +159,7 @@ Infrastructure — no reasoning-quality risk (code, no experiment gate):
 | [D08](mvp/D08-legacy-freeze-and-deletion.md) | Legacy freeze and eventual deletion | Simplified production route and import proof pass; destructive legacy-code deletion remains a future restore-backed change | The environment-blocked drill does not block this direct cutover, but recovery tooling remains |
 | [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — safe subset not started | Deferred lexical consolidation rejected by [E05](mvp/E05-lexical-consolidation-guard.md) and closed |
 | [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Railway/import/web/client/backfill/worker/publication gates passed; restore exception recorded | Railway is the only production target |
+| [D15](mvp/D15-agent-first-tasks.md) | Agent-first tasks | Accepted for implementation — measured storage choice complete; build in progress | Deterministic bounded surfaces; gates 1–12 required before release |
 
 Features — flag + experiment gated:
 
@@ -270,6 +271,14 @@ then superseded the staged rollout with the direct-cutover Track 1 on
 
 ## Change log
 
+- 2026-08-27: Added D15 for the owner-approved agent-first tasks feature.
+  Selected canonical versioned task entries plus a transactional indexed
+  projection after a 2,000-task spike measured 0.295 ms p95 projection reads
+  and an index scan without a sequential scan. Recorded schema, deterministic
+  engine, provenance, contexts/projects, HTTP/MCP, guard, Todoist v1 pull,
+  narrow iOS credentials, Night Signal surfaces, threat model, and all twelve
+  acceptance gates. Release remains closed until every gate, including
+  scenarios 12a–g, has recorded passing output.
 - 2026-07-31 (cutover execution): Completed the zero-diff layered migration,
   exact fresh-source overlay, ten history-preserving soft deletions, primary
   agent-memory and dormant-backup import/replay, Straylight-only Codex and
