@@ -48,8 +48,11 @@ MESSAGE_COUNT = 500
 # The child intentionally sorts before its parent.  A generic path-sorted
 # carrystate import therefore fails unless the messaging-aware importer orders
 # the continuation graph parent-first.
-CHILD_ID = uuid.UUID("00000000-0000-4000-8000-000000000001")
-PARENT_ID = uuid.UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
+CHILD_ID = uuid.UUID("00000000-0000-7000-8000-000000000001")
+PARENT_ID = uuid.UUID("ffffffff-ffff-7fff-bfff-ffffffffffff")
+MALFORMED_ID = uuid.UUID("10000000-0000-7000-8000-000000000001")
+UNMARKED_ID = uuid.UUID("10000000-0000-7000-8000-000000000002")
+MANAGED_OVERSIZE_ID = uuid.UUID("10000000-0000-7000-8000-000000000003")
 PARTICIPANTS = [
     {"agent_id": "agent-a", "role": "participant"},
     {"agent_id": "owner", "role": "participant"},
@@ -721,7 +724,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     fixture = fixtures()
 
     source_generation = workspace_generation(source.client)
-    malformed_id = uuid.uuid4()
+    malformed_id = MALFORMED_ID
     malformed_header = canonical_header(
         malformed_id,
         status="closed",
@@ -738,7 +741,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         expected=400,
     )
 
-    unmarked_id = uuid.uuid4()
+    unmarked_id = UNMARKED_ID
     unmarked_header = canonical_header(
         unmarked_id,
         status="closed",
@@ -782,7 +785,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         expected=413,
     )
 
-    managed_oversize_id = uuid.uuid4()
+    managed_oversize_id = MANAGED_OVERSIZE_ID
     managed_oversize_header = canonical_header(
         managed_oversize_id,
         status="closed",
