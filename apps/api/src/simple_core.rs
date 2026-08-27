@@ -1134,10 +1134,14 @@ pub async fn read(
             .chain(entry.workspace_generation)
             .max();
         used_entries.push(entry.id);
+        let exact_read_limit = exact_read_char_limit(requested_count, &item, &entry);
+        if requested_count == 1 {
+            remaining_chars = exact_read_limit;
+        }
         let max_chars = item
             .max_chars
             .unwrap_or(256_000)
-            .clamp(1, MAX_EXACT_READ_CHARS)
+            .clamp(1, exact_read_limit)
             .min(remaining_chars);
         let mut rendered = render_read(&entry, &item, max_chars)?;
         if let Some(resolution) = current_truth {
@@ -1202,6 +1206,29 @@ pub async fn read(
     metrics::histogram!("simple.read.entries").record(returned_entries as f64);
     record_serialized_product_read(&state, &auth, ProductActivityOperation::Read, &envelope);
     Ok(Json(envelope))
+}
+
+fn exact_read_char_limit(requested_count: usize, request: &ReadItem, entry: &EntryRow) -> usize {
+    if requested_count == 1
+        && request.view.as_deref().unwrap_or("full") == "full"
+        && entry.kind == "markdown"
+        && entry.media_type == "text/markdown"
+        && entry.size_bytes >= 0
+        && usize::try_from(entry.size_bytes)
+            .is_ok_and(|size| size <= crate::messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES)
+        && entry.content.as_deref().is_some_and(|content| {
+            crate::messaging_protocol::validate_conversation_entry(
+                &entry.path,
+                &entry.metadata,
+                content,
+            )
+            .is_ok_and(|value| value.is_some())
+        })
+    {
+        crate::messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES
+    } else {
+        MAX_EXACT_READ_CHARS
+    }
 }
 
 pub async fn write(
@@ -9172,6 +9199,83 @@ fn render_seed_checkpoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_read_expands_only_for_one_canonical_conversation() {
+        use crate::messaging_protocol::{
+            ConversationHeader, ConversationKind, ConversationParticipant, ConversationStatus,
+            conversation_metadata, conversation_path, render_conversation,
+        };
+
+        let conversation_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let created_at = "2026-08-27T12:00:00Z".parse().unwrap();
+        let header = ConversationHeader {
+            schema: "conversation.v1".to_owned(),
+            conversation_id,
+            conversation_kind: ConversationKind::Direct,
+            direct_key: Some("alpha|owner".to_owned()),
+            subject: None,
+            status: ConversationStatus::Open,
+            participants: vec![
+                ConversationParticipant {
+                    agent_id: "alpha".to_owned(),
+                    role: "participant".to_owned(),
+                },
+                ConversationParticipant {
+                    agent_id: "owner".to_owned(),
+                    role: "participant".to_owned(),
+                },
+            ],
+            created_by_agent_id: "owner".to_owned(),
+            continues_from: None,
+            agent_streak: 0,
+            needs_human: false,
+            latest_sync_cursor: 1,
+            created_at,
+            closed_at: None,
+        };
+        let content = render_conversation(&header, &[]).unwrap();
+        let mut entry = EntryRow {
+            id: conversation_id,
+            path: conversation_path(conversation_id),
+            title: "Conversation".to_owned(),
+            kind: "markdown".to_owned(),
+            media_type: "text/markdown".to_owned(),
+            version: 1,
+            content_sha256: "a".repeat(64),
+            size_bytes: i64::try_from(content.len()).unwrap(),
+            content: Some(content),
+            object_key: None,
+            object_version_id: None,
+            metadata: conversation_metadata(&header),
+            updated_at: created_at,
+            workspace_generation: Some(1),
+        };
+        let request = ReadItem {
+            reference: Some(format!("entry:{conversation_id}")),
+            path: None,
+            link_target: None,
+            view: Some("full".to_owned()),
+            start: None,
+            end: None,
+            max_chars: Some(crate::messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES),
+            version: None,
+        };
+
+        assert_eq!(
+            exact_read_char_limit(1, &request, &entry),
+            crate::messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES
+        );
+        assert_eq!(
+            exact_read_char_limit(2, &request, &entry),
+            MAX_EXACT_READ_CHARS
+        );
+        entry.metadata = json!({});
+        assert_eq!(
+            exact_read_char_limit(1, &request, &entry),
+            MAX_EXACT_READ_CHARS
+        );
+    }
 
     fn candidate_with_sections(id: u128, section_chars: &[usize]) -> Candidate {
         let sections = section_chars

@@ -14,7 +14,10 @@ use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
-use crate::carrystate_cli::{ApiClient, strip_sha256, unwrap_data};
+use crate::{
+    carrystate_cli::{ApiClient, strip_sha256, unwrap_data},
+    messaging_protocol,
+};
 
 const EXPORT_MANIFEST_FORMAT: &str = "straylight-workspace-export@v1";
 const IMPORT_MANIFEST_FORMAT: &str = "straylight-workspace-import-manifest@v1";
@@ -361,6 +364,7 @@ async fn download_markdown(
     entry: &ManifestEntry,
     destination: &Path,
 ) -> Result<()> {
+    let max_chars = exact_text_read_limit(entry)?;
     let response = client
         .post_json(
             "/v1/workspace/read",
@@ -368,7 +372,7 @@ async fn download_markdown(
                 "requests": [{
                     "ref": entry.entry_ref,
                     "view": "full",
-                    "max_chars": MAX_EXACT_TEXT_READ_CHARS,
+                    "max_chars": max_chars,
                     "version": entry.version
                 }]
             }),
@@ -412,13 +416,18 @@ async fn download_markdown(
         );
     }
     if hash_bytes(text.as_bytes()) != strip_sha256(&entry.content_hash)
-        && text.chars().count() == MAX_EXACT_TEXT_READ_CHARS
+        && text.chars().count() == max_chars
     {
         bail!(
             "{} exceeds workspace.read's current {}-character exact-content limit",
             entry.path,
-            MAX_EXACT_TEXT_READ_CHARS
+            max_chars
         );
+    }
+    if is_managed_conversation_manifest_entry(entry) {
+        messaging_protocol::validate_conversation_entry(&entry.path, &entry.metadata, text)
+            .map_err(|error| anyhow!(error.to_string()))?
+            .ok_or_else(|| anyhow!("managed conversation export lacks canonical metadata"))?;
     }
     write_verified_bytes(
         destination,
@@ -426,6 +435,42 @@ async fn download_markdown(
         &entry.content_hash,
         entry.size_bytes,
     )
+}
+
+fn exact_text_read_limit(entry: &ManifestEntry) -> Result<usize> {
+    if !is_managed_conversation_manifest_entry(entry) {
+        return Ok(MAX_EXACT_TEXT_READ_CHARS);
+    }
+    if entry.size_bytes > messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES as u64 {
+        bail!(
+            "{} exceeds the managed conversation {}-byte limit",
+            entry.path,
+            messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES
+        );
+    }
+    Ok(messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES)
+}
+
+fn is_managed_conversation_manifest_entry(entry: &ManifestEntry) -> bool {
+    if entry.kind != EntryKind::Markdown || entry.media_type != "text/markdown" {
+        return false;
+    }
+    let Some(path_id) = messaging_protocol::conversation_id_from_path(&entry.path) else {
+        return false;
+    };
+    let metadata = entry
+        .metadata
+        .get("client")
+        .filter(|value| value.is_object())
+        .unwrap_or(&entry.metadata);
+    metadata.get("kind").and_then(Value::as_str) == Some("conversation")
+        && metadata.get("schema").and_then(Value::as_str) == Some("conversation.v1")
+        && metadata
+            .get("conversation")
+            .and_then(|value| value.get("id"))
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            == Some(path_id)
 }
 
 fn write_verified_bytes(
@@ -695,6 +740,40 @@ mod tests {
         .unwrap();
         assert_eq!(wrapped.modified_unix_ns, Some(456));
         assert_eq!(wrapped.mode, Some(0o600));
+    }
+
+    #[test]
+    fn managed_conversation_exact_read_limit_is_narrow() {
+        let conversation_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let mut managed = manifest_entry(1, true);
+        managed.path = messaging_protocol::conversation_path(conversation_id);
+        managed.size_bytes = (MAX_EXACT_TEXT_READ_CHARS + 1) as u64;
+        managed.metadata = json!({
+            "kind": "conversation",
+            "schema": "conversation.v1",
+            "conversation": {"id": conversation_id}
+        });
+        assert!(is_managed_conversation_manifest_entry(&managed));
+        assert_eq!(
+            exact_text_read_limit(&managed).unwrap(),
+            messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES
+        );
+
+        let mut ordinary_path = managed.clone();
+        ordinary_path.path = "Trips/conversation.md".to_owned();
+        assert!(!is_managed_conversation_manifest_entry(&ordinary_path));
+        assert_eq!(
+            exact_text_read_limit(&ordinary_path).unwrap(),
+            MAX_EXACT_TEXT_READ_CHARS
+        );
+
+        let mut unmarked = managed.clone();
+        unmarked.metadata = json!({});
+        assert!(!is_managed_conversation_manifest_entry(&unmarked));
+        assert_eq!(
+            exact_text_read_limit(&unmarked).unwrap(),
+            MAX_EXACT_TEXT_READ_CHARS
+        );
     }
 
     #[test]

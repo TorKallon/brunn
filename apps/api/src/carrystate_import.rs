@@ -21,7 +21,10 @@ use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::carrystate_cli::{ApiClient, strip_sha256, unwrap_data};
+use crate::{
+    carrystate_cli::{ApiClient, strip_sha256, unwrap_data},
+    messaging_protocol,
+};
 
 const IMPORT_MANIFEST_FORMAT: &str = "straylight-workspace-import-manifest@v1";
 const EXPORT_MANIFEST_FORMAT: &str = "straylight-workspace-export@v1";
@@ -30,6 +33,8 @@ const TIER_A_HISTORY_STAGE_FORMAT: &str = "straylight-tier-a-history-stage@v1";
 const TIER_A_ORDINARY_HISTORY_SEMANTICS: &str = "ordinary_content_transition";
 const TIER_A_EXACT_HISTORY_SEMANTICS: &str = "preserve_intentional_exact_bytes_version";
 const MAX_TEXT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_MANAGED_CONVERSATION_BYTES: u64 =
+    messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES as u64;
 const MAX_MULTIPART_BINARY_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_STREAMED_BINARY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_CONTEXT_SOURCE_BYTES: u64 = 256 * 1024;
@@ -236,6 +241,7 @@ pub async fn run(client: Option<&ApiClient>, args: ImportArgs) -> Result<()> {
     let mut uploaded = 0_usize;
     let mut skipped = 0_usize;
     for phase in [
+        ImportPhase::ManagedConversation,
         ImportPhase::Markdown,
         ImportPhase::Binary,
         ImportPhase::BinaryCompanion,
@@ -273,6 +279,7 @@ pub async fn run(client: Option<&ApiClient>, args: ImportArgs) -> Result<()> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ImportPhase {
+    ManagedConversation,
     Markdown,
     Binary,
     BinaryCompanion,
@@ -281,8 +288,11 @@ enum ImportPhase {
 impl ImportPhase {
     fn includes(self, entry: &InventoryEntry) -> bool {
         match self {
+            Self::ManagedConversation => is_managed_conversation_entry(entry),
             Self::Markdown => {
-                entry.kind == EntryKind::Markdown && !is_binary_companion_entry(entry)
+                entry.kind == EntryKind::Markdown
+                    && !is_binary_companion_entry(entry)
+                    && !is_managed_conversation_entry(entry)
             }
             Self::Binary => entry.kind == EntryKind::Binary,
             Self::BinaryCompanion => {
@@ -293,9 +303,14 @@ impl ImportPhase {
 
     fn concurrency(self) -> usize {
         match self {
+            Self::ManagedConversation => 1,
             Self::Binary => MAX_CONCURRENT_BINARY_WRITES,
             Self::Markdown | Self::BinaryCompanion => MAX_CONCURRENT_MARKDOWN_WRITES,
         }
+    }
+
+    fn forces_upload(self) -> bool {
+        self == Self::ManagedConversation
     }
 }
 
@@ -327,6 +342,94 @@ struct ImportCounts {
     skipped: usize,
 }
 
+fn effective_client_metadata(metadata: &Value) -> &Value {
+    metadata
+        .get("client")
+        .filter(|value| value.is_object())
+        .unwrap_or(metadata)
+}
+
+fn managed_conversation_id(path: &str, metadata: &Value) -> Option<Uuid> {
+    let path_id = messaging_protocol::conversation_id_from_path(path)?;
+    let metadata = effective_client_metadata(metadata);
+    (metadata.get("kind").and_then(Value::as_str) == Some("conversation")
+        && metadata.get("schema").and_then(Value::as_str) == Some("conversation.v1")
+        && metadata
+            .get("conversation")
+            .and_then(|value| value.get("id"))
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            == Some(path_id))
+    .then_some(path_id)
+}
+
+fn is_managed_conversation_entry(entry: &InventoryEntry) -> bool {
+    entry.kind == EntryKind::Markdown
+        && entry.media_type == "text/markdown"
+        && managed_conversation_id(&entry.path, &entry.source_metadata).is_some()
+}
+
+fn managed_conversation_parent(entry: &InventoryEntry) -> Result<Option<Uuid>> {
+    if !is_managed_conversation_entry(entry) {
+        return Ok(None);
+    }
+    let value = effective_client_metadata(&entry.source_metadata)
+        .get("conversation")
+        .and_then(|value| value.get("continues_from"));
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(
+            Uuid::parse_str(value).context("conversation continues_from is not a UUID")?,
+        )),
+        Some(_) => bail!("conversation continues_from must be a UUID or null"),
+    }
+}
+
+fn import_phase_entries(
+    entries: &[InventoryEntry],
+    phase: ImportPhase,
+) -> Result<Vec<&InventoryEntry>> {
+    let selected = entries
+        .iter()
+        .filter(|entry| phase.includes(entry))
+        .collect::<Vec<_>>();
+    if phase != ImportPhase::ManagedConversation {
+        return Ok(selected);
+    }
+
+    let mut nodes = Vec::with_capacity(selected.len());
+    let mut known = BTreeSet::new();
+    for entry in selected {
+        let conversation_id = managed_conversation_id(&entry.path, &entry.source_metadata)
+            .ok_or_else(|| anyhow!("managed conversation import lacks canonical identity"))?;
+        if !known.insert(conversation_id) {
+            bail!("workspace import contains a duplicate managed conversation id");
+        }
+        nodes.push((conversation_id, managed_conversation_parent(entry)?, entry));
+    }
+
+    let mut emitted = BTreeSet::new();
+    let mut ordered = Vec::with_capacity(nodes.len());
+    while ordered.len() < nodes.len() {
+        let before = ordered.len();
+        for (conversation_id, parent_id, entry) in &nodes {
+            if emitted.contains(conversation_id) {
+                continue;
+            }
+            if parent_id.is_some_and(|parent| known.contains(&parent) && !emitted.contains(&parent))
+            {
+                continue;
+            }
+            emitted.insert(*conversation_id);
+            ordered.push(*entry);
+        }
+        if ordered.len() == before {
+            bail!("managed conversation continuation graph contains a cycle");
+        }
+    }
+    Ok(ordered)
+}
+
 async fn import_phase(
     client: &ApiClient,
     root: &Path,
@@ -336,7 +439,7 @@ async fn import_phase(
     phase: ImportPhase,
 ) -> Result<ImportCounts> {
     let mut plans = Vec::new();
-    for entry in entries.iter().filter(|entry| phase.includes(entry)) {
+    for entry in import_phase_entries(entries, phase)? {
         let portable_companion = portable_companion_entry(entry, entries)?;
         let companion_binary = tier_a_binary_for_companion(entry, entries)?;
         let key = collision_key(&entry.path);
@@ -356,7 +459,7 @@ async fn import_phase(
             companion_binary,
             expected_version: decision.expected_version,
             current,
-            upload: decision.upload,
+            upload: decision.upload || phase.forces_upload(),
         });
     }
 
@@ -423,6 +526,34 @@ async fn import_phase(
     Ok(counts)
 }
 
+fn is_managed_conversation_portable_entry(path: &str, entry: &PortableExportEntry) -> bool {
+    entry.kind == EntryKind::Markdown
+        && entry.media_type == "text/markdown"
+        && managed_conversation_id(path, &entry.metadata).is_some()
+}
+
+fn validate_managed_conversation_portable_entry(
+    path: &str,
+    entry: &PortableExportEntry,
+    inspected: &InspectedFile,
+) -> Result<()> {
+    if entry.size_bytes != inspected.size_bytes
+        || strip_sha256(&entry.content_hash) != inspected.sha256
+    {
+        bail!("managed conversation bytes do not match the portable export manifest");
+    }
+    let bytes = inspected
+        .bytes
+        .as_deref()
+        .ok_or_else(|| anyhow!("managed conversation exceeds the import collection limit"))?;
+    let markdown = std::str::from_utf8(bytes)
+        .context("managed conversation export content is not valid UTF-8")?;
+    messaging_protocol::validate_conversation_entry(path, &entry.metadata, markdown)
+        .map_err(|error| anyhow!(error.to_string()))?
+        .ok_or_else(|| anyhow!("managed conversation export lacks canonical metadata"))?;
+    Ok(())
+}
+
 fn inventory(root: &Path, args: &ImportArgs) -> Result<InventoryManifest> {
     let includes = build_globs(&args.include)?;
     let excludes = build_globs(&args.exclude)?;
@@ -474,9 +605,28 @@ fn inventory(root: &Path, args: &ImportArgs) -> Result<InventoryManifest> {
         }
 
         let metadata = item.metadata()?;
-        let inspected = inspect_file(item.path(), &metadata)?;
+        let portable_entry = portable.get(&relative);
+        let managed_portable = portable_entry
+            .filter(|candidate| is_managed_conversation_portable_entry(&relative, candidate));
+        if managed_portable
+            .is_some_and(|candidate| candidate.size_bytes > MAX_MANAGED_CONVERSATION_BYTES)
+        {
+            bail!(
+                "{relative} exceeds the managed conversation {}-byte limit",
+                messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES
+            );
+        }
+        let collect_limit = if managed_portable.is_some() {
+            MAX_MANAGED_CONVERSATION_BYTES
+        } else {
+            MAX_TEXT_BYTES
+        };
+        let inspected = inspect_file(item.path(), &metadata, collect_limit)?;
+        if let Some(candidate) = managed_portable {
+            validate_managed_conversation_portable_entry(&relative, candidate, &inspected)?;
+        }
         let kind = classify_file(item.path(), inspected.bytes.as_deref());
-        let matching_portable = portable.get(&relative).filter(|candidate| {
+        let matching_portable = portable_entry.filter(|candidate| {
             candidate.kind == kind
                 && strip_sha256(&candidate.content_hash) == inspected.sha256
                 && candidate.size_bytes == inspected.size_bytes
@@ -561,14 +711,18 @@ struct InspectedFile {
     bytes: Option<Vec<u8>>,
 }
 
-fn inspect_file(path: &Path, expected: &std::fs::Metadata) -> Result<InspectedFile> {
+fn inspect_file(
+    path: &Path,
+    expected: &std::fs::Metadata,
+    collect_limit: u64,
+) -> Result<InspectedFile> {
     let mut file =
         File::open(path).with_context(|| format!("could not open {}", path.display()))?;
     let opened = file.metadata()?;
     ensure_same_file(path, expected, &opened)?;
     let mut hasher = Sha256::new();
     let mut size_bytes = 0_u64;
-    let collect = opened.len() <= MAX_TEXT_BYTES;
+    let collect = opened.len() <= collect_limit;
     let mut bytes = collect.then(|| Vec::with_capacity(opened.len() as usize));
     let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
@@ -2174,6 +2328,27 @@ mod tests {
         }
     }
 
+    fn conversation_entry(id: Uuid, parent: Option<Uuid>) -> InventoryEntry {
+        InventoryEntry {
+            path: messaging_protocol::conversation_path(id),
+            kind: EntryKind::Markdown,
+            content_hash: format!("sha256:{}", "a".repeat(64)),
+            size_bytes: MAX_TEXT_BYTES + 1,
+            media_type: "text/markdown".to_owned(),
+            portable: PortableMetadata::default(),
+            attachment_context: Vec::new(),
+            source_metadata: json!({
+                "kind": "conversation",
+                "schema": "conversation.v1",
+                "conversation": {
+                    "id": id,
+                    "continues_from": parent
+                }
+            }),
+            observed: ObservedFile::default(),
+        }
+    }
+
     fn remote_history_entry(version: i64, target: i64, semantics: &str) -> RemoteEntry {
         RemoteEntry {
             entry_ref: format!("entry:{}", Uuid::now_v7()),
@@ -2423,6 +2598,64 @@ mod tests {
         assert!(ImportPhase::Binary.includes(&binary));
         assert!(ImportPhase::BinaryCompanion.includes(&companion));
         assert!(!ImportPhase::Markdown.includes(&companion));
+    }
+
+    #[test]
+    fn managed_conversations_import_parent_first_without_reordering_inventory() {
+        let child_id = Uuid::parse_str("00000000-0000-4000-8000-000000000001").unwrap();
+        let parent_id = Uuid::parse_str("ffffffff-ffff-4fff-bfff-ffffffffffff").unwrap();
+        let child = conversation_entry(child_id, Some(parent_id));
+        let parent = conversation_entry(parent_id, None);
+        let ordinary = InventoryEntry {
+            path: "Notes/ordinary.md".to_owned(),
+            kind: EntryKind::Markdown,
+            content_hash: format!("sha256:{}", "b".repeat(64)),
+            size_bytes: 10,
+            media_type: "text/markdown".to_owned(),
+            portable: PortableMetadata::default(),
+            attachment_context: Vec::new(),
+            source_metadata: Value::Null,
+            observed: ObservedFile::default(),
+        };
+        let entries = vec![child, ordinary, parent];
+
+        let managed = import_phase_entries(&entries, ImportPhase::ManagedConversation).unwrap();
+        assert_eq!(
+            managed
+                .iter()
+                .map(|entry| managed_conversation_id(&entry.path, &entry.source_metadata).unwrap())
+                .collect::<Vec<_>>(),
+            [parent_id, child_id]
+        );
+        assert_eq!(
+            import_phase_entries(&entries, ImportPhase::Markdown)
+                .unwrap()
+                .iter()
+                .map(|entry| entry.path.as_str())
+                .collect::<Vec<_>>(),
+            ["Notes/ordinary.md"]
+        );
+        assert_eq!(ImportPhase::ManagedConversation.concurrency(), 1);
+        assert!(ImportPhase::ManagedConversation.forces_upload());
+        assert!(!ImportPhase::Markdown.forces_upload());
+
+        let matching_parent = RemoteEntry {
+            entry_ref: format!("entry:{parent_id}"),
+            path: entries[2].path.clone(),
+            kind: "markdown".to_owned(),
+            version: 1,
+            content_hash: entries[2].content_hash.clone(),
+            size_bytes: entries[2].size_bytes,
+            metadata: json!({
+                "portable": {
+                    "modified_unix_ns": null,
+                    "mode": null
+                }
+            }),
+        };
+        let decision = plan_import_entry(&entries[2], Some(&matching_parent), true, None).unwrap();
+        assert!(!decision.upload);
+        assert!(decision.upload || ImportPhase::ManagedConversation.forces_upload());
     }
 
     #[test]
