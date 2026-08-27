@@ -1,4 +1,4 @@
--- Durable agent messaging. Canonical conversation state remains in versioned
+-- Migration 0075: durable agent messaging. Canonical conversation state remains in versioned
 -- workspace entries; the messaging tables are principals, bindings, compact
 -- coordination state, and one rebuildable message projection.
 
@@ -396,7 +396,7 @@ CREATE TABLE straylight.messaging_conversations (
   agent_streak integer NOT NULL DEFAULT 0 CHECK (agent_streak BETWEEN 0 AND 20),
   needs_human boolean NOT NULL DEFAULT false,
   continues_from uuid,
-  latest_sync_cursor bigint NOT NULL DEFAULT 0 CHECK (latest_sync_cursor >= 0),
+  latest_sync_cursor bigint NOT NULL CHECK (latest_sync_cursor > 0),
   closed_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
@@ -482,6 +482,7 @@ CREATE TABLE straylight.messaging_message_index (
   refs jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (
     jsonb_typeof(refs) = 'array' AND jsonb_array_length(refs) <= 32
   ),
+  in_reply_to_conversation_id uuid,
   in_reply_to bigint CHECK (in_reply_to IS NULL OR in_reply_to > 0),
   correlation_id text CHECK (
     correlation_id IS NULL OR length(btrim(correlation_id)) BETWEEN 1 AND 200
@@ -501,9 +502,10 @@ CREATE TABLE straylight.messaging_message_index (
     ON DELETE CASCADE,
   FOREIGN KEY (user_id, from_agent_id)
     REFERENCES straylight.messaging_agents(user_id, agent_id),
-  FOREIGN KEY (user_id, conversation_id, in_reply_to)
+  FOREIGN KEY (user_id, in_reply_to_conversation_id, in_reply_to)
     REFERENCES straylight.messaging_message_index(user_id, conversation_id, seq)
     DEFERRABLE INITIALLY DEFERRED,
+  CHECK ((in_reply_to_conversation_id IS NULL) = (in_reply_to IS NULL)),
   CHECK (
     (kind = 'system' AND from_agent_id IS NULL
       AND client_key IS NULL AND request_hash IS NULL
@@ -518,16 +520,33 @@ CREATE TABLE straylight.messaging_message_index (
   CHECK (NOT expects_reply OR kind = 'question'),
   CHECK (reply_by IS NULL OR expects_reply),
   CHECK (
+    kind <> 'system'
+    OR (
+      in_reply_to_conversation_id IS NULL AND in_reply_to IS NULL
+      AND correlation_id IS NULL AND NOT expects_reply
+      AND reply_by IS NULL AND reply_by_handled_at IS NULL
+    )
+  ),
+  CHECK (
     reply_by IS NULL
     OR (reply_by > created_at AND reply_by <= created_at + interval '24 hours')
   ),
-  CHECK (reply_by_handled_at IS NULL OR reply_by IS NOT NULL)
+  CHECK (
+    reply_by_handled_at IS NULL
+    OR (reply_by IS NOT NULL AND reply_by_handled_at >= reply_by)
+  )
 );
 
 CREATE INDEX messaging_message_index_cursor_idx
   ON straylight.messaging_message_index (
     user_id, sync_cursor, conversation_id, seq
   );
+
+CREATE INDEX messaging_message_index_reply_idx
+  ON straylight.messaging_message_index (
+    user_id, in_reply_to_conversation_id, in_reply_to
+  )
+  WHERE in_reply_to IS NOT NULL;
 
 CREATE UNIQUE INDEX messaging_message_index_system_key_idx
   ON straylight.messaging_message_index (
@@ -822,6 +841,16 @@ USING (
 WITH CHECK (
   straylight_auth.can_access_user(user_id)
   AND straylight_auth.has_any_capability(ARRAY['message.write', 'admin'])
+  AND (
+    kind = 'system'
+    OR EXISTS (
+      SELECT 1
+      FROM straylight.messaging_participants AS participant
+      WHERE participant.user_id=messaging_message_index.user_id
+        AND participant.conversation_id=messaging_message_index.conversation_id
+        AND participant.agent_id=messaging_message_index.from_agent_id
+    )
+  )
 );
 
 CREATE POLICY messaging_sync_state_select
@@ -995,6 +1024,44 @@ WITH CHECK (
 -- effect. This does not grant message writers the general notification
 -- publisher: only a typed target backed by the just-written conversation
 -- message and the fixed content-free copies below are writable.
+CREATE POLICY messaging_notifications_select
+ON straylight.notifications
+FOR SELECT TO app_rw
+USING (
+  user_id = straylight_auth.current_user_id()
+  AND straylight_auth.context_is_valid()
+  AND straylight_auth.has_capability('message.write')
+  AND producer_credential_id = straylight_auth.current_credential_id()
+  AND kind = 'operational'
+  AND source IS NULL
+  AND correlation_id = event_key
+  AND jsonb_typeof(target) = 'object'
+  AND target->>'type' = 'conversation'
+  AND target - 'type' - 'conversation_id' - 'seq' = '{}'::jsonb
+  AND EXISTS (
+    SELECT 1
+    FROM straylight.messaging_message_index AS message
+    WHERE message.user_id = notifications.user_id
+      AND message.conversation_id::text = notifications.target->>'conversation_id'
+      AND message.seq::text = notifications.target->>'seq'
+  )
+);
+
+-- Delivery fan-out reads only the current user's live installation rows. The
+-- public installation routes retain their existing notification:manage guard;
+-- this policy exists solely so a typed message side effect can populate the
+-- existing outbox in the same transaction.
+CREATE POLICY messaging_notification_installations_select
+ON straylight.notification_installations
+FOR SELECT TO app_rw
+USING (
+  user_id = straylight_auth.current_user_id()
+  AND straylight_auth.context_is_valid()
+  AND straylight_auth.has_capability('message.write')
+  AND enabled
+  AND revoked_at IS NULL
+);
+
 CREATE POLICY messaging_notifications_insert
 ON straylight.notifications
 FOR INSERT TO app_rw

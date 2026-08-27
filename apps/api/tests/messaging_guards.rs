@@ -376,6 +376,68 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     };
     let app = router(state.clone());
 
+    let notification_conflict = seed_workspace(&pool, "notification-conflict").await;
+    let notification_conflict_conversation = create_conversation(
+        &app,
+        &notification_conflict.agent.token,
+        &["agent-b", "owner"],
+        "Notification event-key conflict",
+    )
+    .await;
+    let conflict_event_key = format!("message:{notification_conflict_conversation}:1");
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.notifications (
+          id,user_id,producer_credential_id,event_key,request_hash,
+          correlation_id,kind,importance,title,body,source,target,
+          occurred_at,expires_at
+        ) VALUES (
+          $1,$2,$3,$4,$5,$4,'operational','normal','New agent message',
+          'Open Straylight to view the conversation.',NULL,$6,
+          clock_timestamp(),clock_timestamp()+interval '24 hours'
+        )
+        "#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(notification_conflict.user_id)
+    .bind(notification_conflict.agent.id)
+    .bind(&conflict_event_key)
+    .bind("f".repeat(64))
+    .bind(json!({
+        "type": "conversation",
+        "conversation_id": notification_conflict_conversation,
+        "seq": 1
+    }))
+    .execute(&pool)
+    .await
+    .expect("seed conflicting notification event key");
+    let conflicted_send = request_json(
+        &app,
+        Method::POST,
+        &format!("{MESSAGING_ROOT}/conversations/{notification_conflict_conversation}/messages"),
+        &notification_conflict.agent.token,
+        text_send(900, "this send must fail atomically"),
+    )
+    .await;
+    assert_error(
+        &conflicted_send,
+        StatusCode::CONFLICT,
+        "notification_event_key_conflict",
+    );
+    let conflicted_message_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT count(*)::bigint
+        FROM straylight.messaging_message_index
+        WHERE user_id=$1 AND conversation_id=$2
+        "#,
+    )
+    .bind(notification_conflict.user_id)
+    .bind(notification_conflict_conversation)
+    .fetch_one(&pool)
+    .await
+    .expect("count rolled-back conflicted send");
+    assert_eq!(conflicted_message_count, 0);
+
     let sender_rate = seed_workspace(&pool, "sender-rate").await;
     let sender_rate_conversation = create_conversation(
         &app,
@@ -664,6 +726,63 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
         "an owner post promotes an observer for subsequent delivery"
     );
 
+    let pause_rollover = seed_workspace(&pool, "pause-rollover").await;
+    let pause_rollover_conversation = create_conversation(
+        &app,
+        &pause_rollover.agent.token,
+        &["agent-b"],
+        "Twentieth message at rollover",
+    )
+    .await;
+    seed_messages(
+        &pool,
+        pause_rollover.user_id,
+        pause_rollover_conversation,
+        1,
+        498,
+        &["agent-a"],
+        Utc::now() - ChronoDuration::hours(2),
+        19,
+    )
+    .await;
+    let pause_at_rollover = request_json(
+        &app,
+        Method::POST,
+        &format!("{MESSAGING_ROOT}/conversations/{pause_rollover_conversation}/messages"),
+        &pause_rollover.agent.token,
+        text_send(900, "twentieth message fills the source entry"),
+    )
+    .await;
+    assert_eq!(pause_at_rollover.status, StatusCode::OK);
+    assert_eq!(
+        data(&pause_at_rollover).get("seq").and_then(Value::as_i64),
+        Some(499)
+    );
+    let pause_continuation = data(&pause_at_rollover)
+        .get("continuation_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .expect("the source entry rolls after its pause system message");
+    let pause_events = sqlx::query_scalar::<_, Vec<String>>(
+        r#"
+        SELECT array_agg(event_key ORDER BY event_key)
+        FROM straylight.notifications
+        WHERE user_id=$1
+        "#,
+    )
+    .bind(pause_rollover.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read rollover pause notifications");
+    assert_eq!(
+        pause_events,
+        vec![
+            format!("message-system:{pause_continuation}:1"),
+            format!("needs-human:{pause_rollover_conversation}:500"),
+        ],
+        "the attention alert targets the actual pause record, not the continuation marker"
+    );
+
     let rollover = seed_workspace(&pool, "rollover").await;
     let rollover_conversation = create_conversation(
         &app,
@@ -792,6 +911,86 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     .await
     .expect("count continuation system record");
     assert_eq!(continuation_systems, 1);
+    let cross_continuation_reply = request_json(
+        &app,
+        Method::POST,
+        &rollover_path,
+        &rollover.agent.token,
+        json!({
+            "client_key": client_key(902),
+            "kind": "text",
+            "body_md": "reply to the predecessor boundary",
+            "in_reply_to": 500
+        }),
+    )
+    .await;
+    assert_eq!(cross_continuation_reply.status, StatusCode::OK);
+    assert_eq!(
+        data(&cross_continuation_reply)
+            .get("conversation_id")
+            .and_then(Value::as_str),
+        Some(continuation_id.to_string().as_str())
+    );
+    let stored_reply = sqlx::query_as::<_, (Option<Uuid>, Option<i64>)>(
+        r#"
+        SELECT in_reply_to_conversation_id,in_reply_to
+        FROM straylight.messaging_message_index
+        WHERE user_id=$1 AND conversation_id=$2 AND seq=3
+        "#,
+    )
+    .bind(rollover.user_id)
+    .bind(continuation_id)
+    .fetch_one(&pool)
+    .await
+    .expect("read cross-continuation reply reference");
+    assert_eq!(
+        stored_reply,
+        (Some(rollover_conversation), Some(500)),
+        "the server derives and stores the ancestor conversation identity"
+    );
+    let reply_collision_body = json!({
+        "client_key": client_key(903),
+        "kind": "text",
+        "body_md": "reply target identity is part of idempotency",
+        "in_reply_to": 2
+    });
+    let reply_collision_original = request_json(
+        &app,
+        Method::POST,
+        &rollover_path,
+        &rollover.agent.token,
+        reply_collision_body.clone(),
+    )
+    .await;
+    assert_eq!(reply_collision_original.status, StatusCode::OK);
+    let reply_collision_replay = request_json(
+        &app,
+        Method::POST,
+        &rollover_path,
+        &rollover.agent.token,
+        reply_collision_body.clone(),
+    )
+    .await;
+    assert_eq!(reply_collision_replay.status, StatusCode::OK);
+    assert_eq!(
+        data(&reply_collision_replay)
+            .get("duplicate")
+            .and_then(Value::as_bool),
+        Some(true)
+    );
+    let changed_reply_target = request_json(
+        &app,
+        Method::POST,
+        &format!("{MESSAGING_ROOT}/conversations/{continuation_id}/messages"),
+        &rollover.agent.token,
+        reply_collision_body,
+    )
+    .await;
+    assert_error(
+        &changed_reply_target,
+        StatusCode::CONFLICT,
+        "idempotency_conflict",
+    );
 
     let deadline = seed_workspace(&pool, "reply-deadline").await;
     let deadline_conversation = create_conversation(
@@ -874,4 +1073,78 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     .expect("count deadline notifications");
     assert_eq!(deadline_systems, 1);
     assert_eq!(deadline_notifications, 1);
+
+    let deadline_race = seed_workspace(&pool, "reply-deadline-race").await;
+    let deadline_race_conversation = create_conversation(
+        &app,
+        &deadline_race.agent.token,
+        &["agent-b"],
+        "Reply racing its deadline",
+    )
+    .await;
+    let race_reply_by = Utc::now() + ChronoDuration::minutes(1);
+    let race_question = request_json(
+        &app,
+        Method::POST,
+        &format!("{MESSAGING_ROOT}/conversations/{deadline_race_conversation}/messages"),
+        &deadline_race.agent.token,
+        json!({
+            "client_key": client_key(900),
+            "kind": "question",
+            "body_md": "Race the injected deadline",
+            "expects_reply": true,
+            "reply_by": race_reply_by
+        }),
+    )
+    .await;
+    assert_eq!(race_question.status, StatusCode::OK);
+    let race_question_seq = data(&race_question)
+        .get("seq")
+        .and_then(Value::as_i64)
+        .expect("race question returns a sequence");
+    let race_path = format!("{MESSAGING_ROOT}/conversations/{deadline_race_conversation}/messages");
+    let race_reply = request_json(
+        &app,
+        Method::POST,
+        &race_path,
+        &deadline_race.agent_b.token,
+        json!({
+            "client_key": client_key(901),
+            "kind": "text",
+            "body_md": "Concurrent answer",
+            "in_reply_to": race_question_seq
+        }),
+    );
+    let race_expiry =
+        messaging_service::process_due_reply_by(&state, race_reply_by + ChronoDuration::seconds(1));
+    let (race_reply, race_expiry) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(race_reply, race_expiry)
+        })
+        .await
+        .expect("reply/deadline race completes without deadlock");
+    assert_eq!(race_reply.status, StatusCode::OK);
+    assert!(race_expiry.expect("deadline race is processed"));
+    let race_effects = sqlx::query_as::<_, (i64, i64)>(
+        r#"
+        SELECT
+          (SELECT count(*)::bigint
+           FROM straylight.messaging_message_index
+           WHERE user_id=$1 AND system_key=$2),
+          (SELECT count(*)::bigint
+           FROM straylight.notifications
+           WHERE user_id=$1 AND event_key=$2)
+        "#,
+    )
+    .bind(deadline_race.user_id)
+    .bind(format!(
+        "reply-by:{deadline_race_conversation}:{race_question_seq}"
+    ))
+    .fetch_one(&pool)
+    .await
+    .expect("count serialized race effects");
+    assert!(
+        race_effects == (0, 0) || race_effects == (1, 1),
+        "the serial winner either answers before expiry or emits one complete expiry effect"
+    );
 }

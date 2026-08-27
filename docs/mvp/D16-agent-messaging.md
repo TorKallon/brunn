@@ -43,8 +43,9 @@ messages and proves ordinary writes are still capped at 4 MiB.
 
 ## One additive migration
 
-Migration `0073_agent_messaging.sql` is the only planned migration. It follows
-the task run's 0071 storage and claimed 0072 HTTP contract migrations, and
+Migration `0075_agent_messaging.sql` is the only planned migration. It follows
+the task run's 0071 storage plus claimed 0072 HTTP, 0073 guard, and 0074 Todoist
+migrations, and
 extends, never replaces, their capability
 allowlists and RLS policies with `message.read` and `message.write`.
 Every table has direct `user_id`, same-user foreign keys, account-cascade
@@ -57,7 +58,7 @@ behavior, row-level security enabled and forced, and policies rooted in
 | `messaging_credential_bindings` | At-most-one credential-to-principal binding, constrained to one user |
 | `messaging_conversations` | Entry/path, immutable subject, direct/group kind, status, last seq/activity, agent streak, needs-human projection, continuation links, latest change cursor |
 | `messaging_participants` | Principal role and durable `last_read_seq`; the owner is inserted as observer for agent-to-agent conversations |
-| `messaging_message_index` | Rebuildable message fields, body/refs, sender-scoped client key and request hash, reply deadline/handled marker, and sync cursor |
+| `messaging_message_index` | Rebuildable message fields, body/refs, sender-scoped client key and request hash, owning conversation for reply references, reply deadline/handled marker, and sync cursor |
 | `messaging_sync_state` | One monotonic cursor counter per user |
 
 The critical uniques are `(user_id, conversation_id, seq)`,
@@ -71,8 +72,9 @@ sequence. Each record begins with a versioned JSON HTML comment containing the
 immutable fields and exact UTF-8 body byte count; the parser consumes that
 many bytes before its fixed closing marker. This makes arbitrary Markdown and
 marker-looking text unambiguous. The portable entry metadata repeats the
-conversation structure needed to validate path, participants, and continuation
-links. Import rejects a path/envelope/body mismatch instead of guessing.
+conversation structure, including its latest sync cursor, needed to validate
+path, participants, and continuation links. Import rejects a
+path/envelope/body mismatch instead of guessing.
 
 ## Identity, authority, and registry
 
@@ -114,7 +116,10 @@ At seq 500 the same transaction closes the entry, creates its open continuation
 with `continues_from`, and writes the continuation's first `system` record.
 The response carries `continuation_id`; addressing the closed id resolves to
 that continuation, while reads remain on the immutable original. No unbounded
-entry or separate page model is introduced.
+entry or separate page model is introduced. A public `in_reply_to` remains a
+sequence only; the server derives and stores the ancestor conversation id so a
+reply to predecessor seq 500 stays unambiguous without expanding the client
+payload.
 
 ## HTTP, sync, and wait contract
 
@@ -258,7 +263,14 @@ record, gapless seq, ids, participant ownership, continuation links, size cap,
 and the metadata/body cross-check, then rebuilds conversation, participant,
 message-index, and sync projection state in the same transaction. A missing or
 malformed marker fails closed; generic workspace writes cannot forge a
-messaging projection. Closing is soft; account deletion cascades all rows.
+messaging projection. Continuations import parent-first and must preserve their
+kind, subject, direct identity, participants, 500-message boundary, and opening
+system marker. Per-principal `last_read_seq` is delivery state rather than part
+of the immutable conversation index, so a portable import resets it to zero;
+the gate compares the rebuilt conversation/message index and canonical bytes.
+Canonicalizing every read receipt was rejected because it would create an entry
+version and change-feed event for every resident fetch. Closing is soft;
+account deletion cascades all rows.
 
 ## Threat model and telemetry
 
@@ -289,7 +301,7 @@ conversation ids, client keys, or credentials.
 | 6 — notifications | Event-key replay/conflict, generic body, typed target/route/collapse/content-available, observer filtering, quiet hours, existing ledger suite |
 | 7 — iOS | Store-first launch metric, durable offline outbox/relaunch/exactly-once reconnect, silent-push prefetch, cold deep link, view-only, 1,000-row scroll profile |
 | 8 — Web | Browser sign-in/list/open/send/echo and credential-binding sender change |
-| 9 — regressions | Gate-off HTTP 404/tool absence, unchanged old-tool snapshot, previous release against 0073, all old and landed-task suites/scenarios with flag off/on |
+| 9 — regressions | Gate-off HTTP 404/tool absence, unchanged old-tool snapshot, previous release against 0075, all old and landed-task suites/scenarios with flag off/on |
 | 10 — brand | Night Signal token, both-appearance contrast, keyboard, focus, reduced-motion, and status-ramp audits |
 | 11 — standard | Locked Cargo all-target check and API suites, isolated DB suites, MCP, production contracts, retrieval fingerprint, Web build/tests, iOS package/app tests, diff check, added-line secret scan |
 | 12 — real interfaces | One disposable API/worker/Postgres/object-store/MCP/Web/iOS stack, plus production smoke only after gates 1–11 |

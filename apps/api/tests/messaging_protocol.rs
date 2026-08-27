@@ -5,7 +5,9 @@ use chrono::{TimeZone, Utc};
 use messaging_protocol::{
     CanonicalMessage, ConversationHeader, ConversationKind, ConversationParticipant,
     ConversationStatus, MessageKind, MessageRef, ProtocolError, SendMessageInput,
-    conversation_path, parse_conversation, render_conversation, request_hash, validate_send_input,
+    conversation_metadata, conversation_path, is_conversation_candidate, is_workspace_import,
+    parse_conversation, render_conversation, request_hash, request_hash_with_reply_target,
+    validate_conversation_entry, validate_send_input,
 };
 use uuid::Uuid;
 
@@ -52,23 +54,25 @@ fn header() -> ConversationHeader {
         continues_from: None,
         agent_streak: 0,
         needs_human: false,
+        latest_sync_cursor: 42,
         created_at: as_of(),
         closed_at: None,
     }
 }
 
 fn messages() -> Vec<CanonicalMessage> {
-    vec![
+    let mut messages = vec![
         CanonicalMessage {
             seq: 1,
             message_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000011").unwrap(),
             from_agent_id: Some("owner".to_owned()),
             client_key: Some("01J00000000000000000000000".to_owned()),
             system_key: None,
-            request_hash: Some("a".repeat(64)),
+            request_hash: None,
             kind: MessageKind::Question,
             body_md: "Arbitrary Markdown\n\n<!-- /straylight-message-v1 -->\n`-->` 🛰️".to_owned(),
             refs: input().refs,
+            in_reply_to_conversation_id: None,
             in_reply_to: None,
             correlation_id: Some("has-->marker".to_owned()),
             expects_reply: true,
@@ -83,10 +87,11 @@ fn messages() -> Vec<CanonicalMessage> {
             from_agent_id: Some("echo".to_owned()),
             client_key: Some("01J00000000000000000000001".to_owned()),
             system_key: None,
-            request_hash: Some("b".repeat(64)),
+            request_hash: None,
             kind: MessageKind::Text,
             body_md: "Verified.".to_owned(),
             refs: vec![],
+            in_reply_to_conversation_id: Some(header().conversation_id),
             in_reply_to: Some(1),
             correlation_id: None,
             expects_reply: false,
@@ -95,7 +100,31 @@ fn messages() -> Vec<CanonicalMessage> {
             sync_cursor: 42,
             created_at: as_of() + chrono::Duration::seconds(2),
         },
-    ]
+    ];
+    for message in &mut messages {
+        refresh_request_hash(message);
+    }
+    messages
+}
+
+fn refresh_request_hash(message: &mut CanonicalMessage) {
+    if message.kind == MessageKind::System {
+        return;
+    }
+    message.request_hash = Some(request_hash_with_reply_target(
+        header().conversation_id,
+        message.in_reply_to_conversation_id,
+        &SendMessageInput {
+            client_key: message.client_key.clone().unwrap(),
+            kind: message.kind,
+            body_md: message.body_md.clone(),
+            refs: message.refs.clone(),
+            in_reply_to: message.in_reply_to,
+            correlation_id: message.correlation_id.clone(),
+            expects_reply: message.expects_reply,
+            reply_by: message.reply_by,
+        },
+    ));
 }
 
 #[test]
@@ -113,6 +142,60 @@ fn canonical_conversation_round_trips_arbitrary_markdown() {
         render_conversation(&parsed_header, &parsed_messages).unwrap(),
         rendered
     );
+}
+
+#[test]
+fn typed_metadata_and_path_must_match_the_canonical_header() {
+    let header = header();
+    let rendered = render_conversation(&header, &messages()).unwrap();
+    let metadata = conversation_metadata(&header);
+    let validated = validate_conversation_entry(
+        &conversation_path(header.conversation_id),
+        &metadata,
+        &rendered,
+    )
+    .unwrap()
+    .expect("typed conversation is managed");
+    assert_eq!(validated.0, header);
+
+    let wrapped = serde_json::json!({"client": metadata, "server": {"ignored": true}});
+    assert!(
+        validate_conversation_entry(
+            &conversation_path(header.conversation_id),
+            &wrapped,
+            &rendered,
+        )
+        .unwrap()
+        .is_some()
+    );
+
+    let mut wrong_metadata = conversation_metadata(&header);
+    wrong_metadata["conversation"]["latest_sync_cursor"] = serde_json::json!(41);
+    assert!(matches!(
+        validate_conversation_entry(
+            &conversation_path(header.conversation_id),
+            &wrong_metadata,
+            &rendered,
+        ),
+        Err(ProtocolError::Invalid(message)) if message.contains("metadata")
+    ));
+    assert!(
+        validate_conversation_entry("Notes/ordinary.md", &serde_json::json!({}), "hello")
+            .unwrap()
+            .is_none()
+    );
+    let imported = serde_json::json!({
+        "client": conversation_metadata(&header),
+        "_straylight_import": {
+            "format": messaging_protocol::WORKSPACE_IMPORT_FORMAT
+        }
+    });
+    assert!(is_conversation_candidate(
+        &conversation_path(header.conversation_id),
+        &imported
+    ));
+    assert!(is_workspace_import(&imported));
+    assert!(!is_workspace_import(&wrapped));
 }
 
 #[test]
@@ -164,6 +247,64 @@ fn canonical_parser_rejects_body_length_and_sequence_tampering() {
         parse_conversation(&wrong_sequence),
         Err(ProtocolError::Invalid(message)) if message.contains("gapless")
     ));
+
+    let mut stale_hash = messages();
+    stale_hash[0].body_md.push_str(" changed");
+    assert!(matches!(
+        render_conversation(&header(), &stale_hash),
+        Err(ProtocolError::Invalid(message)) if message.contains("request_hash")
+    ));
+
+    let mut outsider = messages();
+    outsider[0].from_agent_id = Some("not-a-participant".to_owned());
+    assert!(matches!(
+        render_conversation(&header(), &outsider),
+        Err(ProtocolError::Invalid(message)) if message.contains("participant")
+    ));
+
+    let mut stale_cursor = header();
+    stale_cursor.latest_sync_cursor = 41;
+    assert!(matches!(
+        render_conversation(&stale_cursor, &messages()),
+        Err(ProtocolError::Invalid(message)) if message.contains("latest_sync_cursor")
+    ));
+
+    let mut control_correlation = messages();
+    control_correlation[0].correlation_id = Some("release\nspoofed".to_owned());
+    refresh_request_hash(&mut control_correlation[0]);
+    assert!(matches!(
+        render_conversation(&header(), &control_correlation),
+        Err(ProtocolError::Invalid(message)) if message.contains("correlation_id")
+    ));
+}
+
+#[test]
+fn canonical_replies_carry_the_owning_conversation_across_rollover() {
+    let predecessor = Uuid::parse_str("018f0000-0000-7000-8000-000000000009").unwrap();
+    let mut continued_header = header();
+    continued_header.continues_from = Some(predecessor);
+    let mut continued_messages = messages();
+    continued_messages[1].in_reply_to_conversation_id = Some(predecessor);
+    continued_messages[1].in_reply_to = Some(500);
+    refresh_request_hash(&mut continued_messages[1]);
+    let rendered = render_conversation(&continued_header, &continued_messages).unwrap();
+    let (_, parsed) = parse_conversation(&rendered).unwrap();
+    assert_eq!(parsed[1].in_reply_to_conversation_id, Some(predecessor));
+    assert_eq!(parsed[1].in_reply_to, Some(500));
+
+    let mut missing_owner = continued_messages.clone();
+    missing_owner[1].in_reply_to_conversation_id = None;
+    assert!(matches!(
+        render_conversation(&continued_header, &missing_owner),
+        Err(ProtocolError::Invalid(message)) if message.contains("in_reply_to")
+    ));
+
+    let mut forward_reference = messages();
+    forward_reference[1].in_reply_to = Some(2);
+    assert!(matches!(
+        render_conversation(&header(), &forward_reference),
+        Err(ProtocolError::Invalid(message)) if message.contains("in_reply_to")
+    ));
 }
 
 #[test]
@@ -208,5 +349,13 @@ fn request_hash_covers_target_and_payload_but_is_retry_stable() {
     assert_ne!(
         request_hash(conversation, &original),
         request_hash(conversation, &changed)
+    );
+
+    let mut reply = input();
+    reply.in_reply_to = Some(1);
+    assert_ne!(
+        request_hash_with_reply_target(conversation, Some(conversation), &reply),
+        request_hash_with_reply_target(conversation, Some(other_conversation), &reply),
+        "the server-derived owning conversation is part of replay identity"
     );
 }

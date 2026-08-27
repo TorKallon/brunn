@@ -300,7 +300,7 @@ test("message.send retries a transient conversation send with the identical clie
     client_key: CLIENT_KEY,
     kind: "question",
     body_md: "Can you confirm the release gate?",
-    refs: ["entry:019f8800-0000-7000-8000-000000000002"],
+    refs: [{ entry_ref: "entry:019f8800-0000-7000-8000-000000000002" }],
     in_reply_to: 3,
     correlation_id: "release:2026-08-27",
     expects_reply: true,

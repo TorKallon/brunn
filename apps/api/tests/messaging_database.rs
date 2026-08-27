@@ -387,6 +387,28 @@ async fn assert_narrow_notification_side_effect(
         "seq": 1
     });
     let event_key = format!("message:{conversation_id}:1");
+    let installation_id = Uuid::now_v7();
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.notification_installations (
+          id,user_id,client_installation_id,registered_by_credential_id,
+          platform,environment,app_id,token_ciphertext,token_nonce,token_hash,
+          preview
+        ) VALUES ($1,$2,$3,$4,'ios','development','com.straylight.test',
+                  $5,$6,$7,'generic')
+        "#,
+    )
+    .bind(installation_id)
+    .bind(writer.user_id)
+    .bind(Uuid::now_v7())
+    .bind(writer.credential_id)
+    .bind(vec![7_u8; 32])
+    .bind(vec![8_u8; 12])
+    .bind(hex::encode(Sha256::digest(conversation_id.as_bytes())))
+    .execute(pool)
+    .await
+    .expect("seed live notification installation");
+    let notification_id = Uuid::now_v7();
     let mut tx = begin_as_app_rw(pool, &writer.auth).await;
     sqlx::query(
         r#"
@@ -401,7 +423,7 @@ async fn assert_narrow_notification_side_effect(
         )
         "#,
     )
-    .bind(Uuid::now_v7())
+    .bind(notification_id)
     .bind(writer.user_id)
     .bind(writer.credential_id)
     .bind(&event_key)
@@ -410,6 +432,24 @@ async fn assert_narrow_notification_side_effect(
     .execute(&mut *tx)
     .await
     .expect("message.write publishes only its typed generic conversation side effect");
+    let deliveries = sqlx::query(
+        r#"
+        INSERT INTO straylight.notification_deliveries (
+          user_id,notification_id,installation_id,state,last_error_code
+        )
+        SELECT $1,$2,installation.id,'suppressed','transport_disabled'
+        FROM straylight.notification_installations AS installation
+        WHERE installation.user_id=$1
+          AND installation.enabled AND installation.revoked_at IS NULL
+        "#,
+    )
+    .bind(writer.user_id)
+    .bind(notification_id)
+    .execute(&mut *tx)
+    .await
+    .expect("message.write fans its typed alert into the existing delivery outbox")
+    .rows_affected();
+    assert_eq!(deliveries, 1, "the live installation gets one outbox row");
 
     let forged = sqlx::query(
         r#"
@@ -643,10 +683,10 @@ async fn assert_schema_contract(pool: &PgPool) {
 #[tokio::test]
 async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
     let migration =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations/0073_agent_messaging.sql");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations/0075_agent_messaging.sql");
     assert!(
         migration.is_file(),
-        "missing 0073 agent-messaging database surface: {}",
+        "missing 0075 agent-messaging database surface: {}",
         migration.display()
     );
 

@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use url::Url;
 use uuid::Uuid;
@@ -11,6 +12,11 @@ pub const MESSAGE_REFS_LIMIT: usize = 32;
 pub const SUBJECT_LIMIT_CHARS: usize = 240;
 pub const CORRELATION_ID_LIMIT_CHARS: usize = 200;
 pub const MAX_MESSAGES_PER_CONVERSATION: i64 = 500;
+pub const MAX_CANONICAL_CONVERSATION_BYTES: usize = 12 * 1024 * 1024;
+pub const CONVERSATION_ENTRY_PREFIX: &str = ".straylight/conversations/";
+pub const WORKSPACE_IMPORT_FORMAT: &str = "straylight-workspace-import-manifest@v1";
+pub const CONTINUATION_SYSTEM_BODY: &str =
+    "This conversation continues from the preceding 500-message entry.";
 
 const HEADER_PREFIX: &str = "<!-- straylight-conversation-v1 ";
 const MESSAGE_PREFIX: &str = "<!-- straylight-message-v1 ";
@@ -108,6 +114,7 @@ pub struct ConversationHeader {
     pub continues_from: Option<Uuid>,
     pub agent_streak: i32,
     pub needs_human: bool,
+    pub latest_sync_cursor: i64,
     pub created_at: DateTime<Utc>,
     pub closed_at: Option<DateTime<Utc>>,
 }
@@ -125,6 +132,7 @@ pub struct CanonicalMessage {
     pub body_md: String,
     #[serde(default)]
     pub refs: Vec<MessageRef>,
+    pub in_reply_to_conversation_id: Option<Uuid>,
     pub in_reply_to: Option<i64>,
     pub correlation_id: Option<String>,
     pub expects_reply: bool,
@@ -146,6 +154,7 @@ struct MessageEnvelope {
     kind: MessageKind,
     #[serde(default)]
     refs: Vec<MessageRef>,
+    in_reply_to_conversation_id: Option<Uuid>,
     in_reply_to: Option<i64>,
     correlation_id: Option<String>,
     expects_reply: bool,
@@ -167,6 +176,7 @@ impl From<&CanonicalMessage> for MessageEnvelope {
             request_hash: message.request_hash.clone(),
             kind: message.kind,
             refs: message.refs.clone(),
+            in_reply_to_conversation_id: message.in_reply_to_conversation_id,
             in_reply_to: message.in_reply_to,
             correlation_id: message.correlation_id.clone(),
             expects_reply: message.expects_reply,
@@ -180,7 +190,15 @@ impl From<&CanonicalMessage> for MessageEnvelope {
 }
 
 pub fn conversation_path(conversation_id: Uuid) -> String {
-    format!(".straylight/conversations/{conversation_id}.md")
+    format!("{CONVERSATION_ENTRY_PREFIX}{conversation_id}.md")
+}
+
+pub fn conversation_id_from_path(path: &str) -> Option<Uuid> {
+    let raw = path
+        .strip_prefix(CONVERSATION_ENTRY_PREFIX)?
+        .strip_suffix(".md")?;
+    let conversation_id = Uuid::parse_str(raw).ok()?;
+    (raw == conversation_id.to_string()).then_some(conversation_id)
 }
 
 pub fn validate_agent_id(agent_id: &str) -> Result<(), ProtocolError> {
@@ -226,17 +244,7 @@ pub fn validate_send_input(
             "in_reply_to must be a positive conversation sequence".to_owned(),
         ));
     }
-    if let Some(value) = input.correlation_id.as_deref() {
-        let trimmed = value.trim();
-        if trimmed.is_empty()
-            || trimmed.chars().count() > CORRELATION_ID_LIMIT_CHARS
-            || trimmed.chars().any(char::is_control)
-        {
-            return Err(ProtocolError::Invalid(format!(
-                "correlation_id must be a printable single line of at most {CORRELATION_ID_LIMIT_CHARS} characters"
-            )));
-        }
-    }
+    validate_correlation_id(input.correlation_id.as_deref())?;
     if input.kind == MessageKind::System {
         return Err(ProtocolError::Invalid(
             "clients cannot send system messages".to_owned(),
@@ -264,6 +272,22 @@ pub fn validate_body(body_md: &str) -> Result<(), ProtocolError> {
     if body_md.is_empty() || body_md.len() > MESSAGE_BODY_LIMIT_BYTES {
         return Err(ProtocolError::Invalid(format!(
             "body_md must contain 1 to {MESSAGE_BODY_LIMIT_BYTES} UTF-8 bytes"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_correlation_id(value: Option<&str>) -> Result<(), ProtocolError> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed.chars().count() > CORRELATION_ID_LIMIT_CHARS
+        || trimmed.chars().any(char::is_control)
+    {
+        return Err(ProtocolError::Invalid(format!(
+            "correlation_id must be a printable single line of at most {CORRELATION_ID_LIMIT_CHARS} characters"
         )));
     }
     Ok(())
@@ -323,7 +347,7 @@ pub fn render_conversation(
     messages: &[CanonicalMessage],
 ) -> Result<String, ProtocolError> {
     validate_header(header)?;
-    validate_messages(messages)?;
+    validate_messages(header, messages)?;
     let mut output = String::new();
     output.push_str(HEADER_PREFIX);
     output.push_str(&comment_safe_json(header)?);
@@ -341,6 +365,11 @@ pub fn render_conversation(
 pub fn parse_conversation(
     markdown: &str,
 ) -> Result<(ConversationHeader, Vec<CanonicalMessage>), ProtocolError> {
+    if markdown.len() > MAX_CANONICAL_CONVERSATION_BYTES {
+        return Err(ProtocolError::Invalid(format!(
+            "canonical conversation Markdown exceeds {MAX_CANONICAL_CONVERSATION_BYTES} bytes"
+        )));
+    }
     let (header_json, mut offset) = parse_comment(markdown, 0, HEADER_PREFIX)?;
     let header: ConversationHeader =
         serde_json::from_str(header_json).map_err(|_| ProtocolError::NonCanonical)?;
@@ -367,6 +396,7 @@ pub fn parse_conversation(
             kind: envelope.kind,
             body_md,
             refs: envelope.refs,
+            in_reply_to_conversation_id: envelope.in_reply_to_conversation_id,
             in_reply_to: envelope.in_reply_to,
             correlation_id: envelope.correlation_id,
             expects_reply: envelope.expects_reply,
@@ -378,14 +408,109 @@ pub fn parse_conversation(
         offset = body_end + MESSAGE_END.len();
     }
     validate_header(&header)?;
-    validate_messages(&messages)?;
+    validate_messages(&header, &messages)?;
     if render_conversation(&header, &messages)? != markdown {
         return Err(ProtocolError::NonCanonical);
     }
     Ok((header, messages))
 }
 
+pub fn conversation_metadata(header: &ConversationHeader) -> Value {
+    json!({
+        "kind": "conversation",
+        "schema": "conversation.v1",
+        "conversation": {
+            "id": header.conversation_id,
+            "conversation_kind": header.conversation_kind,
+            "direct_key": header.direct_key,
+            "subject": header.subject,
+            "status": header.status,
+            "participants": header.participants,
+            "created_by_agent_id": header.created_by_agent_id,
+            "continues_from": header.continues_from,
+            "agent_streak": header.agent_streak,
+            "needs_human": header.needs_human,
+            "latest_sync_cursor": header.latest_sync_cursor,
+            "created_at": header.created_at,
+            "closed_at": header.closed_at
+        }
+    })
+}
+
+pub fn validate_conversation_entry(
+    path: &str,
+    metadata: &Value,
+    markdown: &str,
+) -> Result<Option<(ConversationHeader, Vec<CanonicalMessage>)>, ProtocolError> {
+    let effective = effective_metadata(metadata);
+    if !is_conversation_candidate(path, metadata) {
+        return Ok(None);
+    }
+    let declared_kind = effective.get("kind").and_then(Value::as_str) == Some("conversation");
+    let declared_schema =
+        effective.get("schema").and_then(Value::as_str) == Some("conversation.v1");
+    let path_id = conversation_id_from_path(path).ok_or_else(|| {
+        ProtocolError::Invalid(
+            "conversation metadata is allowed only at .straylight/conversations/<uuid>.md"
+                .to_owned(),
+        )
+    })?;
+    if !declared_kind || !declared_schema {
+        return Err(ProtocolError::Invalid(
+            "canonical conversation entries require kind conversation and schema conversation.v1"
+                .to_owned(),
+        ));
+    }
+    let (header, messages) = parse_conversation(markdown)?;
+    if header.conversation_id != path_id {
+        return Err(ProtocolError::Invalid(
+            "conversation header id must match the canonical entry path".to_owned(),
+        ));
+    }
+    let expected = conversation_metadata(&header);
+    if effective.get("conversation") != expected.get("conversation") {
+        return Err(ProtocolError::Invalid(
+            "conversation metadata must match the canonical Markdown header".to_owned(),
+        ));
+    }
+    Ok(Some((header, messages)))
+}
+
+pub fn is_conversation_candidate(path: &str, metadata: &Value) -> bool {
+    let effective = effective_metadata(metadata);
+    path.starts_with(CONVERSATION_ENTRY_PREFIX)
+        || effective.get("kind").and_then(Value::as_str) == Some("conversation")
+        || effective.get("schema").and_then(Value::as_str) == Some("conversation.v1")
+}
+
+pub fn is_workspace_import(metadata: &Value) -> bool {
+    metadata
+        .get("_straylight_import")
+        .and_then(|value| value.get("format"))
+        .and_then(Value::as_str)
+        == Some(WORKSPACE_IMPORT_FORMAT)
+}
+
+fn effective_metadata(metadata: &Value) -> &Value {
+    metadata
+        .get("client")
+        .filter(|value| value.is_object())
+        .unwrap_or(metadata)
+}
+
 pub fn request_hash(conversation_id: Uuid, input: &SendMessageInput) -> String {
+    request_hash_with_reply_target(
+        conversation_id,
+        input.in_reply_to.map(|_| conversation_id),
+        input,
+    )
+}
+
+pub fn request_hash_with_reply_target(
+    conversation_id: Uuid,
+    in_reply_to_conversation_id: Option<Uuid>,
+    input: &SendMessageInput,
+) -> String {
     #[derive(Serialize)]
     struct RequestHash<'a> {
         conversation_id: Uuid,
@@ -393,6 +518,7 @@ pub fn request_hash(conversation_id: Uuid, input: &SendMessageInput) -> String {
         kind: MessageKind,
         body_md: &'a str,
         refs: &'a [MessageRef],
+        in_reply_to_conversation_id: Option<Uuid>,
         in_reply_to: Option<i64>,
         correlation_id: &'a Option<String>,
         expects_reply: bool,
@@ -404,6 +530,7 @@ pub fn request_hash(conversation_id: Uuid, input: &SendMessageInput) -> String {
         kind: input.kind,
         body_md: &input.body_md,
         refs: &input.refs,
+        in_reply_to_conversation_id,
         in_reply_to: input.in_reply_to,
         correlation_id: &input.correlation_id,
         expects_reply: input.expects_reply,
@@ -486,19 +613,72 @@ fn validate_header(header: &ConversationHeader) -> Result<(), ProtocolError> {
         }
         previous = Some(&participant.agent_id);
     }
+    if !header
+        .participants
+        .iter()
+        .any(|participant| participant.agent_id == header.created_by_agent_id)
+    {
+        return Err(ProtocolError::Invalid(
+            "created_by_agent_id must be a conversation participant".to_owned(),
+        ));
+    }
+    let primary = header
+        .participants
+        .iter()
+        .filter(|participant| participant.role == "participant")
+        .map(|participant| participant.agent_id.as_str())
+        .collect::<Vec<_>>();
+    match header.conversation_kind {
+        ConversationKind::Direct if primary.len() != 2 => {
+            return Err(ProtocolError::Invalid(
+                "direct conversation must have exactly two participant roles".to_owned(),
+            ));
+        }
+        ConversationKind::Group if primary.len() < 3 => {
+            return Err(ProtocolError::Invalid(
+                "group conversation must have at least three participant roles".to_owned(),
+            ));
+        }
+        _ => {}
+    }
+    if header.subject.is_none()
+        && header.conversation_kind == ConversationKind::Direct
+        && header.direct_key.as_deref() != Some(primary.join("|").as_str())
+    {
+        return Err(ProtocolError::Invalid(
+            "subjectless direct conversation direct_key must match its participant roles"
+                .to_owned(),
+        ));
+    }
     if header.continues_from == Some(header.conversation_id) {
         return Err(ProtocolError::Invalid(
             "conversation cannot continue from itself".to_owned(),
         ));
     }
+    if header.latest_sync_cursor <= 0 {
+        return Err(ProtocolError::Invalid(
+            "latest_sync_cursor must be positive".to_owned(),
+        ));
+    }
     Ok(())
 }
 
-fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError> {
+fn validate_messages(
+    header: &ConversationHeader,
+    messages: &[CanonicalMessage],
+) -> Result<(), ProtocolError> {
     if messages.len() > MAX_MESSAGES_PER_CONVERSATION as usize {
         return Err(ProtocolError::Invalid(format!(
             "conversation exceeds {MAX_MESSAGES_PER_CONVERSATION} messages"
         )));
+    }
+    if messages
+        .last()
+        .is_some_and(|message| message.sync_cursor > header.latest_sync_cursor)
+    {
+        return Err(ProtocolError::Invalid(
+            "latest_sync_cursor cannot precede the last message cursor".to_owned(),
+        ));
     }
     for (index, message) in messages.iter().enumerate() {
         let expected = index as i64 + 1;
@@ -509,6 +689,14 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
         }
         validate_body(&message.body_md)?;
         validate_refs(&message.refs)?;
+        validate_correlation_id(message.correlation_id.as_deref())?;
+        if message.created_at < header.created_at
+            || index > 0 && message.created_at < messages[index - 1].created_at
+        {
+            return Err(ProtocolError::Invalid(
+                "message timestamps must not precede the conversation or prior sequence".to_owned(),
+            ));
+        }
         if message.sync_cursor <= 0
             || index > 0 && message.sync_cursor <= messages[index - 1].sync_cursor
         {
@@ -516,13 +704,16 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
                 "message sync cursors must be positive and increasing".to_owned(),
             ));
         }
-        if message
-            .in_reply_to
-            .is_some_and(|seq| seq <= 0 || seq >= message.seq)
-        {
-            return Err(ProtocolError::Invalid(
-                "in_reply_to must name an earlier conversation sequence".to_owned(),
-            ));
+        match (message.in_reply_to_conversation_id, message.in_reply_to) {
+            (None, None) => {}
+            (Some(conversation_id), Some(seq))
+                if seq > 0 && (conversation_id != header.conversation_id || seq < message.seq) => {}
+            _ => {
+                return Err(ProtocolError::Invalid(
+                    "in_reply_to must name an earlier sequence in this conversation or a positive sequence in an ancestor"
+                        .to_owned(),
+                ));
+            }
         }
         match message.kind {
             MessageKind::System => {
@@ -537,6 +728,16 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
                         "system message identity and dedupe fields are invalid".to_owned(),
                     ));
                 }
+                if message.in_reply_to.is_some()
+                    || message.correlation_id.is_some()
+                    || message.expects_reply
+                    || message.reply_by.is_some()
+                    || message.reply_by_handled_at.is_some()
+                {
+                    return Err(ProtocolError::Invalid(
+                        "system messages cannot carry client reply fields".to_owned(),
+                    ));
+                }
             }
             MessageKind::Text | MessageKind::Question => {
                 if message.system_key.is_some() {
@@ -548,6 +749,15 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
                     ProtocolError::Invalid("non-system message requires a sender".to_owned())
                 })?;
                 validate_agent_id(sender)?;
+                if !header
+                    .participants
+                    .iter()
+                    .any(|participant| participant.agent_id == sender)
+                {
+                    return Err(ProtocolError::Invalid(
+                        "non-system message sender must be a conversation participant".to_owned(),
+                    ));
+                }
                 let client_key = message.client_key.as_deref().ok_or_else(|| {
                     ProtocolError::Invalid("non-system message requires a client_key".to_owned())
                 })?;
@@ -568,6 +778,27 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
                         "stored request_hash must be lowercase SHA-256 hex".to_owned(),
                     ));
                 }
+                let input = SendMessageInput {
+                    client_key: client_key.to_owned(),
+                    kind: message.kind,
+                    body_md: message.body_md.clone(),
+                    refs: message.refs.clone(),
+                    in_reply_to: message.in_reply_to,
+                    correlation_id: message.correlation_id.clone(),
+                    expects_reply: message.expects_reply,
+                    reply_by: message.reply_by,
+                };
+                if request_hash
+                    != self::request_hash_with_reply_target(
+                        header.conversation_id,
+                        message.in_reply_to_conversation_id,
+                        &input,
+                    )
+                {
+                    return Err(ProtocolError::Invalid(
+                        "stored request_hash does not match the canonical message".to_owned(),
+                    ));
+                }
             }
         }
         if message.expects_reply && message.kind != MessageKind::Question {
@@ -580,11 +811,37 @@ fn validate_messages(messages: &[CanonicalMessage]) -> Result<(), ProtocolError>
                 "reply_by requires expects_reply".to_owned(),
             ));
         }
+        if message.reply_by.is_some_and(|reply_by| {
+            reply_by <= message.created_at
+                || reply_by > message.created_at + chrono::Duration::hours(24)
+        }) {
+            return Err(ProtocolError::Invalid(
+                "stored reply_by must be after creation and no more than 24 hours away".to_owned(),
+            ));
+        }
         if message.reply_by_handled_at.is_some() && message.reply_by.is_none() {
             return Err(ProtocolError::Invalid(
                 "reply_by_handled_at requires reply_by".to_owned(),
             ));
         }
+        if message
+            .reply_by_handled_at
+            .zip(message.reply_by)
+            .is_some_and(|(handled_at, reply_by)| handled_at < reply_by)
+        {
+            return Err(ProtocolError::Invalid(
+                "reply_by_handled_at cannot precede reply_by".to_owned(),
+            ));
+        }
+    }
+    if header
+        .closed_at
+        .zip(messages.last().map(|message| message.created_at))
+        .is_some_and(|(closed_at, last_message_at)| closed_at < last_message_at)
+    {
+        return Err(ProtocolError::Invalid(
+            "closed_at cannot precede the last message".to_owned(),
+        ));
     }
     Ok(())
 }

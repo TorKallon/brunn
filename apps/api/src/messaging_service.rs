@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashSet},
+    time::Duration,
+};
 
 use axum::{
     Extension, Json, Router,
@@ -21,7 +24,7 @@ use crate::{
         self, CanonicalMessage, ConversationHeader, ConversationKind, ConversationParticipant,
         ConversationStatus, MessageKind, MessageRef, SendMessageInput,
     },
-    models::ResponseStatus,
+    models::{CredentialId, ResponseStatus, UserId},
     simple_core::WorkspaceEnvelope,
 };
 
@@ -32,7 +35,6 @@ const PRESENCE_LEASE_SECONDS: i64 = 60;
 const SENDER_RATE_LIMIT: i64 = 60;
 const CONVERSATION_RATE_LIMIT: i64 = 200;
 const AGENT_STREAK_LIMIT: i32 = 20;
-const MAX_CANONICAL_CONVERSATION_BYTES: usize = 12 * 1024 * 1024;
 const MAX_CONTINUATION_HOPS: usize = 64;
 
 pub fn router() -> Router<AppState> {
@@ -170,6 +172,8 @@ pub struct MessageView {
     pub kind: String,
     pub body_md: String,
     pub refs: Vec<MessageRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_reply_to_conversation_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub in_reply_to: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -357,7 +361,11 @@ async fn sync(
         if now >= deadline {
             let mut response = page.response;
             response.status = "timeout".to_owned();
-            response.resume_cursor = Some(response.cursor);
+            response.resume_cursor = Some(if query.conversation_id.is_some() {
+                query.after_seq.unwrap_or(0)
+            } else {
+                response.cursor
+            });
             metrics::counter!("messaging.wait", "result" => "timeout").increment(1);
             metrics::histogram!(
                 "messaging.sync.duration_ms",
@@ -450,8 +458,35 @@ async fn send_message(
             replay.conversation_id,
         )
         .await?;
-        let expected_hash = messaging_protocol::request_hash(replay.conversation_id, &input);
-        if !same_target || replay.request_hash.as_deref() != Some(expected_hash.as_str()) {
+        let expected_reply_conversation_id = input.in_reply_to.map(|_| conversation_id);
+        let reply_target_exists = match input.in_reply_to {
+            Some(seq) => {
+                sqlx::query_scalar::<_, bool>(
+                    r#"
+                    SELECT EXISTS(
+                      SELECT 1 FROM straylight.messaging_message_index
+                      WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
+                    )
+                    "#,
+                )
+                .bind(auth.user_id.0)
+                .bind(conversation_id)
+                .bind(seq)
+                .fetch_one(&mut *tx)
+                .await?
+            }
+            None => true,
+        };
+        let expected_hash = messaging_protocol::request_hash_with_reply_target(
+            replay.conversation_id,
+            expected_reply_conversation_id,
+            &input,
+        );
+        if !same_target
+            || !reply_target_exists
+            || replay.in_reply_to_conversation_id != expected_reply_conversation_id
+            || replay.request_hash.as_deref() != Some(expected_hash.as_str())
+        {
             return Err(ApiError::conflict(
                 "idempotency_conflict",
                 "the client key was already used with a different messaging request",
@@ -495,7 +530,14 @@ async fn send_message(
         ));
     }
     check_send_rates_in_tx(&mut tx, auth.user_id.0, &sender.agent_id, target_id, as_of).await?;
-    validate_reply_target_in_tx(&mut tx, auth.user_id.0, target_id, input.in_reply_to).await?;
+    let in_reply_to_conversation_id = validate_reply_target_in_tx(
+        &mut tx,
+        auth.user_id.0,
+        conversation_id,
+        target_id,
+        input.in_reply_to,
+    )
+    .await?;
 
     let next_streak = if sender_is_owner {
         0
@@ -513,7 +555,11 @@ async fn send_message(
             || (input.kind == MessageKind::Question && owner_is_participant)
     };
     let plan = rollover_plan(conversation.last_seq, pauses)?;
-    let request_hash = messaging_protocol::request_hash(target_id, &input);
+    let request_hash = messaging_protocol::request_hash_with_reply_target(
+        target_id,
+        in_reply_to_conversation_id,
+        &input,
+    );
     let message_cursor = allocate_cursor_in_tx(&mut tx, auth.user_id.0).await?;
     let message_id = Uuid::now_v7();
     insert_client_message_in_tx(
@@ -524,6 +570,7 @@ async fn send_message(
         message_id,
         &sender.agent_id,
         &request_hash,
+        in_reply_to_conversation_id,
         &input,
         message_cursor,
         as_of,
@@ -585,6 +632,7 @@ async fn send_message(
             pauses,
             needs_human,
             plan.pause_system_in_continuation,
+            true,
             as_of,
         )
         .await?;
@@ -614,13 +662,15 @@ async fn send_message(
     }
 
     if pauses {
-        let notification_conversation = continuation_id.unwrap_or(target_id);
-        let notification_seq = if plan.pause_system_in_continuation {
-            2
-        } else if continuation_id.is_some() {
-            1
+        let (notification_conversation, notification_seq) = if plan.pause_system_in_continuation {
+            (
+                continuation_id.ok_or_else(|| {
+                    ApiError::Internal("pause rollover did not create a continuation".to_owned())
+                })?,
+                2,
+            )
         } else {
-            last_seq
+            (target_id, last_seq)
         };
         publish_conversation_notification_in_tx(
             &mut tx,
@@ -1752,7 +1802,8 @@ async fn load_sync_messages_in_tx(
         r#"
         SELECT message.conversation_id,message.seq,message.message_id,
                message.from_agent_id,message.client_key,message.request_hash,
-               message.kind,message.body_md,message.refs,message.in_reply_to,
+               message.kind,message.body_md,message.refs,
+               message.in_reply_to_conversation_id,message.in_reply_to,
                message.correlation_id,message.expects_reply,message.reply_by,
                message.sync_cursor,message.created_at
         FROM straylight.messaging_message_index AS message
@@ -1926,6 +1977,7 @@ fn message_view_from_row(row: PgRow) -> ApiResult<MessageView> {
         kind: row.try_get("kind")?,
         body_md: row.try_get("body_md")?,
         refs,
+        in_reply_to_conversation_id: row.try_get("in_reply_to_conversation_id")?,
         in_reply_to: row.try_get("in_reply_to")?,
         correlation_id: row.try_get("correlation_id")?,
         expects_reply: row.try_get("expects_reply")?,
@@ -2131,7 +2183,8 @@ async fn load_replay_in_tx(
     sqlx::query(
         r#"
         SELECT conversation_id,seq,message_id,from_agent_id,client_key,
-               request_hash,kind,body_md,refs,in_reply_to,correlation_id,
+               request_hash,kind,body_md,refs,in_reply_to_conversation_id,
+               in_reply_to,correlation_id,
                expects_reply,reply_by,sync_cursor,created_at
         FROM straylight.messaging_message_index
         WHERE user_id=$1 AND from_agent_id=$2 AND client_key=$3
@@ -2323,12 +2376,25 @@ fn retry_after_seconds(available_at: DateTime<Utc>, as_of: DateTime<Utc>) -> i64
 async fn validate_reply_target_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
-    conversation_id: Uuid,
+    requested_conversation_id: Uuid,
+    target_conversation_id: Uuid,
     in_reply_to: Option<i64>,
-) -> ApiResult<()> {
+) -> ApiResult<Option<Uuid>> {
     let Some(in_reply_to) = in_reply_to else {
-        return Ok(());
+        return Ok(None);
     };
+    if !continuation_chain_contains_in_tx(
+        tx,
+        user_id,
+        requested_conversation_id,
+        target_conversation_id,
+    )
+    .await?
+    {
+        return Err(ApiError::invalid(
+            "in_reply_to must name a message in this conversation or one of its ancestors",
+        ));
+    }
     let exists = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
@@ -2338,15 +2404,15 @@ async fn validate_reply_target_in_tx(
         "#,
     )
     .bind(user_id)
-    .bind(conversation_id)
+    .bind(requested_conversation_id)
     .bind(in_reply_to)
     .fetch_one(&mut **tx)
     .await?;
     if exists {
-        Ok(())
+        Ok(Some(requested_conversation_id))
     } else {
         Err(ApiError::invalid(
-            "in_reply_to must name an existing message in this conversation",
+            "in_reply_to must name an existing message in this conversation or one of its ancestors",
         ))
     }
 }
@@ -2359,6 +2425,7 @@ async fn insert_client_message_in_tx(
     message_id: Uuid,
     sender_agent_id: &str,
     request_hash: &str,
+    in_reply_to_conversation_id: Option<Uuid>,
     input: &SendMessageInput,
     sync_cursor: i64,
     created_at: DateTime<Utc>,
@@ -2367,11 +2434,12 @@ async fn insert_client_message_in_tx(
         r#"
         INSERT INTO straylight.messaging_message_index (
           user_id,conversation_id,seq,message_id,from_agent_id,client_key,
-          system_key,request_hash,kind,body_md,refs,in_reply_to,
+          system_key,request_hash,kind,body_md,refs,
+          in_reply_to_conversation_id,in_reply_to,
           correlation_id,expects_reply,reply_by,reply_by_handled_at,
           sync_cursor,created_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,$13,$14,NULL,$15,$16
+          $1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,$13,$14,$15,NULL,$16,$17
         )
         "#,
     )
@@ -2385,6 +2453,7 @@ async fn insert_client_message_in_tx(
     .bind(message_kind_str(input.kind))
     .bind(&input.body_md)
     .bind(serde_json::to_value(&input.refs)?)
+    .bind(in_reply_to_conversation_id)
     .bind(input.in_reply_to)
     .bind(input.correlation_id.as_deref())
     .bind(input.expects_reply)
@@ -2410,12 +2479,13 @@ async fn insert_system_message_in_tx(
         r#"
         INSERT INTO straylight.messaging_message_index (
           user_id,conversation_id,seq,message_id,from_agent_id,client_key,
-          system_key,request_hash,kind,body_md,refs,in_reply_to,
+          system_key,request_hash,kind,body_md,refs,
+          in_reply_to_conversation_id,in_reply_to,
           correlation_id,expects_reply,reply_by,reply_by_handled_at,
           sync_cursor,created_at
         ) VALUES (
           $1,$2,$3,$4,NULL,NULL,$5,NULL,'system',$6,'[]'::jsonb,
-          NULL,NULL,false,NULL,NULL,$7,$8
+          NULL,NULL,NULL,false,NULL,NULL,$7,$8
         )
         ON CONFLICT (user_id,conversation_id,system_key)
           WHERE system_key IS NOT NULL DO NOTHING
@@ -2451,7 +2521,8 @@ async fn load_message_by_seq_in_tx(
     let row = sqlx::query(
         r#"
         SELECT conversation_id,seq,message_id,from_agent_id,client_key,
-               request_hash,kind,body_md,refs,in_reply_to,correlation_id,
+               request_hash,kind,body_md,refs,in_reply_to_conversation_id,
+               in_reply_to,correlation_id,
                expects_reply,reply_by,sync_cursor,created_at
         FROM straylight.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
@@ -2506,6 +2577,7 @@ async fn create_continuation_in_tx(
     paused: bool,
     needs_human: bool,
     include_pause_system: bool,
+    notify_system: bool,
     as_of: DateTime<Utc>,
 ) -> ApiResult<Uuid> {
     let continuation_id = Uuid::now_v7();
@@ -2568,7 +2640,7 @@ async fn create_continuation_in_tx(
         continuation_id,
         1,
         &format!("continuation:{}", previous.conversation_id),
-        "This conversation continues from the preceding 500-message entry.",
+        messaging_protocol::CONTINUATION_SYSTEM_BODY,
         continuation_cursor,
         as_of,
     )
@@ -2587,9 +2659,513 @@ async fn create_continuation_in_tx(
         .await?;
     }
     write_canonical_conversation_in_tx(tx, auth, continuation_id).await?;
-    publish_conversation_notification_in_tx(tx, state, auth, continuation_id, 1, "system", as_of)
+    if notify_system {
+        publish_conversation_notification_in_tx(
+            tx,
+            state,
+            auth,
+            continuation_id,
+            1,
+            "system",
+            as_of,
+        )
         .await?;
+    }
     Ok(continuation_id)
+}
+
+pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> ApiResult<bool> {
+    let pool = state.admin_pool.as_ref().ok_or_else(|| {
+        ApiError::configuration("the messaging worker requires DATABASE_URL_ADMIN")
+    })?;
+    let mut tx = pool.begin().await?;
+    let candidate = sqlx::query(
+        r#"
+        SELECT question.user_id,question.conversation_id,question.seq
+        FROM straylight.messaging_message_index AS question
+        WHERE question.kind='question'
+          AND question.expects_reply
+          AND question.reply_by IS NOT NULL
+          AND question.reply_by<=$1
+          AND question.reply_by_handled_at IS NULL
+        ORDER BY question.reply_by,question.user_id,
+                 question.conversation_id,question.seq
+        LIMIT 1
+        "#,
+    )
+    .bind(as_of)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(candidate) = candidate else {
+        tx.commit().await?;
+        return Ok(false);
+    };
+    let user_id: Uuid = candidate.try_get("user_id")?;
+    let question_conversation_id: Uuid = candidate.try_get("conversation_id")?;
+    let question_seq: i64 = candidate.try_get("seq")?;
+
+    // Match the send path's conversation-before-message lock order. This
+    // serializes a reply racing its deadline without a question/conversation
+    // deadlock or a false expiry.
+    let (target_id, conversation) =
+        load_writable_conversation_for_update(&mut tx, user_id, question_conversation_id).await?;
+    let due = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT seq
+        FROM straylight.messaging_message_index
+        WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
+          AND kind='question' AND expects_reply
+          AND reply_by IS NOT NULL AND reply_by<=$4
+          AND reply_by_handled_at IS NULL
+        FOR UPDATE SKIP LOCKED
+        "#,
+    )
+    .bind(user_id)
+    .bind(question_conversation_id)
+    .bind(question_seq)
+    .bind(as_of)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if due.is_none() {
+        tx.commit().await?;
+        return Ok(false);
+    }
+    let producer_credential_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT version.created_by_credential_id
+        FROM straylight.entries AS entry
+        JOIN straylight.entry_versions AS version
+          ON version.user_id=entry.user_id
+         AND version.entry_id=entry.id
+         AND version.version=entry.current_version
+        WHERE entry.user_id=$1 AND entry.id=$2
+        "#,
+    )
+    .bind(user_id)
+    .bind(question_conversation_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let auth = worker_auth(user_id, producer_credential_id);
+
+    let answered = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+          SELECT 1
+          FROM straylight.messaging_message_index AS reply
+          WHERE reply.user_id=$1
+            AND reply.in_reply_to_conversation_id=$2
+            AND reply.in_reply_to=$3
+        )
+        "#,
+    )
+    .bind(user_id)
+    .bind(question_conversation_id)
+    .bind(question_seq)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE straylight.messaging_message_index
+        SET reply_by_handled_at=$4
+        WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
+          AND reply_by_handled_at IS NULL
+        "#,
+    )
+    .bind(user_id)
+    .bind(question_conversation_id)
+    .bind(question_seq)
+    .bind(as_of)
+    .execute(&mut *tx)
+    .await?;
+    if answered {
+        write_canonical_conversation_in_tx(&mut tx, &auth, question_conversation_id).await?;
+        tx.commit().await?;
+        state.workspace_features.invalidate(user_id).await;
+        metrics::counter!("messaging.reply_by", "result" => "answered").increment(1);
+        return Ok(true);
+    }
+
+    let system_seq = conversation.last_seq + 1;
+    if system_seq > messaging_protocol::MAX_MESSAGES_PER_CONVERSATION {
+        return Err(ApiError::Internal(
+            "an open messaging conversation exceeded its entry budget".to_owned(),
+        ));
+    }
+    let event_key = format!("reply-by:{question_conversation_id}:{question_seq}");
+    let system_cursor = allocate_cursor_in_tx(&mut tx, user_id).await?;
+    insert_system_message_in_tx(
+        &mut tx,
+        user_id,
+        target_id,
+        system_seq,
+        &event_key,
+        "The requested reply window expired without a response.",
+        system_cursor,
+        as_of,
+    )
+    .await?;
+
+    if system_seq == messaging_protocol::MAX_MESSAGES_PER_CONVERSATION {
+        close_for_rollover_in_tx(
+            &mut tx,
+            user_id,
+            target_id,
+            system_seq,
+            system_cursor,
+            conversation.agent_streak,
+            as_of,
+        )
+        .await?;
+        write_canonical_conversation_in_tx(&mut tx, &auth, target_id).await?;
+        create_continuation_in_tx(
+            &mut tx,
+            state,
+            &auth,
+            &conversation,
+            &conversation.created_by_agent_id,
+            conversation.agent_streak,
+            false,
+            true,
+            false,
+            false,
+            as_of,
+        )
+        .await?;
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE straylight.messaging_conversations
+            SET last_seq=$3,last_message_at=$4,needs_human=true,
+                latest_sync_cursor=$5,updated_at=$4
+            WHERE user_id=$1 AND conversation_id=$2
+            "#,
+        )
+        .bind(user_id)
+        .bind(target_id)
+        .bind(system_seq)
+        .bind(as_of)
+        .bind(system_cursor)
+        .execute(&mut *tx)
+        .await?;
+        write_canonical_conversation_in_tx(&mut tx, &auth, target_id).await?;
+    }
+    if target_id != question_conversation_id {
+        write_canonical_conversation_in_tx(&mut tx, &auth, question_conversation_id).await?;
+    }
+    publish_conversation_notification_in_tx(
+        &mut tx,
+        state,
+        &auth,
+        question_conversation_id,
+        question_seq,
+        "reply-by",
+        as_of,
+    )
+    .await?;
+    tx.commit().await?;
+    state.workspace_features.invalidate(user_id).await;
+    metrics::counter!("messaging.reply_by", "result" => "expired").increment(1);
+    Ok(true)
+}
+
+fn worker_auth(user_id: Uuid, credential_id: Uuid) -> AuthContext {
+    AuthContext {
+        credential_id: CredentialId(credential_id),
+        user_id: UserId(user_id),
+        capabilities: HashSet::from(["admin".to_owned(), "message.write".to_owned()]),
+        scope_refs: Vec::new(),
+        read_only: false,
+    }
+}
+
+pub(crate) async fn sync_managed_entry_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    entry_id: Uuid,
+    entry_version: i64,
+    path: &str,
+    metadata: &Value,
+) -> ApiResult<()> {
+    if !messaging_protocol::is_conversation_candidate(path, metadata) {
+        return Ok(());
+    }
+    if !messaging_protocol::is_workspace_import(metadata) {
+        return Err(ApiError::invalid(
+            "canonical conversation projection rebuild requires workspace import metadata",
+        ));
+    }
+    let content = sqlx::query_scalar::<_, Option<String>>(
+        r#"
+        SELECT content
+        FROM straylight.entry_versions
+        WHERE user_id=$1 AND entry_id=$2 AND version=$3
+        "#,
+    )
+    .bind(user_id)
+    .bind(entry_id)
+    .bind(entry_version)
+    .fetch_optional(&mut **tx)
+    .await?
+    .flatten()
+    .ok_or_else(|| ApiError::invalid("canonical conversation entry content is unavailable"))?;
+    let (header, messages) =
+        messaging_protocol::validate_conversation_entry(path, metadata, &content)
+            .map_err(protocol_error)?
+            .ok_or_else(|| ApiError::invalid("canonical conversation metadata is required"))?;
+    if header.conversation_id != entry_id {
+        return Err(ApiError::invalid(
+            "conversation entry id must equal its canonical conversation id",
+        ));
+    }
+
+    let mut required_principals = BTreeSet::new();
+    required_principals.insert(header.created_by_agent_id.clone());
+    required_principals.extend(
+        header
+            .participants
+            .iter()
+            .map(|participant| participant.agent_id.clone()),
+    );
+    required_principals.extend(
+        messages
+            .iter()
+            .filter_map(|message| message.from_agent_id.clone()),
+    );
+    let required_principals = required_principals.into_iter().collect::<Vec<_>>();
+    let present_principals = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT agent_id
+        FROM straylight.messaging_agents
+        WHERE user_id=$1 AND agent_id=ANY($2)
+        ORDER BY agent_id
+        "#,
+    )
+    .bind(user_id)
+    .bind(&required_principals)
+    .fetch_all(&mut **tx)
+    .await?;
+    if present_principals != required_principals {
+        return Err(ApiError::invalid(
+            "all canonical conversation principals must already exist for this user",
+        ));
+    }
+
+    if let Some(parent_id) = header.continues_from {
+        let parent = sqlx::query(
+            r#"
+            SELECT conversation_kind,direct_key,subject,status,last_seq
+            FROM straylight.messaging_conversations
+            WHERE user_id=$1 AND conversation_id=$2
+            "#,
+        )
+        .bind(user_id)
+        .bind(parent_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| {
+            ApiError::invalid("conversation continuation parent must be imported before its child")
+        })?;
+        let expected_kind = match header.conversation_kind {
+            ConversationKind::Direct => "direct",
+            ConversationKind::Group => "group",
+        };
+        let parent_participants = sqlx::query(
+            r#"
+            SELECT agent_id,role
+            FROM straylight.messaging_participants
+            WHERE user_id=$1 AND conversation_id=$2
+            ORDER BY agent_id
+            "#,
+        )
+        .bind(user_id)
+        .bind(parent_id)
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .map(|row| ConversationParticipant {
+            agent_id: row.get("agent_id"),
+            role: row.get("role"),
+        })
+        .collect::<Vec<_>>();
+        let first = messages.first();
+        let expected_system_key = format!("continuation:{parent_id}");
+        let identity_matches = parent.try_get::<String, _>("conversation_kind")? == expected_kind
+            && parent.try_get::<Option<String>, _>("direct_key")? == header.direct_key
+            && parent.try_get::<Option<String>, _>("subject")? == header.subject
+            && parent_participants == header.participants;
+        let marker_matches = first.is_some_and(|message| {
+            message.seq == 1
+                && message.kind == MessageKind::System
+                && message.system_key.as_deref() == Some(expected_system_key.as_str())
+                && message.body_md == messaging_protocol::CONTINUATION_SYSTEM_BODY
+        });
+        if parent.try_get::<String, _>("status")? != "closed"
+            || parent.try_get::<i64, _>("last_seq")?
+                != messaging_protocol::MAX_MESSAGES_PER_CONVERSATION
+            || !identity_matches
+            || !marker_matches
+            || continuation_chain_contains_in_tx(tx, user_id, header.conversation_id, parent_id)
+                .await?
+        {
+            return Err(ApiError::invalid(
+                "conversation continuation must preserve its closed 500-message parent identity and canonical opening marker",
+            ));
+        }
+    }
+
+    let last_seq = messages.len() as i64;
+    let last_message_at = messages.last().map(|message| message.created_at);
+    let conversation_kind = match header.conversation_kind {
+        ConversationKind::Direct => "direct",
+        ConversationKind::Group => "group",
+    };
+    let status = match header.status {
+        ConversationStatus::Open => "open",
+        ConversationStatus::PausedForHuman => "paused_for_human",
+        ConversationStatus::Closed => "closed",
+    };
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.messaging_conversations (
+          user_id,conversation_id,entry_id,path,conversation_kind,direct_key,
+          subject,status,created_by_agent_id,last_seq,last_message_at,
+          agent_streak,needs_human,continues_from,latest_sync_cursor,
+          closed_at,created_at,updated_at
+        ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+          clock_timestamp()
+        )
+        ON CONFLICT (user_id,conversation_id) DO UPDATE SET
+          entry_id=EXCLUDED.entry_id,path=EXCLUDED.path,
+          conversation_kind=EXCLUDED.conversation_kind,
+          direct_key=EXCLUDED.direct_key,subject=EXCLUDED.subject,
+          status=EXCLUDED.status,created_by_agent_id=EXCLUDED.created_by_agent_id,
+          last_seq=EXCLUDED.last_seq,last_message_at=EXCLUDED.last_message_at,
+          agent_streak=EXCLUDED.agent_streak,needs_human=EXCLUDED.needs_human,
+          continues_from=EXCLUDED.continues_from,
+          latest_sync_cursor=EXCLUDED.latest_sync_cursor,
+          closed_at=EXCLUDED.closed_at,created_at=EXCLUDED.created_at,
+          updated_at=clock_timestamp()
+        "#,
+    )
+    .bind(user_id)
+    .bind(header.conversation_id)
+    .bind(entry_id)
+    .bind(path)
+    .bind(conversation_kind)
+    .bind(header.direct_key.as_deref())
+    .bind(header.subject.as_deref())
+    .bind(status)
+    .bind(&header.created_by_agent_id)
+    .bind(last_seq)
+    .bind(last_message_at)
+    .bind(header.agent_streak)
+    .bind(header.needs_human)
+    .bind(header.continues_from)
+    .bind(header.latest_sync_cursor)
+    .bind(header.closed_at)
+    .bind(header.created_at)
+    .execute(&mut **tx)
+    .await?;
+
+    sqlx::query(
+        "DELETE FROM straylight.messaging_message_index WHERE user_id=$1 AND conversation_id=$2",
+    )
+    .bind(user_id)
+    .bind(header.conversation_id)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM straylight.messaging_participants WHERE user_id=$1 AND conversation_id=$2",
+    )
+    .bind(user_id)
+    .bind(header.conversation_id)
+    .execute(&mut **tx)
+    .await?;
+
+    for participant in &header.participants {
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.messaging_participants (
+              user_id,conversation_id,agent_id,role,last_read_seq,joined_at,updated_at
+            ) VALUES ($1,$2,$3,$4,0,$5,$5)
+            "#,
+        )
+        .bind(user_id)
+        .bind(header.conversation_id)
+        .bind(&participant.agent_id)
+        .bind(&participant.role)
+        .bind(header.created_at)
+        .execute(&mut **tx)
+        .await?;
+    }
+    for message in &messages {
+        if let Some(reply_conversation_id) = message.in_reply_to_conversation_id
+            && reply_conversation_id != header.conversation_id
+            && !continuation_chain_contains_in_tx(
+                tx,
+                user_id,
+                reply_conversation_id,
+                header.conversation_id,
+            )
+            .await?
+        {
+            return Err(ApiError::invalid(
+                "canonical reply target must belong to this continuation chain",
+            ));
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO straylight.messaging_message_index (
+              user_id,conversation_id,seq,message_id,from_agent_id,client_key,
+              system_key,request_hash,kind,body_md,refs,
+              in_reply_to_conversation_id,in_reply_to,correlation_id,
+              expects_reply,reply_by,reply_by_handled_at,sync_cursor,created_at
+            ) VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+            )
+            "#,
+        )
+        .bind(user_id)
+        .bind(header.conversation_id)
+        .bind(message.seq)
+        .bind(message.message_id)
+        .bind(message.from_agent_id.as_deref())
+        .bind(message.client_key.as_deref())
+        .bind(message.system_key.as_deref())
+        .bind(message.request_hash.as_deref())
+        .bind(message_kind_str(message.kind))
+        .bind(&message.body_md)
+        .bind(serde_json::to_value(&message.refs)?)
+        .bind(message.in_reply_to_conversation_id)
+        .bind(message.in_reply_to)
+        .bind(message.correlation_id.as_deref())
+        .bind(message.expects_reply)
+        .bind(message.reply_by)
+        .bind(message.reply_by_handled_at)
+        .bind(message.sync_cursor)
+        .bind(message.created_at)
+        .execute(&mut **tx)
+        .await?;
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.messaging_sync_state (user_id,current_cursor,updated_at)
+        VALUES ($1,$2,clock_timestamp())
+        ON CONFLICT (user_id) DO UPDATE SET
+          current_cursor=GREATEST(
+            straylight.messaging_sync_state.current_cursor,
+            EXCLUDED.current_cursor
+          ),
+          updated_at=clock_timestamp()
+        "#,
+    )
+    .bind(user_id)
+    .bind(header.latest_sync_cursor)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 async fn write_canonical_conversation_in_tx(
@@ -2614,36 +3190,20 @@ async fn write_canonical_conversation_in_tx(
         continues_from: conversation.continues_from,
         agent_streak: conversation.agent_streak,
         needs_human: conversation.needs_human,
+        latest_sync_cursor: conversation.latest_sync_cursor,
         created_at: conversation.created_at,
         closed_at: conversation.closed_at,
     };
     let content =
         messaging_protocol::render_conversation(&header, &messages).map_err(protocol_error)?;
-    if content.len() > MAX_CANONICAL_CONVERSATION_BYTES {
+    if content.len() > messaging_protocol::MAX_CANONICAL_CONVERSATION_BYTES {
         return Err(ApiError::public(
             StatusCode::PAYLOAD_TOO_LARGE,
             "conversation_entry_too_large",
             "canonical conversation Markdown is limited to 12 MiB",
         ));
     }
-    let metadata = json!({
-        "kind": "conversation",
-        "schema": "conversation.v1",
-        "conversation": {
-            "id": header.conversation_id,
-            "conversation_kind": header.conversation_kind,
-            "direct_key": header.direct_key,
-            "subject": header.subject,
-            "status": header.status,
-            "participants": header.participants,
-            "created_by_agent_id": header.created_by_agent_id,
-            "continues_from": header.continues_from,
-            "agent_streak": header.agent_streak,
-            "needs_human": header.needs_human,
-            "created_at": header.created_at,
-            "closed_at": header.closed_at
-        }
-    });
+    let metadata = messaging_protocol::conversation_metadata(&header);
     upsert_canonical_entry_in_tx(tx, auth, &conversation, content, metadata).await
 }
 
@@ -2719,7 +3279,8 @@ async fn load_canonical_messages_in_tx(
     let rows = sqlx::query(
         r#"
         SELECT seq,message_id,from_agent_id,client_key,system_key,request_hash,
-               kind,body_md,refs,in_reply_to,correlation_id,expects_reply,
+               kind,body_md,refs,in_reply_to_conversation_id,in_reply_to,
+               correlation_id,expects_reply,
                reply_by,reply_by_handled_at,sync_cursor,created_at
         FROM straylight.messaging_message_index
         WHERE user_id=$1 AND conversation_id=$2
@@ -2742,6 +3303,7 @@ async fn load_canonical_messages_in_tx(
                 kind: parse_message_kind(&row.try_get::<String, _>("kind")?)?,
                 body_md: row.try_get("body_md")?,
                 refs: serde_json::from_value(row.try_get("refs")?)?,
+                in_reply_to_conversation_id: row.try_get("in_reply_to_conversation_id")?,
                 in_reply_to: row.try_get("in_reply_to")?,
                 correlation_id: row.try_get("correlation_id")?,
                 expects_reply: row.try_get("expects_reply")?,
@@ -2904,6 +3466,7 @@ async fn publish_conversation_notification_in_tx(
     let event_key = match event_type {
         "message" => format!("message:{conversation_id}:{seq}"),
         "needs-human" => format!("needs-human:{conversation_id}:{seq}"),
+        "reply-by" => format!("reply-by:{conversation_id}:{seq}"),
         "system" => format!("message-system:{conversation_id}:{seq}"),
         _ => {
             return Err(ApiError::Internal(
@@ -2916,7 +3479,7 @@ async fn publish_conversation_notification_in_tx(
         "conversation_id": conversation_id,
         "seq": seq
     });
-    let (title, body, importance) = if event_type == "needs-human" {
+    let (title, body, importance) = if matches!(event_type, "needs-human" | "reply-by") {
         (
             "Agent reply needed",
             "Open Straylight to continue an agent conversation.",
@@ -2955,7 +3518,7 @@ async fn publish_conversation_notification_in_tx(
     .bind(auth.user_id.0)
     .bind(auth.credential_id.0)
     .bind(&event_key)
-    .bind(request_hash)
+    .bind(&request_hash)
     .bind(importance)
     .bind(title)
     .bind(body)
@@ -2965,6 +3528,27 @@ async fn publish_conversation_notification_in_tx(
     .await?
     .rows_affected()
         == 1;
+    let existing = sqlx::query_as::<_, (Uuid, String)>(
+        "SELECT id,request_hash FROM straylight.notifications WHERE user_id=$1 AND event_key=$2",
+    )
+    .bind(auth.user_id.0)
+    .bind(&event_key)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some((resolved_id, existing_hash)) = existing else {
+        return Err(ApiError::conflict(
+            "notification_event_key_conflict",
+            "the event key was already used with different notification content",
+            json!({"event_key": event_key}),
+        ));
+    };
+    if existing_hash != request_hash {
+        return Err(ApiError::conflict(
+            "notification_event_key_conflict",
+            "the event key was already used with different notification content",
+            json!({"event_key": event_key}),
+        ));
+    }
     if inserted {
         sqlx::query(
             r#"
@@ -2979,7 +3563,7 @@ async fn publish_conversation_notification_in_tx(
             "#,
         )
         .bind(auth.user_id.0)
-        .bind(notification_id)
+        .bind(resolved_id)
         .bind(if state.config.apns_delivery_enabled {
             "queued"
         } else {
