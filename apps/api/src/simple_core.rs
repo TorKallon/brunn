@@ -8466,7 +8466,17 @@ fn validate_public_path(path: &str) -> ApiResult<()> {
 
 fn require_write_capabilities(auth: &AuthContext, path: &str) -> ApiResult<()> {
     auth.require(Capability::Save)?;
-    if path.starts_with(crate::task_service::TASK_ENTRY_PREFIX) {
+    if path.starts_with(crate::messaging_protocol::CONVERSATION_ENTRY_PREFIX) {
+        if crate::messaging_protocol::conversation_id_from_path(path).is_none() {
+            return Err(ApiError::invalid(
+                "managed conversation paths require a lowercase canonical UUIDv7 filename",
+            ));
+        }
+        auth.require(Capability::MessageWrite)?;
+        if !auth.can(Capability::CredentialManage) && !auth.can(Capability::Admin) {
+            return Err(ApiError::capability(Capability::CredentialManage.as_str()));
+        }
+    } else if path.starts_with(crate::task_service::TASK_ENTRY_PREFIX) {
         if crate::task_service::task_id_from_path(path).is_none() {
             return Err(ApiError::invalid(
                 "managed task paths require a lowercase canonical UUIDv7 filename",
@@ -8520,9 +8530,23 @@ fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
             .and_then(Value::as_str)
             .is_some();
     let task_restore = crate::task_service::validate_task_entry(&request.path, &request.metadata)?;
+    let conversation_restore = if request
+        .path
+        .starts_with(crate::messaging_protocol::CONVERSATION_ENTRY_PREFIX)
+    {
+        crate::messaging_protocol::validate_conversation_entry(
+            &request.path,
+            &request.metadata,
+            &request.content,
+        )
+        .map_err(|error| ApiError::invalid(error.to_string()))?
+        .is_some()
+    } else {
+        false
+    };
     if portable_restore
         && request.expected_version.is_some()
-        && (checkpoint_restore || binary_companion_restore || task_restore)
+        && (checkpoint_restore || binary_companion_restore || task_restore || conversation_restore)
     {
         return Ok(());
     }
@@ -9200,16 +9224,13 @@ fn render_seed_checkpoint(
 mod tests {
     use super::*;
 
-    #[test]
-    fn exact_read_expands_only_for_one_canonical_conversation() {
+    fn test_conversation_header() -> crate::messaging_protocol::ConversationHeader {
         use crate::messaging_protocol::{
             ConversationHeader, ConversationKind, ConversationParticipant, ConversationStatus,
-            conversation_metadata, conversation_path, render_conversation,
         };
 
-        let conversation_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-        let created_at = "2026-08-27T12:00:00Z".parse().unwrap();
-        let header = ConversationHeader {
+        let conversation_id = Uuid::parse_str("550e8400-e29b-71d4-a716-446655440000").unwrap();
+        ConversationHeader {
             schema: "conversation.v1".to_owned(),
             conversation_id,
             conversation_kind: ConversationKind::Direct,
@@ -9231,9 +9252,20 @@ mod tests {
             agent_streak: 0,
             needs_human: false,
             latest_sync_cursor: 1,
-            created_at,
+            created_at: "2026-08-27T12:00:00Z".parse().unwrap(),
             closed_at: None,
+        }
+    }
+
+    #[test]
+    fn exact_read_expands_only_for_one_canonical_conversation() {
+        use crate::messaging_protocol::{
+            conversation_metadata, conversation_path, render_conversation,
         };
+
+        let header = test_conversation_header();
+        let conversation_id = header.conversation_id;
+        let created_at = header.created_at;
         let content = render_conversation(&header, &[]).unwrap();
         let mut entry = EntryRow {
             id: conversation_id,
@@ -9893,6 +9925,25 @@ mod tests {
             }),
         };
         assert!(validate_write_path(&portable_restore).is_ok());
+
+        let conversation = test_conversation_header();
+        let conversation_restore = WriteRequest {
+            path: crate::messaging_protocol::conversation_path(conversation.conversation_id),
+            content: crate::messaging_protocol::render_conversation(&conversation, &[]).unwrap(),
+            media_type: markdown_media_type(),
+            expected_version: Some(0),
+            idempotency_key: None,
+            metadata: json!({
+                "client": crate::messaging_protocol::conversation_metadata(&conversation),
+                "_straylight_import": {
+                    "format": crate::messaging_protocol::WORKSPACE_IMPORT_FORMAT
+                }
+            }),
+        };
+        assert!(
+            validate_write_path(&conversation_restore).is_ok(),
+            "a canonical portable conversation restore owns its reserved path"
+        );
     }
 
     #[test]
@@ -9918,6 +9969,27 @@ mod tests {
             .is_err()
         );
         assert!(require_write_capabilities(&save_only, ".straylight/binaries/receipt.md").is_err());
+        let conversation_path = crate::messaging_protocol::conversation_path(Uuid::now_v7());
+        assert!(require_write_capabilities(&save_only, &conversation_path).is_err());
+        assert!(
+            require_write_capabilities(
+                &auth(&[Capability::Save, Capability::MessageWrite]),
+                &conversation_path
+            )
+            .is_err(),
+            "ordinary messaging credentials cannot forge managed conversation entries"
+        );
+        assert!(
+            require_write_capabilities(
+                &auth(&[
+                    Capability::Save,
+                    Capability::MessageWrite,
+                    Capability::CredentialManage
+                ]),
+                &conversation_path
+            )
+            .is_ok()
+        );
         let task_id = Uuid::now_v7();
         let task_path = format!(".straylight/tasks/{task_id}.md");
         assert!(require_write_capabilities(&save_only, &task_path).is_err());

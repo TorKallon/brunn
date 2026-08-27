@@ -5,9 +5,9 @@ use chrono::{TimeZone, Utc};
 use messaging_protocol::{
     CanonicalMessage, ConversationHeader, ConversationKind, ConversationParticipant,
     ConversationStatus, MessageKind, MessageRef, ProtocolError, SendMessageInput,
-    conversation_metadata, conversation_path, is_conversation_candidate, is_workspace_import,
-    parse_conversation, render_conversation, request_hash, request_hash_with_reply_target,
-    validate_conversation_entry, validate_send_input,
+    conversation_id_from_path, conversation_metadata, conversation_path, is_conversation_candidate,
+    is_workspace_import, parse_conversation, render_conversation, request_hash,
+    request_hash_with_reply_target, validate_conversation_entry, validate_send_input,
 };
 use uuid::Uuid;
 
@@ -196,6 +196,7 @@ fn typed_metadata_and_path_must_match_the_canonical_header() {
     ));
     assert!(is_workspace_import(&imported));
     assert!(!is_workspace_import(&wrapped));
+    assert!(conversation_id_from_path(&conversation_path(Uuid::new_v4())).is_none());
 }
 
 #[test]
@@ -319,6 +320,13 @@ fn client_input_is_strict_and_question_deadline_is_bounded() {
     let mut bad_key = input();
     bad_key.client_key = "new-key-per-retry".to_owned();
     assert!(validate_send_input(&bad_key, as_of()).is_err());
+
+    let mut overflow_key = input();
+    overflow_key.client_key = "81J00000000000000000000000".to_owned();
+    assert!(
+        validate_send_input(&overflow_key, as_of()).is_err(),
+        "a 128-bit ULID cannot begin above 7"
+    );
 
     let mut late = input();
     late.reply_by = Some(as_of() + chrono::Duration::hours(25));

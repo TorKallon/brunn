@@ -514,7 +514,7 @@ CREATE TABLE straylight.messaging_message_index (
       AND length(system_key) BETWEEN 1 AND 200)
     OR
     (kind <> 'system' AND from_agent_id IS NOT NULL
-      AND client_key ~ '^[0-9A-HJKMNP-TV-Z]{26}$'
+      AND client_key ~ '^[0-7][0-9A-HJKMNP-TV-Z]{25}$'
       AND request_hash IS NOT NULL AND system_key IS NULL)
   ),
   CHECK (NOT expects_reply OR kind = 'question'),

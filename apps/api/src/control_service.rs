@@ -1020,6 +1020,7 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "verify",
                 "status",
                 "task.read",
+                "message.read",
             ],
         )),
         "read_write" => Ok((
@@ -1039,6 +1040,8 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "dream",
                 "task.read",
                 "task.write",
+                "message.read",
+                "message.write",
             ],
         )),
         "ios_tasks" => Ok(("ios_tasks", vec!["task.write", "notification:manage"])),
@@ -1065,6 +1068,8 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
                 "task.read",
                 "task.write",
                 "integration.manage",
+                "message.read",
+                "message.write",
                 "admin",
             ],
         )),
@@ -1509,14 +1514,25 @@ mod credential_tests {
         let (access, capabilities) = credential_template(None).expect("default template");
         assert_eq!(access, "read_write");
         assert!(capabilities.contains(&"save"));
+        assert!(capabilities.contains(&"message.read"));
+        assert!(capabilities.contains(&"message.write"));
         assert!(!capabilities.contains(&"credential:manage"));
+    }
+
+    #[test]
+    fn read_only_credentials_can_receive_but_not_send_messages() {
+        let (access, capabilities) =
+            credential_template(Some("read_only")).expect("read-only template");
+        assert_eq!(access, "read_only");
+        assert!(capabilities.contains(&"message.read"));
+        assert!(!capabilities.contains(&"message.write"));
     }
 
     #[test]
     fn owner_template_has_every_capability() {
         let (access, capabilities) = credential_template(Some("owner")).expect("owner template");
         assert_eq!(access, "owner");
-        assert_eq!(capabilities.len(), 21);
+        assert_eq!(capabilities.len(), 23);
         assert!(capabilities.contains(&"dream"));
         assert!(capabilities.contains(&"credential:manage"));
         assert!(capabilities.contains(&"notification:publish"));
@@ -1525,6 +1541,8 @@ mod credential_tests {
         assert!(capabilities.contains(&"secret:write"));
         assert!(capabilities.contains(&"task.read"));
         assert!(capabilities.contains(&"task.write"));
+        assert!(capabilities.contains(&"message.read"));
+        assert!(capabilities.contains(&"message.write"));
         assert!(capabilities.contains(&"integration.manage"));
         assert!(capabilities.contains(&"admin"));
     }

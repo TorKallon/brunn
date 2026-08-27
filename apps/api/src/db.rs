@@ -290,7 +290,36 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
         return Ok(());
     };
 
-    let write_capabilities = vec![
+    let write_capabilities = dev_write_capabilities();
+    let (user_id, _, scope_id, _): (Uuid, Uuid, Uuid, Uuid) =
+        sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
+            .bind(&config.dev_user_ref)
+            .bind(&config.dev_user_name)
+            .bind("Local read/write")
+            .bind(hash_token(read_write_token))
+            .bind(&write_capabilities)
+            .fetch_one(pool)
+            .await?;
+
+    if let Some(read_only_token) = &config.dev_read_only_token {
+        let read_capabilities = dev_read_capabilities();
+        let _: (Uuid, Uuid, Uuid, Uuid) =
+            sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
+                .bind(&config.dev_user_ref)
+                .bind(&config.dev_user_name)
+                .bind("Local read-only")
+                .bind(hash_token(read_only_token))
+                .bind(&read_capabilities)
+                .fetch_one(pool)
+                .await?;
+    }
+
+    ensure_initial_manifest_from_pool(pool, user_id, scope_id).await?;
+    Ok(())
+}
+
+fn dev_write_capabilities() -> Vec<&'static str> {
+    vec![
         "open",
         "query",
         "read",
@@ -311,41 +340,23 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
         "task.read",
         "task.write",
         "integration.manage",
+        "message.read",
+        "message.write",
         "admin",
-    ];
-    let (user_id, _, scope_id, _): (Uuid, Uuid, Uuid, Uuid) =
-        sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
-            .bind(&config.dev_user_ref)
-            .bind(&config.dev_user_name)
-            .bind("Local read/write")
-            .bind(hash_token(read_write_token))
-            .bind(&write_capabilities)
-            .fetch_one(pool)
-            .await?;
+    ]
+}
 
-    if let Some(read_only_token) = &config.dev_read_only_token {
-        let read_capabilities = vec![
-            "open",
-            "query",
-            "read",
-            "compute",
-            "verify",
-            "status",
-            "task.read",
-        ];
-        let _: (Uuid, Uuid, Uuid, Uuid) =
-            sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
-                .bind(&config.dev_user_ref)
-                .bind(&config.dev_user_name)
-                .bind("Local read-only")
-                .bind(hash_token(read_only_token))
-                .bind(&read_capabilities)
-                .fetch_one(pool)
-                .await?;
-    }
-
-    ensure_initial_manifest_from_pool(pool, user_id, scope_id).await?;
-    Ok(())
+fn dev_read_capabilities() -> Vec<&'static str> {
+    vec![
+        "open",
+        "query",
+        "read",
+        "compute",
+        "verify",
+        "status",
+        "task.read",
+        "message.read",
+    ]
 }
 
 async fn ensure_initial_manifest_from_pool(
@@ -453,5 +464,15 @@ mod tests {
             statement_timeout(Duration::from_secs(3_600)),
             Duration::from_secs(3_595)
         );
+    }
+
+    #[test]
+    fn dev_credentials_match_messaging_access_templates() {
+        let read_write = dev_write_capabilities();
+        assert!(read_write.contains(&"message.read"));
+        assert!(read_write.contains(&"message.write"));
+        let read_only = dev_read_capabilities();
+        assert!(read_only.contains(&"message.read"));
+        assert!(!read_only.contains(&"message.write"));
     }
 }

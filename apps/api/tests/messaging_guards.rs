@@ -725,6 +725,23 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
         owner_role_after_post, "participant",
         "an owner post promotes an observer for subsequent delivery"
     );
+    let owner_post_shape = sqlx::query_as::<_, (String, Option<String>)>(
+        r#"
+        SELECT conversation_kind,direct_key
+        FROM straylight.messaging_conversations
+        WHERE user_id=$1 AND conversation_id=$2
+        "#,
+    )
+    .bind(streak.user_id)
+    .bind(streak_conversation)
+    .fetch_one(&pool)
+    .await
+    .expect("read owner-promoted conversation shape");
+    assert_eq!(
+        owner_post_shape,
+        ("group".to_owned(), None),
+        "promoting the owner makes a two-agent direct a canonical group"
+    );
 
     let pause_rollover = seed_workspace(&pool, "pause-rollover").await;
     let pause_rollover_conversation = create_conversation(
@@ -1073,6 +1090,75 @@ async fn messaging_guards_preserve_replay_budgets_rollover_and_reply_deadlines()
     .expect("count deadline notifications");
     assert_eq!(deadline_systems, 1);
     assert_eq!(deadline_notifications, 1);
+
+    let canceled = seed_workspace(&pool, "reply-deadline-close").await;
+    let canceled_conversation = create_conversation(
+        &app,
+        &canceled.agent.token,
+        &["agent-b"],
+        "Close cancels a reply deadline",
+    )
+    .await;
+    let canceled_reply_by = Utc::now() + ChronoDuration::minutes(1);
+    let canceled_question = request_json(
+        &app,
+        Method::POST,
+        &format!("{MESSAGING_ROOT}/conversations/{canceled_conversation}/messages"),
+        &canceled.agent.token,
+        json!({
+            "client_key": client_key(901),
+            "kind": "question",
+            "body_md": "This deadline is canceled by close",
+            "expects_reply": true,
+            "reply_by": canceled_reply_by
+        }),
+    )
+    .await;
+    assert_eq!(canceled_question.status, StatusCode::OK);
+    let canceled_question_seq = data(&canceled_question)
+        .get("seq")
+        .and_then(Value::as_i64)
+        .expect("canceled question returns a sequence");
+    let closed = request_json(
+        &app,
+        Method::POST,
+        &format!("{MESSAGING_ROOT}/conversations/{canceled_conversation}/close"),
+        &canceled.owner.token,
+        json!({}),
+    )
+    .await;
+    assert_eq!(closed.status, StatusCode::OK);
+    let canceled_handled = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
+        r#"
+        SELECT reply_by_handled_at
+        FROM straylight.messaging_message_index
+        WHERE user_id=$1 AND conversation_id=$2 AND seq=$3
+        "#,
+    )
+    .bind(canceled.user_id)
+    .bind(canceled_conversation)
+    .bind(canceled_question_seq)
+    .fetch_one(&pool)
+    .await
+    .expect("read canceled reply deadline");
+    assert!(
+        canceled_handled.is_some(),
+        "closing retires a future deadline so it cannot block the worker"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*)::bigint FROM straylight.messaging_message_index WHERE user_id=$1 AND system_key=$2",
+        )
+        .bind(canceled.user_id)
+        .bind(format!(
+            "reply-by:{canceled_conversation}:{canceled_question_seq}"
+        ))
+        .fetch_one(&pool)
+        .await
+        .expect("count canceled deadline systems"),
+        0,
+        "canceling a deadline does not synthesize an expiry message"
+    );
 
     let deadline_race = seed_workspace(&pool, "reply-deadline-race").await;
     let deadline_race_conversation = create_conversation(

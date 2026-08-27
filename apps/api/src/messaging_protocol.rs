@@ -26,7 +26,7 @@ const MESSAGE_END: &str = "\n<!-- /straylight-message-v1 -->\n";
 static AGENT_ID: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$").expect("messaging agent id regex"));
 static CLIENT_KEY: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[0-9A-HJKMNP-TV-Z]{26}$").expect("Crockford ULID regex"));
+    Lazy::new(|| Regex::new(r"^[0-7][0-9A-HJKMNP-TV-Z]{25}$").expect("Crockford ULID regex"));
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ProtocolError {
@@ -198,7 +198,8 @@ pub fn conversation_id_from_path(path: &str) -> Option<Uuid> {
         .strip_prefix(CONVERSATION_ENTRY_PREFIX)?
         .strip_suffix(".md")?;
     let conversation_id = Uuid::parse_str(raw).ok()?;
-    (raw == conversation_id.to_string()).then_some(conversation_id)
+    (raw == conversation_id.to_string() && conversation_id.get_version_num() == 7)
+        .then_some(conversation_id)
 }
 
 pub fn validate_agent_id(agent_id: &str) -> Result<(), ProtocolError> {

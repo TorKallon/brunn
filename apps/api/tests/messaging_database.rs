@@ -689,6 +689,11 @@ async fn messaging_schema_capabilities_rls_and_managed_entries_fail_closed() {
         "missing 0075 agent-messaging database surface: {}",
         migration.display()
     );
+    let migration_sql = std::fs::read_to_string(&migration).expect("read messaging migration");
+    assert!(
+        migration_sql.contains("^[0-7][0-9A-HJKMNP-TV-Z]{25}$"),
+        "the database must reject ULIDs outside the 128-bit leading range"
+    );
 
     let Some(pool) = connect_test_pool().await else {
         return;

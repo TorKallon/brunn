@@ -24,7 +24,7 @@ use crate::{
         self, CanonicalMessage, ConversationHeader, ConversationKind, ConversationParticipant,
         ConversationStatus, MessageKind, MessageRef, SendMessageInput,
     },
-    models::{CredentialId, ResponseStatus, UserId},
+    models::{Capability, CredentialId, ResponseStatus, UserId},
     simple_core::WorkspaceEnvelope,
 };
 
@@ -330,12 +330,15 @@ async fn sync(
     headers: HeaderMap,
     Query(query): Query<SyncQuery>,
 ) -> ApiResult<Json<WorkspaceEnvelope<SyncResponse>>> {
-    require_capability(&auth, "message.read")?;
+    auth.require(Capability::MessageRead)?;
     let limit = validate_sync_query(&query)?;
     let started = tokio::time::Instant::now();
     let deadline = started + Duration::from_secs(query.wait);
     let mut renew_presence = query.wait > 0;
     let allow_web_owner_fallback = is_web_session_request(&headers);
+    if query.wait > 0 {
+        metrics::counter!("messaging.wait", "result" => "started").increment(1);
+    }
 
     loop {
         let page = sync_once(
@@ -349,6 +352,14 @@ async fn sync(
         .await?;
         renew_presence = false;
         if page.activity || query.wait == 0 {
+            let payload_bytes = serde_json::to_vec(&page.response)
+                .map(|payload| payload.len())
+                .unwrap_or(0);
+            metrics::histogram!(
+                "messaging.sync.payload_bytes",
+                "wait" => if query.wait > 0 { "long_poll" } else { "immediate" }
+            )
+            .record(payload_bytes as f64);
             metrics::histogram!(
                 "messaging.sync.duration_ms",
                 "wait" => if query.wait > 0 { "long_poll" } else { "immediate" },
@@ -366,6 +377,14 @@ async fn sync(
             } else {
                 response.cursor
             });
+            let payload_bytes = serde_json::to_vec(&response)
+                .map(|payload| payload.len())
+                .unwrap_or(0);
+            metrics::histogram!(
+                "messaging.sync.payload_bytes",
+                "wait" => "long_poll"
+            )
+            .record(payload_bytes as f64);
             metrics::counter!("messaging.wait", "result" => "timeout").increment(1);
             metrics::histogram!(
                 "messaging.sync.duration_ms",
@@ -385,7 +404,7 @@ async fn create_conversation(
     headers: HeaderMap,
     Json(request): Json<CreateConversationRequest>,
 ) -> ApiResult<Json<WorkspaceEnvelope<CreateConversationResponse>>> {
-    require_capability(&auth, "message.write")?;
+    auth.require(Capability::MessageWrite)?;
     let subject =
         messaging_protocol::validate_subject(request.subject.as_deref()).map_err(protocol_error)?;
     if request.participants.is_empty() || request.participants.len() > 31 {
@@ -440,7 +459,7 @@ async fn send_message(
     Path(conversation_id): Path<Uuid>,
     Json(input): Json<SendMessageInput>,
 ) -> ApiResult<Json<WorkspaceEnvelope<SendMessageResponse>>> {
-    require_capability(&auth, "message.write")?;
+    auth.require(Capability::MessageWrite)?;
     let as_of = Utc::now();
 
     let started = std::time::Instant::now();
@@ -494,7 +513,18 @@ async fn send_message(
             ));
         }
         tx.commit().await?;
-        metrics::counter!("messaging.send", "result" => "duplicate").increment(1);
+        metrics::counter!(
+            "messaging.send",
+            "result" => "duplicate",
+            "principal_kind" => sender.principal_kind.clone()
+        )
+        .increment(1);
+        metrics::histogram!(
+            "messaging.send.duration_ms",
+            "result" => "duplicate",
+            "principal_kind" => sender.principal_kind.clone()
+        )
+        .record(started.elapsed().as_secs_f64() * 1_000.0);
         let response = SendMessageResponse {
             conversation_id: replay.conversation_id,
             seq: replay.seq,
@@ -513,7 +543,7 @@ async fn send_message(
     require_conversation_sender(&mut tx, auth.user_id.0, target_id, &sender, &conversation).await?;
     let sender_is_owner = sender.principal_kind == "owner";
     if sender_is_owner {
-        promote_owner_participant_in_tx(
+        let promoted = promote_owner_participant_in_tx(
             &mut tx,
             auth.user_id.0,
             target_id,
@@ -521,6 +551,10 @@ async fn send_message(
             as_of,
         )
         .await?;
+        if promoted {
+            conversation.conversation_kind = "group".to_owned();
+            conversation.direct_key = None;
+        }
     }
     if conversation.status == "paused_for_human" && !sender_is_owner {
         return Err(ApiError::conflict(
@@ -690,9 +724,18 @@ async fn send_message(
     tx.commit().await?;
     state.workspace_features.invalidate(auth.user_id.0).await;
     conversation.last_seq = last_seq;
-    metrics::counter!("messaging.send", "result" => "created").increment(1);
-    metrics::histogram!("messaging.send.duration_ms")
-        .record(started.elapsed().as_secs_f64() * 1_000.0);
+    metrics::counter!(
+        "messaging.send",
+        "result" => "created",
+        "principal_kind" => sender.principal_kind.clone()
+    )
+    .increment(1);
+    metrics::histogram!(
+        "messaging.send.duration_ms",
+        "result" => "created",
+        "principal_kind" => sender.principal_kind.clone()
+    )
+    .record(started.elapsed().as_secs_f64() * 1_000.0);
     let mut envelope = WorkspaceEnvelope::complete(SendMessageResponse {
         conversation_id: target_id,
         seq: plan.user_seq,
@@ -711,7 +754,7 @@ async fn mark_read(
     Path(conversation_id): Path<Uuid>,
     Json(request): Json<ReadRequest>,
 ) -> ApiResult<Json<WorkspaceEnvelope<ReadResponse>>> {
-    require_capability(&auth, "message.write")?;
+    auth.require(Capability::MessageWrite)?;
     if request.last_read_seq < 0 {
         return Err(ApiError::invalid("last_read_seq must be nonnegative"));
     }
@@ -798,7 +841,7 @@ async fn resume_conversation(
     Path(conversation_id): Path<Uuid>,
     Json(_request): Json<EmptyRequest>,
 ) -> ApiResult<Json<WorkspaceEnvelope<ConversationMutationResponse>>> {
-    require_capability(&auth, "message.write")?;
+    auth.require(Capability::MessageWrite)?;
     let mut tx = state.begin_write(&auth).await?;
     let principal =
         resolve_principal_in_tx(&mut tx, &auth, is_web_session_request(&headers)).await?;
@@ -867,7 +910,7 @@ async fn close_conversation(
     Path(conversation_id): Path<Uuid>,
     Json(_request): Json<EmptyRequest>,
 ) -> ApiResult<Json<WorkspaceEnvelope<ConversationMutationResponse>>> {
-    require_capability(&auth, "message.write")?;
+    auth.require(Capability::MessageWrite)?;
     let as_of = Utc::now();
     let mut tx = state.begin_write(&auth).await?;
     let principal =
@@ -886,6 +929,9 @@ async fn close_conversation(
     let cursor = if duplicate {
         conversation.latest_sync_cursor
     } else {
+        let canceled_deadline_conversations =
+            cancel_reply_deadlines_for_chain_in_tx(&mut tx, auth.user_id.0, conversation_id, as_of)
+                .await?;
         let cursor = allocate_cursor_in_tx(&mut tx, auth.user_id.0).await?;
         sqlx::query(
             r#"
@@ -902,6 +948,12 @@ async fn close_conversation(
         .execute(&mut *tx)
         .await?;
         write_canonical_conversation_in_tx(&mut tx, &auth, conversation_id).await?;
+        for canceled_conversation_id in canceled_deadline_conversations {
+            if canceled_conversation_id != conversation_id {
+                write_canonical_conversation_in_tx(&mut tx, &auth, canceled_conversation_id)
+                    .await?;
+            }
+        }
         cursor
     };
     tx.commit().await?;
@@ -927,7 +979,7 @@ async fn list_agents(
     Extension(auth): Extension<AuthContext>,
     headers: HeaderMap,
 ) -> ApiResult<Json<WorkspaceEnvelope<AgentListResponse>>> {
-    require_capability(&auth, "message.read")?;
+    auth.require(Capability::MessageRead)?;
     let as_of = Utc::now();
     let web_session = is_web_session_request(&headers);
     let mut tx = state.begin_write(&auth).await?;
@@ -1137,14 +1189,6 @@ fn complete_envelope<T>(data: T) -> Json<WorkspaceEnvelope<T>> {
 
 fn protocol_error(error: messaging_protocol::ProtocolError) -> ApiError {
     ApiError::invalid(error.to_string())
-}
-
-fn require_capability(auth: &AuthContext, capability: &'static str) -> ApiResult<()> {
-    if auth.capabilities.contains(capability) || auth.capabilities.contains("admin") {
-        Ok(())
-    } else {
-        Err(ApiError::capability(capability))
-    }
 }
 
 fn has_registry_capability(auth: &AuthContext) -> bool {
@@ -2123,8 +2167,8 @@ async fn promote_owner_participant_in_tx(
     conversation_id: Uuid,
     owner_agent_id: &str,
     as_of: DateTime<Utc>,
-) -> ApiResult<()> {
-    sqlx::query(
+) -> ApiResult<bool> {
+    let promoted = sqlx::query(
         r#"
         UPDATE straylight.messaging_participants
         SET role='participant',updated_at=$4
@@ -2138,7 +2182,60 @@ async fn promote_owner_participant_in_tx(
     .bind(as_of)
     .execute(&mut **tx)
     .await?;
-    Ok(())
+    if promoted.rows_affected() == 0 {
+        return Ok(false);
+    }
+    sqlx::query(
+        r#"
+        UPDATE straylight.messaging_conversations
+        SET conversation_kind='group',direct_key=NULL,updated_at=$3
+        WHERE user_id=$1 AND conversation_id=$2
+        "#,
+    )
+    .bind(user_id)
+    .bind(conversation_id)
+    .bind(as_of)
+    .execute(&mut **tx)
+    .await?;
+    Ok(true)
+}
+
+async fn cancel_reply_deadlines_for_chain_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    conversation_id: Uuid,
+    as_of: DateTime<Utc>,
+) -> ApiResult<Vec<Uuid>> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"
+        WITH RECURSIVE ancestors AS (
+          SELECT conversation_id,continues_from
+          FROM straylight.messaging_conversations
+          WHERE user_id=$1 AND conversation_id=$2
+          UNION
+          SELECT parent.conversation_id,parent.continues_from
+          FROM straylight.messaging_conversations AS parent
+          JOIN ancestors AS child
+            ON child.continues_from=parent.conversation_id
+          WHERE parent.user_id=$1
+        ), canceled AS (
+          UPDATE straylight.messaging_message_index AS message
+          SET reply_by_handled_at=$3
+          FROM ancestors
+          WHERE message.user_id=$1
+            AND message.conversation_id=ancestors.conversation_id
+            AND message.reply_by IS NOT NULL
+            AND message.reply_by_handled_at IS NULL
+          RETURNING message.conversation_id
+        )
+        SELECT DISTINCT conversation_id FROM canceled
+        "#,
+    )
+    .bind(user_id)
+    .bind(conversation_id)
+    .bind(as_of)
+    .fetch_all(&mut **tx)
+    .await?)
 }
 
 async fn require_conversation_sender(
@@ -2854,13 +2951,7 @@ pub async fn process_due_reply_by(state: &AppState, as_of: DateTime<Utc>) -> Api
         write_canonical_conversation_in_tx(&mut tx, &auth, question_conversation_id).await?;
     }
     publish_conversation_notification_in_tx(
-        &mut tx,
-        state,
-        &auth,
-        question_conversation_id,
-        question_seq,
-        "reply-by",
-        as_of,
+        &mut tx, state, &auth, target_id, system_seq, "reply-by", as_of,
     )
     .await?;
     tx.commit().await?;
