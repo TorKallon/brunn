@@ -29,7 +29,7 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
     assert.match(client.getInstructions() ?? "", /Start substantive work with memory\.open/);
     assert.match(client.getInstructions() ?? "", /memory\.checkpoint/);
     const response = await client.listTools();
-    assert.deepEqual(response.tools.map((tool) => tool.name).sort(), [
+    const expectedNames = [
       "asset.list",
       "asset.metadata",
       "briefing.dedupe",
@@ -62,7 +62,17 @@ test("remote profile exposes only hosted-safe tools with bounded reads", async (
       "task.settings",
       "task.sync_status",
       "task.update",
-    ]);
+    ];
+    if (process.env.STRAYLIGHT_MESSAGING_ENABLED === "true") {
+      expectedNames.push(
+        "agent.list",
+        "message.list",
+        "message.read",
+        "message.send",
+        "message.wait",
+      );
+    }
+    assert.deepEqual(response.tools.map((tool) => tool.name).sort(), expectedNames.sort());
     assert.equal(response.tools.some((tool) => tool.name === "memory.stage"), false);
     assert.equal(response.tools.some((tool) => tool.name === "asset.fetch"), false);
 

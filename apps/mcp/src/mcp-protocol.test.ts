@@ -33,7 +33,7 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
   const response = await client.listTools();
 
   const names = response.tools.map((tool) => tool.name).sort();
-  assert.deepEqual(names, [
+  const expectedNames = [
     "asset.fetch",
     "asset.list",
     "asset.metadata",
@@ -68,7 +68,17 @@ test("stdio server negotiates and exposes the complete typed memory surface", as
     "task.settings",
     "task.sync_status",
     "task.update",
-  ]);
+  ];
+  if (process.env.STRAYLIGHT_MESSAGING_ENABLED === "true") {
+    expectedNames.push(
+      "agent.list",
+      "message.list",
+      "message.read",
+      "message.send",
+      "message.wait",
+    );
+  }
+  assert.deepEqual(names, expectedNames.sort());
   assert.equal(response.tools.every((tool) => tool.inputSchema.type === "object"), true);
   const open = response.tools.find((tool) => tool.name === "memory.open");
   assert.ok(open);
