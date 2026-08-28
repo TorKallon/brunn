@@ -30,6 +30,7 @@ use crate::{
 const DEFAULT_LIST_LIMIT: i64 = 50;
 const MAX_LIST_LIMIT: i64 = 100;
 const APNS_LEASE_SECONDS: i64 = 300;
+const APNS_ALERT_PREVIEW_MAX_CHARS: usize = 500;
 const DEFAULT_NOTIFICATION_TTL_HOURS: i64 = 24;
 const MAX_NOTIFICATION_TTL_HOURS: i64 = 24 * 7;
 const LIST_NOTIFICATIONS_SQL: &str = r#"
@@ -1480,6 +1481,7 @@ struct ClaimedDelivery {
     budget_attempt_count: i32,
     max_attempts: i32,
     kind: String,
+    body: String,
     target: Value,
     environment: String,
     app_id: String,
@@ -1688,7 +1690,8 @@ async fn claim_delivery(pool: &PgPool) -> ApiResult<Option<ClaimedDelivery>> {
                   delivery.installation_id,
                   delivery.attempt_count+delivery.provider_block_count AS attempt_number,
                   delivery.attempt_count AS budget_attempt_count,
-                  delivery.max_attempts,notification.kind,notification.target,
+                  delivery.max_attempts,notification.kind,notification.body,
+                  notification.target,
                   notification.expires_at,
                   installation.client_installation_id,
                   installation.environment,installation.app_id,
@@ -1709,6 +1712,7 @@ async fn claim_delivery(pool: &PgPool) -> ApiResult<Option<ClaimedDelivery>> {
             budget_attempt_count: row.try_get("budget_attempt_count")?,
             max_attempts: row.try_get("max_attempts")?,
             kind: row.try_get("kind")?,
+            body: row.try_get("body")?,
             target: row.try_get("target")?,
             environment: row.try_get("environment")?,
             app_id: row.try_get("app_id")?,
@@ -1802,9 +1806,15 @@ fn push_collapse_id(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> 
 fn push_body(delivery: &ClaimedDelivery, target: &ResolvedPushTarget) -> String {
     match target {
         ResolvedPushTarget::Conversation { .. } => "A new agent message is available.".to_owned(),
-        ResolvedPushTarget::Task { .. }
-        | ResolvedPushTarget::Ordinary
-        | ResolvedPushTarget::Malformed => generic_push_body(&delivery.kind).to_owned(),
+        ResolvedPushTarget::Task { .. } => generic_push_body(&delivery.kind).to_owned(),
+        ResolvedPushTarget::Ordinary | ResolvedPushTarget::Malformed
+            if delivery.kind == "operational" =>
+        {
+            alert_text_preview(&delivery.body)
+        }
+        ResolvedPushTarget::Ordinary | ResolvedPushTarget::Malformed => {
+            generic_push_body(&delivery.kind).to_owned()
+        }
     }
 }
 
@@ -1812,7 +1822,6 @@ fn generic_push_body(kind: &str) -> &'static str {
     match kind {
         "briefing_ready" => "Your briefing is ready.",
         "correction" => "A Straylight update needs your attention.",
-        "operational" => "Straylight has an operational alert.",
         _ => "A new Straylight alert is available.",
     }
 }
@@ -1837,6 +1846,18 @@ fn parse_canonical_conversation_id(value: &str) -> ApiResult<Uuid> {
         ));
     }
     Ok(conversation_id)
+}
+
+fn alert_text_preview(body: &str) -> String {
+    if body.chars().count() <= APNS_ALERT_PREVIEW_MAX_CHARS {
+        return body.to_owned();
+    }
+    let mut preview = body
+        .chars()
+        .take(APNS_ALERT_PREVIEW_MAX_CHARS - 1)
+        .collect::<String>();
+    preview.push('…');
+    preview
 }
 
 async fn record_acceptance(
@@ -2131,7 +2152,7 @@ mod tests {
     }
 
     #[test]
-    fn push_payload_contains_only_generic_copy_and_opaque_refs() {
+    fn news_push_payload_contains_only_generic_copy_and_opaque_refs() {
         let delivery = ClaimedDelivery {
             id: Uuid::now_v7(),
             user_id: Uuid::now_v7(),
@@ -2142,6 +2163,7 @@ mod tests {
             budget_attempt_count: 1,
             max_attempts: 8,
             kind: "news_alert".to_owned(),
+            body: "Private news detail".to_owned(),
             target: json!({"type":"notification"}),
             environment: "development".to_owned(),
             app_id: "com.example.Straylight".to_owned(),
@@ -2153,6 +2175,11 @@ mod tests {
         let payload = push_payload(&delivery, &target);
         assert_eq!(payload["schema"], "straylight-push@v1");
         assert_eq!(payload["aps"]["alert"]["title"], "Straylight");
+        assert_eq!(
+            payload["aps"]["alert"]["body"],
+            "A new Straylight alert is available."
+        );
+        assert!(!payload.to_string().contains("Private news detail"));
         assert!(payload.get("title").is_none());
         assert!(payload.get("body").is_none());
         assert!(
@@ -2180,6 +2207,39 @@ mod tests {
     }
 
     #[test]
+    fn operational_push_payload_previews_alert_text_with_a_bounded_size() {
+        let alert_text = "Storage on Nyx is above the operational threshold.";
+        let mut delivery = ClaimedDelivery {
+            id: Uuid::now_v7(),
+            user_id: Uuid::now_v7(),
+            notification_id: Uuid::now_v7(),
+            installation_id: Uuid::now_v7(),
+            client_installation_id: Uuid::now_v7(),
+            attempt_number: 1,
+            budget_attempt_count: 1,
+            max_attempts: 8,
+            kind: "operational".to_owned(),
+            body: alert_text.to_owned(),
+            target: json!({"type":"notification"}),
+            environment: "development".to_owned(),
+            app_id: "com.example.Straylight".to_owned(),
+            token_ciphertext: Vec::new(),
+            token_nonce: Vec::new(),
+            expires_at: None,
+        };
+        let target = resolve_push_target(&delivery.target);
+        let payload = push_payload(&delivery, &target);
+        assert_eq!(payload["aps"]["alert"]["body"], alert_text);
+
+        delivery.body = "🚨".repeat(20_000);
+        let payload = push_payload(&delivery, &target);
+        let preview = payload["aps"]["alert"]["body"].as_str().unwrap();
+        assert_eq!(preview.chars().count(), APNS_ALERT_PREVIEW_MAX_CHARS);
+        assert!(preview.ends_with('…'));
+        assert!(serde_json::to_vec(&payload).unwrap().len() < 4_096);
+    }
+
+    #[test]
     fn task_push_uses_the_exact_typed_uuidv7_route() {
         let task_id = Uuid::now_v7();
         let delivery = ClaimedDelivery {
@@ -2192,6 +2252,7 @@ mod tests {
             budget_attempt_count: 1,
             max_attempts: 8,
             kind: "task_guard".to_owned(),
+            body: "Private deadline detail".to_owned(),
             target: json!({"type":"task","task_ref":task_id.to_string()}),
             environment: "development".to_owned(),
             app_id: "com.example.Straylight".to_owned(),
@@ -2209,6 +2270,8 @@ mod tests {
             payload["aps"]["alert"]["body"],
             "A new Straylight alert is available."
         );
+        assert!(!payload.to_string().contains("Private deadline detail"));
+
         let mut request = fixture();
         request.target = NotificationTarget::Task {
             task_ref: Uuid::new_v4().to_string(),

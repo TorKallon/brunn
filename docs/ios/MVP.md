@@ -96,10 +96,12 @@ attempt state, and open/acknowledgement receipts. iOS asks permission only from
 the contextual setup flow, obtains the current APNs token each launch, keeps it
 in memory, and upserts it through the account session with CSRF protection.
 
-The strict `straylight-push@v1` payload contains only generic APS prose, opaque
-notification/delivery references, and a matching typed route. It contains no
-briefing prose, path, semantic item identifier, source URL, or personal value.
-APNs `accepted_by_apns` is displayed honestly and never called device delivery.
+The strict `straylight-push@v1` payload contains a bounded preview of an
+operational alert's body. Briefing, material-news, and correction pushes retain
+generic APS prose. Every payload otherwise contains only opaque
+notification/delivery references and a matching typed route; paths, semantic
+item identifiers, source URLs, and user identifiers stay out of APNs. APNs
+`accepted_by_apns` is displayed honestly and never called device delivery.
 
 The `STRAYLIGHT_APNS_ENVIRONMENT` build setting expands into the
 `aps-environment` entitlement and the installation request. Debug builds use

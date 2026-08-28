@@ -224,13 +224,14 @@ private struct NotificationPrimerView: View {
                 Image(systemName: "bell.badge")
                     .font(.system(size: 42, weight: .medium))
                     .foregroundStyle(StraylightTheme.signal)
-                Text("Private alerts, resolved after open")
+                Text("Useful previews, private detail after open")
                     .font(.largeTitle.bold())
-                Text("Straylight can send a generic lock-screen signal for morning briefings, material news, corrections, and operational attention. The app then authenticates and opens the durable alert detail.")
+                Text("Operational alerts can show a short preview on the lock screen. Briefings, material news, and corrections keep generic preview text. The app then authenticates and opens the durable alert detail.")
                     .font(.body)
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Register this installation with an opaque identifier", systemImage: "iphone.gen3")
-                    Label("Keep default lock-screen text generic", systemImage: "lock")
+                    Label("Preview operational alert text", systemImage: "text.bubble")
+                    Label("Keep other lock-screen text generic", systemImage: "lock")
                     Label("Resolve private content only after authenticated open", systemImage: "arrow.down.doc")
                     Label("Record APNs attempts, opens, and acknowledgements", systemImage: "checkmark.seal")
                 }
