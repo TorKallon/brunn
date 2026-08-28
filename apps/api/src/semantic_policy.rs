@@ -747,8 +747,12 @@ mod tests {
             QueryEmbeddingCache::new(8, Duration::from_secs(60), Duration::from_secs(1)),
             8,
         );
-        let first =
-            runtime.query_embedding(embedder.clone(), "current plan", true, Duration::from_secs(5));
+        let first = runtime.query_embedding(
+            embedder.clone(),
+            "current plan",
+            true,
+            Duration::from_secs(5),
+        );
         assert!(
             tokio::time::timeout(Duration::from_millis(5), first)
                 .await
@@ -945,7 +949,8 @@ mod tests {
         assert_eq!(runtime.cached_readiness_at(user, now), None);
         runtime.store_readiness_at(user, true, now);
         assert_eq!(
-            runtime.cached_readiness_at(user, now + READINESS_POSITIVE_TTL - Duration::from_secs(1)),
+            runtime
+                .cached_readiness_at(user, now + READINESS_POSITIVE_TTL - Duration::from_secs(1)),
             Some(true)
         );
         assert_eq!(
@@ -954,7 +959,8 @@ mod tests {
         );
         runtime.store_readiness_at(user, false, now);
         assert_eq!(
-            runtime.cached_readiness_at(user, now + READINESS_NEGATIVE_TTL - Duration::from_secs(1)),
+            runtime
+                .cached_readiness_at(user, now + READINESS_NEGATIVE_TTL - Duration::from_secs(1)),
             Some(false)
         );
         assert_eq!(

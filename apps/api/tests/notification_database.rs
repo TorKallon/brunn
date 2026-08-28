@@ -689,9 +689,11 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     .await
     .expect("read historical assignment after account switch");
     assert!(!old_assignment.get::<bool, _>("enabled"));
-    assert!(old_assignment
-        .try_get::<chrono::DateTime<chrono::Utc>, _>("revoked_at")
-        .is_ok());
+    assert!(
+        old_assignment
+            .try_get::<chrono::DateTime<chrono::Utc>, _>("revoked_at")
+            .is_ok()
+    );
     assert_eq!(
         old_assignment.get::<Option<Vec<u8>>, _>("token_ciphertext"),
         None
@@ -700,20 +702,16 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
         old_assignment.get::<Option<Vec<u8>>, _>("token_nonce"),
         None
     );
-    assert_eq!(
-        old_assignment.get::<Option<String>, _>("token_hash"),
-        None
-    );
+    assert_eq!(old_assignment.get::<Option<String>, _>("token_hash"), None);
     assert_eq!(old_assignment.get::<String, _>("state"), "expired");
     assert_eq!(
         old_assignment.get::<String, _>("last_error_code"),
         "installation_reassigned"
     );
 
-    for (principal, expected_installation) in [
-        (&first, first_installation),
-        (&second, second_installation),
-    ] {
+    for (principal, expected_installation) in
+        [(&first, first_installation), (&second, second_installation)]
+    {
         let mut tx = begin_as_app_rw(&pool, &principal.auth).await;
         let visible = sqlx::query_scalar::<_, Vec<Uuid>>(
             r#"
@@ -808,9 +806,11 @@ async fn installation_claims_support_account_switch_and_same_user_management() {
     .await
     .expect("read same-user revoked installation");
     assert!(!revoked.get::<bool, _>("enabled"));
-    assert!(revoked
-        .try_get::<chrono::DateTime<chrono::Utc>, _>("revoked_at")
-        .is_ok());
+    assert!(
+        revoked
+            .try_get::<chrono::DateTime<chrono::Utc>, _>("revoked_at")
+            .is_ok()
+    );
     assert_eq!(revoked.get::<Option<Vec<u8>>, _>("token_ciphertext"), None);
     assert_eq!(revoked.get::<Option<Vec<u8>>, _>("token_nonce"), None);
     assert_eq!(revoked.get::<Option<String>, _>("token_hash"), None);

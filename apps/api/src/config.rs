@@ -1034,12 +1034,10 @@ mod tests {
                 command.env("STRAYLIGHT_TODOIST_SYNC_ENABLED", "true");
             }
             "todoist_with_secret_key" => {
-                command
-                    .env("STRAYLIGHT_TODOIST_SYNC_ENABLED", "true")
-                    .env(
-                        "STRAYLIGHT_SECRET_ENCRYPTION_KEY",
-                        STANDARD.encode([11_u8; 32]),
-                    );
+                command.env("STRAYLIGHT_TODOIST_SYNC_ENABLED", "true").env(
+                    "STRAYLIGHT_SECRET_ENCRYPTION_KEY",
+                    STANDARD.encode([11_u8; 32]),
+                );
             }
             scenario => panic!("unknown config probe scenario {scenario}"),
         }
@@ -1240,16 +1238,18 @@ mod tests {
                 let error = Config::from_env()
                     .err()
                     .expect("enabled Todoist sync without a vault key must fail");
-                assert!(error.to_string().contains("STRAYLIGHT_SECRET_ENCRYPTION_KEY"));
+                assert!(
+                    error
+                        .to_string()
+                        .contains("STRAYLIGHT_SECRET_ENCRYPTION_KEY")
+                );
             }
             "todoist_with_secret_key" => {
                 let config = Config::from_env().unwrap();
                 assert!(config.todoist_sync_enabled);
                 assert_eq!(
-                    decode_secret_encryption_key(
-                        config.secret_encryption_key.as_deref().unwrap()
-                    )
-                    .unwrap(),
+                    decode_secret_encryption_key(config.secret_encryption_key.as_deref().unwrap())
+                        .unwrap(),
                     [11_u8; 32]
                 );
             }
