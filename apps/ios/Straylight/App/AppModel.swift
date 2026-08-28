@@ -21,6 +21,11 @@ typealias NotificationReceiptWriter = @Sendable (
     String?
 ) async throws -> NotificationReceiptResponse
 
+@MainActor
+private final class MessagingBearerState {
+    var token: String?
+}
+
 enum AppPhase: Equatable {
     case launching
     case connectionRequired
@@ -31,9 +36,16 @@ enum AppPhase: Equatable {
 enum AppTab: Hashable {
     case dashboard
     case today
+    case agents
     case alerts
     case archive
     case more
+}
+
+enum MessagingRefreshOutcome: Equatable {
+    case newData
+    case noData
+    case failed
 }
 
 @MainActor
@@ -44,6 +56,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var readOnlyCredential = false
     @Published private(set) var canManageNotifications = false
     @Published private(set) var canWriteTasks = false
+    @Published private(set) var canWriteMessages = false
+    @Published private(set) var messagingEnabled = false
+    @Published private(set) var messagingMessage: String?
+    @Published var focusedMessagingConversationID: String?
+    @Published var focusedMessagingSequence: Int64?
     @Published private(set) var hasStoredDeviceTaskCredential = false
     @Published private(set) var deviceTaskAccessMessage: String?
     @Published private(set) var isConfiguringDeviceTaskAccess = false
@@ -101,7 +118,9 @@ final class AppModel: ObservableObject {
     }
 
     let api: StraylightAPI
+    let messagingController: MessagingController?
     private let credentialStore: any CredentialStoring
+    private let messagingBearerState: MessagingBearerState
     private let briefingCache: BriefingCache
     private let taskSurfaceCache: TaskSurfaceCache
     private let bootstrapValidationTimeout: Duration
@@ -125,7 +144,12 @@ final class AppModel: ObservableObject {
         taskSurfaceCache: TaskSurfaceCache = TaskSurfaceCache(),
         bootstrapValidationTimeout: Duration = .seconds(6),
         storedSessionChecker: @escaping StoredSessionChecker = { api in
-            api.hasAuthenticatedSession()
+            if api.hasAuthenticatedSession() { return true }
+            // CFNetwork can rehydrate the persistent cookie store after this
+            // actor's first synchronous read on a cold process launch. A
+            // single session probe lets URLSession load and send that cookie
+            // before treating the device as signed out.
+            return (try? await api.authSession()) != nil
         },
         bootstrapIdentityLoader: @escaping BootstrapIdentityLoader = { api in
             _ = try await api.authSession()
@@ -151,10 +175,13 @@ final class AppModel: ObservableObject {
                 kind: kind,
                 deliveryRef: deliveryRef
             )
-        }
+        },
+        messagingController: MessagingController? = nil
     ) {
+        let messagingBearerState = MessagingBearerState()
         self.api = api
         self.credentialStore = credentialStore
+        self.messagingBearerState = messagingBearerState
         self.briefingCache = briefingCache
         self.taskSurfaceCache = taskSurfaceCache
         self.bootstrapValidationTimeout = bootstrapValidationTimeout
@@ -165,9 +192,53 @@ final class AppModel: ObservableObject {
         self.notificationListLoader = notificationListLoader
         self.notificationDetailLoader = notificationDetailLoader
         self.notificationReceiptWriter = notificationReceiptWriter
+        if let messagingController {
+            self.messagingController = messagingController
+        } else if let store = try? MessagingStore() {
+            self.messagingController = MessagingController(
+                store: store,
+                transport: MessagingTransportOperations(
+                    sync: { request in
+                        try await api.messagingSync(request)
+                    },
+                    send: { conversationID, exactRequestData in
+                        guard let bearerToken = await messagingBearerState.token,
+                              !bearerToken.isEmpty
+                        else { throw StraylightAPIError.notConnected }
+                        return try await api.sendMessagingMessage(
+                            conversationID: conversationID,
+                            exactRequestData: exactRequestData,
+                            bearerToken: bearerToken
+                        )
+                    },
+                    createConversation: { request in
+                        guard let bearerToken = await messagingBearerState.token,
+                              !bearerToken.isEmpty
+                        else { throw StraylightAPIError.notConnected }
+                        return try await api.createMessagingConversation(
+                            request,
+                            bearerToken: bearerToken
+                        )
+                    },
+                    markRead: { conversationID, request in
+                        guard let bearerToken = await messagingBearerState.token,
+                              !bearerToken.isEmpty
+                        else { throw StraylightAPIError.notConnected }
+                        return try await api.markMessagingRead(
+                            conversationID: conversationID,
+                            lastReadSeq: request.lastReadSeq,
+                            bearerToken: bearerToken
+                        )
+                    }
+                )
+            )
+        } else {
+            self.messagingController = nil
+        }
     }
 
     func bootstrap() async {
+        messagingBearerState.token = nil
         if ProcessInfo.processInfo.arguments.contains("--ui-test-reset-task-contexts") {
             UserDefaults.standard.removeObject(forKey: Self.taskContextsDefaultsKey)
         }
@@ -190,9 +261,31 @@ final class AppModel: ObservableObject {
 
         let cachedTaskUserID = await loadLocallyBoundTaskSurface()
         await loadCachedBriefing()
-        let hasProtectedOfflineSurface = latestBriefing != nil || cachedTaskUserID != nil
-        if hasProtectedOfflineSurface {
-            user = UserSummary(id: cachedTaskUserID ?? "cached", displayName: "Owner")
+        let hasImmediatelyAvailableProtectedSurface = latestBriefing != nil
+            || cachedTaskUserID != nil
+        if hasImmediatelyAvailableProtectedSurface {
+            user = UserSummary(
+                id: cachedTaskUserID ?? "cached",
+                displayName: "Owner"
+            )
+            connectionValidated = false
+            phase = .ready
+            connectionMessage = "Checking Straylight while the last protected Today view remains available."
+            applyPendingRouteLocally()
+        }
+
+        // Restoring the SwiftData messaging cache can take longer than the
+        // bounded Today cache read. Keep the existing instant-paint contract
+        // by revealing an already verified Today surface before this work.
+        let cachedMessagingUserID = await loadLocallyBoundMessagingSurface()
+        let hasProtectedOfflineSurface = latestBriefing != nil
+            || cachedTaskUserID != nil
+            || cachedMessagingUserID != nil
+        if hasProtectedOfflineSurface, !hasImmediatelyAvailableProtectedSurface {
+            user = UserSummary(
+                id: cachedTaskUserID ?? cachedMessagingUserID ?? "cached",
+                displayName: "Owner"
+            )
             connectionValidated = false
             phase = .ready
             connectionMessage = "Checking Straylight while the last protected Today view remains available."
@@ -205,10 +298,12 @@ final class AppModel: ObservableObject {
             if await loadCachedTaskSurface(for: identity.user.id) {
                 await bindTaskSurfaceCache(to: identity.user.id)
             }
+            await bindMessagingSurface(to: identity.user.id)
             await validateStoredDeviceTaskCredential()
             Task { await refreshDashboard() }
             Task { await refreshNotifications() }
             Task { await refreshTaskSurface() }
+            Task { await refreshMessaging(.launch) }
             await resumePendingRoute()
             await refreshBriefing()
         } catch is BootstrapValidationError {
@@ -226,6 +321,9 @@ final class AppModel: ObservableObject {
             do {
                 try await briefingCache.clear()
                 try await taskSurfaceCache.clear()
+                try messagingController?.clearActiveAccount()
+                messagingEnabled = false
+                messagingMessage = nil
                 cacheSavedAt = nil
                 cachedAt = nil
                 latestBriefing = nil
@@ -247,7 +345,10 @@ final class AppModel: ObservableObject {
         } catch {
             if hasProtectedOfflineSurface {
                 if user == nil {
-                    user = UserSummary(id: cachedTaskUserID ?? "cached", displayName: "Owner")
+                    user = UserSummary(
+                        id: cachedTaskUserID ?? cachedMessagingUserID ?? "cached",
+                        displayName: "Owner"
+                    )
                 }
                 connectionValidated = false
                 phase = .ready
@@ -268,18 +369,27 @@ final class AppModel: ObservableObject {
         invalidateDashboardContext()
         phase = .launching
         connectionMessage = nil
-        await api.clearAuthenticatedSession()
+        messagingBearerState.token = nil
+        messagingController?.deactivate()
+        messagingEnabled = false
+        guard await api.clearAuthenticatedSession() else {
+            phase = .connectionRequired
+            connectionMessage = "The previous protected message upload could not be removed. Unlock this iPhone and retry before signing in."
+            return
+        }
         do {
             let identity = try await loginLoader(api, email, password)
             accept(identity)
             if await loadCachedTaskSurface(for: identity.user.id) {
                 await bindTaskSurfaceCache(to: identity.user.id)
             }
+            await bindMessagingSurface(to: identity.user.id)
             await validateStoredDeviceTaskCredential()
             Task { await refreshDashboard() }
             Task { await refreshNotifications() }
             await loadCachedBriefing()
             Task { await refreshTaskSurface() }
+            Task { await refreshMessaging(.launch) }
             await resumePendingRoute()
             await refreshBriefing()
         } catch {
@@ -295,11 +405,18 @@ final class AppModel: ObservableObject {
 
     func enterDemo() {
         invalidateDashboardContext()
+        messagingBearerState.token = nil
+        messagingController?.deactivate()
         isDemo = true
         user = UserSummary(id: "user:demo", displayName: "Rourke")
         currentCredentialID = "credential:demo-iphone"
         canManageNotifications = true
         canWriteTasks = !ProcessInfo.processInfo.arguments.contains("--ui-test-task-read-only")
+        canWriteMessages = false
+        messagingEnabled = false
+        messagingMessage = nil
+        focusedMessagingConversationID = nil
+        focusedMessagingSequence = nil
         hasStoredDeviceTaskCredential = false
         dashboard = SampleData.dashboard
         latestBriefing = SampleData.briefing
@@ -353,6 +470,8 @@ final class AppModel: ObservableObject {
                 guard pendingCredentialRef != nil else {
                     canWriteTasks = false
                     canManageNotifications = false
+                    canWriteMessages = false
+                    messagingBearerState.token = nil
                     hasStoredDeviceTaskCredential = true
                     privacyMessage = "Disconnect stopped because the protected device credential could not be read for server revocation. Retry after unlocking this iPhone."
                     return
@@ -366,6 +485,8 @@ final class AppModel: ObservableObject {
                 } catch {
                     canWriteTasks = false
                     canManageNotifications = false
+                    canWriteMessages = false
+                    messagingBearerState.token = nil
                     hasStoredDeviceTaskCredential = true
                     privacyMessage = "Disconnect stopped because device task access could not be revoked on Straylight. The protected Keychain credential remains locally disabled; retry while online."
                     return
@@ -373,12 +494,16 @@ final class AppModel: ObservableObject {
             }
         }
         try? await api.logout()
-        await api.clearAuthenticatedSession()
+        guard await api.clearAuthenticatedSession() else {
+            privacyMessage = "Disconnect is incomplete: protected queued message data could not be removed. Unlock this iPhone and retry before considering it disconnected."
+            return
+        }
         do {
             try credentialStore.delete()
             Self.clearPendingDeviceCredentialRef()
             try await briefingCache.clear()
             try await taskSurfaceCache.clear()
+            try messagingController?.clearActiveAccount()
         } catch {
             privacyMessage = "Disconnect is incomplete: private local data could not be removed. \(error.localizedDescription) Retry before considering this iPhone disconnected."
             return
@@ -388,6 +513,12 @@ final class AppModel: ObservableObject {
         currentCredentialID = nil
         canManageNotifications = false
         canWriteTasks = false
+        canWriteMessages = false
+        messagingBearerState.token = nil
+        messagingEnabled = false
+        messagingMessage = nil
+        focusedMessagingConversationID = nil
+        focusedMessagingSequence = nil
         hasStoredDeviceTaskCredential = false
         deviceTaskAccessMessage = nil
         latestBriefing = nil
@@ -470,6 +601,150 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func loadLocallyBoundMessagingSurface() async -> String? {
+        guard let messagingController,
+              let sessionFingerprint = await api.authenticatedSessionFingerprint()
+        else {
+            messagingEnabled = false
+            return nil
+        }
+        do {
+            guard try messagingController.activateCachedSession(
+                sessionFingerprint: sessionFingerprint
+            ) else {
+                messagingEnabled = false
+                return nil
+            }
+            messagingEnabled = messagingController.messagingEnabled
+            messagingMessage = nil
+            if messagingEnabled, let activeAccountID = messagingController.activeAccountID {
+                do {
+                    if let credential = try credentialStore.load(),
+                       credential.userID == activeAccountID,
+                       let capabilities = credential.capabilities,
+                       Set(capabilities) == Self.messagingDeviceCapabilities,
+                       Self.hasApprovedDeviceCapabilities(capabilities),
+                       !credential.token.isEmpty
+                    {
+                        applyDeviceCapabilities(capabilities, bearerToken: credential.token)
+                    }
+                } catch {
+                    canWriteMessages = false
+                    messagingBearerState.token = nil
+                    messagingMessage = "The protected device credential could not be read; Agents remains view only."
+                }
+            }
+            return messagingController.activeAccountID
+        } catch {
+            messagingController.deactivate()
+            messagingEnabled = false
+            messagingMessage = "The protected Agents cache could not be verified and remains hidden."
+            return nil
+        }
+    }
+
+    private func bindMessagingSurface(to userID: String) async {
+        let sessionFingerprint = await api.authenticatedSessionFingerprint()
+        guard let messagingController,
+              let sessionFingerprint
+        else {
+            messagingEnabled = false
+            return
+        }
+        do {
+            try messagingController.bindValidatedAccount(
+                accountID: userID,
+                sessionFingerprint: sessionFingerprint
+            )
+            let status = try await api.messagingStatus()
+            let enabled = status.featureFlags?.messagingEnabled == true
+            try messagingController.setMessagingEnabled(enabled)
+            messagingEnabled = enabled
+            if !enabled {
+                try messagingController.selectConversation(nil)
+                focusedMessagingConversationID = nil
+                focusedMessagingSequence = nil
+                if selectedTab == .agents { selectedTab = .dashboard }
+            }
+            messagingMessage = nil
+        } catch {
+            // If the authenticated identity is valid but status is temporarily
+            // unreachable, retain only an exact same-session cached gate.
+            messagingEnabled = messagingController.messagingEnabled
+            messagingMessage = messagingEnabled
+                ? "Showing the protected Agents cache while messaging reconnects."
+                : nil
+        }
+    }
+
+    @discardableResult
+    func refreshMessaging(
+        _ trigger: MessagingSyncTrigger = .pullToRefresh
+    ) async -> MessagingRefreshOutcome {
+        if trigger == .foreground {
+            await refreshMessagingRuntimeGate()
+        }
+        guard messagingEnabled, let messagingController else { return .noData }
+        do {
+            if canWriteMessages {
+                try await messagingController.flushOutbox()
+            }
+            let response = try await messagingController.refresh(trigger)
+            messagingMessage = nil
+            return response.messages.isEmpty && response.conversations.isEmpty
+                ? .noData
+                : .newData
+        } catch {
+            messagingMessage = "Agents could not refresh. The protected local copy remains available."
+            return .failed
+        }
+    }
+
+    private func refreshMessagingRuntimeGate() async {
+        guard connectionValidated, let messagingController else { return }
+        do {
+            let status = try await api.messagingStatus()
+            let enabled = status.featureFlags?.messagingEnabled == true
+            try messagingController.setMessagingEnabled(enabled)
+            messagingEnabled = enabled
+            if !enabled {
+                try messagingController.selectConversation(nil)
+                focusedMessagingConversationID = nil
+                focusedMessagingSequence = nil
+                if selectedTab == .agents { selectedTab = .dashboard }
+            }
+        } catch {
+            // A status transport failure is not evidence that the server gate
+            // changed. Retain only the account/session-bound cached decision.
+            messagingEnabled = messagingController.messagingEnabled
+        }
+    }
+
+    @discardableResult
+    func createMessagingConversation(
+        participants: [String],
+        subject: String?
+    ) async throws -> String {
+        guard messagingEnabled, canWriteMessages, let messagingController else {
+            throw StraylightAPIError.notConnected
+        }
+        let conversation = try await messagingController.createConversation(
+            participants: participants,
+            subject: subject
+        )
+        focusedMessagingConversationID = conversation.conversationID
+        focusedMessagingSequence = nil
+        return conversation.conversationID
+    }
+
+    func focusMessagingConversation(_ conversationID: String, sequence: Int64? = nil) {
+        guard messagingEnabled, let messagingController else { return }
+        selectedTab = .agents
+        focusedMessagingConversationID = conversationID
+        focusedMessagingSequence = sequence
+        try? messagingController.selectConversation(conversationID)
+    }
+
     func bootstrapDeviceTaskAccess() async {
         guard !isDemo,
               connectionValidated,
@@ -503,7 +778,7 @@ final class AppModel: ObservableObject {
                 try await api.bootstrapDeviceTaskCredential()
             createdCredentialRef = oneTimeResponse?.id
             guard oneTimeResponse?.access == "ios_tasks",
-                  Self.hasExactDeviceTaskCapabilities(oneTimeResponse?.capabilities ?? []),
+                  Self.hasApprovedDeviceCapabilities(oneTimeResponse?.capabilities ?? []),
                   oneTimeResponse?.id.hasPrefix("credential:") == true,
                   oneTimeResponse?.token.isEmpty == false,
                   let credentialRef = oneTimeResponse?.id
@@ -511,25 +786,41 @@ final class AppModel: ObservableObject {
                 throw StraylightAPIError.invalidResponse
             }
             var oneTimeToken = oneTimeResponse?.token ?? ""
+            let issuedCapabilities = oneTimeResponse?.capabilities ?? []
             oneTimeResponse = nil
             defer { oneTimeToken.removeAll(keepingCapacity: false) }
+            if Set(issuedCapabilities) == Self.messagingDeviceCapabilities {
+                let owners = try await api.messagingAgents().agents.filter {
+                    !$0.archived && $0.principalKind == "owner"
+                }
+                guard owners.count == 1 else {
+                    throw StraylightAPIError.invalidResponse
+                }
+                _ = try await api.bindMessagingCredential(
+                    agentID: owners[0].agentID,
+                    credentialReference: credentialRef
+                )
+            }
             let identity = try await api.deviceCredentialIdentity(
                 bearerToken: oneTimeToken
             )
             guard identity.user.id == user?.id,
                   identity.credentialID == credentialRef,
-                  Self.hasExactDeviceTaskCapabilities(identity.capabilities)
+                  Self.hasApprovedDeviceCapabilities(identity.capabilities)
             else {
                 throw StraylightAPIError.invalidResponse
             }
             try credentialStore.save(DeviceTaskCredential(
                 credentialRef: credentialRef,
-                token: oneTimeToken
+                token: oneTimeToken,
+                userID: identity.user.id,
+                capabilities: identity.capabilities.sorted()
             ))
             hasStoredDeviceTaskCredential = true
-            canWriteTasks = true
-            canManageNotifications = true
-            deviceTaskAccessMessage = "Device task access is ready."
+            applyDeviceCapabilities(identity.capabilities, bearerToken: oneTimeToken)
+            deviceTaskAccessMessage = canWriteMessages
+                ? "Device task and messaging access is ready."
+                : "Device task access is ready."
         } catch {
             var revocationUnconfirmed = false
             if let createdCredentialRef {
@@ -554,6 +845,8 @@ final class AppModel: ObservableObject {
             }
             canWriteTasks = false
             canManageNotifications = false
+            canWriteMessages = false
+            messagingBearerState.token = nil
             deviceTaskAccessMessage = revocationUnconfirmed
                 ? "Device task access failed after issuance, and automatic revocation could not be confirmed. Revoke “iOS task access” from the web before retrying."
                 : "Device task access could not be created. \(error.localizedDescription)"
@@ -576,11 +869,15 @@ final class AppModel: ObservableObject {
             hasStoredDeviceTaskCredential = false
             canWriteTasks = false
             canManageNotifications = false
+            canWriteMessages = false
+            messagingBearerState.token = nil
             deviceTaskAccessMessage = "Device task access was revoked."
             return true
         } catch {
             canWriteTasks = false
             canManageNotifications = false
+            canWriteMessages = false
+            messagingBearerState.token = nil
             hasStoredDeviceTaskCredential = true
             deviceTaskAccessMessage = "Revocation could not be confirmed. The local credential remains protected and disabled."
             return false
@@ -588,7 +885,7 @@ final class AppModel: ObservableObject {
     }
 
     func deviceTaskBearer() -> String? {
-        guard canWriteTasks || canManageNotifications else { return nil }
+        guard canWriteTasks || canManageNotifications || canWriteMessages else { return nil }
         guard let token = try? credentialStore.load()?.token, !token.isEmpty else { return nil }
         return token
     }
@@ -596,6 +893,8 @@ final class AppModel: ObservableObject {
     private func validateStoredDeviceTaskCredential() async {
         canWriteTasks = false
         canManageNotifications = false
+        canWriteMessages = false
+        messagingBearerState.token = nil
         if let pendingCredentialRef = Self.pendingDeviceCredentialRef() {
             hasStoredDeviceTaskCredential = true
             do {
@@ -639,7 +938,7 @@ final class AppModel: ObservableObject {
             )
             guard identity.user.id == user?.id,
                   identity.credentialID == credential.credentialRef,
-                  Self.hasExactDeviceTaskCapabilities(identity.capabilities)
+                  Self.hasApprovedDeviceCapabilities(identity.capabilities)
             else {
                 do {
                     _ = try await api.revokeCredential(reference: credential.credentialRef)
@@ -651,8 +950,13 @@ final class AppModel: ObservableObject {
                 }
                 return
             }
-            canWriteTasks = true
-            canManageNotifications = true
+            try credentialStore.save(DeviceTaskCredential(
+                credentialRef: credential.credentialRef,
+                token: credential.token,
+                userID: identity.user.id,
+                capabilities: identity.capabilities.sorted()
+            ))
+            applyDeviceCapabilities(identity.capabilities, bearerToken: credential.token)
             deviceTaskAccessMessage = nil
         } catch let error as StraylightAPIError where error.isUnauthorized {
             do {
@@ -1037,14 +1341,28 @@ final class AppModel: ObservableObject {
         let base = "straylight.pending-device-task-credential-ref.v1"
         return namespace.map { "\(base).\($0)" } ?? base
     }
-    private static let deviceTaskCapabilities: Set<String> = [
+    private static let legacyDeviceTaskCapabilities: Set<String> = [
         "task.write",
         "notification:manage",
     ]
+    private static let messagingDeviceCapabilities: Set<String> = [
+        "task.write",
+        "message.write",
+        "notification:manage",
+    ]
 
-    private static func hasExactDeviceTaskCapabilities(_ capabilities: [String]) -> Bool {
-        capabilities.count == deviceTaskCapabilities.count
-            && Set(capabilities) == deviceTaskCapabilities
+    private static func hasApprovedDeviceCapabilities(_ capabilities: [String]) -> Bool {
+        let values = Set(capabilities)
+        return capabilities.count == values.count
+            && (values == legacyDeviceTaskCapabilities || values == messagingDeviceCapabilities)
+    }
+
+    private func applyDeviceCapabilities(_ capabilities: [String], bearerToken: String) {
+        let values = Set(capabilities)
+        canWriteTasks = values.contains("task.write")
+        canManageNotifications = values.contains("notification:manage")
+        canWriteMessages = values == Self.messagingDeviceCapabilities
+        messagingBearerState.token = canWriteMessages ? bearerToken : nil
     }
 
     private static func pendingDeviceCredentialRef() -> String? {
@@ -1373,6 +1691,13 @@ final class AppModel: ObservableObject {
             }
             presentedNotification = nil
             await openTask(reference: taskRef)
+        case .conversation:
+            guard let route = notification.target.appRoute else {
+                notificationMessage = "This alert has an invalid conversation target."
+                return
+            }
+            presentedNotification = nil
+            await handle(route)
         }
     }
 
@@ -1636,6 +1961,18 @@ final class AppModel: ObservableObject {
             await openTask(reference: reference)
         case let .notification(notificationRef, deliveryRef):
             await openNotification(reference: notificationRef, deliveryRef: deliveryRef)
+        case let .conversation(conversationID, sequence):
+            guard messagingEnabled, let messagingController else { return }
+            focusMessagingConversation(conversationID, sequence: sequence)
+            guard connectionValidated else { return }
+            do {
+                _ = try await messagingController.refreshThread(
+                    conversationID: conversationID
+                )
+                messagingMessage = nil
+            } catch {
+                messagingMessage = "The linked conversation could not refresh. The protected local copy remains visible."
+            }
         case let .briefing(date, edition, _):
             guard !isDemo else { return }
             guard connectionValidated else {
@@ -1662,6 +1999,8 @@ final class AppModel: ObservableObject {
         // remain disabled until the separate least-privilege bearer validates.
         canWriteTasks = false
         canManageNotifications = false
+        canWriteMessages = false
+        messagingBearerState.token = nil
         connectionValidated = true
         phase = .ready
         if let previousUserID, previousUserID != identity.user.id {
@@ -1734,6 +2073,12 @@ final class AppModel: ObservableObject {
             selectedTab = .alerts
         case .task:
             selectedTab = .today
+        case let .conversation(conversationID, sequence):
+            guard messagingEnabled else { return }
+            selectedTab = .agents
+            focusedMessagingConversationID = conversationID
+            focusedMessagingSequence = sequence
+            try? messagingController?.selectConversation(conversationID)
         }
     }
 

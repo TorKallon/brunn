@@ -3,10 +3,13 @@ use axum::{
     body::Body,
     http::{Method, Request, StatusCode, header},
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
+use url::Url;
 use uuid::Uuid;
 
 use straylight::{AppState, Config, auth::hash_token, router};
@@ -32,6 +35,13 @@ struct WorkspaceFixture {
     unbound_writer: CredentialFixture,
 }
 
+fn database_url_as_role(database_url: &str, role: &str) -> String {
+    let mut url = Url::parse(database_url).expect("parse disposable PostgreSQL URL");
+    url.query_pairs_mut()
+        .append_pair("options", &format!("-c role={role}"));
+    url.into()
+}
+
 async fn connect_test_state() -> Option<(PgPool, AppState)> {
     let Some(database_url) = std::env::var("STRAYLIGHT_TEST_DATABASE_URL")
         .ok()
@@ -55,8 +65,9 @@ async fn connect_test_state() -> Option<(PgPool, AppState)> {
     // Its isolated-stack invocation supplies the normal disposable object-store
     // configuration in addition to STRAYLIGHT_TEST_DATABASE_URL.
     let mut config = Config::from_env().expect("load disposable API configuration");
-    config.database_url_rw = database_url.clone();
-    config.database_url_ro = database_url;
+    let app_database_url = database_url_as_role(&database_url, "app_rw");
+    config.database_url_rw = app_database_url.clone();
+    config.database_url_ro = app_database_url;
     config.database_url_admin = None;
     config.database_max_connections = 4;
     config.apns_delivery_enabled = false;
@@ -180,6 +191,40 @@ async fn bind_credential(
     .expect("bind messaging endpoint credential");
 }
 
+async fn insert_web_session(pool: &PgPool, user_id: Uuid, credential_id: Uuid) -> (String, String) {
+    let username = format!("messaging-bind-{}", user_id.simple());
+    let email = format!("{username}@example.test");
+    sqlx::query(
+        r#"
+        INSERT INTO straylight.web_identities (
+          user_id,username,username_normalized,email,email_normalized,
+          password_hash,web_credential_id
+        ) VALUES ($1,$2,$2,$3,$3,'$argon2id$fixture',$4)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&username)
+    .bind(&email)
+    .bind(credential_id)
+    .execute(pool)
+    .await
+    .expect("insert messaging binding Web identity");
+    let session_token = format!("sws_{}{}", credential_id.simple(), "0".repeat(11));
+    sqlx::query(
+        "INSERT INTO straylight.web_sessions(user_id,credential_id,token_hash,expires_at) VALUES($1,$2,$3,clock_timestamp()+interval '1 hour')",
+    )
+    .bind(user_id)
+    .bind(credential_id)
+    .bind(hash_token(&session_token))
+    .execute(pool)
+    .await
+    .expect("insert messaging binding Web session");
+    let mut digest = Sha256::new();
+    digest.update(b"straylight.web-csrf.v1\0");
+    digest.update(session_token.as_bytes());
+    (session_token, URL_SAFE_NO_PAD.encode(digest.finalize()))
+}
+
 async fn seed_workspace(pool: &PgPool, label: &str) -> WorkspaceFixture {
     let (user_id, scope_id) = insert_user(pool, label).await;
     let owner = insert_credential(
@@ -298,6 +343,46 @@ async fn request_json(
     .await
 }
 
+async fn request_web(
+    app: &Router,
+    method: Method,
+    uri: &str,
+    session_token: &str,
+    csrf: &str,
+    production_cookies: bool,
+    body: Option<Value>,
+) -> HttpResponse {
+    let cookie_prefix = if production_cookies { "__Host-" } else { "" };
+    let mut builder = Request::builder().method(method.clone()).uri(uri).header(
+        header::COOKIE,
+        format!(
+            "{cookie_prefix}straylight_session={session_token}; {cookie_prefix}straylight_csrf={csrf}"
+        ),
+    );
+    let body = if let Some(body) = body {
+        builder = builder
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-csrf-token", csrf);
+        Body::from(serde_json::to_vec(&body).expect("serialize Web endpoint request"))
+    } else {
+        Body::empty()
+    };
+    let response = app
+        .clone()
+        .oneshot(builder.body(body).expect("build Web endpoint request"))
+        .await
+        .expect("serve Web endpoint request");
+    let status = response.status();
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("collect Web endpoint response")
+        .to_bytes();
+    let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    HttpResponse { status, body }
+}
+
 fn assert_status(response: &HttpResponse, expected: StatusCode) {
     assert_eq!(response.status, expected, "unexpected endpoint status");
 }
@@ -328,6 +413,164 @@ fn send_body(client_key: String, body_md: impl Into<String>) -> Value {
         "kind": "text",
         "body_md": body_md.into()
     })
+}
+
+#[tokio::test]
+async fn messaging_registry_binds_active_credentials_and_rejects_disabled_credentials() {
+    let Some((pool, mut state)) = connect_test_state().await else {
+        return;
+    };
+
+    let (user_id, scope_id) = insert_user(&pool, "credential-binding").await;
+    let owner = insert_credential(
+        &pool,
+        user_id,
+        scope_id,
+        "credential-binding owner",
+        &["admin", "message.read", "message.write", "read"],
+    )
+    .await;
+    let active = insert_credential(
+        &pool,
+        user_id,
+        scope_id,
+        "credential-binding active",
+        &["message.read", "message.write"],
+    )
+    .await;
+    let disabled = insert_credential(
+        &pool,
+        user_id,
+        scope_id,
+        "credential-binding disabled",
+        &["message.read", "message.write"],
+    )
+    .await;
+    insert_agent(&pool, user_id, owner.id, "owner", "owner").await;
+    insert_agent(
+        &pool,
+        user_id,
+        owner.id,
+        "credential-binding-target",
+        "resident",
+    )
+    .await;
+    bind_credential(&pool, user_id, owner.id, "owner", owner.id).await;
+    sqlx::query(
+        "UPDATE straylight.api_credentials SET disabled_at=clock_timestamp() WHERE user_id=$1 AND id=$2",
+    )
+    .bind(user_id)
+    .bind(disabled.id)
+    .execute(&pool)
+    .await
+    .expect("disable messaging endpoint credential");
+
+    let (session_token, csrf) = insert_web_session(&pool, user_id, owner.id).await;
+    let production_cookies = state.config.deployment_environment == "production";
+    state.config.messaging_enabled = true;
+    let app = router(state);
+    let path = "/v1/workspace/messaging/agents/credential-binding-target/credential";
+
+    let active_response = request_web(
+        &app,
+        Method::PUT,
+        path,
+        &session_token,
+        &csrf,
+        production_cookies,
+        Some(json!({"credential_id": active.id})),
+    )
+    .await;
+    assert_eq!(
+        active_response.status,
+        StatusCode::OK,
+        "active credential binding failed: {}",
+        active_response.body
+    );
+    assert_eq!(
+        data(&active_response).get("bound").and_then(Value::as_bool),
+        Some(true)
+    );
+    let active_binding = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+          SELECT 1 FROM straylight.messaging_credential_bindings
+          WHERE user_id=$1 AND credential_id=$2
+            AND agent_id='credential-binding-target'
+        )
+        "#,
+    )
+    .bind(user_id)
+    .bind(active.id)
+    .fetch_one(&pool)
+    .await
+    .expect("read active credential binding");
+    assert!(active_binding, "the active credential must be bound");
+
+    let listed = request_web(
+        &app,
+        Method::GET,
+        "/v1/workspace/messaging/agents",
+        &session_token,
+        &csrf,
+        production_cookies,
+        None,
+    )
+    .await;
+    assert_eq!(
+        listed.status,
+        StatusCode::OK,
+        "cookie-authenticated agent list failed: {}",
+        listed.body
+    );
+    let agents = data(&listed)
+        .get("agents")
+        .and_then(Value::as_array)
+        .expect("agent list is an array");
+    let target_agents = agents
+        .iter()
+        .filter(|agent| {
+            agent.get("agent_id").and_then(Value::as_str) == Some("credential-binding-target")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        target_agents.len(),
+        1,
+        "bound agent must appear exactly once"
+    );
+    assert_eq!(
+        target_agents[0].get("credential_names"),
+        Some(&json!(["credential-binding active"])),
+        "the active credential label must be revealed exactly once"
+    );
+
+    let disabled_response = request_web(
+        &app,
+        Method::PUT,
+        path,
+        &session_token,
+        &csrf,
+        production_cookies,
+        Some(json!({"credential_id": disabled.id})),
+    )
+    .await;
+    assert_error(
+        &disabled_response,
+        StatusCode::NOT_FOUND,
+        "messaging_not_found",
+    );
+    let disabled_binding = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM straylight.messaging_credential_bindings WHERE user_id=$1 AND credential_id=$2)",
+    )
+    .bind(user_id)
+    .bind(disabled.id)
+    .fetch_one(&pool)
+    .await
+    .expect("check disabled credential binding");
+    assert!(
+        !disabled_binding,
+        "a disabled credential must never be bound"
+    );
 }
 
 #[tokio::test]

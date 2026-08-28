@@ -35,6 +35,8 @@ const OWNER_CAPABILITIES: &[&str] = &[
     "task.read",
     "task.write",
     "integration.manage",
+    "message.read",
+    "message.write",
     "admin",
 ];
 
@@ -220,5 +222,11 @@ mod tests {
         assert!(first.starts_with("sl_"));
         assert_ne!(first, second);
         assert!(first.len() >= 40);
+    }
+
+    #[test]
+    fn new_and_recovered_owner_credentials_include_messaging_authority() {
+        assert!(OWNER_CAPABILITIES.contains(&"message.read"));
+        assert!(OWNER_CAPABILITIES.contains(&"message.write"));
     }
 }

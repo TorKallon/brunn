@@ -1,6 +1,6 @@
 # D16 — Agent Messaging
 
-Status: Accepted for implementation — measured storage choice complete; build in progress
+Status: Implementation complete locally — final release verification in progress
 Date: 2026-08-27
 Depends on: D12, D13, D15 shared capability and surface registration, notifications, documents, and the existing worker
 Gated by: all twelve gates in the owner-approved 2026-08-26 agent-messaging specification
@@ -35,6 +35,13 @@ the synthetic control yet retains orders of magnitude of headroom under both
 100 ms gates. It is the simpler choice because entry history, changes,
 export/import, account deletion, and exact reads remain existing-core behavior.
 
+A fresh source-backed database run exercised the real send and sync handlers at
+50 conversations, 10,000 messages, and 40 samples. It measured 27.429 ms p95
+send latency, 5.073 ms p95 sync latency, and a 1,208-byte p95 delta payload.
+The indexed handler measurements remain comfortably below the 100 ms and
+32 KiB release limits; the earlier figures above remain labeled as the
+pre-implementation storage-design spike rather than substituted runtime data.
+
 The ordinary workspace limit remains 4 MiB. A worst-case conversation is more
 than 8 MiB (`500 × 16 KiB` plus framing), so only the managed conversation
 write/import/exact-read path gets a 12 MiB ceiling. With the messaging gate on,
@@ -45,7 +52,7 @@ maximum-size messages and proves the ordinary limit is unchanged.
 
 ## One additive migration
 
-Migration `0076_agent_messaging.sql` is the only planned migration. It follows
+Migration `0076_agent_messaging.sql` is the only messaging migration. It follows
 the task run's 0071 storage plus claimed 0072 HTTP, 0073 guard, and 0074 Todoist
 migrations, and
 extends, never replaces, their capability
@@ -339,6 +346,29 @@ tests:
   tools; scoped echo answers hosted-MCP canary; Web and install build show it;
   canary soft-closes; no API/Web 5xx; existing memory, briefing, document, and
   task tools still answer.
+
+## Pre-release verification evidence
+
+The fresh backend matrix completed the locked all-target check, 473 library
+tests with one intentional environment-test ignore, and all 24 integration
+targets (69 tests) against a recreated database and versioned object-store
+bucket. The two final compatibility deltas—new/recovered owner messaging
+authority and the additive three-capability iOS task credential—then passed
+focused unit tests, the locked all-target check, and the real task mutation
+flow.
+
+MCP passed 97 tests with messaging off and the same 97 with it on. Web passed
+its production build and all 128 Vitest cases; the real browser scenario passed
+sign-in, send/echo, credential rebind, server-derived sender, and soft-close.
+The signed iOS candidate passed 80 app tests and the full UI target with 14
+passes, six expected disposable-environment skips, and no failures. The current
+test harness then passed the same-stack task Gate 12d and messaging Gate 12c
+one-for-one; the protected 1,000-row continuation profile also passed at an
+exact 500+500 physical split. The Swift package contract passed 26 tests.
+
+Local gates 1–11 and scenarios 12a–f are green. Production Gate 12g remains
+intentionally pending until this exact source is committed, pushed, deployed
+with the flag off first, and then enabled through the serialized canary.
 
 ## Simplicity boundary and release order
 

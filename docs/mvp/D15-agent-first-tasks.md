@@ -202,8 +202,10 @@ are exactly product-spec §9.
 
 iOS reads through its owner cookie session. A separate opaque Keychain bearer
 is attached only to task mutations and notification registration; its complete
-capability array is `task.write` plus existing notification-management and
-nothing broader. UI action gates inspect exact task.write, never legacy
+legacy capability array is `task.write` plus existing notification-management.
+D16 may add only `message.write` to that same bearer; the task service accepts
+exactly those approved two- or three-capability profiles and nothing broader.
+UI action gates inspect exact task.write, never legacy
 save/checkpoint `read_only`; without it the data remains visible but view-only.
 
 Today renders the union of conditional Urgent, Next five, Done today, and

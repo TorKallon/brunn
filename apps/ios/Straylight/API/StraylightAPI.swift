@@ -60,19 +60,35 @@ public actor StraylightAPI {
     private let configuration: StraylightAPIConfiguration
     private let session: URLSession
     private let cookieStorage: HTTPCookieStorage
+    private let usesBackgroundMessagingTransport: Bool
+    private let sessionFingerprintURL: URL?
+    private var responseCSRFToken: String?
+    private var responseSessionFingerprint: String?
+    private var persistedSessionFingerprint: String?
 
     public init(
         configuration: StraylightAPIConfiguration = .init(),
         session: URLSession? = nil,
-        cookieStorage: HTTPCookieStorage? = nil
+        cookieStorage: HTTPCookieStorage? = nil,
+        sessionFingerprintURL: URL? = nil
     ) {
         self.configuration = configuration
         let resolvedCookieStorage = cookieStorage
             ?? session?.configuration.httpCookieStorage
             ?? HTTPCookieStorage.shared
         self.cookieStorage = resolvedCookieStorage
+        let resolvedFingerprintURL = sessionFingerprintURL
+            ?? (session == nil && cookieStorage == nil
+                ? Self.defaultSessionFingerprintURL()
+                : nil)
+        self.sessionFingerprintURL = resolvedFingerprintURL
+        responseCSRFToken = nil
+        responseSessionFingerprint = nil
+        persistedSessionFingerprint = resolvedFingerprintURL
+            .flatMap(Self.loadPersistedSessionFingerprint)
         if let session {
             self.session = session
+            usesBackgroundMessagingTransport = false
         } else {
             let sessionConfiguration = URLSessionConfiguration.default
             sessionConfiguration.waitsForConnectivity = true
@@ -83,16 +99,35 @@ public actor StraylightAPI {
             sessionConfiguration.httpCookieStorage = resolvedCookieStorage
             sessionConfiguration.httpShouldSetCookies = true
             self.session = URLSession(configuration: sessionConfiguration)
+            usesBackgroundMessagingTransport = true
         }
     }
 
     public func hasAuthenticatedSession() -> Bool {
-        cookiesForServer().contains { Self.sessionCookieNames.contains($0.name) }
+        authenticatedSessionFingerprint() != nil
     }
 
     public func authenticatedSessionFingerprint() -> String? {
-        let sessionCookies = cookiesForServer()
+        let liveFingerprint = sessionFingerprint(from: cookiesForServer())
+        if let responseSessionFingerprint {
+            if liveFingerprint == responseSessionFingerprint {
+                self.responseSessionFingerprint = nil
+            }
+            return responseSessionFingerprint
+        }
+        if let liveFingerprint {
+            if liveFingerprint != persistedSessionFingerprint {
+                persistSessionFingerprint(liveFingerprint)
+            }
+            return liveFingerprint
+        }
+        return persistedSessionFingerprint
+    }
+
+    private func sessionFingerprint(from cookies: [HTTPCookie]) -> String? {
+        let sessionCookies = cookies
             .filter { Self.sessionCookieNames.contains($0.name) }
+            .filter { !$0.value.isEmpty }
             .sorted { $0.name < $1.name }
         guard !sessionCookies.isEmpty else { return nil }
         let material = sessionCookies.map {
@@ -102,13 +137,21 @@ public actor StraylightAPI {
         return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    public func clearAuthenticatedSession() {
+    @discardableResult
+    public func clearAuthenticatedSession() async -> Bool {
+        responseCSRFToken = nil
+        responseSessionFingerprint = nil
+        persistSessionFingerprint(nil)
         for cookie in cookiesForServer()
             where Self.sessionCookieNames.contains(cookie.name)
                 || Self.csrfCookieNames.contains(cookie.name)
         {
             cookieStorage.deleteCookie(cookie)
         }
+        if usesBackgroundMessagingTransport {
+            return await MessagingBackgroundTransport.clearAuthenticatedSessionArtifacts()
+        }
+        return true
     }
 
     public func login(email: String, password: String) async throws -> AuthSessionData {
@@ -117,6 +160,12 @@ public actor StraylightAPI {
             let password: String
         }
 
+        // A new interactive sign-in replaces any prior cookie pair. Clearing
+        // first also guarantees the response's session and CSRF cookies are
+        // accepted as one pair rather than racing stale automatic handling.
+        guard await clearAuthenticatedSession() else {
+            throw MessagingBackgroundTransportError.artifactPurgeFailed
+        }
         let response: WorkspaceEnvelope<AuthSessionData> = try await post(
             path: "auth/login",
             body: LoginRequest(email: email, password: password)
@@ -126,6 +175,7 @@ public actor StraylightAPI {
 
     public func authSession() async throws -> AuthSessionData {
         let response: WorkspaceEnvelope<AuthSessionData> = try await get(path: "auth/session")
+        _ = authenticatedSessionFingerprint()
         return response.data
     }
 
@@ -137,7 +187,9 @@ public actor StraylightAPI {
             body: nil
         )
         _ = response
-        clearAuthenticatedSession()
+        guard await clearAuthenticatedSession() else {
+            throw MessagingBackgroundTransportError.artifactPurgeFailed
+        }
     }
 
     public func me() async throws -> MeData {
@@ -313,6 +365,133 @@ public actor StraylightAPI {
         return response.data
     }
 
+    func messagingStatus() async throws -> MessagingRuntimeStatus {
+        try await get(path: "status")
+    }
+
+    func messagingSync(_ request: MessagingSyncRequest) async throws -> MessagingSyncResponse {
+        var queryItems = [
+            URLQueryItem(name: "cursor", value: String(request.cursor)),
+            URLQueryItem(name: "wait", value: String(request.waitSeconds)),
+            URLQueryItem(name: "limit", value: String(request.limit)),
+        ]
+        if let conversationID = request.conversationID {
+            guard ConversationReference.canonical(conversationID) != nil else {
+                throw StraylightAPIError.invalidConfiguration
+            }
+            queryItems.append(URLQueryItem(name: "conversation_id", value: conversationID))
+        }
+        if let afterSequence = request.afterSequence {
+            queryItems.append(URLQueryItem(name: "after_seq", value: String(afterSequence)))
+        }
+        let response: WorkspaceEnvelope<MessagingSyncResponse> = try await get(
+            path: "workspace/messaging/sync",
+            queryItems: queryItems
+        )
+        return response.data
+    }
+
+    func messagingAgents() async throws -> MessagingAgentListResponse {
+        let response: WorkspaceEnvelope<MessagingAgentListResponse> = try await get(
+            path: "workspace/messaging/agents"
+        )
+        return response.data
+    }
+
+    func bindMessagingCredential(
+        agentID: String,
+        credentialReference: String
+    ) async throws -> MessagingCredentialBindingResponse {
+        guard Self.isCanonicalMessagingAgentID(agentID),
+              credentialReference.hasPrefix("credential:")
+        else {
+            throw StraylightAPIError.invalidConfiguration
+        }
+        let credentialID = String(credentialReference.dropFirst("credential:".count))
+        guard let identifier = UUID(uuidString: credentialID),
+              credentialID == identifier.uuidString.lowercased()
+        else {
+            throw StraylightAPIError.invalidConfiguration
+        }
+        let response: WorkspaceEnvelope<MessagingCredentialBindingResponse> = try await put(
+            path: "workspace/messaging/agents/\(agentID)/credential",
+            body: MessagingCredentialBindingRequest(credentialID: credentialID)
+        )
+        return response.data
+    }
+
+    func createMessagingConversation(
+        _ request: MessagingCreateConversationRequest,
+        bearerToken: String
+    ) async throws -> MessagingCreateConversationResponse {
+        let response: WorkspaceEnvelope<MessagingCreateConversationResponse> = try await post(
+            path: "workspace/messaging/conversations",
+            body: request,
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
+        return response.data
+    }
+
+    func sendMessagingMessage(
+        conversationID: String,
+        exactRequestData: Data,
+        bearerToken: String
+    ) async throws -> MessagingSendResponse {
+        guard ConversationReference.canonical(conversationID) != nil,
+              !exactRequestData.isEmpty
+        else {
+            throw StraylightAPIError.invalidConfiguration
+        }
+        if usesBackgroundMessagingTransport {
+            let url = try makeURL(
+                path: "workspace/messaging/conversations/\(conversationID)/messages",
+                queryItems: []
+            )
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.httpShouldHandleCookies = false
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+            let upload = try await MessagingBackgroundTransport.shared.upload(
+                request: request,
+                exactRequestData: exactRequestData
+            )
+            let response: WorkspaceEnvelope<MessagingSendResponse> = try decodeResponse(
+                data: upload.data,
+                response: upload.response
+            )
+            return response.data
+        }
+        let response: WorkspaceEnvelope<MessagingSendResponse> = try await request(
+            path: "workspace/messaging/conversations/\(conversationID)/messages",
+            queryItems: [],
+            method: "POST",
+            body: exactRequestData,
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
+        return response.data
+    }
+
+    func markMessagingRead(
+        conversationID: String,
+        lastReadSeq: Int64,
+        bearerToken: String
+    ) async throws -> MessagingReadResponse {
+        guard ConversationReference.canonical(conversationID) != nil else {
+            throw StraylightAPIError.invalidConfiguration
+        }
+        let response: WorkspaceEnvelope<MessagingReadResponse> = try await post(
+            path: "workspace/messaging/conversations/\(conversationID)/read",
+            body: MessagingReadRequest(lastReadSeq: lastReadSeq),
+            bearerToken: bearerToken,
+            sendCookies: false
+        )
+        return response.data
+    }
+
     public func setTaskProjectInterest(
         slug: String,
         interest: String,
@@ -438,6 +617,38 @@ public actor StraylightAPI {
         "workspace/tasks/\(reference)"
     }
 
+    private nonisolated static func isCanonicalMessagingAgentID(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        guard (1 ... 80).contains(bytes.count) else { return false }
+
+        func isLetterOrNumber(_ byte: UInt8) -> Bool {
+            (byte >= Character("a").asciiValue! && byte <= Character("z").asciiValue!)
+                || (byte >= Character("0").asciiValue! && byte <= Character("9").asciiValue!)
+        }
+
+        guard let first = bytes.first,
+              let last = bytes.last,
+              isLetterOrNumber(first),
+              isLetterOrNumber(last)
+        else { return false }
+
+        var previousWasSeparator = false
+        for byte in bytes {
+            if isLetterOrNumber(byte) {
+                previousWasSeparator = false
+            } else if byte == Character(".").asciiValue
+                || byte == Character("_").asciiValue
+                || byte == Character("-").asciiValue
+            {
+                guard !previousWasSeparator else { return false }
+                previousWasSeparator = true
+            } else {
+                return false
+            }
+        }
+        return true
+    }
+
     private func get<Response: Decodable & Sendable>(
         path: String,
         queryItems: [URLQueryItem] = [],
@@ -534,10 +745,18 @@ public actor StraylightAPI {
         request.httpBody = body
         request.httpShouldHandleCookies = sendCookies
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if sendCookies, let cookieHeader = HTTPCookie.requestHeaderFields(
-            with: cookiesForServer()
-        )["Cookie"] {
-            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        let unsafeMethod = !["GET", "HEAD", "OPTIONS"].contains(method.uppercased())
+        let csrfToken = sendCookies
+            ? responseCSRFToken ?? cookiesForServer().first {
+                Self.csrfCookieNames.contains($0.name)
+            }?.value
+            : nil
+        if unsafeMethod, let csrfToken {
+            // URLSession owns the Cookie header and receives/stores cookies
+            // through this actor's configured HTTPCookieStorage. The explicit
+            // header is retained from that same authenticated response even
+            // if CFNetwork has not yet exposed its cookie-store update.
+            request.setValue(csrfToken, forHTTPHeaderField: "X-CSRF-Token")
         }
         if let bearerToken {
             request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
@@ -545,14 +764,54 @@ public actor StraylightAPI {
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        if sendCookies,
-           !["GET", "HEAD", "OPTIONS"].contains(method.uppercased()),
-           let csrfToken = csrfToken()
-        {
-            request.setValue(csrfToken, forHTTPHeaderField: "X-CSRF-Token")
-        }
 
         let (data, response) = try await session.data(for: request)
+        if sendCookies {
+            captureResponseCookies(response, for: url)
+        }
+        return try decodeResponse(data: data, response: response)
+    }
+
+    private func captureResponseCookies(_ response: URLResponse, for url: URL) {
+        guard let response = response as? HTTPURLResponse else { return }
+        let responseURL = response.url ?? url
+        var headerFields: [String: String] = [:]
+        for (rawName, rawValue) in response.allHeaderFields {
+            guard let name = rawName as? String else { continue }
+            if let values = rawValue as? [String] {
+                headerFields[name] = values.joined(separator: ", ")
+            } else {
+                headerFields[name] = String(describing: rawValue)
+            }
+        }
+        let cookies = HTTPCookie.cookies(
+            withResponseHeaderFields: headerFields,
+            for: responseURL
+        )
+        guard !cookies.isEmpty else { return }
+        cookieStorage.setCookies(cookies, for: responseURL, mainDocumentURL: nil)
+        let sessionCookies = cookies.filter {
+            Self.sessionCookieNames.contains($0.name)
+        }
+        if !sessionCookies.isEmpty {
+            // HTTPCookieStorage can lag its own successful setCookies call.
+            // Retain only the derived fingerprint needed for immediate,
+            // account-scoped cache binding; never retain the raw session value.
+            let fingerprint = sessionFingerprint(from: sessionCookies)
+            responseSessionFingerprint = fingerprint
+            persistSessionFingerprint(fingerprint)
+        }
+        if let csrfCookie = cookies.first(where: {
+            Self.csrfCookieNames.contains($0.name)
+        }) {
+            responseCSRFToken = csrfCookie.value.isEmpty ? nil : csrfCookie.value
+        }
+    }
+
+    private func decodeResponse<Response: Decodable & Sendable>(
+        data: Data,
+        response: URLResponse
+    ) throws -> Response {
         guard let response = response as? HTTPURLResponse else {
             throw StraylightAPIError.invalidResponse
         }
@@ -560,9 +819,8 @@ public actor StraylightAPI {
             throw decodeServerError(data: data, status: response.statusCode)
         }
 
-        let decoder = JSONDecoder()
         do {
-            return try decoder.decode(Response.self, from: data)
+            return try JSONDecoder().decode(Response.self, from: data)
         } catch {
             throw StraylightAPIError.decoding(error.localizedDescription)
         }
@@ -572,8 +830,80 @@ public actor StraylightAPI {
         cookieStorage.cookies(for: configuration.baseURL) ?? []
     }
 
-    private func csrfToken() -> String? {
-        cookiesForServer().first { Self.csrfCookieNames.contains($0.name) }?.value
+    private func persistSessionFingerprint(_ fingerprint: String?) {
+        persistedSessionFingerprint = fingerprint
+        guard let sessionFingerprintURL else { return }
+        if let fingerprint, Self.isValidSessionFingerprint(fingerprint) {
+            do {
+                let directory = sessionFingerprintURL.deletingLastPathComponent()
+                try FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: true,
+                    attributes: [.protectionKey: FileProtectionType.complete]
+                )
+                try FileManager.default.setAttributes(
+                    [.protectionKey: FileProtectionType.complete],
+                    ofItemAtPath: directory.path
+                )
+                var directoryValues = URLResourceValues()
+                directoryValues.isExcludedFromBackup = true
+                var mutableDirectory = directory
+                try mutableDirectory.setResourceValues(directoryValues)
+                try Data(fingerprint.utf8).write(
+                    to: sessionFingerprintURL,
+                    options: [.atomic, .completeFileProtection]
+                )
+                var fileValues = URLResourceValues()
+                fileValues.isExcludedFromBackup = true
+                var mutableFile = sessionFingerprintURL
+                try mutableFile.setResourceValues(fileValues)
+            } catch {
+                // Cookie auth remains authoritative. Failure to persist this
+                // non-secret digest only disables protected cold-cache paint.
+            }
+        } else if FileManager.default.fileExists(atPath: sessionFingerprintURL.path) {
+            try? FileManager.default.removeItem(at: sessionFingerprintURL)
+        }
+    }
+
+    private static func defaultSessionFingerprintURL() -> URL? {
+        let root = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        )[0]
+        var directory = root.appendingPathComponent("Straylight", isDirectory: true)
+#if DEBUG
+        if let namespace = ProcessInfo.processInfo.environment["STRAYLIGHT_CREDENTIAL_NAMESPACE"],
+           !namespace.isEmpty
+        {
+            let allowed = CharacterSet(
+                charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+            )
+            guard (1 ... 64).contains(namespace.utf8.count),
+                  namespace.unicodeScalars.allSatisfy(allowed.contains)
+            else { return nil }
+            directory.appendPathComponent(namespace, isDirectory: true)
+        }
+#endif
+        return directory.appendingPathComponent(
+            "web-session-fingerprint-v1",
+            isDirectory: false
+        )
+    }
+
+    private static func loadPersistedSessionFingerprint(from url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url),
+              let fingerprint = String(data: data, encoding: .utf8),
+              isValidSessionFingerprint(fingerprint)
+        else { return nil }
+        return fingerprint
+    }
+
+    private static func isValidSessionFingerprint(_ value: String) -> Bool {
+        guard value.hasPrefix("sha256:"), value.utf8.count == 71 else { return false }
+        return value.utf8.dropFirst(7).allSatisfy { byte in
+            (byte >= 48 && byte <= 57) || (byte >= 97 && byte <= 102)
+        }
     }
 
     private func makeURL(path: String, queryItems: [URLQueryItem]) throws -> URL {

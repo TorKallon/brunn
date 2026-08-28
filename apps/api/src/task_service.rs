@@ -1851,9 +1851,11 @@ fn may_assert_owner(auth: &AuthContext) -> bool {
 }
 
 fn is_owner_device_credential(auth: &AuthContext) -> bool {
-    auth.capabilities.len() == 2
-        && auth.can(Capability::TaskWrite)
-        && auth.can(Capability::NotificationManage)
+    let has_task_profile =
+        auth.can(Capability::TaskWrite) && auth.can(Capability::NotificationManage);
+    has_task_profile
+        && (auth.capabilities.len() == 2
+            || (auth.capabilities.len() == 3 && auth.can(Capability::MessageWrite)))
 }
 
 fn may_preserve_agent_identity(auth: &AuthContext) -> bool {
@@ -8264,6 +8266,24 @@ mod tests {
             "ios"
         );
         assert!(canonical_completed_via(&owner_device, "web").is_err());
+
+        let messaging_owner_device = auth(&["task.write", "notification:manage", "message.write"]);
+        assert_eq!(
+            canonical_public_source(&messaging_owner_device, "owner").unwrap(),
+            "owner"
+        );
+        assert_eq!(
+            canonical_completed_via(&messaging_owner_device, "ios").unwrap(),
+            "ios"
+        );
+        let overbroad_owner_device = auth(&[
+            "task.write",
+            "notification:manage",
+            "message.write",
+            "message.read",
+        ]);
+        assert!(canonical_public_source(&overbroad_owner_device, "owner").is_err());
+        assert!(canonical_completed_via(&overbroad_owner_device, "ios").is_err());
 
         let trusted = auth(&["task.write", "credential:manage"]);
         assert_eq!(

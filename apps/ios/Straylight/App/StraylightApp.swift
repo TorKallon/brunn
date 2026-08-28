@@ -38,6 +38,23 @@ struct StraylightApp: App {
                     guard let route = PushRouteBuffer.shared.take() else { return }
                     Task { await model.handle(route) }
                 }
+                .onReceive(NotificationCenter.default.publisher(
+                    for: .straylightMessagingPrefetch
+                )) { event in
+                    guard let prefetch = event.object as? MessagingBackgroundPrefetch else {
+                        return
+                    }
+                    Task {
+                        switch await model.refreshMessaging(.notificationPush) {
+                        case .newData:
+                            prefetch.finish(.newData)
+                        case .noData:
+                            prefetch.finish(.noData)
+                        case .failed:
+                            prefetch.finish(.failed)
+                        }
+                    }
+                }
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else { return }
                     Task {
@@ -55,6 +72,7 @@ struct StraylightApp: App {
                         )
                         await model.refreshDashboardIfNeeded()
                         await model.refreshNotifications()
+                        await model.refreshMessaging(.foreground)
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .straylightPushToken)) { event in

@@ -155,7 +155,7 @@ private struct SearchResultRow: View {
     }
 }
 
-private struct ContextSourceView: View {
+struct ContextSourceView: View {
     let request: WorkspaceEntryRequest
     @EnvironmentObject private var model: AppModel
     @State private var item: WorkspaceReadItem?

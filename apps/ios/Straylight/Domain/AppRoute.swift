@@ -5,6 +5,7 @@ public enum AppRoute: Hashable, Sendable {
     case briefing(date: String, edition: String, itemID: String?)
     case notification(notificationRef: String, deliveryRef: String?)
     case task(reference: String)
+    case conversation(conversationID: String, sequence: Int64)
 
     public init?(url: URL) {
         guard url.scheme?.lowercased() == "straylight" else { return nil }
@@ -41,9 +42,33 @@ public enum AppRoute: Hashable, Sendable {
         case "task" where path.count == 1:
             guard let reference = TaskReference.canonical(path[0]) else { return nil }
             self = .task(reference: reference)
+        case "conversation" where path.count == 1:
+            guard url.user == nil,
+                  url.password == nil,
+                  url.port == nil,
+                  url.fragment == nil,
+                  let conversationID = ConversationReference.canonical(path[0]),
+                  let queryItems = components?.queryItems,
+                  queryItems.count == 1,
+                  queryItems[0].name == "seq",
+                  let rawSequence = queryItems[0].value,
+                  let sequence = Int64(rawSequence),
+                  sequence > 0,
+                  String(sequence) == rawSequence
+            else { return nil }
+            self = .conversation(
+                conversationID: conversationID,
+                sequence: sequence
+            )
         default:
             return nil
         }
+    }
+}
+
+public enum ConversationReference {
+    public static func canonical(_ value: String) -> String? {
+        TaskReference.canonical(value)
     }
 }
 

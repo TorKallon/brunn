@@ -199,11 +199,24 @@ enum NotificationRouteParser {
         case let .notification(routeNotificationRef, routeDeliveryRef)
             where routeNotificationRef == notificationRef && routeDeliveryRef == deliveryRef:
             return route
-        case .task:
+        case .task, .conversation:
             return route
         default:
             return nil
         }
+    }
+
+    static func isMessagingPrefetch(_ userInfo: [AnyHashable: Any]) -> Bool {
+        guard case .conversation = route(from: userInfo),
+              let aps = userInfo["aps"] as? [AnyHashable: Any]
+        else { return false }
+        if let contentAvailable = aps["content-available"] as? Int {
+            return contentAvailable == 1
+        }
+        if let contentAvailable = aps["content-available"] as? NSNumber {
+            return contentAvailable.intValue == 1
+        }
+        return false
     }
 }
 
@@ -211,6 +224,24 @@ extension Notification.Name {
     static let straylightPushRoute = Notification.Name("straylight.push-route")
     static let straylightPushToken = Notification.Name("straylight.push-token")
     static let straylightPushRegistrationFailed = Notification.Name("straylight.push-registration-failed")
+    static let straylightMessagingPrefetch = Notification.Name("straylight.messaging-prefetch")
+}
+
+final class MessagingBackgroundPrefetch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completionHandler: ((UIBackgroundFetchResult) -> Void)?
+
+    init(completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        self.completionHandler = completionHandler
+    }
+
+    func finish(_ result: UIBackgroundFetchResult) {
+        lock.lock()
+        let completionHandler = completionHandler
+        self.completionHandler = nil
+        lock.unlock()
+        completionHandler?(result)
+    }
 }
 
 final class PushRouteBuffer: @unchecked Sendable {
@@ -291,6 +322,29 @@ enum NotificationDelegateHandoff {
             }
         }
     }
+
+    static func finishBackgroundFetch(
+        shouldPrefetch: Bool,
+        completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        let request = MessagingBackgroundPrefetch(completionHandler: completionHandler)
+        guard shouldPrefetch else {
+            DispatchQueue.main.async {
+                request.finish(.noData)
+            }
+            return
+        }
+
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .straylightMessagingPrefetch,
+                object: request
+            )
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25) {
+            request.finish(.failed)
+        }
+    }
 }
 
 private enum NotificationInstallationIdentity {
@@ -307,12 +361,34 @@ private enum NotificationInstallationIdentity {
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    nonisolated static func handlesBackgroundURLSession(identifier: String) -> Bool {
+        MessagingBackgroundTransport.handlesBackgroundSession(identifier: identifier)
+    }
+
     func application(
         _: UIApplication,
         didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    func application(
+        _: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        guard Self.handlesBackgroundURLSession(identifier: identifier),
+              MessagingBackgroundTransport.handleBackgroundEvents(
+                  identifier: identifier,
+                  completionHandler: completionHandler
+              )
+        else {
+            DispatchQueue.main.async {
+                completionHandler()
+            }
+            return
+        }
     }
 
     func application(
@@ -328,6 +404,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         NotificationCenter.default.post(name: .straylightPushRegistrationFailed, object: error)
+    }
+
+    func application(
+        _: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        NotificationDelegateHandoff.finishBackgroundFetch(
+            shouldPrefetch: NotificationRouteParser.isMessagingPrefetch(userInfo),
+            completionHandler: completionHandler
+        )
     }
 
     nonisolated func userNotificationCenter(

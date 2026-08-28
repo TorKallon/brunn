@@ -426,6 +426,11 @@ final class StraylightUITests: XCTestCase {
         XCTAssertTrue(element("task-detail", in: app).waitForExistence(timeout: 12))
         XCTAssertTrue(element("task-detail-title", in: app).exists)
         XCTAssertTrue(element("task-detail-view-only", in: app).exists)
+        XCUIDevice.shared.press(.home)
+        let backgrounded = app.wait(for: .runningBackground, timeout: 5)
+            || app.state == .runningBackgroundSuspended
+        XCTAssertTrue(backgrounded)
+        Thread.sleep(forTimeInterval: 2)
         app.terminate()
         app.launchArguments = ["--ui-test-reset-task-contexts"] + localeArguments
         app.launch()
@@ -453,7 +458,7 @@ final class StraylightUITests: XCTestCase {
         tapContextChip(contextChip, in: app)
         XCTAssertTrue(contextFilteredRow.waitForExistence(timeout: 8))
 
-        app.tabBars.buttons["Settings"].tap()
+        selectNativeTab("Settings", in: app)
         let bootstrap = element("device-task-access-bootstrap", in: app)
         scroll(bootstrap, intoViewIn: app)
         bootstrap.tap()
@@ -475,7 +480,7 @@ final class StraylightUITests: XCTestCase {
         tomorrow.tap()
         XCTAssertTrue(snoozeRow.waitForNonExistence(timeout: 8))
 
-        app.tabBars.buttons["Settings"].tap()
+        selectNativeTab("Settings", in: app)
         let finalRevoke = element("device-task-access-revoke", in: app)
         scroll(finalRevoke, intoViewIn: app)
         finalRevoke.tap()
@@ -505,6 +510,22 @@ final class StraylightUITests: XCTestCase {
         let today = app.tabBars.buttons["Today"]
         XCTAssertTrue(today.waitForExistence(timeout: 3))
         today.tap()
+    }
+
+    @MainActor
+    private func selectNativeTab(_ label: String, in app: XCUIApplication) {
+        let direct = app.tabBars.buttons[label]
+        if direct.waitForExistence(timeout: 3) {
+            if !direct.isSelected { direct.tap() }
+            return
+        }
+
+        let more = app.tabBars.buttons["More"]
+        XCTAssertTrue(more.waitForExistence(timeout: 3))
+        more.tap()
+        let destination = app.staticTexts[label].firstMatch
+        XCTAssertTrue(destination.waitForExistence(timeout: 3))
+        destination.tap()
     }
 
     @MainActor

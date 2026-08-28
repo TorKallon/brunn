@@ -11,6 +11,20 @@ protocol CredentialStoring: AnyObject {
 struct DeviceTaskCredential: Codable, Sendable, Equatable {
     let credentialRef: String
     let token: String
+    let userID: String?
+    let capabilities: [String]?
+
+    init(
+        credentialRef: String,
+        token: String,
+        userID: String? = nil,
+        capabilities: [String]? = nil
+    ) {
+        self.credentialRef = credentialRef
+        self.token = token
+        self.userID = userID
+        self.capabilities = capabilities
+    }
 }
 
 enum KeychainCredentialError: Error, LocalizedError {

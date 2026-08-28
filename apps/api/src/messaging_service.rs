@@ -1139,8 +1139,8 @@ async fn bind_agent_credential(
         let credential_exists = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS(
-              SELECT 1 FROM straylight.api_credentials
-              WHERE user_id=$1 AND id=$2 AND revoked_at IS NULL
+              SELECT 1 FROM straylight_auth.list_credentials($1)
+              WHERE id=$2 AND disabled_at IS NULL
             )
             "#,
         )
@@ -2059,9 +2059,8 @@ async fn load_agent_views_in_tx(
             r#"
             SELECT binding.agent_id,credential.label
             FROM straylight.messaging_credential_bindings AS binding
-            JOIN straylight.api_credentials AS credential
-              ON credential.user_id=binding.user_id
-             AND credential.id=binding.credential_id
+            JOIN straylight_auth.list_credentials($1) AS credential
+              ON credential.id=binding.credential_id
             WHERE binding.user_id=$1
             ORDER BY binding.agent_id,credential.label
             "#,

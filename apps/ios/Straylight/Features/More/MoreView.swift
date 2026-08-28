@@ -32,21 +32,18 @@ struct MoreView: View {
                 Text("Alerts remain in Straylight even when APNs is delayed, denied, or unavailable. Provider acceptance is never labeled as device delivery.")
             }
 
-            Section("Connection") {
-                LabeledContent("Account", value: model.user?.displayName ?? "Owner")
-                LabeledContent("Server", value: "straylight.rourkem.com")
-                LabeledContent("Access", value: accessLabel)
-            }
-
             Section {
                 LabeledContent(
                     "Status",
-                    value: model.canWriteTasks ? "Connected" : "View only"
+                    value: model.canWriteTasks || model.canWriteMessages ? "Connected" : "View only"
                 )
                 if model.canWriteTasks {
-                    Label("task.write + notification.manage only", systemImage: "checkmark.shield")
+                    Label(deviceCapabilityLabel, systemImage: "checkmark.shield")
                         .font(.footnote)
                         .foregroundStyle(StraylightTheme.success)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(deviceCapabilityLabel)
+                        .accessibilityIdentifier("messaging-device-access-capabilities")
                     Button("Revoke device task access", role: .destructive) {
                         Task {
                             if model.canManageNotifications {
@@ -94,9 +91,15 @@ struct MoreView: View {
                         .foregroundStyle(model.canWriteTasks ? StraylightTheme.success : StraylightTheme.amber)
                 }
             } header: {
-                Text("Device task access")
+                Text("Device task and agent access")
             } footer: {
-                Text("Creates a one-time opaque credential and stores it in this iPhone's protected Keychain. It cannot read workspace content or manage credentials, and its token is never displayed.")
+                Text("Creates one opaque credential and stores it in this iPhone's protected Keychain. With agent messaging enabled, the same credential gains only message.write. It cannot read workspace content or manage credentials, and its token is never displayed.")
+            }
+
+            Section("Connection") {
+                LabeledContent("Account", value: model.user?.displayName ?? "Owner")
+                LabeledContent("Server", value: "straylight.rourkem.com")
+                LabeledContent("Access", value: accessLabel)
             }
 
             Section("Notifications") {
@@ -188,6 +191,14 @@ struct MoreView: View {
         }
         .sheet(isPresented: $showingNotificationPrimer) {
             NotificationPrimerView()
+        }
+    }
+
+    private var deviceCapabilityLabel: String {
+        if model.canWriteMessages {
+            "task.write + message.write + notification.manage only"
+        } else {
+            "task.write + notification.manage only"
         }
     }
 

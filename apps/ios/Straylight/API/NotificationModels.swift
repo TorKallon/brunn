@@ -45,6 +45,7 @@ public enum StraylightNotificationTargetType: String, Codable, Sendable, Equatab
     case briefing
     case entry
     case task
+    case conversation
 }
 
 public struct StraylightNotificationTarget: Codable, Sendable, Equatable {
@@ -54,6 +55,8 @@ public struct StraylightNotificationTarget: Codable, Sendable, Equatable {
     public let itemID: String?
     public let entryRef: String?
     public let taskRef: String?
+    public let conversationID: String?
+    public let sequence: Int64?
 
     public init(
         type: StraylightNotificationTargetType,
@@ -61,7 +64,9 @@ public struct StraylightNotificationTarget: Codable, Sendable, Equatable {
         edition: String? = nil,
         itemID: String? = nil,
         entryRef: String? = nil,
-        taskRef: String? = nil
+        taskRef: String? = nil,
+        conversationID: String? = nil,
+        sequence: Int64? = nil
     ) {
         self.type = type
         self.date = date
@@ -69,6 +74,25 @@ public struct StraylightNotificationTarget: Codable, Sendable, Equatable {
         self.itemID = itemID
         self.entryRef = entryRef
         self.taskRef = taskRef
+        self.conversationID = conversationID
+        self.sequence = sequence
+    }
+
+    public var appRoute: AppRoute? {
+        guard type == .conversation,
+              date == nil,
+              edition == nil,
+              itemID == nil,
+              entryRef == nil,
+              taskRef == nil,
+              let conversationID = conversationID.flatMap(ConversationReference.canonical),
+              let sequence,
+              sequence > 0
+        else { return nil }
+        return .conversation(
+            conversationID: conversationID,
+            sequence: sequence
+        )
     }
 
     enum CodingKeys: String, CodingKey {
@@ -78,6 +102,8 @@ public struct StraylightNotificationTarget: Codable, Sendable, Equatable {
         case itemID = "item_id"
         case entryRef = "entry_ref"
         case taskRef = "task_ref"
+        case conversationID = "conversation_id"
+        case sequence = "seq"
     }
 }
 

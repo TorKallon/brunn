@@ -80,6 +80,26 @@ private struct MainTabView: View {
             .tabItem { Label("Today", systemImage: "sunrise") }
             .tag(AppTab.today)
 
+            if model.messagingEnabled, let messagingController = model.messagingController {
+                NavigationStack {
+                    AgentsView(
+                        controller: messagingController,
+                        canWriteMessages: model.canWriteMessages,
+                        focusedConversationID: model.focusedMessagingConversationID,
+                        focusedSequence: model.focusedMessagingSequence,
+                        onCreateConversation: { participants, subject in
+                            try await model.createMessagingConversation(
+                                participants: participants,
+                                subject: subject
+                            )
+                        }
+                    )
+                }
+                .tabItem { Label("Agents", systemImage: "bubble.left.and.bubble.right") }
+                .badge(messagingUnreadCount(messagingController))
+                .tag(AppTab.agents)
+            }
+
             NavigationStack {
                 AlertsView()
             }
@@ -100,5 +120,12 @@ private struct MainTabView: View {
             .tag(AppTab.more)
         }
         .tint(StraylightTheme.signalBlue)
+    }
+
+    private func messagingUnreadCount(_ controller: MessagingController) -> Int {
+        let count = controller.conversations.reduce(Int64(0)) { partial, conversation in
+            partial + max(conversation.unreadCount, 0)
+        }
+        return count > 0 ? Int(min(count, Int64(Int.max))) : 0
     }
 }

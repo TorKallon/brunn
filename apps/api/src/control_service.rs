@@ -929,8 +929,10 @@ pub async fn create_credential(
             "credential name must contain 1 to 120 characters",
         ));
     }
-    let (access, capabilities) =
-        credential_template(request.get("access").and_then(Value::as_str))?;
+    let (access, capabilities) = credential_template_for_gate(
+        request.get("access").and_then(Value::as_str),
+        state.config.messaging_enabled,
+    )?;
     if access == "ios_tasks" {
         auth.require(Capability::Admin)?;
     }
@@ -1077,6 +1079,17 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
             "credential access must be read_only, read_write, ios_tasks, or owner",
         )),
     }
+}
+
+fn credential_template_for_gate(
+    access: Option<&str>,
+    messaging_enabled: bool,
+) -> ApiResult<(&'static str, Vec<&'static str>)> {
+    let (access, mut capabilities) = credential_template(access)?;
+    if access == "ios_tasks" && messaging_enabled {
+        capabilities.push("message.write");
+    }
+    Ok((access, capabilities))
 }
 
 fn map_credential_issue_error(error: sqlx::Error) -> ApiError {
@@ -1483,11 +1496,12 @@ fn credential_row_value(row: sqlx::postgres::PgRow) -> ApiResult<Value> {
 }
 
 fn credential_access_label(capabilities: &[String]) -> &'static str {
-    if capabilities.len() == 2
+    if matches!(capabilities.len(), 2 | 3)
         && capabilities.iter().any(|value| value == "task.write")
         && capabilities
             .iter()
             .any(|value| value == "notification:manage")
+        && (capabilities.len() == 2 || capabilities.iter().any(|value| value == "message.write"))
     {
         "ios_tasks"
     } else if capabilities
@@ -1507,7 +1521,7 @@ fn credential_access_label(capabilities: &[String]) -> &'static str {
 
 #[cfg(test)]
 mod credential_tests {
-    use super::{credential_access_label, credential_template};
+    use super::{credential_access_label, credential_template, credential_template_for_gate};
 
     #[test]
     fn omitted_credential_access_defaults_to_read_write() {
@@ -1569,6 +1583,24 @@ mod credential_tests {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         assert_eq!(credential_access_label(&stored), "ios_tasks");
+    }
+
+    #[test]
+    fn ios_tasks_adds_only_message_write_when_messaging_is_enabled() {
+        let (off_access, off) =
+            credential_template_for_gate(Some("ios_tasks"), false).expect("gate-off template");
+        assert_eq!(off_access, "ios_tasks");
+        assert_eq!(off, ["task.write", "notification:manage"]);
+
+        let (on_access, on) =
+            credential_template_for_gate(Some("ios_tasks"), true).expect("gate-on template");
+        assert_eq!(on_access, "ios_tasks");
+        assert_eq!(on, ["task.write", "notification:manage", "message.write"]);
+        assert!(!on.contains(&"message.read"));
+        assert_eq!(
+            credential_access_label(&on.into_iter().map(str::to_owned).collect::<Vec<_>>()),
+            "ios_tasks"
+        );
     }
 
     #[test]

@@ -565,9 +565,7 @@ final class StraylightTests: XCTestCase {
         let requests = recorder.snapshot()
         XCTAssertEqual(requests.map(\.httpMethod), ["GET", "PUT", "POST"])
         XCTAssertNil(requests[0].value(forHTTPHeaderField: "Authorization"))
-        XCTAssertTrue(requests[0].value(forHTTPHeaderField: "Cookie")?.contains(
-            "straylight_session=session-secret"
-        ) == true)
+        XCTAssertTrue(requests[0].httpShouldHandleCookies)
         XCTAssertEqual(
             requests[1].value(forHTTPHeaderField: "Authorization"),
             "Bearer narrow-device-token"
@@ -576,9 +574,7 @@ final class StraylightTests: XCTestCase {
         XCTAssertNil(requests[1].value(forHTTPHeaderField: "X-CSRF-Token"))
         XCTAssertNil(requests.last?.value(forHTTPHeaderField: "Authorization"))
         XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "X-CSRF-Token"), "csrf-secret")
-        XCTAssertTrue(requests.last?.value(forHTTPHeaderField: "Cookie")?.contains(
-            "straylight_session=session-secret"
-        ) == true)
+        XCTAssertTrue(requests.last?.httpShouldHandleCookies == true)
         XCTAssertEqual(
             requests[1].url?.path,
             "/api/v1/workspace/notification-installations/11111111-1111-1111-1111-111111111111"
@@ -732,9 +728,7 @@ final class StraylightTests: XCTestCase {
         ])
         XCTAssertNil(requests[0].value(forHTTPHeaderField: "Authorization"))
         XCTAssertEqual(requests[0].value(forHTTPHeaderField: "X-CSRF-Token"), "owner-csrf")
-        XCTAssertTrue(requests[0].value(forHTTPHeaderField: "Cookie")?.contains(
-            "straylight_session=owner-session"
-        ) == true)
+        XCTAssertTrue(requests[0].httpShouldHandleCookies)
 
         XCTAssertEqual(
             requests[1].value(forHTTPHeaderField: "Authorization"),
@@ -745,13 +739,171 @@ final class StraylightTests: XCTestCase {
 
         XCTAssertNil(requests[2].value(forHTTPHeaderField: "Authorization"))
         XCTAssertEqual(requests[2].value(forHTTPHeaderField: "X-CSRF-Token"), "owner-csrf")
-        XCTAssertTrue(requests[2].value(forHTTPHeaderField: "Cookie")?.contains(
-            "straylight_session=owner-session"
-        ) == true)
+        XCTAssertTrue(requests[2].httpShouldHandleCookies)
         XCTAssertEqual(
             requests[2].url?.path,
             "/api/v1/credentials/credential:11111111-1111-4111-8111-111111111111"
         )
+    }
+
+    func testLoginResponseSynchronizesCSRFCookieBeforeImmediateMutation() async throws {
+        let host = "login-csrf-\(UUID().uuidString.lowercased()).straylight.test"
+        let baseURL = try XCTUnwrap(URL(string: "https://\(host)/api/v1"))
+        let fingerprintDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fingerprintURL = fingerprintDirectory
+            .appendingPathComponent("web-session-fingerprint-v1", isDirectory: false)
+        let cookieStorage = HTTPCookieStorage.shared
+        for cookie in cookieStorage.cookies(for: baseURL) ?? [] {
+            cookieStorage.deleteCookie(cookie)
+        }
+        defer {
+            for cookie in cookieStorage.cookies(for: baseURL) ?? [] {
+                cookieStorage.deleteCookie(cookie)
+            }
+            try? FileManager.default.removeItem(at: fingerprintDirectory)
+            NotificationRequestURLProtocol.handler = nil
+        }
+
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            switch request.url?.path {
+            case "/api/v1/auth/login":
+                return StubbedHTTPResponse(
+                    json: #"{"status":"complete","data":{"user":{"id":"user:one","display_name":"Owner"},"expires_at":"2026-09-27T12:00:00Z"}}"#,
+                    headers: [
+                        "Set-Cookie": "straylight_session=sws_test_session; Path=/; HttpOnly; SameSite=Strict, straylight_csrf=csrf-from-login; Path=/; SameSite=Strict",
+                    ]
+                )
+            case "/api/v1/credentials":
+                return StubbedHTTPResponse(json: #"{"id":"credential:11111111-1111-4111-8111-111111111111","access":"ios_tasks","capabilities":["task.write","notification:manage"],"token":"one-time-narrow-token"}"#)
+            default:
+                return StubbedHTTPResponse(statusCode: 404, json: #"{"error":{"code":"unexpected","message":"unexpected"}}"#)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        // Keep the transport cookie jar detached so this test can only pass
+        // through StraylightAPI's explicit response-cookie synchronization.
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage,
+            sessionFingerprintURL: fingerprintURL
+        )
+
+        _ = try await api.login(email: "owner@example.test", password: "not-a-secret")
+        let hasAuthenticatedSession = await api.hasAuthenticatedSession()
+        XCTAssertTrue(hasAuthenticatedSession)
+        let sessionFingerprint = await api.authenticatedSessionFingerprint()
+        XCTAssertTrue(sessionFingerprint?.hasPrefix("sha256:") == true)
+        XCTAssertEqual(
+            try String(contentsOf: fingerprintURL, encoding: .utf8),
+            sessionFingerprint
+        )
+        XCTAssertFalse(
+            try String(contentsOf: fingerprintURL, encoding: .utf8)
+                .contains("sws_test_session")
+        )
+        let fingerprintAttributes = try FileManager.default.attributesOfItem(
+            atPath: fingerprintURL.path
+        )
+        let fingerprintProtection = fingerprintAttributes[.protectionKey] as? FileProtectionType
+#if targetEnvironment(simulator)
+        // Simulator filesystems can omit NSFileProtectionKey entirely even
+        // when the complete-protection write option was applied.
+        XCTAssertTrue(fingerprintProtection == nil || fingerprintProtection == .complete)
+#else
+        XCTAssertEqual(fingerprintProtection, .complete)
+#endif
+        XCTAssertEqual(
+            try fingerprintURL.resourceValues(forKeys: [.isExcludedFromBackupKey])
+                .isExcludedFromBackup,
+            true
+        )
+        XCTAssertEqual(
+            try fingerprintDirectory.resourceValues(forKeys: [.isExcludedFromBackupKey])
+                .isExcludedFromBackup,
+            true
+        )
+        _ = try await api.bootstrapDeviceTaskCredential()
+
+        let requests = recorder.snapshot()
+        XCTAssertEqual(requests.map(\.url?.path), [
+            "/api/v1/auth/login",
+            "/api/v1/credentials",
+        ])
+        XCTAssertTrue(requests[0].httpShouldHandleCookies)
+        XCTAssertNil(requests[0].value(forHTTPHeaderField: "X-CSRF-Token"))
+        XCTAssertTrue(requests[1].httpShouldHandleCookies)
+        XCTAssertEqual(
+            requests[1].value(forHTTPHeaderField: "X-CSRF-Token"),
+            "csrf-from-login"
+        )
+        XCTAssertEqual(
+            Set((cookieStorage.cookies(for: baseURL) ?? []).map(\.name)),
+            Set(["straylight_session", "straylight_csrf"])
+        )
+
+        for cookie in cookieStorage.cookies(for: baseURL) ?? []
+            where cookie.name == "straylight_session"
+        {
+            cookieStorage.deleteCookie(cookie)
+        }
+        let replacementCookie = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: host,
+            .path: "/",
+            .name: "straylight_session",
+            .value: "replacement-account-session",
+            .secure: "TRUE",
+        ]))
+        cookieStorage.setCookie(replacementCookie)
+        let replacementAPI = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage,
+            sessionFingerprintURL: fingerprintURL
+        )
+        let replacementFingerprint = await replacementAPI.authenticatedSessionFingerprint()
+        XCTAssertNotEqual(replacementFingerprint, sessionFingerprint)
+        XCTAssertEqual(
+            try String(contentsOf: fingerprintURL, encoding: .utf8),
+            replacementFingerprint
+        )
+
+        cookieStorage.deleteCookie(replacementCookie)
+        let restoredAPI = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage,
+            sessionFingerprintURL: fingerprintURL
+        )
+        let restoredFingerprint = await restoredAPI.authenticatedSessionFingerprint()
+        XCTAssertEqual(restoredFingerprint, replacementFingerprint)
+        cookieStorage.setCookie(replacementCookie)
+        await restoredAPI.clearAuthenticatedSession()
+        let clearedFingerprint = await restoredAPI.authenticatedSessionFingerprint()
+        XCTAssertNil(clearedFingerprint)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fingerprintURL.path))
+        XCTAssertFalse(
+            (cookieStorage.cookies(for: baseURL) ?? []).contains {
+                $0.name == "straylight_session"
+            }
+        )
+
+        try Data(("sha256:" + String(repeating: "١", count: 64)).utf8)
+            .write(to: fingerprintURL, options: .atomic)
+        let corruptAPI = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration),
+            cookieStorage: cookieStorage,
+            sessionFingerprintURL: fingerprintURL
+        )
+        let corruptFingerprint = await corruptAPI.authenticatedSessionFingerprint()
+        XCTAssertNil(corruptFingerprint)
     }
 
     @MainActor
@@ -866,6 +1018,7 @@ final class StraylightTests: XCTestCase {
 
         await model.connect(email: "owner@example.test", password: "password")
         XCTAssertTrue(model.canWriteTasks)
+        XCTAssertFalse(model.canWriteMessages)
         await model.disconnect()
 
         XCTAssertEqual(model.phase, .ready)
@@ -946,6 +1099,61 @@ final class StraylightTests: XCTestCase {
             "Bearer account-a-narrow-token"
         )
         XCTAssertNil(lifecycle.last?.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    @MainActor
+    func testExactMessagingDeviceCredentialEnablesOnlyApprovedMutationSurfaces() async throws {
+        let credentialRef = "credential:55555555-5555-4555-8555-555555555555"
+        let baseURL = try XCTUnwrap(URL(string: "https://messaging-device.straylight.test/api/v1"))
+        NotificationRequestURLProtocol.handler = { request in
+            if request.httpMethod == "GET", request.url?.path == "/api/v1/me" {
+                return StubbedHTTPResponse(json: #"""
+                {"user":{"id":"user:one","display_name":"Owner"},"credential_id":"credential:55555555-5555-4555-8555-555555555555","capabilities":["task.write","message.write","notification:manage"],"read_only":false}
+                """#)
+            }
+            return StubbedHTTPResponse(
+                statusCode: 503,
+                json: #"{"error":{"code":"test_background_request","message":"not part of credential test"}}"#
+            )
+        }
+        defer { NotificationRequestURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration)
+        )
+        let credentialStore = TestCredentialStore(credential: DeviceTaskCredential(
+            credentialRef: credentialRef,
+            token: "protected-messaging-token"
+        ))
+        let owner = MeData(
+            user: UserSummary(id: "user:one", displayName: "Owner"),
+            credentialID: "credential:web-owner",
+            capabilities: ["credential:manage", "admin", "task.read", "message.read"],
+            readOnly: false
+        )
+        let model = AppModel(
+            api: api,
+            credentialStore: credentialStore,
+            loginLoader: { _, _, _ in owner },
+            dashboardLoader: { _, _ in SampleData.dashboard },
+            notificationListLoader: { _, _ in
+                NotificationListResponse(items: [], nextCursor: nil, unreadCount: 0)
+            }
+        )
+
+        await model.connect(email: "owner@example.test", password: "password")
+
+        XCTAssertTrue(model.canWriteTasks)
+        XCTAssertTrue(model.canWriteMessages)
+        XCTAssertTrue(model.canManageNotifications)
+        XCTAssertEqual(model.deviceTaskBearer(), "protected-messaging-token")
+        XCTAssertEqual(
+            try credentialStore.load()?.capabilities,
+            ["message.write", "notification:manage", "task.write"]
+        )
+        XCTAssertEqual(try credentialStore.load()?.userID, "user:one")
     }
 
     private static let readOnlyIdentity = MeData(
@@ -1599,10 +1807,16 @@ private final class NotificationHandoffRecorder: @unchecked Sendable {
 private struct StubbedHTTPResponse: Sendable {
     let statusCode: Int
     let json: String
+    let headers: [String: String]
 
-    init(statusCode: Int = 200, json: String) {
+    init(
+        statusCode: Int = 200,
+        json: String,
+        headers: [String: String] = [:]
+    ) {
         self.statusCode = statusCode
         self.json = json
+        self.headers = headers
     }
 }
 
@@ -1656,7 +1870,10 @@ private final class NotificationRequestURLProtocol: URLProtocol, @unchecked Send
             url: url,
             statusCode: stub.statusCode,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: ["Content-Type": "application/json"].merging(
+                stub.headers,
+                uniquingKeysWith: { _, replacement in replacement }
+            )
         ) else {
             client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
             return

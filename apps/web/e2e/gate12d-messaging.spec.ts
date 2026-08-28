@@ -68,8 +68,14 @@ test("gate 12d: authenticated Web messaging and credential-derived sender", asyn
   await expect(
     page.getByRole("heading", { name: subject, exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Kind").selectOption("question");
-  await page.getByLabel("Message").fill(question);
+  await page
+    .locator("form.messaging-composer")
+    .getByLabel("Kind")
+    .selectOption("question");
+  await page
+    .locator("form.messaging-composer")
+    .getByRole("textbox", { name: "Message", exact: true })
+    .fill(question);
   const ownerSendResponse = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&

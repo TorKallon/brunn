@@ -296,7 +296,7 @@ private struct AlertDetailView: View {
         switch current.target.type {
         case .notification:
             EmptyView()
-        case .today, .briefing, .task:
+        case .today, .briefing, .task, .conversation:
             Button {
                 Task { await model.openNotificationTarget(current) }
             } label: {
@@ -324,6 +324,7 @@ private struct AlertDetailView: View {
         switch current.target.type {
         case .briefing: "Open exact briefing"
         case .task: "Open task"
+        case .conversation: "Open conversation"
         default: "Open Today"
         }
     }
@@ -332,6 +333,7 @@ private struct AlertDetailView: View {
         switch current.target.type {
         case .briefing: "sunrise"
         case .task: "checkmark.circle"
+        case .conversation: "bubble.left.and.bubble.right"
         default: "calendar"
         }
     }
