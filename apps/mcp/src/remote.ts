@@ -18,6 +18,8 @@ import {
 } from "./oauth-provider.js";
 
 const REMOTE_SCOPE = "mcp:tools";
+const MCP_ALLOWED_METHODS = "GET, POST, DELETE, OPTIONS";
+const MCP_EXPOSED_HEADERS = "WWW-Authenticate, MCP-Session-Id, MCP-Protocol-Version";
 // Tool schemas permit a 4 MiB checkpoint/write field. Leave bounded room for
 // the JSON-RPC envelope while matching the public proxy and API body limits.
 const REMOTE_JSON_BODY_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -34,6 +36,7 @@ export interface RemoteMcpAppOptions {
   publicUrl: URL;
   apiUrl: string;
   provider: OAuthServerProvider;
+  allowedOrigins: readonly string[];
   fetchImpl?: typeof fetch;
 }
 
@@ -42,7 +45,9 @@ export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
   const resourceUrl = new URL("/mcp", publicUrl);
   const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl);
   const fetchImpl = options.fetchImpl ?? fetch;
+  const allowedOrigins = new Set(normalizeAllowedOrigins(options.allowedOrigins));
   const app = express();
+  app.use("/mcp", mcpCors(allowedOrigins));
   app.use(express.json({ limit: REMOTE_JSON_BODY_LIMIT_BYTES, strict: true }));
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -52,7 +57,8 @@ export function createRemoteMcpApp(options: RemoteMcpAppOptions): Express {
     response.status(200).json({ status: "ok", service: "straylight-remote-mcp" });
   });
 
-  app.get("/.well-known/oauth-protected-resource", (_request, response) => {
+  app.options("/.well-known/oauth-protected-resource", publicMetadataCors);
+  app.get("/.well-known/oauth-protected-resource", publicMetadataCors, (_request, response) => {
     response.status(200).json({
       resource: resourceUrl.href,
       authorization_servers: [publicUrl.href],
@@ -198,6 +204,9 @@ async function runRemoteServer(): Promise<void> {
   const publicUrl = new URL(requiredEnvironment("STRAYLIGHT_MCP_PUBLIC_URL"));
   const apiUrl = requiredEnvironment("STRAYLIGHT_API_URL").replace(/\/$/, "");
   const secret = decodeSealingKey(requiredEnvironment("STRAYLIGHT_MCP_SEALING_KEY"));
+  const allowedOrigins = parseAllowedOrigins(
+    requiredEnvironment("STRAYLIGHT_MCP_ALLOWED_ORIGINS"),
+  );
   const resourceUrl = new URL("/mcp", canonicalPublicUrl(publicUrl));
   const provider = new StraylightOAuthProvider({
     secret,
@@ -206,7 +215,7 @@ async function runRemoteServer(): Promise<void> {
     refreshTokenTtlSeconds: 365 * 24 * 60 * 60,
     verifyUpstreamToken: (token) => verifyRemoteCredential(apiUrl, token),
   });
-  const app = createRemoteMcpApp({ publicUrl, apiUrl, provider });
+  const app = createRemoteMcpApp({ publicUrl, apiUrl, provider, allowedOrigins });
   const port = parsePort(process.env.PORT ?? "8080");
   app.listen(port, "::", (error?: Error) => {
     if (error) {
@@ -226,6 +235,89 @@ function securityHeaders(_request: Request, response: Response, next: NextFuncti
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("X-Frame-Options", "DENY");
   next();
+}
+
+function mcpCors(allowedOrigins: ReadonlySet<string>) {
+  return (request: Request, response: Response, next: NextFunction): void => {
+    response.vary("Origin");
+    const origin = request.get("Origin");
+    if (origin === undefined) {
+      next();
+      return;
+    }
+    if (!allowedOrigins.has(origin)) {
+      response.status(403).json({ error: "origin_not_allowed" });
+      return;
+    }
+
+    response.setHeader("Access-Control-Allow-Origin", origin);
+    response.setHeader("Access-Control-Allow-Methods", MCP_ALLOWED_METHODS);
+    response.setHeader("Access-Control-Expose-Headers", MCP_EXPOSED_HEADERS);
+
+    if (request.method !== "OPTIONS") {
+      next();
+      return;
+    }
+
+    const requestedHeaders = request.get("Access-Control-Request-Headers");
+    if (requestedHeaders !== undefined) {
+      response.vary("Access-Control-Request-Headers");
+      response.setHeader("Access-Control-Allow-Headers", requestedHeaders);
+    }
+    response.setHeader("Access-Control-Max-Age", "600");
+    response.status(204).end();
+  };
+}
+
+function publicMetadataCors(request: Request, response: Response, next: NextFunction): void {
+  response.setHeader("Access-Control-Allow-Origin", "*");
+  response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  const requestedHeaders = request.get("Access-Control-Request-Headers");
+  if (requestedHeaders !== undefined) {
+    response.vary("Access-Control-Request-Headers");
+    response.setHeader("Access-Control-Allow-Headers", requestedHeaders);
+  }
+  if (request.method === "OPTIONS") {
+    response.setHeader("Access-Control-Max-Age", "600");
+    response.status(204).end();
+    return;
+  }
+  next();
+}
+
+export function parseAllowedOrigins(value: string): string[] {
+  return normalizeAllowedOrigins(value.split(","));
+}
+
+function normalizeAllowedOrigins(values: readonly string[]): string[] {
+  const origins = new Set<string>();
+  for (const value of values) {
+    const candidate = value.trim();
+    if (candidate.length === 0 || candidate === "*") {
+      throw new Error("STRAYLIGHT_MCP_ALLOWED_ORIGINS requires explicit HTTPS origins");
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(candidate);
+    } catch {
+      throw new Error("STRAYLIGHT_MCP_ALLOWED_ORIGINS contains an invalid URL");
+    }
+    if (
+      parsed.protocol !== "https:"
+      || parsed.username.length > 0
+      || parsed.password.length > 0
+      || parsed.pathname !== "/"
+      || parsed.search.length > 0
+      || parsed.hash.length > 0
+    ) {
+      throw new Error("STRAYLIGHT_MCP_ALLOWED_ORIGINS requires exact credential-free HTTPS origins");
+    }
+    origins.add(parsed.origin);
+  }
+  if (origins.size === 0) {
+    throw new Error("STRAYLIGHT_MCP_ALLOWED_ORIGINS requires at least one origin");
+  }
+  return [...origins];
 }
 
 function canonicalPublicUrl(value: URL): URL {

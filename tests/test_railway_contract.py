@@ -301,6 +301,14 @@ class RailwayContractTests(unittest.TestCase):
             'STRAYLIGHT_MCP_PUBLIC_URL: "https://straylight.rourkem.com"',
             mcp_block,
         )
+        self.assertIn(
+            'STRAYLIGHT_MCP_ALLOWED_ORIGINS:',
+            mcp_block,
+        )
+        self.assertIn(
+            '"https://chatgpt.com,https://claude.ai,https://straylight.rourkem.com"',
+            mcp_block,
+        )
         self.assertIn("STRAYLIGHT_MCP_SEALING_KEY: preserve()", mcp_block)
         self.assertNotIn("STRAYLIGHT_API_TOKEN", mcp_block)
 

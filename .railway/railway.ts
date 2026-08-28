@@ -242,6 +242,8 @@ const mcp = service("mcp", {
     PORT: "8080",
     STRAYLIGHT_API_URL: "http://api.railway.internal:8080",
     STRAYLIGHT_MCP_PUBLIC_URL: "https://straylight.rourkem.com",
+    STRAYLIGHT_MCP_ALLOWED_ORIGINS:
+      "https://chatgpt.com,https://claude.ai,https://straylight.rourkem.com",
     STRAYLIGHT_MESSAGING_ENABLED: api.env.STRAYLIGHT_MESSAGING_ENABLED,
     STRAYLIGHT_MCP_SEALING_KEY: preserve(),
     STRAYLIGHT_BUILD_REVISION: preserve(),

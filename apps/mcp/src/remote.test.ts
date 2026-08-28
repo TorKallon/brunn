@@ -10,6 +10,7 @@ import { StraylightOAuthProvider } from "./oauth-provider.js";
 import {
   createRemoteMcpApp,
   decodeSealingKey,
+  parseAllowedOrigins,
   verifyRemoteCredential,
 } from "./remote.js";
 
@@ -61,6 +62,23 @@ test("sealing key parser accepts exactly 32 base64 bytes", () => {
   assert.throws(() => decodeSealingKey("not-base64"), /exactly 32 bytes/);
 });
 
+test("remote browser origins require explicit credential-free HTTPS origins", () => {
+  assert.deepEqual(
+    parseAllowedOrigins("https://chatgpt.com, https://claude.ai/,https://chatgpt.com"),
+    ["https://chatgpt.com", "https://claude.ai"],
+  );
+  for (const value of [
+    "",
+    "*",
+    "http://chatgpt.com",
+    "https://user:secret@chatgpt.com",
+    "https://chatgpt.com/plugins",
+    "https://chatgpt.com?mode=mcp",
+  ]) {
+    assert.throws(() => parseAllowedOrigins(value), /explicit HTTPS|exact credential-free/);
+  }
+});
+
 test("remote gateway completes OAuth and serves the hosted-safe MCP profile", async () => {
   const upstreamAuthorizations: string[] = [];
   const upstreamFetch: typeof fetch = async (_input, init) => {
@@ -82,6 +100,7 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
     publicUrl,
     apiUrl: "https://api.example",
     provider,
+    allowedOrigins: ["https://chatgpt.com", "https://claude.ai"],
     fetchImpl: upstreamFetch,
   });
   const server = await listen(app);
@@ -90,22 +109,114 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
   try {
+    const requestedHeaders = [
+      "authorization",
+      "content-type",
+      "mcp-protocol-version",
+      "mcp-session-id",
+      "last-event-id",
+    ].join(", ");
+    const preflight = await fetch(`${baseUrl}/mcp`, {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://chatgpt.com",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": requestedHeaders,
+      },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), "https://chatgpt.com");
+    assert.equal(preflight.headers.get("access-control-allow-methods"), "GET, POST, DELETE, OPTIONS");
+    assert.equal(preflight.headers.get("access-control-allow-headers"), requestedHeaders);
+    assert.equal(preflight.headers.get("access-control-max-age"), "600");
+    assert.match(preflight.headers.get("vary") ?? "", /Origin/u);
+    assert.match(preflight.headers.get("vary") ?? "", /Access-Control-Request-Headers/u);
+    assert.equal(preflight.headers.has("access-control-allow-credentials"), false);
+
     const unauthorized = await fetch(`${baseUrl}/mcp`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        origin: "https://chatgpt.com",
+      },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
     });
     assert.equal(unauthorized.status, 401);
+    assert.equal(unauthorized.headers.get("access-control-allow-origin"), "https://chatgpt.com");
+    assert.match(unauthorized.headers.get("access-control-expose-headers") ?? "", /WWW-Authenticate/u);
     assert.match(
       unauthorized.headers.get("www-authenticate") ?? "",
       /resource_metadata="https:\/\/straylight\.example\/\.well-known\/oauth-protected-resource\/mcp"/,
     );
 
-    const resourceMetadata = await json(await fetch(`${baseUrl}/.well-known/oauth-protected-resource/mcp`));
+    const originless = await fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    });
+    assert.equal(originless.status, 401);
+    assert.equal(originless.headers.has("access-control-allow-origin"), false);
+
+    const untrusted = await fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://untrusted.example",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+    });
+    assert.equal(untrusted.status, 403);
+    assert.equal(untrusted.headers.has("access-control-allow-origin"), false);
+    assert.equal((await json(untrusted)).error, "origin_not_allowed");
+
+    const resourceMetadataResponse = await fetch(
+      `${baseUrl}/.well-known/oauth-protected-resource/mcp`,
+      {
+        headers: {
+          origin: "https://chatgpt.com",
+          "mcp-protocol-version": "2025-06-18",
+        },
+      },
+    );
+    assert.equal(resourceMetadataResponse.headers.get("access-control-allow-origin"), "*");
+    const resourceMetadata = await json(resourceMetadataResponse);
     assert.equal(resourceMetadata.resource, resourceUrl.href);
     assert.deepEqual(resourceMetadata.authorization_servers, [publicUrl.href]);
-    const rootMetadata = await json(await fetch(`${baseUrl}/.well-known/oauth-protected-resource`));
+    const rootMetadataResponse = await fetch(
+      `${baseUrl}/.well-known/oauth-protected-resource`,
+      {
+        headers: {
+          origin: "https://chatgpt.com",
+          "mcp-protocol-version": "2025-06-18",
+        },
+      },
+    );
+    assert.equal(rootMetadataResponse.headers.get("access-control-allow-origin"), "*");
+    const rootMetadata = await json(rootMetadataResponse);
     assert.equal(rootMetadata.resource, resourceUrl.href);
+    for (const path of [
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/mcp",
+    ]) {
+      const metadataPreflight = await fetch(`${baseUrl}${path}`, {
+        method: "OPTIONS",
+        headers: {
+          origin: "https://chatgpt.com",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "mcp-protocol-version",
+        },
+      });
+      assert.equal(metadataPreflight.status, 204);
+      assert.equal(metadataPreflight.headers.get("access-control-allow-origin"), "*");
+      assert.match(
+        metadataPreflight.headers.get("access-control-allow-methods") ?? "",
+        /(?:^|,)\s*GET(?:\s*,|$)/u,
+      );
+      assert.equal(
+        metadataPreflight.headers.get("access-control-allow-headers"),
+        "mcp-protocol-version",
+      );
+    }
     const authorizationMetadata = await json(await fetch(`${baseUrl}/.well-known/oauth-authorization-server`));
     assert.equal(authorizationMetadata.issuer, publicUrl.href);
     assert.equal(authorizationMetadata.registration_endpoint, `${publicUrl.href}register`);
@@ -185,7 +296,12 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
     assert.equal(tokenResponse.scope, "mcp:tools");
 
     const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {
-      requestInit: { headers: { authorization: `Bearer ${accessToken}` } },
+      requestInit: {
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          origin: "https://chatgpt.com",
+        },
+      },
     });
     const client = new Client({ name: "remote-http-test", version: "0.1.0" });
     try {
@@ -225,7 +341,20 @@ test("remote gateway completes OAuth and serves the hosted-safe MCP profile", as
     } finally {
       await client.close().catch(() => undefined);
     }
+
+    const originlessTransport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), {
+      requestInit: { headers: { authorization: `Bearer ${accessToken}` } },
+    });
+    const originlessClient = new Client({ name: "remote-http-originless-test", version: "0.1.0" });
+    try {
+      await originlessClient.connect(originlessTransport as never);
+      const status = await originlessClient.callTool({ name: "memory.status", arguments: {} });
+      assert.equal(status.isError, undefined);
+    } finally {
+      await originlessClient.close().catch(() => undefined);
+    }
     assert.deepEqual(upstreamAuthorizations, [
+      "Bearer dedicated-upstream-token",
       "Bearer dedicated-upstream-token",
       "Bearer dedicated-upstream-token",
     ]);

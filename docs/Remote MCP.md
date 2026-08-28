@@ -1,7 +1,8 @@
 # Hosted ChatGPT and Claude access
 
-Status: production gateway live; ChatGPT Work qualified; Claude account install
-pending its required interactive approval, 2026-07-31
+Status: production gateway live; ChatGPT Chat/Work account setup and mobile use
+supported when the plugin is available to the account; Claude account install
+pending its required interactive approval, 2026-08-27
 
 Straylight exposes one authenticated Streamable HTTP MCP resource at:
 
@@ -9,8 +10,8 @@ Straylight exposes one authenticated Streamable HTTP MCP resource at:
 https://straylight.rourkem.com/mcp
 ```
 
-The same endpoint is used for ChatGPT Work and Claude custom connectors. The
-existing local Codex, Aether/OpenClaw, and Claude Code integrations remain
+The same endpoint is used for ChatGPT Chat, Work, and Claude custom connectors.
+The existing local Codex, Aether/OpenClaw, and Claude Code integrations remain
 stdio clients and are not routed through this gateway.
 
 ## Trust and token model
@@ -19,6 +20,13 @@ The public web service proxies an exact allowlist of MCP and OAuth routes to a
 private one-replica Railway service. The gateway implements OAuth 2.1
 authorization code flow, S256 PKCE, dynamic client registration, RFC 8707
 resource binding, and RFC 9728 protected-resource metadata.
+
+The MCP route permits browser access only from the exact HTTPS origins in
+`STRAYLIGHT_MCP_ALLOWED_ORIGINS`. Requests without an `Origin` remain valid for
+non-browser MCP clients. Browser preflights run before bearer authentication,
+and authenticated or 401 responses expose only the MCP session and OAuth
+challenge headers required by browser clients. Protected-resource metadata is
+public and remains readable from any origin.
 
 Every product gets a distinct Straylight `read_write` credential scoped to
 `scope:root`. The approval page rejects read-only credentials and owner tokens
@@ -53,8 +61,8 @@ filesystem-dependent tools.
 
 The checked-in topology creates private service `mcp` from
 `apps/mcp/Dockerfile.remote`, then passes its private hostname to the public
-web proxy. Before applying topology changes, always run a plan and require zero
-unrelated deletions:
+web proxy. Before applying topology changes, always run a plan and require the
+diff to contain only the intended changes—no unrelated updates or deletions:
 
 ```bash
 export RAILWAY_IAC_TS_BIN="$PWD/.railway/node_modules/.bin/railway-iac-ts"
@@ -62,12 +70,17 @@ railway config plan --verbose
 railway config apply --yes --verbose
 ```
 
+Do not apply a mixed-drift plan. Use a service-scoped variable update and
+MCP-only deployment for a narrow gateway release, or reconcile the unrelated
+topology drift as a separate change.
+
 The service requires:
 
 ```text
 PORT=8080
 STRAYLIGHT_API_URL=http://api.railway.internal:8080
 STRAYLIGHT_MCP_PUBLIC_URL=https://straylight.rourkem.com
+STRAYLIGHT_MCP_ALLOWED_ORIGINS=https://chatgpt.com,https://claude.ai,https://straylight.rourkem.com
 STRAYLIGHT_MCP_SEALING_KEY=<base64 for exactly 32 random bytes>
 ```
 
@@ -89,12 +102,19 @@ node scripts/remote-canary.mjs
 
 ## Product setup
 
-For ChatGPT Work, enable Developer mode and add the MCP URL as a personal
-connection on the web/desktop plugin page. Complete OAuth with the dedicated
-ChatGPT credential. OpenAI currently documents plugins as web/desktop only,
-not native mobile. The account-level connection is usable anywhere the Work
-web surface is available; native-mobile access requires ChatGPT Remote through
-a connected desktop host until native plugin support exists.
+On ChatGPT web or desktop, enable Developer mode under **Settings → Security
+and login**, then use the plus control on the Plugins page to register the full
+MCP URL above. Complete OAuth with the dedicated ChatGPT credential and review
+the discovered tools and metadata before enabling it. Developer mode can be
+account- or policy-dependent.
+
+This creates the cloud/account connection used by new Chat and Work
+conversations. OpenAI documents account-available plugins as usable on mobile,
+although web/desktop are the documented browse and install surfaces. On the
+same account, open a new mobile Chat or Work conversation and select Straylight
+from Plugins or `@` autocomplete. A local Codex stdio configuration or a local
+plugin-creator personal-marketplace entry does not create this account-level
+connection and is not a mobile provisioning path.
 
 For Claude, add the URL under custom connectors on web or desktop and complete
 OAuth with the dedicated Claude credential. Claude remote connectors sync to
@@ -120,7 +140,8 @@ is in
 Current product references:
 
 - [OpenAI plugin availability](https://learn.chatgpt.com/docs/plugins)
-- [OpenAI remote connections](https://learn.chatgpt.com/docs/remote-connections)
+- [OpenAI ChatGPT connection setup](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+- [OpenAI MCP connections](https://learn.chatgpt.com/docs/extend/mcp)
 - [OpenAI MCP authentication](https://developers.openai.com/plugins/build/auth)
 - [Claude custom connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
 - [Claude connector authentication](https://claude.com/docs/connectors/building/authentication)
