@@ -1,11 +1,13 @@
 # Straylight for iOS
 
-Native SwiftUI home dashboard, briefing reader, and durable Alerts inbox for
-hosted Straylight.
+Native SwiftUI home dashboard, briefing reader, bounded task client, and durable
+Alerts inbox for hosted Straylight.
 
 ## Implemented MVP
 
 - full-width Today reader modeled on the mobile web view
+- dedicated bounded Tasks tab with Urgent/Next, completion, snooze, Done today,
+  projects, source provenance, and content-free Todoist import status
 - Home dashboard with direct memory-search access, storage totals, seven-day
   usage charts, and a credential access inventory
 - workspace entry search with Best match, Last modified, and Title ordering,
@@ -23,10 +25,16 @@ hosted Straylight.
   briefing or entry target
 - deterministic demo fixtures plus Swift Package, app-unit, and UI tests
 
-Search and its entry reader are reachable from Home. Tasks remain outside this
-MVP. The notification inbox, installation, receipt, and APNs outbox contracts are
-implemented; production push remains gated on provider configuration and a
-signed-device canary. See `docs/ios/MVP.md` for the rollout boundary.
+Search and its entry reader are reachable from Home. Today remains
+briefing-only, while Tasks has a dedicated bottom-tab destination and applies
+the server/agent-managed iOS context default without a persistent context strip.
+Task reads use the owner Web session. An inline enablement control creates the
+exact least-privilege device credential for mutations; absent that credential,
+the same bounded task data remains view-only. Todoist status is content-free,
+and import configuration stays in Web settings. The notification inbox,
+installation, receipt, and APNs outbox contracts are implemented; production
+push remains gated on provider configuration and a signed-device canary. See
+`docs/ios/MVP.md` for the rollout boundary.
 
 ## Open
 

@@ -369,7 +369,7 @@ final class AgentMessagingUITests: XCTestCase {
 
     /// Deterministic no-network regression for the default-off launch shape.
     @MainActor
-    func testDemoMessagingGateOffKeepsExactlyFiveTabs() {
+    func testDemoMessagingGateOffKeepsTasksVisibleInTheFiveTabBudget() {
         let app = XCUIApplication()
         app.launchArguments = localeArguments + ["--demo"]
         app.launchEnvironment["TZ"] = "America/Los_Angeles"
@@ -554,10 +554,10 @@ final class AgentMessagingUITests: XCTestCase {
     private func assertExactLegacyTabs(in app: XCUIApplication) {
         XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 12))
         let labels = Set(app.tabBars.buttons.allElementsBoundByIndex.map(\.label))
-        XCTAssertEqual(labels, Set(["Home", "Today", "Alerts", "Archive", "Settings"]))
+        XCTAssertEqual(labels, Set(["Home", "Today", "Tasks", "Alerts", "More"]))
         XCTAssertEqual(app.tabBars.buttons.count, 5)
         XCTAssertFalse(app.tabBars.buttons["Agents"].exists)
-        XCTAssertFalse(app.tabBars.buttons["More"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Tasks"].exists)
     }
 
     @MainActor

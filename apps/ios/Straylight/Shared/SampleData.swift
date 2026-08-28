@@ -411,7 +411,8 @@ enum SampleData {
             project: "operations",
             contexts: ["online"],
             tier: 5,
-            reason: "ready since Aug 12"
+            reason: "ready since Aug 12",
+            source: "todoist"
         ),
         agentCandidate(
             6,
@@ -575,7 +576,8 @@ enum SampleData {
         tier: Int,
         reason: String,
         inferred: Bool = false,
-        pinned: Bool = false
+        pinned: Bool = false,
+        source: String? = nil
     ) -> AgentTaskCandidate {
         AgentTaskCandidate(
             taskRef: String(format: "019f8800-0000-7000-8000-%012d", suffix),
@@ -586,7 +588,7 @@ enum SampleData {
             requiredContexts: contexts,
             tier: tier,
             reason: reason,
-            provenanceMarkers: inferred ? ["agent:codex"] : [],
+            provenanceMarkers: inferred ? ["agent:codex"] : (source.map { [$0] } ?? []),
             pinned: pinned
         )
     }

@@ -66,6 +66,12 @@ import; deletion or a non-task current version removes the projection. The
 five initial contexts (`phone`, `home`, `errands`, `quick`, `online`) and iOS
 `phone,online` / web `online` defaults are seeded per user.
 
+Surface availability is durable server state, not a per-device preference. iOS
+loads the current `surface_defaults["ios"]` value on refresh, filters it against
+the active context registry, and does not expose a persistent context strip.
+Owners or agents change the iOS default through Web settings or
+`task.contexts set_available`; legacy device-local selections are discarded.
+
 Capabilities become `task.read`, `task.write`, and `integration.manage`.
 Read-only credentials get only task.read; ordinary save credentials get read
 and write; integration.manage is owner-web-only.
@@ -201,21 +207,28 @@ are exactly product-spec §9.
 ## iOS and Web under Night Signal
 
 iOS reads through its owner cookie session. A separate opaque Keychain bearer
-is attached only to task mutations and notification registration; its complete
-legacy capability array is `task.write` plus existing notification-management.
-D16 may add only `message.write` to that same bearer; the task service accepts
-exactly those approved two- or three-capability profiles and nothing broader.
-UI action gates inspect exact task.write, never legacy
-save/checkpoint `read_only`; without it the data remains visible but view-only.
+is attached only to task mutations and notification registration. When that
+credential is absent, the dedicated Tasks tab remains readable and presents an
+inline **Enable task actions** control that mints the exact approved
+least-privilege iOS capability profile: `task.write` plus existing
+notification-management. D16 may add only `message.write` to that same bearer;
+the task service accepts exactly those approved two- or three-capability
+profiles and nothing broader. UI action gates inspect exact `task.write`, never
+legacy save/checkpoint `read_only`.
 
-Today renders the union of conditional Urgent, Next five, Done today, and
-context chips above the briefing, capped at five unique rows (seven with pins).
-“5 more” is explicit; a later bounded feed is at most 25 and never `all`.
-Projects shows registry cards and checkpoint-derived detail. A validated
-lowercase UUID `straylight://task/<id>` survives cold login and opens fetched
-detail. Completion uses status-green feedback and haptic; long press exposes
-actions. The bounded, user-bound cache stays complete-file-protected. No new
-entitlement is added.
+Today remains briefing-only. A dedicated Tasks bottom-tab destination renders
+conditional Urgent, Next five, Done today, and Projects, capped at five unique
+rows (seven with pins). It applies the server/agent-managed iOS context default
+without placing context controls across the task surface. “5 more” is explicit;
+a later bounded feed is at most 25 and never `all`. A content-free Todoist status
+card reports only the environment gate, saved/effective mode, token-configured
+boolean, configuration generation, run timing, outcome, and error code; it
+never exposes the token, imported task content, or external identifiers.
+Imported rows retain a Todoist provenance marker, while configuration stays in
+Web settings. A validated lowercase UUID `straylight://task/<id>` survives cold
+login, selects Tasks, and opens fetched detail. Completion uses status-green
+feedback and haptic; long press exposes actions. The bounded, user-bound cache
+stays complete-file-protected. No new entitlement is added.
 
 Web adds the same conditional Urgent/Next/Done/Projects cards, accessible
 reasons/provenance and defensive global cap. Explicit 5-more then `/tasks`
@@ -259,7 +272,7 @@ store, MCP, browser, and simulator stack:
 | 12a | MCP capture→reasoned Next→complete→Done; context block; correction; explicit and path-fallback checkpoint project state |
 | 12b | `as_of` 7d/48h/day once-only inbox, typed route, quiet suppression, inferred marker/no override |
 | 12c | Real browser sign-in; conditional Urgent; globally capped Next/reasons/provenance; complete/snooze/confirm; 5-more/all/filter/page; context merge; Todoist kill switch |
-| 12d | Same-stack simulator XCUITest: Today/actions/chips/deep link and exact-capability view-only/write variants |
+| 12d | Same-stack simulator XCUITest: briefing-only Today; dedicated Tasks tab/actions with no context strip; server-default filtering; content-free Todoist status; deep link; inline exact-capability view-only/write variants |
 | 12e | Recorded API fixture twice, mapping, precedence, completion/deletion, both recurrence paths, kill switch, no mutation surface |
 | 12f | Task/history byte-exact round trip and task changes in `memory.changes` |
 | 12g | Exact production readiness revision, hosted tool list, hosted capture visible with reason and dashboard-completed/dropped, zero API/Web 5xx |

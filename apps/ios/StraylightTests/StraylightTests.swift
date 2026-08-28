@@ -451,7 +451,7 @@ final class StraylightTests: XCTestCase {
         await model.handle(.task(reference: taskRef))
         model.enterDemo()
 
-        XCTAssertEqual(model.selectedTab, .today)
+        XCTAssertEqual(model.selectedTab, .tasks)
         XCTAssertEqual(model.presentedTask?.taskRef, taskRef)
     }
 
@@ -656,6 +656,106 @@ final class StraylightTests: XCTestCase {
         )
         XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
         XCTAssertNil(request.value(forHTTPHeaderField: "X-CSRF-Token"))
+    }
+
+    func testTodoistStatusReadIsContentFreeAndUsesTheReadSession() async throws {
+        defer { NotificationRequestURLProtocol.handler = nil }
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            return StubbedHTTPResponse(json: #"""
+            {"status":"complete","data":{"environment_enabled":false,"saved_mode":"off","effective_mode":"off","token_configured":false,"configuration_generation":3,"last_run_at":null,"last_outcome":null,"last_error_code":null,"next_run_at":null}}
+            """#)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = StraylightAPI(
+            configuration: .init(baseURL: try XCTUnwrap(URL(string: "https://todoist-status.straylight.test/api/v1"))),
+            session: URLSession(configuration: configuration)
+        )
+
+        let response = try await api.taskTodoistStatus()
+
+        XCTAssertFalse(response.data.environmentEnabled)
+        XCTAssertFalse(response.data.tokenConfigured)
+        XCTAssertEqual(response.data.savedMode, "off")
+        XCTAssertEqual(response.data.effectiveMode, "off")
+        XCTAssertEqual(response.data.configurationGeneration, 3)
+        let request = try XCTUnwrap(recorder.snapshot().first)
+        XCTAssertEqual(request.httpMethod, "GET")
+        XCTAssertEqual(request.url?.path, "/api/v1/workspace/integrations/todoist/status")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+    }
+
+    @MainActor
+    func testTaskActionBootstrapRepairsAStoredCredentialInsteadOfSilentlyReturning() async throws {
+        let credentialRef = "credential:12121212-1212-4212-8212-121212121212"
+        let baseURL = try XCTUnwrap(URL(string: "https://repair-device.straylight.test/api/v1"))
+        let recorder = NotificationRequestRecorder()
+        NotificationRequestURLProtocol.handler = { request in
+            recorder.append(request)
+            if request.httpMethod == "GET", request.url?.path == "/api/v1/me" {
+                let identityAttempts = recorder.snapshot().filter {
+                    $0.httpMethod == "GET" && $0.url?.path == "/api/v1/me"
+                }.count
+                if identityAttempts == 1 {
+                    return StubbedHTTPResponse(
+                        statusCode: 503,
+                        json: #"{"error":{"code":"temporarily_unavailable","message":"retry"}}"#
+                    )
+                }
+                return StubbedHTTPResponse(json: #"""
+                {"user":{"id":"user:one","display_name":"Owner"},"credential_id":"credential:12121212-1212-4212-8212-121212121212","capabilities":["task.write","notification:manage"],"read_only":false}
+                """#)
+            }
+            return StubbedHTTPResponse(
+                statusCode: 503,
+                json: #"{"error":{"code":"test_background_request","message":"not part of repair test"}}"#
+            )
+        }
+        defer { NotificationRequestURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [NotificationRequestURLProtocol.self]
+        let api = StraylightAPI(
+            configuration: .init(baseURL: baseURL),
+            session: URLSession(configuration: configuration)
+        )
+        let store = TestCredentialStore(credential: DeviceTaskCredential(
+            credentialRef: credentialRef,
+            token: "protected-narrow-token",
+            userID: "user:one",
+            capabilities: ["notification:manage", "task.write"]
+        ))
+        let owner = MeData(
+            user: UserSummary(id: "user:one", displayName: "Owner"),
+            credentialID: "credential:web-owner",
+            capabilities: ["credential:manage", "admin", "task.read"],
+            readOnly: false
+        )
+        let model = AppModel(
+            api: api,
+            credentialStore: store,
+            loginLoader: { _, _, _ in owner },
+            dashboardLoader: { _, _ in SampleData.dashboard },
+            notificationListLoader: { _, _ in
+                NotificationListResponse(items: [], nextCursor: nil, unreadCount: 0)
+            }
+        )
+
+        await model.connect(email: "owner@example.test", password: "password")
+        XCTAssertTrue(model.hasStoredDeviceTaskCredential)
+        XCTAssertFalse(model.canWriteTasks)
+
+        await model.bootstrapDeviceTaskAccess()
+
+        XCTAssertTrue(model.canWriteTasks)
+        XCTAssertTrue(model.canManageNotifications)
+        XCTAssertTrue(model.hasStoredDeviceTaskCredential)
+        XCTAssertNil(model.deviceTaskAccessMessage)
+        let lifecycle = recorder.snapshot().filter {
+            $0.url?.path == "/api/v1/me" || $0.url?.path == "/api/v1/credentials"
+        }
+        XCTAssertEqual(lifecycle.map(\.httpMethod), ["GET", "GET"])
     }
 
     func testDeviceTaskCredentialBootstrapUsesOwnerCookieThenValidatesBearerAndRevokesWithCookie() async throws {

@@ -36,6 +36,7 @@ enum AppPhase: Equatable {
 enum AppTab: Hashable {
     case dashboard
     case today
+    case tasks
     case agents
     case alerts
     case archive
@@ -100,6 +101,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var taskContexts: [AgentTaskContext] = []
     @Published private(set) var selectedTaskContexts: Set<String> = []
     @Published private(set) var taskProjects: [AgentTaskProject] = []
+    @Published private(set) var todoistStatus: AgentTaskTodoistStatus?
     @Published var selectedProjectState: AgentTaskProjectStateData?
     @Published private(set) var taskNextRemaining = 0
     @Published private(set) var taskBacklogTotal = 0
@@ -331,6 +333,7 @@ final class AppModel: ObservableObject {
                 nextTasks = []
                 doneToday = nil
                 taskProjects = []
+                todoistStatus = nil
                 taskContexts = []
                 selectedTaskContexts = []
                 taskNextRemaining = 0
@@ -431,6 +434,25 @@ final class AppModel: ObservableObject {
             : SampleData.agentTaskContexts
         selectedTaskContexts = ["phone", "online"]
         taskProjects = SampleData.agentTaskProjects
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-todoist-error") {
+            todoistStatus = AgentTaskTodoistStatus(
+                environmentEnabled: true,
+                savedMode: "pull",
+                effectiveMode: "pull",
+                tokenConfigured: true,
+                configurationGeneration: 2,
+                lastOutcome: "error",
+                lastErrorCode: "todoist_apply_rejected"
+            )
+        } else {
+            todoistStatus = AgentTaskTodoistStatus(
+                environmentEnabled: false,
+                savedMode: "off",
+                effectiveMode: "off",
+                tokenConfigured: false,
+                configurationGeneration: 1
+            )
+        }
         taskNextRemaining = 7
         taskBacklogTotal = 18
         taskMessage = nil
@@ -541,6 +563,7 @@ final class AppModel: ObservableObject {
         taskContexts = []
         selectedTaskContexts = []
         taskProjects = []
+        todoistStatus = nil
         selectedProjectState = nil
         taskNextRemaining = 0
         taskBacklogTotal = 0
@@ -746,15 +769,24 @@ final class AppModel: ObservableObject {
     }
 
     func bootstrapDeviceTaskAccess() async {
-        guard !isDemo,
-              connectionValidated,
-              !hasStoredDeviceTaskCredential,
-              !isConfiguringDeviceTaskAccess
-        else { return }
+        guard !isConfiguringDeviceTaskAccess else { return }
+        guard !isDemo else {
+            deviceTaskAccessMessage = "Task actions can be enabled after connecting this iPhone to Straylight."
+            return
+        }
+        guard connectionValidated else {
+            deviceTaskAccessMessage = "Reconnect to Straylight before enabling task actions."
+            return
+        }
         isConfiguringDeviceTaskAccess = true
         defer { isConfiguringDeviceTaskAccess = false }
         var createdCredentialRef: String?
         do {
+            if hasStoredDeviceTaskCredential {
+                await validateStoredDeviceTaskCredential()
+                if canWriteTasks { return }
+                guard !hasStoredDeviceTaskCredential else { return }
+            }
             if Self.pendingDeviceCredentialRef() != nil {
                 hasStoredDeviceTaskCredential = true
                 deviceTaskAccessMessage = "Pending device access must be revoked before a replacement can be created."
@@ -987,7 +1019,7 @@ final class AppModel: ObservableObject {
         } catch {
             clearTaskSurfacePresentation()
             try? await taskSurfaceCache.clear()
-            taskMessage = "The protected Today task cache could not be verified and was removed."
+            taskMessage = "The protected task cache could not be verified and was removed."
             return nil
         }
     }
@@ -999,7 +1031,7 @@ final class AppModel: ObservableObject {
             guard cached.userID == userID else {
                 clearTaskSurfacePresentation()
                 try await taskSurfaceCache.clear()
-                taskMessage = "A protected Today cache for another account was removed."
+                taskMessage = "A protected Tasks cache for another account was removed."
                 return false
             }
             urgentTasks = cached.urgent
@@ -1014,7 +1046,7 @@ final class AppModel: ObservableObject {
         } catch {
             clearTaskSurfacePresentation()
             try? await taskSurfaceCache.clear()
-            taskMessage = "The protected Today task cache could not be verified and was removed."
+            taskMessage = "The protected task cache could not be verified and was removed."
             return false
         }
     }
@@ -1030,7 +1062,7 @@ final class AppModel: ObservableObject {
             )
         } catch {
             taskMessage = taskMessage
-                ?? "Today is available, but its protected account binding could not be saved for offline launch."
+                ?? "Tasks are available, but their protected account binding could not be saved for offline launch."
         }
     }
 
@@ -1047,14 +1079,10 @@ final class AppModel: ObservableObject {
             let contextResponse = try await api.taskContexts()
             taskContexts = contextResponse.data.contexts.filter { !$0.archived }
             let validSlugs = Set(taskContexts.map(\.slug))
-            let stored = Self.persistedTaskContexts().filter(validSlugs.contains)
-            if !stored.isEmpty || UserDefaults.standard.object(forKey: Self.taskContextsDefaultsKey) != nil {
-                selectedTaskContexts = Set(stored)
-            } else {
-                let defaults = contextResponse.data.surfaceDefaults["ios"]?.contextsAvailable
-                    ?? ["phone", "online"]
-                selectedTaskContexts = Set(defaults.filter(validSlugs.contains))
-            }
+            let defaults = contextResponse.data.surfaceDefaults["ios"]?.contextsAvailable
+                ?? ["phone", "online"]
+            selectedTaskContexts = Set(defaults.filter(validSlugs.contains))
+            UserDefaults.standard.removeObject(forKey: Self.taskContextsDefaultsKey)
 
             let selected = selectedTaskContexts.sorted()
             async let urgentResponse = api.taskCandidates(
@@ -1068,6 +1096,8 @@ final class AppModel: ObservableObject {
             )
             async let doneResponse = api.taskDoneSummary(limit: 25)
             async let projectResponse = api.taskProjects()
+            async let todoistStatusResponse: WorkspaceEnvelope<AgentTaskTodoistStatus>? =
+                try? api.taskTodoistStatus()
 
             let (urgent, next, done, projects) = try await (
                 urgentResponse,
@@ -1079,30 +1109,13 @@ final class AppModel: ObservableObject {
             nextTasks = next.data.items
             doneToday = done.data
             taskProjects = projects.data.projects
+            todoistStatus = await todoistStatusResponse?.data
             taskNextRemaining = next.data.nextRemaining
             taskBacklogTotal = next.data.backlogTotal
             taskMessage = nil
             try await saveTaskSurfaceCache()
         } catch {
-            taskMessage = "Tasks could not refresh. The last protected Today set remains visible."
-        }
-    }
-
-    func toggleTaskContext(_ slug: String) async {
-        guard taskContexts.contains(where: { $0.slug == slug }) else { return }
-        if selectedTaskContexts.contains(slug) {
-            selectedTaskContexts.remove(slug)
-        } else {
-            selectedTaskContexts.insert(slug)
-        }
-        UserDefaults.standard.set(
-            selectedTaskContexts.sorted(),
-            forKey: Self.taskContextsDefaultsKey
-        )
-        if isDemo {
-            taskMessage = nil
-        } else {
-            await refreshTaskSurface()
+            taskMessage = "Tasks could not refresh. The last protected task set remains visible."
         }
     }
 
@@ -1203,7 +1216,7 @@ final class AppModel: ObservableObject {
             taskMessage = "The task link was invalid."
             return
         }
-        selectedTab = .today
+        selectedTab = .tasks
         if isDemo {
             presentedTask = SampleData.agentTaskDetail(reference: canonical)
             return
@@ -1375,10 +1388,6 @@ final class AppModel: ObservableObject {
 
     private static func clearPendingDeviceCredentialRef() {
         UserDefaults.standard.removeObject(forKey: pendingDeviceCredentialRefKey)
-    }
-
-    private static func persistedTaskContexts() -> [String] {
-        UserDefaults.standard.stringArray(forKey: taskContextsDefaultsKey) ?? []
     }
 
     func refreshBriefing() async {
@@ -2019,6 +2028,7 @@ final class AppModel: ObservableObject {
         taskContexts = []
         selectedTaskContexts = []
         taskProjects = []
+        todoistStatus = nil
         selectedProjectState = nil
         taskNextRemaining = 0
         taskBacklogTotal = 0
@@ -2072,7 +2082,7 @@ final class AppModel: ObservableObject {
         case .notification:
             selectedTab = .alerts
         case .task:
-            selectedTab = .today
+            selectedTab = .tasks
         case let .conversation(conversationID, sequence):
             guard messagingEnabled else { return }
             selectedTab = .agents

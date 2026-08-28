@@ -261,7 +261,7 @@ final class StraylightUITests: XCTestCase {
     @MainActor
     func testSettingsHidesLegacyTopicsAndPersistsAppearance() {
         let app = launchDemo()
-        app.tabBars.buttons["Settings"].tap()
+        selectNativeTab("Settings", in: app)
 
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Tracked topics"].exists)
@@ -275,8 +275,7 @@ final class StraylightUITests: XCTestCase {
 
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 5))
-        app.tabBars.buttons["Settings"].tap()
+        selectNativeTab("Settings", in: app)
 
         let restoredAppearance = app.segmentedControls["appearance-mode"]
         XCTAssertTrue(restoredAppearance.waitForExistence(timeout: 2))
@@ -286,7 +285,7 @@ final class StraylightUITests: XCTestCase {
     @MainActor
     func testArchiveOpensPriorEditionsAndPinnedRevision() {
         let app = launchDemo()
-        app.tabBars.buttons["Archive"].tap()
+        selectNativeTab("Archive", in: app)
 
         XCTAssertTrue(app.navigationBars["Archive"].waitForExistence(timeout: 3))
         XCTAssertTrue(element("briefing-archive-list", in: app).exists)
@@ -314,16 +313,25 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
-    func testAgentFirstTasksDemoCoversBoundedActionsContextsAndColdRoute() throws {
+    func testAgentFirstTasksDemoCoversDedicatedTabActionsAndColdRoute() throws {
         let app = launchDemo(extraArguments: ["--ui-test-task-crowded-contexts"])
         openToday(in: app)
+        XCTAssertTrue(element("briefing-reader", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(element("agent-task-surface", in: app).exists)
+        openTasks(in: app)
 
-        XCTAssertTrue(element("agent-task-today", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("agent-task-surface", in: app).waitForExistence(timeout: 5))
+        XCTAssertFalse(element("task-contexts-card", in: app).exists)
+        XCTAssertTrue(element("task-todoist-status", in: app).exists)
         XCTAssertTrue(element("task-urgent", in: app).exists)
         XCTAssertTrue(element("task-next-card", in: app).exists)
         XCTAssertTrue(element("task-done-today", in: app).exists)
         XCTAssertFalse(element("task-view-only", in: app).exists)
         XCTAssertLessThanOrEqual(taskRows(in: app).count, 7)
+        let todoistRow = element("task-row-019f8800-0000-7000-8000-000000000005", in: app)
+        XCTAssertTrue(todoistRow.waitForExistence(timeout: 2))
+        XCTAssertTrue(todoistRow.label.contains("Imported from Todoist"))
+        keepScreenshot(named: "tasks-dedicated-tab", from: app)
         XCTAssertTrue(
             element(
                 "task-complete-019f8800-0000-7000-8000-000000000001",
@@ -342,19 +350,12 @@ final class StraylightUITests: XCTestCase {
         let snoozeRef = "019f8800-0000-7000-8000-000000000005"
         let snoozeRow = element("task-row-\(snoozeRef)", in: app)
         XCTAssertTrue(snoozeRow.waitForExistence(timeout: 2))
-        snoozeRow.press(forDuration: 1.0)
+        snoozeRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 1.0)
         let threeDays = app.buttons["3 days"]
         XCTAssertTrue(threeDays.waitForExistence(timeout: 2))
         threeDays.tap()
         XCTAssertTrue(snoozeRow.waitForNonExistence(timeout: 2))
-
-        let filteredRef = "019f8800-0000-7000-8000-000000000006"
-        XCTAssertTrue(element("task-row-\(filteredRef)", in: app).waitForExistence(timeout: 2))
-        tapContextChip(
-            app.buttons.matching(identifier: "task-context-online").firstMatch,
-            in: app
-        )
-        XCTAssertTrue(element("task-row-\(filteredRef)", in: app).waitForNonExistence(timeout: 2))
 
         app.terminate()
         let routeRef = "019f8800-0000-7000-8000-000000000002"
@@ -366,21 +367,37 @@ final class StraylightUITests: XCTestCase {
     @MainActor
     func testAgentFirstTasksEmptyUrgentAndViewOnlyStates() {
         let emptyApp = launchDemo(extraArguments: ["--ui-test-task-empty-urgent"])
-        openToday(in: emptyApp)
-        XCTAssertTrue(element("task-urgent-empty", in: emptyApp).waitForExistence(timeout: 3))
+        openTasks(in: emptyApp)
+        XCTAssertTrue(element("task-next-card", in: emptyApp).waitForExistence(timeout: 3))
+        XCTAssertFalse(element("task-urgent-empty", in: emptyApp).exists)
         XCTAssertFalse(element("task-urgent", in: emptyApp).exists)
         XCTAssertLessThanOrEqual(taskRows(in: emptyApp).count, 7)
         emptyApp.terminate()
 
         let viewOnlyApp = launchDemo(extraArguments: ["--ui-test-task-read-only"])
-        openToday(in: viewOnlyApp)
+        openTasks(in: viewOnlyApp)
         XCTAssertTrue(element("task-view-only", in: viewOnlyApp).waitForExistence(timeout: 3))
+        XCTAssertFalse(element("task-enable-actions", in: viewOnlyApp).exists)
         let complete = element(
             "task-complete-019f8800-0000-7000-8000-000000000003",
             in: viewOnlyApp
         )
         XCTAssertTrue(complete.waitForExistence(timeout: 2))
         XCTAssertFalse(complete.isEnabled)
+        viewOnlyApp.terminate()
+
+        let failedTodoistApp = launchDemo(extraArguments: ["--ui-test-todoist-error"])
+        openTasks(in: failedTodoistApp)
+        XCTAssertTrue(
+            failedTodoistApp.staticTexts["Todoist import needs attention"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(
+            failedTodoistApp.staticTexts[
+                "The last pull failed with the content-free status code todoist_apply_rejected."
+            ].exists
+        )
+        XCTAssertTrue(element("task-todoist-settings", in: failedTodoistApp).exists)
     }
 
     @MainActor
@@ -396,9 +413,6 @@ final class StraylightUITests: XCTestCase {
         }
         let baseURL = environment["STRAYLIGHT_E2E_API_BASE_URL"]
             ?? "http://127.0.0.1:18111/v1"
-        let context = environment["STRAYLIGHT_E2E_FILTER_CONTEXT"] ?? "phone"
-        let filteredRef = environment["STRAYLIGHT_E2E_FILTERED_TASK_REF"] ?? snoozeRef
-
         let app = XCUIApplication()
         let localeArguments = [
             "-AppleLanguages", "(en)",
@@ -434,10 +448,10 @@ final class StraylightUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--ui-test-reset-task-contexts"] + localeArguments
         app.launch()
-        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Tasks"].waitForExistence(timeout: 10))
 
-        openToday(in: app)
-        XCTAssertTrue(element("agent-task-today", in: app).waitForExistence(timeout: 10))
+        openTasks(in: app)
+        XCTAssertTrue(element("agent-task-surface", in: app).waitForExistence(timeout: 10))
         XCTAssertTrue(element("task-urgent", in: app).waitForExistence(timeout: 10))
         XCTAssertTrue(element("task-next-card", in: app).waitForExistence(timeout: 10))
         XCTAssertTrue(element("task-done-today", in: app).waitForExistence(timeout: 10))
@@ -447,25 +461,10 @@ final class StraylightUITests: XCTestCase {
         XCTAssertTrue(viewOnlyComplete.waitForExistence(timeout: 5))
         XCTAssertFalse(viewOnlyComplete.isEnabled)
 
-        let contextChip = app.buttons
-            .matching(identifier: "task-context-\(context)")
-            .firstMatch
-        let contextFilteredRow = element("task-row-\(filteredRef)", in: app)
-        XCTAssertTrue(contextChip.waitForExistence(timeout: 3))
-        XCTAssertTrue(contextFilteredRow.waitForExistence(timeout: 3))
-        tapContextChip(contextChip, in: app)
-        XCTAssertTrue(contextFilteredRow.waitForNonExistence(timeout: 5))
-        tapContextChip(contextChip, in: app)
-        XCTAssertTrue(contextFilteredRow.waitForExistence(timeout: 8))
-
-        selectNativeTab("Settings", in: app)
-        let bootstrap = element("device-task-access-bootstrap", in: app)
-        scroll(bootstrap, intoViewIn: app)
-        bootstrap.tap()
-        let revoke = element("device-task-access-revoke", in: app)
-        XCTAssertTrue(revoke.waitForExistence(timeout: 10))
-
-        app.tabBars.buttons["Today"].tap()
+        XCTAssertFalse(element("task-contexts-card", in: app).exists)
+        let enableActions = element("task-enable-actions", in: app)
+        XCTAssertTrue(enableActions.waitForExistence(timeout: 3))
+        enableActions.tap()
         let writableComplete = element("task-complete-\(completeRef)", in: app)
         XCTAssertTrue(writableComplete.waitForExistence(timeout: 8))
         XCTAssertTrue(writableComplete.isEnabled)
@@ -513,6 +512,13 @@ final class StraylightUITests: XCTestCase {
     }
 
     @MainActor
+    private func openTasks(in app: XCUIApplication) {
+        let tasks = app.tabBars.buttons["Tasks"]
+        XCTAssertTrue(tasks.waitForExistence(timeout: 3))
+        tasks.tap()
+    }
+
+    @MainActor
     private func selectNativeTab(_ label: String, in app: XCUIApplication) {
         let direct = app.tabBars.buttons[label]
         if direct.waitForExistence(timeout: 3) {
@@ -556,28 +562,6 @@ final class StraylightUITests: XCTestCase {
             app.swipeUp()
         }
         XCTAssertTrue(element.isHittable, "Element never became hittable.", file: file, line: line)
-    }
-
-    @MainActor
-    private func tapContextChip(
-        _ chip: XCUIElement,
-        in app: XCUIApplication,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        XCTAssertTrue(
-            chip.waitForExistence(timeout: 3),
-            "Context chip does not exist.",
-            file: file,
-            line: line
-        )
-        XCTAssertTrue(
-            chip.isHittable,
-            "Context chip is not directly tappable.",
-            file: file,
-            line: line
-        )
-        chip.tap()
     }
 
     @MainActor

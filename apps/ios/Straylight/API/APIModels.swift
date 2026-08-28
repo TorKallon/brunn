@@ -132,6 +132,52 @@ public enum AgentTaskView: String, Codable, Sendable, Equatable {
     case all
 }
 
+public struct AgentTaskTodoistStatus: Codable, Sendable, Equatable {
+    public let environmentEnabled: Bool
+    public let savedMode: String
+    public let effectiveMode: String
+    public let tokenConfigured: Bool
+    public let configurationGeneration: Int
+    public let lastRunAt: String?
+    public let lastOutcome: String?
+    public let lastErrorCode: String?
+    public let nextRunAt: String?
+
+    public init(
+        environmentEnabled: Bool,
+        savedMode: String,
+        effectiveMode: String,
+        tokenConfigured: Bool,
+        configurationGeneration: Int,
+        lastRunAt: String? = nil,
+        lastOutcome: String? = nil,
+        lastErrorCode: String? = nil,
+        nextRunAt: String? = nil
+    ) {
+        self.environmentEnabled = environmentEnabled
+        self.savedMode = savedMode
+        self.effectiveMode = effectiveMode
+        self.tokenConfigured = tokenConfigured
+        self.configurationGeneration = configurationGeneration
+        self.lastRunAt = lastRunAt
+        self.lastOutcome = lastOutcome
+        self.lastErrorCode = lastErrorCode
+        self.nextRunAt = nextRunAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case environmentEnabled = "environment_enabled"
+        case savedMode = "saved_mode"
+        case effectiveMode = "effective_mode"
+        case tokenConfigured = "token_configured"
+        case configurationGeneration = "configuration_generation"
+        case lastRunAt = "last_run_at"
+        case lastOutcome = "last_outcome"
+        case lastErrorCode = "last_error_code"
+        case nextRunAt = "next_run_at"
+    }
+}
+
 public struct AgentTaskCandidate: Identifiable, Codable, Sendable, Equatable {
     public let taskRef: String
     public let entryRef: String

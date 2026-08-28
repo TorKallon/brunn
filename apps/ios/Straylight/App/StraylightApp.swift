@@ -71,6 +71,7 @@ struct StraylightApp: App {
                             bearerToken: model.deviceTaskBearer()
                         )
                         await model.refreshDashboardIfNeeded()
+                        await model.refreshTaskSurface()
                         await model.refreshNotifications()
                         await model.refreshMessaging(.foreground)
                     }

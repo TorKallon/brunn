@@ -1,14 +1,15 @@
-# Straylight iOS briefing and notifications MVP
+# Straylight iOS briefing, tasks, and notifications MVP
 
-Status: briefing/account-session baseline installed as build 4; notifications
-implemented locally with production rollout and signed-device canaries pending,
-2026-08-02
+Status: briefing/account-session baseline installed as build 4; bounded Tasks
+navigation and actions implemented in the current source; notification
+production rollout and signed-device canaries pending, 2026-08-28
 
 ## Product outcome
 
-The iOS MVP is a focused native reader for content published by Straylight's
-briefing agents. It is not a WebView, assistant shell, task manager, or second
-notes database.
+The iOS MVP is a focused native client for content published by Straylight's
+briefing agents, bounded agent-first task action, and durable alerts. It is not
+a WebView, general assistant shell, unbounded task manager, or second notes
+database.
 
 The primary design rule is simple: use the phone for prose. The native reader
 follows the deployed mobile web view with 12-point phone gutters, no decorative
@@ -20,16 +21,22 @@ Type, VoiceOver, selection, Reduce Motion, and safe web links are preserved.
 
 | Surface | Responsibility |
 | --- | --- |
-| Today | Current structured edition, complete summary, every section and item, legacy Markdown fallback, sources, timestamps, change context, and revision disclosure. |
-| Search | Source-backed workspace entry matches with selectable Best match, Last modified, and Title order; exact version-pinned reads; formatted/raw Markdown; and safe internal entry links. |
+| Home | Dashboard plus source-backed workspace entry search with selectable Best match, Last modified, and Title order; exact version-pinned reads; formatted/raw Markdown; and safe internal entry links. |
+| Today | Briefing-only current structured edition, complete summary, every section and item, legacy Markdown fallback, sources, timestamps, change context, and revision disclosure. |
+| Tasks | Dedicated bounded Urgent, Next, Done today, and Projects surface with completion, snooze, provenance, detail, and content-free Todoist status. |
+| Agents | Conditional messaging surface when the server enables agent messaging. |
 | Alerts | Durable notification events across briefings, material news, corrections, and operational attention, with server-backed unread/acknowledged state and exact detail. |
 | Archive | Newest-first cursor-paginated editions, date/edition navigation, exact current or pinned historical versions, and the complete reader. |
 | Settings | Appearance, connection/cache/privacy state, contextual notification permission, and installation controls. |
 
-The connected app uses hosted Straylight as the source of truth. Only the
-latest edition is cached as a disposable, data-protected offline snapshot.
-Alert state remains server-backed and independent of APNs success. The push is
-only an attention signal; authenticated detail is the durable record.
+Tasks has its own direct bottom-tab destination; it does not occupy Today.
+Native tab overflow may place secondary destinations under More without moving
+Tasks behind overflow. The connected app uses hosted Straylight as the source
+of truth. The latest edition and bounded task surface are cached as disposable,
+account-bound, data-protected snapshots, never as an offline task database or
+mutation queue. Alert state remains server-backed and independent of APNs
+success. The push is only an attention signal; authenticated detail is the
+durable record.
 
 ## Current client contract
 
@@ -44,6 +51,11 @@ The production API base is `https://straylight.rourkem.com/api/v1`.
 | Model briefing actions | `POST /workspace/briefings/items/action` |
 | Search workspace entries | `POST /workspace/search` with per-query `sort=best_match|last_modified|title` |
 | Read an exact current or pinned entry | `POST /workspace/read` with exact `ref`/`path` and optional `version` |
+| Read bounded task candidates and detail | `GET /workspace/tasks/candidates?view=`, `GET /workspace/tasks/{task_ref}` |
+| Complete, snooze, or otherwise update one task | `PATCH /workspace/tasks/{task_ref}` |
+| Read task support data | `GET /workspace/tasks/done-summary`, `GET /workspace/contexts`, `GET /workspace/projects`, `GET /workspace/projects/{slug}/state` |
+| Read content-free Todoist state | `GET /workspace/integrations/todoist/status` |
+| Enable or revoke exact device action access | `POST /credentials`, `DELETE /credentials/{credential_ref}` |
 | List/read durable alerts | `GET /workspace/notifications`, `GET /workspace/notifications/{notification_ref}` |
 | Record open/acknowledgement | `POST /workspace/notifications/{notification_ref}/receipts` |
 | Register/revoke this installation | `PUT /workspace/notification-installations/{installation_id}`, `DELETE /workspace/notification-installations/{installation_id}` |
@@ -70,6 +82,17 @@ paths, hosted `sources/` vault-root expansion, and a server-confirmed unique
 basename lookup for bare wiki links. Ambiguous links and other URL schemes fail
 closed.
 
+Tasks defaults to the deterministic, globally bounded ready set: conditional
+Urgent, at most five unique Next rows plus pins, Done today, and Projects. iOS
+reads the server-owned `surface_defaults["ios"]` context availability on every
+refresh and filters it against the active registry. There is no persistent
+context strip or device-local context override; owners or agents change the
+default through Web settings or the task-context management tool. Imported
+rows carry a Todoist provenance marker. The Todoist card is deliberately
+content-free: it shows only environment/saved/effective modes, a
+token-configured boolean, configuration generation, run timestamps/outcome,
+and an error code—never a token, task text, or external identifier.
+
 ## Authentication and mutations
 
 The app signs in with the same email and password as the web UI. The password
@@ -83,11 +106,15 @@ normal session rotation and password reset; account deletion cascades through
 the user's installations, deliveries, and receipts. Requests use HTTPS with
 response caching disabled.
 
-The deployed item-action endpoint requires the broad `save` capability and has
-no idempotency key. The iOS client includes the typed request/response contract
-but does not enable automatic or interactive writes. A narrow mobile
-briefing-interaction contract should precede Mark read, feedback, Go deeper,
-or Mute topic server writes.
+Task reads use the owner cookie session. Task mutations never reuse that cookie:
+they use a separate opaque Keychain bearer with the exact approved iOS profile,
+`task.write` plus notification-management, and optionally `message.write` only
+when agent messaging is enabled. It receives no workspace read, save,
+checkpoint, integration-management, or other broad capability. If the bearer
+is missing, task data stays visible but view-only; an inline **Enable task
+actions** control creates the least-privilege credential in place. Mutations are
+online-only, versioned, and idempotent; the app keeps no offline action queue.
+Briefing item actions remain outside this narrow task-write contract.
 
 ## Push boundary
 
@@ -139,16 +166,18 @@ xcodebuild \
 
 UI coverage verifies the reader occupies at least 90% of the phone width,
 seven-line summary collapse/restore, every section and source-backed detail,
-revision history, Alerts filters/detail/acknowledgement/target routing, and
-Archive version selection. Push contract coverage rejects malformed or
-mismatched opaque references and verifies that a valid tap presents durable
-detail before its target.
+revision history, briefing-only Today, the dedicated Tasks tab with no context
+strip, inline view-only/action enablement, completion, snooze, content-free
+Todoist status, task deep-link routing, Alerts filters/detail/acknowledgement/
+target routing, and Archive version selection. Push contract coverage rejects
+malformed or mismatched opaque references and verifies that a valid tap presents
+durable detail before its target.
 
 ## MVP exclusions
 
 - assistant chat and generated answers
 - arbitrary workspace editing
-- task lists or task mutation
+- arbitrary unbounded task browsing or offline task mutation
 - a whole-corpus local mirror or local embeddings
 - notification preferences and quiet hours
 - widgets, Watch, Live Activities, Siri, Spotlight, or Critical Alerts

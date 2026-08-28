@@ -3,6 +3,76 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let message = model.connectionMessage, !model.isDemo {
+                        ConnectionBanner(message: message, isDemo: model.isDemo)
+                    }
+
+                    if let briefing = model.latestBriefing {
+                        BriefingReader(
+                            briefing: briefing,
+                            cachedAt: model.cachedAt,
+                            focusedItemID: model.focusedBriefingItemID
+                        )
+                        .id(briefing.entryRef)
+                    } else {
+                        BoundaryNotice(
+                            symbol: "sunrise",
+                            title: "No briefing is published yet",
+                            detail: "When an agent publishes a structured briefing, it will appear here."
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.top, 16)
+                .padding(.bottom, 32)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("today-scroll")
+            .background(StraylightTheme.canvas)
+            .navigationTitle("Today")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { BrandMark() }
+            }
+            .refreshable { await model.refreshBriefing() }
+            .overlay {
+                if model.isRefreshingBriefing {
+                    ProgressView()
+                        .padding(12)
+                        .background(.regularMaterial, in: Circle())
+                        .accessibilityLabel("Refreshing briefing")
+                }
+            }
+            .onAppear { scrollToFocusedItem(using: proxy) }
+            .onChange(of: model.focusedBriefingItemID) { _, _ in
+                scrollToFocusedItem(using: proxy)
+            }
+        }
+    }
+
+    private func scrollToFocusedItem(using proxy: ScrollViewProxy) {
+        guard let itemID = model.focusedBriefingItemID else { return }
+        Task { @MainActor in
+            await Task.yield()
+            if reduceMotion {
+                proxy.scrollTo(itemID, anchor: .top)
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(itemID, anchor: .top)
+                }
+            }
+        }
+    }
+}
+
+struct AgentTasksView: View {
+    @EnvironmentObject private var model: AppModel
     @State private var moreTapCount = 0
     @State private var showsBoundedList = false
     @State private var snoozeCandidate: AgentTaskCandidate?
@@ -35,27 +105,30 @@ struct TodayView: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
+        ScrollViewReader { _ in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let message = model.connectionMessage, !model.isDemo {
                         ConnectionBanner(message: message, isDemo: model.isDemo)
                     }
 
-                    AgentTaskTodaySurface(
+                    AgentTaskSurface(
                         projection: projection,
-                        contexts: model.taskContexts,
-                        selectedContexts: model.selectedTaskContexts,
                         doneToday: model.doneToday,
                         projects: model.taskProjects,
+                        todoistStatus: model.todoistStatus,
                         canWrite: model.canWriteTasks,
+                        canRequestWriteAccess: !model.isDemo && model.connectionValidated,
+                        hasStoredWriteAccess: model.hasStoredDeviceTaskCredential,
                         isRefreshing: model.isRefreshingTasks,
+                        isConfiguringWriteAccess: model.isConfiguringDeviceTaskAccess,
                         mutatingRefs: model.mutatingTaskRefs,
                         message: model.taskMessage,
+                        deviceAccessMessage: model.deviceTaskAccessMessage,
                         moreTapCount: moreTapCount,
                         nextRemaining: remainingReadyCount,
-                        toggleContext: { slug in
-                            Task { await model.toggleTaskContext(slug) }
+                        requestWriteAccess: {
+                            Task { await model.bootstrapDeviceTaskAccess() }
                         },
                         complete: complete,
                         open: { candidate in
@@ -76,20 +149,6 @@ struct TodayView: View {
                         }
                     )
 
-                    if let briefing = model.latestBriefing {
-                        BriefingReader(
-                            briefing: briefing,
-                            cachedAt: model.cachedAt,
-                            focusedItemID: model.focusedBriefingItemID
-                        )
-                        .id(briefing.entryRef)
-                    } else {
-                        BoundaryNotice(
-                            symbol: "sunrise",
-                            title: "No briefing is published yet",
-                            detail: "When an agent publishes a structured briefing, it will appear here."
-                        )
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
@@ -97,9 +156,9 @@ struct TodayView: View {
                     .padding(.bottom, 32)
             }
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("today-scroll")
+            .accessibilityIdentifier("tasks-scroll")
             .background(StraylightTheme.canvas)
-            .navigationTitle("Today")
+            .navigationTitle("Tasks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -108,21 +167,14 @@ struct TodayView: View {
             }
             .refreshable {
                 await model.refreshTaskSurface()
-                await model.refreshBriefing()
             }
             .overlay {
-                if model.isRefreshingBriefing {
+                if model.isRefreshingTasks {
                     ProgressView()
                         .padding(12)
                         .background(.regularMaterial, in: Circle())
-                        .accessibilityLabel("Refreshing briefing")
+                        .accessibilityLabel("Refreshing tasks")
                 }
-            }
-            .onAppear {
-                scrollToFocusedItem(using: proxy)
-            }
-            .onChange(of: model.focusedBriefingItemID) { _, _ in
-                scrollToFocusedItem(using: proxy)
             }
             .sheet(item: $model.presentedTask) { task in
                 AgentTaskDetailView(task: task)
@@ -235,19 +287,6 @@ struct TodayView: View {
         }
     }
 
-    private func scrollToFocusedItem(using proxy: ScrollViewProxy) {
-        guard let itemID = model.focusedBriefingItemID else { return }
-        Task { @MainActor in
-            await Task.yield()
-            if reduceMotion {
-                proxy.scrollTo(itemID, anchor: .top)
-            } else {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    proxy.scrollTo(itemID, anchor: .top)
-                }
-            }
-        }
-    }
 }
 
 private extension Array {
@@ -257,19 +296,22 @@ private extension Array {
     }
 }
 
-private struct AgentTaskTodaySurface: View {
+private struct AgentTaskSurface: View {
     let projection: AgentTaskTodayProjection
-    let contexts: [AgentTaskContext]
-    let selectedContexts: Set<String>
     let doneToday: AgentTaskDoneSummaryData?
     let projects: [AgentTaskProject]
+    let todoistStatus: AgentTaskTodoistStatus?
     let canWrite: Bool
+    let canRequestWriteAccess: Bool
+    let hasStoredWriteAccess: Bool
     let isRefreshing: Bool
+    let isConfiguringWriteAccess: Bool
     let mutatingRefs: Set<String>
     let message: String?
+    let deviceAccessMessage: String?
     let moreTapCount: Int
     let nextRemaining: Int
-    let toggleContext: (String) -> Void
+    let requestWriteAccess: () -> Void
     let complete: (AgentTaskCandidate) -> Void
     let open: (AgentTaskCandidate) -> Void
     let action: (AgentTaskCandidate, AgentTaskUpdateOperation) -> Void
@@ -282,24 +324,50 @@ private struct AgentTaskTodaySurface: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if !contexts.isEmpty {
-                contextSelector
-            }
-
             if !canWrite {
-                Label(
-                    "View only · secure task access in Settings to complete or defer",
-                    systemImage: "lock"
-                )
-                .font(.footnote)
-                .foregroundStyle(StraylightTheme.amber)
-                .padding(11)
+                VStack(alignment: .leading, spacing: 9) {
+                    Label("Task actions are locked on this iPhone", systemImage: "lock")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(StraylightTheme.amber)
+                    Text("Enable secure device access to complete, snooze, or correct tasks.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if canRequestWriteAccess {
+                        Button(action: requestWriteAccess) {
+                            HStack {
+                                if isConfiguringWriteAccess {
+                                    ProgressView().controlSize(.small)
+                                }
+                                Text(
+                                    isConfiguringWriteAccess
+                                        ? "Enabling…"
+                                        : hasStoredWriteAccess
+                                            ? "Repair task actions"
+                                            : "Enable task actions"
+                                )
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isConfiguringWriteAccess)
+                        .accessibilityIdentifier("task-enable-actions")
+                    } else {
+                        Text("Connect this iPhone to enable task actions.")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    if let deviceAccessMessage {
+                        Text(deviceAccessMessage)
+                            .font(.footnote)
+                            .foregroundStyle(StraylightTheme.amber)
+                            .accessibilityIdentifier("task-device-access-message")
+                    }
+                }
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.background, in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(StraylightTheme.line, lineWidth: 1)
-                }
+                .overlay { RoundedRectangle(cornerRadius: 8).stroke(StraylightTheme.line, lineWidth: 1) }
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("task-view-only")
             }
 
@@ -309,6 +377,8 @@ private struct AgentTaskTodaySurface: View {
                     .foregroundStyle(StraylightTheme.amber)
                     .accessibilityIdentifier("task-message")
             }
+
+            AgentTaskTodoistStatusCard(status: todoistStatus)
 
             if !projection.urgent.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -323,12 +393,6 @@ private struct AgentTaskTodaySurface: View {
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("task-urgent")
-            } else {
-                Label("Nothing urgent", systemImage: "checkmark.shield")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(StraylightTheme.success)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .accessibilityIdentifier("task-urgent-empty")
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -347,7 +411,7 @@ private struct AgentTaskTodaySurface: View {
                 }
 
                 if projection.next.isEmpty {
-                    Text("No ready tasks match these contexts.")
+                    Text("No ready tasks match the current availability filter.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
@@ -473,62 +537,10 @@ private struct AgentTaskTodaySurface: View {
                 }
                 .accessibilityIdentifier("task-projects")
             }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("agent-task-today")
-    }
 
-    private var contextSelector: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TaskSectionHeader(
-                title: "CONTEXTS",
-                count: selectedContexts.count,
-                tint: StraylightTheme.pulse
-            )
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 104), spacing: 8)],
-                alignment: .leading,
-                spacing: 8
-            ) {
-                ForEach(contexts) { context in
-                    let selected = selectedContexts.contains(context.slug)
-                    Button {
-                        toggleContext(context.slug)
-                    } label: {
-                        Text(context.displayName)
-                            .font(.caption.weight(.semibold))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 11)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .background(
-                                selected ? StraylightTheme.signal.opacity(0.16) : Color.clear,
-                                in: Capsule()
-                            )
-                            .overlay {
-                                Capsule().stroke(
-                                    selected ? StraylightTheme.signal : StraylightTheme.line,
-                                    lineWidth: 1
-                                )
-                            }
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(selected ? StraylightTheme.signal : StraylightTheme.ink)
-                    .accessibilityLabel("\(context.displayName) context, \(selected ? "available" : "unavailable")")
-                    .accessibilityIdentifier("task-context-\(context.slug)")
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("task-contexts")
-        }
-        .padding(12)
-        .background(.background, in: RoundedRectangle(cornerRadius: 8))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(StraylightTheme.line, lineWidth: 1)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("task-contexts-card")
+        .accessibilityIdentifier("agent-task-surface")
     }
 
     @ViewBuilder
@@ -575,6 +587,106 @@ private struct AgentTaskTodaySurface: View {
         } else {
             row
         }
+    }
+}
+
+private struct AgentTaskTodoistStatusCard: View {
+    let status: AgentTaskTodoistStatus?
+
+    private var hasFailure: Bool {
+        guard let status else { return false }
+        if status.lastErrorCode != nil { return true }
+        return ["error", "failed", "failure"].contains(status.lastOutcome?.lowercased())
+    }
+
+    private var isActive: Bool {
+        status?.environmentEnabled == true
+            && status?.tokenConfigured == true
+            && status?.effectiveMode == "pull"
+            && !hasFailure
+    }
+
+    private var title: String {
+        guard let status else { return "Todoist status unavailable" }
+        if !status.tokenConfigured { return "Todoist isn’t connected" }
+        if !status.environmentEnabled || status.effectiveMode == "off" {
+            return "Todoist import is off"
+        }
+        if hasFailure { return "Todoist import needs attention" }
+        if status.effectiveMode == "import_once" { return "Todoist one-time import" }
+        return "Todoist pull is active"
+    }
+
+    private var detail: String {
+        guard let status else {
+            return "Pull to refresh after the server connection is restored."
+        }
+        if !status.tokenConfigured {
+            return "No Todoist tasks can import until a token is saved in Web Settings."
+        }
+        if !status.environmentEnabled {
+            return "The deployment safety switch is off, so imports cannot run."
+        }
+        if status.effectiveMode == "off" {
+            return "Import is saved as off. Change it in Web Settings when you want to pull tasks."
+        }
+        if hasFailure {
+            if let code = status.lastErrorCode {
+                return "The last pull failed with the content-free status code \(code)."
+            }
+            return "The last pull failed. Open Web Settings to review the integration."
+        }
+        if let outcome = status.lastOutcome {
+            return "Last pull: \(outcome.replacingOccurrences(of: "_", with: " "))."
+        }
+        return "Waiting for the first pull."
+    }
+
+    private var tint: Color {
+        hasFailure ? StraylightTheme.red : isActive ? StraylightTheme.signal : StraylightTheme.amber
+    }
+
+    private var symbol: String {
+        hasFailure
+            ? "exclamationmark.triangle"
+            : isActive
+                ? "arrow.triangle.2.circlepath.circle"
+                : "pause.circle"
+    }
+
+    private var showsSettingsLink: Bool {
+        guard let status else { return true }
+        return hasFailure
+            || !status.tokenConfigured
+            || !status.environmentEnabled
+            || status.effectiveMode == "off"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tint)
+            Text(detail)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            if showsSettingsLink,
+               let settingsURL = URL(string: "https://straylight.rourkem.com/settings")
+            {
+                Link(destination: settingsURL) {
+                    Label("Open Web Settings", systemImage: "safari")
+                        .frame(minHeight: 44)
+                }
+                .accessibilityIdentifier("task-todoist-settings")
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background, in: RoundedRectangle(cornerRadius: 8))
+        .overlay { RoundedRectangle(cornerRadius: 8).stroke(StraylightTheme.line, lineWidth: 1) }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("task-todoist-status")
     }
 }
 
@@ -645,6 +757,13 @@ private struct AgentTaskCandidateRow: View {
                                 .foregroundStyle(StraylightTheme.amber)
                                 .accessibilityLabel("Inferred")
                         }
+                        if candidate.provenanceMarkers.contains("todoist") {
+                            Text("TODOIST")
+                                .font(.caption2.weight(.bold))
+                                .tracking(0.4)
+                                .foregroundStyle(StraylightTheme.pulse)
+                                .accessibilityLabel("Imported from Todoist")
+                        }
                     }
                     if let project = candidate.project {
                         Text(project)
@@ -659,7 +778,7 @@ private struct AgentTaskCandidateRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Open \(candidate.title). \(candidate.reason)")
+            .accessibilityLabel(openAccessibilityLabel)
             .accessibilityIdentifier("task-row-\(candidate.taskRef)")
         }
         .padding(10)
@@ -668,6 +787,16 @@ private struct AgentTaskCandidateRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(StraylightTheme.line, lineWidth: 1)
         }
+    }
+
+    private var openAccessibilityLabel: String {
+        var parts = ["Open \(candidate.title).", candidate.reason]
+        if candidate.provenanceMarkers.contains("todoist") {
+            parts.append("Imported from Todoist.")
+        }
+        if candidate.pinned { parts.append("Pinned.") }
+        if candidate.hasInferredProvenance { parts.append("Contains inferred task details.") }
+        return parts.joined(separator: " ")
     }
 }
 
@@ -834,10 +963,38 @@ private struct AgentTaskDetailView: View {
                             .buttonStyle(.bordered)
                         }
                     } else if !model.canWriteTasks {
-                        Label("View only · task.write is not present", systemImage: "lock")
-                            .font(.footnote)
-                            .foregroundStyle(StraylightTheme.amber)
-                            .accessibilityIdentifier("task-detail-view-only")
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Task actions are locked on this iPhone", systemImage: "lock")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(StraylightTheme.amber)
+                            if !model.isDemo, model.connectionValidated {
+                                Button {
+                                    Task { await model.bootstrapDeviceTaskAccess() }
+                                } label: {
+                                    Text(
+                                        model.isConfiguringDeviceTaskAccess
+                                            ? "Enabling…"
+                                            : model.hasStoredDeviceTaskCredential
+                                                ? "Repair task actions"
+                                                : "Enable task actions"
+                                    )
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.isConfiguringDeviceTaskAccess)
+                                .accessibilityIdentifier("task-detail-enable-actions")
+                            } else {
+                                Text("Connect this iPhone to enable task actions.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let message = model.deviceTaskAccessMessage {
+                                Text(message)
+                                    .font(.footnote)
+                                    .foregroundStyle(StraylightTheme.amber)
+                            }
+                        }
+                        .accessibilityIdentifier("task-detail-view-only")
                     }
                 }
                 .padding(16)
@@ -861,9 +1018,17 @@ private struct AgentTaskDetailView: View {
 private struct SourceLine: View {
     let source: String
 
+    private var label: String {
+        switch source {
+        case "owner": "Set by you"
+        case "todoist": "Imported from Todoist"
+        default: "Inferred by \(source)"
+        }
+    }
+
     var body: some View {
         Label(
-            source == "owner" ? "Set by you" : "Inferred by \(source)",
+            label,
             systemImage: source == "owner" ? "person.crop.circle" : "wand.and.stars"
         )
         .font(.caption)

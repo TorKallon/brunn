@@ -358,6 +358,10 @@ public actor StraylightAPI {
         )
     }
 
+    public func taskTodoistStatus() async throws -> WorkspaceEnvelope<AgentTaskTodoistStatus> {
+        try await get(path: "workspace/integrations/todoist/status")
+    }
+
     public func taskProjectState(slug: String) async throws -> AgentTaskProjectStateData {
         let response: WorkspaceEnvelope<AgentTaskProjectStateData> = try await get(
             path: "workspace/projects/\(slug)/state"

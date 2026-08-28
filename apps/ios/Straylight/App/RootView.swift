@@ -80,6 +80,12 @@ private struct MainTabView: View {
             .tabItem { Label("Today", systemImage: "sunrise") }
             .tag(AppTab.today)
 
+            NavigationStack {
+                TasksView()
+            }
+            .tabItem { Label("Tasks", systemImage: "checklist") }
+            .tag(AppTab.tasks)
+
             if model.messagingEnabled, let messagingController = model.messagingController {
                 NavigationStack {
                     AgentsView(
