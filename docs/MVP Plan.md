@@ -160,7 +160,7 @@ Infrastructure — no reasoning-quality risk (code, no experiment gate):
 | [D10](mvp/D10-read-path-roundtrip-reductions.md) | Read-path round-trip reductions (safe subset) | Proposed — safe subset not started | Deferred lexical consolidation rejected by [E05](mvp/E05-lexical-consolidation-guard.md) and closed |
 | [D12](mvp/D12-operational-simplification.md) | S3-only, single hosted target, Datadog trim, backfill rate limit | Railway/import/web/client/backfill/worker/publication gates passed; restore exception recorded | Railway is the only production target |
 | [D15](mvp/D15-agent-first-tasks.md) | Agent-first tasks | Implemented — release requires all owner-approved gates 1–12 | Deterministic bounded surfaces; gates 1–12 required before release |
-| [D16](mvp/D16-agent-messaging.md) | Agent messaging | Implementation complete locally — final release verification in progress | Durable gated mailbox; gates 1–12 required before release |
+| [D16](mvp/D16-agent-messaging.md) | Agent messaging | Production services live — source `21bd90f` gate-on; Gate 12g pending | MCP→Echo→Web and zero-5xx observation green; signed install-ready iOS build blocked by the locked login keychain |
 
 Features — flag + experiment gated:
 
@@ -272,13 +272,24 @@ then superseded the staged rollout with the direct-cutover Track 1 on
 
 ## Change log
 
-- 2026-08-27: Implemented D16's gated durable agent mailbox across API,
-  worker, MCP, Web, and iOS. Fresh handler measurements at 50 conversations
-  and 10,000 messages recorded 27.429 ms p95 send, 5.073 ms p95 sync, and a
-  1,208-byte p95 delta. Local backend, client, file-portability, notification,
-  regression, and real-interface gates are being finalized before the
-  serialized production rollout; the feature remains default-off until that
-  release record is complete.
+- 2026-08-27: Deployed D16's gated durable agent mailbox across API, worker,
+  MCP, Web, and iOS. Source `21bd90f` completed the serialized flag-off then
+  gate-on rollout; gates 1–11 and scenarios 12a–f are green, and the hosted
+  MCP→Echo→Web portion of Gate 12g passed and soft-closed. A 10-minute
+  dual-surface observation returned exact-revision readiness 21/21 through
+  both the Web proxy and direct API edge, with API 5xx 0/21 and Web 5xx 0/116.
+  Existing-credential
+  grants added `message.read` and `message.write`, preserving every prior
+  capability, to Aether/OpenClaw on Nyx RW, Codex owner alpha, Codex on Erebus
+  RW, Grok Bot RW, Claude Web/Mobile RW, Owner alpha, and the separate active
+  Web UI session principal referenced by live Web identities. No other
+  existing credential changed. A dedicated Echo resident credential was
+  created separately with exactly those two capabilities. A physical-device
+  install was intentionally not performed; the separately required
+  development-signed install-ready build remains blocked because the login
+  keychain is locked, leaving Gate 12g open. Fresh handler measurements at 50
+  conversations and 10,000 messages recorded 27.429 ms p95 send, 5.073 ms p95
+  sync, and a 1,208-byte p95 delta.
 - 2026-08-27: Added D15 for the owner-approved agent-first tasks feature.
   Selected canonical versioned task entries plus a transactional indexed
   projection after a 2,000-task spike measured 0.295 ms p95 projection reads

@@ -1,6 +1,6 @@
 # D16 — Agent Messaging
 
-Status: Implementation complete locally — final release verification in progress
+Status: Production services live — source `21bd90f` deployed gate-on; final Gate 12g evidence pending
 Date: 2026-08-27
 Depends on: D12, D13, D15 shared capability and surface registration, notifications, documents, and the existing worker
 Gated by: all twelve gates in the owner-approved 2026-08-26 agent-messaging specification
@@ -108,7 +108,7 @@ fails typed deserialization with a 4xx.
 send, read-position, resume, and close. Registry create/update/archive and
 credential binding are owner-Web-session actions with the existing CSRF
 middleware; no MCP tool mutates registry state. Pre-binding and production
-credential grants remain deployment actions, names only in records.
+credential grants were deployment actions, recorded by name only.
 
 Principal ids are owner-chosen lowercase slugs. Presence is derived online
 while `lease_expires_at > as_of`, otherwise last-seen. A successful wait start
@@ -347,7 +347,7 @@ tests:
   canary soft-closes; no API/Web 5xx; existing memory, briefing, document, and
   task tools still answer.
 
-## Pre-release verification evidence
+## Release verification evidence
 
 The fresh backend matrix completed the locked all-target check, 473 library
 tests with one intentional environment-test ignore, and all 24 integration
@@ -360,15 +360,28 @@ flow.
 MCP passed 97 tests with messaging off and the same 97 with it on. Web passed
 its production build and all 128 Vitest cases; the real browser scenario passed
 sign-in, send/echo, credential rebind, server-derived sender, and soft-close.
-The signed iOS candidate passed 80 app tests and the full UI target with 14
+The iOS simulator test target passed 80 app tests and the full UI target with 14
 passes, six expected disposable-environment skips, and no failures. The current
 test harness then passed the same-stack task Gate 12d and messaging Gate 12c
 one-for-one; the protected 1,000-row continuation profile also passed at an
 exact 500+500 physical split. The Swift package contract passed 26 tests.
 
-Local gates 1–11 and scenarios 12a–f are green. Production Gate 12g remains
-intentionally pending until this exact source is committed, pushed, deployed
-with the flag off first, and then enabled through the serialized canary.
+Gates 1–11 and scenarios 12a–f are green. Source `21bd90f` was published and
+deployed through the serialized flag-off then gate-on rollout. The hosted
+MCP→Echo→Web portion of Gate 12g passed and soft-closed. From
+2026-08-28T04:00:28Z through 04:10:38Z, 21/21 direct-API and 21/21 Web-proxied
+readiness samples returned exact revision `21bd90f` with database and object
+store ready. Railway recorded API 5xx 0/21 and Web 5xx 0/116 in that window.
+Existing-credential
+grants added `message.read` and `message.write`, preserving every prior
+capability, to Aether/OpenClaw on Nyx RW, Codex owner alpha, Codex on Erebus
+RW, Grok Bot RW, Claude Web/Mobile RW, Owner alpha, and the separate active Web
+UI session principal referenced by live Web identities. No other existing
+credential changed. A dedicated Echo resident credential was created
+separately with exactly those two capabilities. A physical-device install was
+intentionally not performed, per authorization. The separately required
+development-signed install-ready build remains blocked because the login
+keychain is locked, so Gate 12g remains open.
 
 ## Simplicity boundary and release order
 
@@ -380,10 +393,10 @@ custom tab bar up front, message search, and any model or runner. V1 stays at
 one migration, five tools, three iOS screens, one Web page, the existing worker,
 and the existing notification pipeline.
 
-Implementation follows the product specification's order and red/green loop.
-The messaging branch rebases after every agent-first-tasks milestone; shared
-registries are edited only after the coordination ledger is re-read. iOS waits
-for the tasks iOS milestone on `origin/main` unless its three-hour/no-process
-stall rule is met. Deployment is serialized, first with messaging off, then
-production gate-off smoke, then gate-on smoke and echo canary. No real device
-notification is sent before 07:00 PDT.
+Implementation followed the product specification's order and red/green loop.
+Shared registries were edited only after the coordination ledger was re-read,
+and the iOS work followed the tasks iOS milestone on `origin/main`. Deployment
+was serialized: messaging off, production gate-off smoke, then gate-on smoke
+and the MCP/Web echo canaries. No physical device install or notification was
+performed. The development-signed install-ready artifact remains pending on
+access to the locked signing keychain.
