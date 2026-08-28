@@ -170,6 +170,7 @@ async fn insert_delivery(
     user_id: Uuid,
     credential_id: Uuid,
     installation_id: Uuid,
+    kind: &str,
     event: &str,
     occurred_offset: &str,
     expires_offset: &str,
@@ -182,8 +183,8 @@ async fn insert_delivery(
           id,user_id,producer_credential_id,event_key,request_hash,
           correlation_id,kind,importance,title,body,target,occurred_at,expires_at
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,'news_alert','important',$7,$8,$9,
-          clock_timestamp()+$10::interval,clock_timestamp()+$11::interval
+          $1,$2,$3,$4,$5,$6,$7,'important',$8,$9,$10,
+          clock_timestamp()+$11::interval,clock_timestamp()+$12::interval
         )
         "#,
     )
@@ -193,8 +194,9 @@ async fn insert_delivery(
     .bind(format!("delivery-state:{event}:{notification_id}"))
     .bind(hex::encode(Sha256::digest(notification_id.as_bytes())))
     .bind(format!("delivery-state:{event}"))
+    .bind(kind)
     .bind(format!("Private {event} title"))
-    .bind(format!("private-{event}-body-must-not-reach-apns"))
+    .bind(format!("Alert text for {event}."))
     .bind(json!({"type": "notification"}))
     .bind(occurred_offset)
     .bind(expires_offset)
@@ -244,7 +246,7 @@ fn failure(
 }
 
 #[tokio::test]
-async fn notification_delivery_state_machine_preserves_transport_truth_and_privacy() {
+async fn notification_delivery_state_machine_preserves_transport_truth_and_preview_policy() {
     let Some(pool) = connect_test_pool().await else {
         return;
     };
@@ -281,6 +283,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
         user_id,
         credential_id,
         accepted_installation,
+        "operational",
         "accepted",
         "-1 minute",
         "1 day",
@@ -315,7 +318,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
     );
     assert!(accepted_request.expiration.is_some());
     let payload = accepted_request.payload.to_string();
-    assert!(!payload.contains("private-accepted-body-must-not-reach-apns"));
+    assert!(payload.contains("Alert text for accepted."));
     assert!(!payload.contains("Private accepted title"));
     drop(requests);
 
@@ -326,6 +329,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
         user_id,
         credential_id,
         retry_installation,
+        "news_alert",
         "retry",
         "-1 minute",
         "1 day",
@@ -354,6 +358,15 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
         "TooManyRequests"
     );
     assert!(retry_row.get::<bool, _>("delayed"));
+    let requests = provider.requests.lock().await;
+    let retry_payload = requests
+        .get(1)
+        .expect("retry APNs request")
+        .payload
+        .to_string();
+    assert!(!retry_payload.contains("Alert text for retry."));
+    assert!(!retry_payload.contains("Private retry title"));
+    drop(requests);
 
     let (invalid_installation, _, _) =
         insert_installation(&pool, &key, user_id, credential_id, 3).await;
@@ -362,6 +375,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
         user_id,
         credential_id,
         invalid_installation,
+        "news_alert",
         "invalid-token",
         "-1 minute",
         "1 day",
@@ -408,6 +422,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
         user_id,
         credential_id,
         expired_installation,
+        "news_alert",
         "expired",
         "-2 days",
         "-1 day",
@@ -434,6 +449,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
         user_id,
         credential_id,
         stale_installation,
+        "news_alert",
         "stale-lease",
         "-1 minute",
         "1 day",
@@ -473,6 +489,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
         user_id,
         credential_id,
         blocked_installation,
+        "news_alert",
         "provider-blocked",
         "-1 minute",
         "1 day",
@@ -485,6 +502,7 @@ async fn notification_delivery_state_machine_preserves_transport_truth_and_priva
         user_id,
         credential_id,
         waiting_installation,
+        "news_alert",
         "provider-waiting",
         "-1 minute",
         "1 day",
