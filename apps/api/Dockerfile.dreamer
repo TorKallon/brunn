@@ -28,16 +28,22 @@ FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd3
 ARG STRAYLIGHT_BUILD_REVISION=unknown
 LABEL org.opencontainers.image.title="Straylight Dreamer" \
       org.opencontainers.image.revision="${STRAYLIGHT_BUILD_REVISION}"
+# The codex CLI is a native binary that verifies TLS against the system
+# store, which the slim image does not ship.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @openai/codex && npm cache clean --force
 COPY --from=builder /build/straylight /usr/local/bin/straylight
 COPY --from=mcp-build /mcp/dist /srv/mcp/dist
 COPY --from=mcp-build /mcp/node_modules /srv/mcp/node_modules
 COPY --from=mcp-build /mcp/package.json /srv/mcp/package.json
-RUN mkdir -p /tmp/dreamer && chown node:node /tmp/dreamer
+# Not under /tmp: codex refuses to create its PATH helper aliases there.
+RUN mkdir -p /srv/dreamer && chown node:node /srv/dreamer
 
 ENV DREAMER_MCP_ENTRY=/srv/mcp/dist/index.js \
     DREAMER_CODEX_PATH=/usr/local/bin/codex \
-    DREAMER_WORK_ROOT=/tmp/dreamer
+    DREAMER_WORK_ROOT=/srv/dreamer
 
 USER node:node
 EXPOSE 8090
