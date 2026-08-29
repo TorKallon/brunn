@@ -1,6 +1,9 @@
 use std::{cell::Cell, future::Future};
 
-use tracing::{Event, Metadata, Subscriber};
+use tracing::{
+    Event, Metadata, Subscriber,
+    field::{Field, Visit},
+};
 use tracing_subscriber::{Layer, layer::Context};
 
 tokio::task_local! {
@@ -23,7 +26,7 @@ where
     S: Subscriber,
 {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
-        if is_sqlx_query(event.metadata()) {
+        if is_sqlx_query(event.metadata()) && !is_driver_introspection(event) {
             increment();
         }
     }
@@ -31,6 +34,43 @@ where
 
 fn is_sqlx_query(metadata: &Metadata<'_>) -> bool {
     metadata.target() == "sqlx::query"
+}
+
+/// SQLx resolves unknown Postgres types once per pooled connection with an
+/// internal `SELECT pg_type.oid, …` lookup that it logs like any other
+/// statement. It is driver bookkeeping, not application SQL, and whether it
+/// fires depends only on pool state, so counting it makes the per-operation
+/// query budgets nondeterministic.
+fn is_driver_introspection(event: &Event<'_>) -> bool {
+    struct SummaryVisitor {
+        introspection: bool,
+    }
+
+    impl Visit for SummaryVisitor {
+        fn record_str(&mut self, field: &Field, value: &str) {
+            if field.name() == "summary" && value.starts_with("SELECT pg_type.oid") {
+                self.introspection = true;
+            }
+        }
+
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "summary" {
+                let rendered = format!("{value:?}");
+                if rendered
+                    .trim_start_matches('"')
+                    .starts_with("SELECT pg_type.oid")
+                {
+                    self.introspection = true;
+                }
+            }
+        }
+    }
+
+    let mut visitor = SummaryVisitor {
+        introspection: false,
+    };
+    event.record(&mut visitor);
+    visitor.introspection
 }
 
 pub async fn scope<F>(future: F) -> F::Output
@@ -70,6 +110,29 @@ mod tests {
         drop(guard);
         assert_eq!(observed, Some(1));
         assert_eq!(current(), None);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn driver_type_introspection_is_not_counted() {
+        let subscriber = tracing_subscriber::registry().with(QueryCountLayer);
+        let dispatch = tracing::Dispatch::new(subscriber);
+        let guard = tracing::dispatcher::set_default(&dispatch);
+        let observed = scope(async {
+            tracing::debug!(
+                target: "sqlx::query",
+                summary = "SELECT pg_type.oid, pg_type.oid::regtype::text pretty_name, …",
+                "type introspection"
+            );
+            tracing::debug!(
+                target: "sqlx::query",
+                summary = "SELECT max(generation) FROM straylight.workspace_changes …",
+                "application statement"
+            );
+            current()
+        })
+        .await;
+        drop(guard);
+        assert_eq!(observed, Some(1));
     }
 
     #[test]
