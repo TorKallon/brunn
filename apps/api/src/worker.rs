@@ -6,9 +6,9 @@ use std::{
 use uuid::Uuid;
 
 use crate::{
-    account_worker,
+    account_worker, background_worker,
     db::AppState,
-    deletion_worker,
+    deletion_worker, dream_service,
     error::{ApiError, ApiResult},
     messaging_service, notification_service, simple_worker, task_guard, telemetry, todoist_sync,
     upload_service,
@@ -44,6 +44,7 @@ pub async fn run(state: AppState) -> ApiResult<()> {
     // can never finalize after a replacement worker reclaims the row.
     let worker_id = boot_unique_worker_id();
     let mut next_account_maintenance = Instant::now();
+    let mut next_dream_scheduler_scan = Instant::now();
     let mut next_upload_maintenance = Instant::now();
     let mut next_task_guard = Instant::now();
     let mut next_todoist_sync = Instant::now();
@@ -74,6 +75,29 @@ pub async fn run(state: AppState) -> ApiResult<()> {
                 .await;
         did_work |= run_simple_workspace_job(&state, &mut cycle_failed).await;
         did_work |= run_deletion_propagation(&state, &mut cycle_failed).await;
+        did_work |= run_background_job(&state, &worker_id, &mut cycle_failed).await;
+        if next_dream_scheduler_scan <= Instant::now() {
+            next_dream_scheduler_scan = Instant::now() + state.config.dream_scheduler_poll_interval;
+            match dream_service::schedule_next_dirty_job(&state).await {
+                Ok(Some(_)) => did_work = true,
+                Ok(None) => {}
+                Err(error) => {
+                    metrics::counter!("worker.cycle.errors", "stage" => "dream_scheduler")
+                        .increment(1);
+                    tracing::warn!(?error, "dream scheduler scan failed");
+                    cycle_failed = true;
+                }
+            }
+        }
+        match dream_service::process_next_job(&state, &worker_id).await {
+            Ok(Some(_)) => did_work = true,
+            Ok(None) => {}
+            Err(error) => {
+                metrics::counter!("worker.cycle.errors", "stage" => "dream_job").increment(1);
+                tracing::warn!(?error, "dream job processing failed");
+                cycle_failed = true;
+            }
+        }
         let now = Instant::now();
 
         if state.config.legacy_api_enabled && next_account_maintenance <= now {
@@ -96,6 +120,18 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(BACKGROUND_WORK_PAUSE).await;
         } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+async fn run_background_job(state: &AppState, worker_id: &str, cycle_failed: &mut bool) -> bool {
+    match background_worker::process_background_job(state, worker_id).await {
+        Ok(did_work) => did_work,
+        Err(error) => {
+            metrics::counter!("worker.cycle.errors", "stage" => "background_job").increment(1);
+            tracing::warn!(?error, "background job cycle failed");
+            *cycle_failed = true;
+            false
         }
     }
 }
