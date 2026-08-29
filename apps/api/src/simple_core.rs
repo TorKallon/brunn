@@ -1238,6 +1238,18 @@ pub async fn write(
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
     require_write_capabilities(&auth, &request.path)?;
     validate_write_path(&request)?;
+    // Inlet rule: chronicle "no durable memory" no-op summaries under
+    // agent-memory/** are not admitted. The path prefix IS the
+    // classification; the producer receives a clean no-op receipt.
+    if is_agent_memory_noop_summary(&request.path, &request.content) {
+        let mut envelope = WorkspaceEnvelope::complete(json!({
+            "path": request.path,
+            "no_op": true,
+            "reason": "agent_memory_noop_summary",
+        }));
+        envelope.status = ResponseStatus::NoOp;
+        return Ok(Json(envelope));
+    }
     let prepared = prepare_markdown(&state, request).await?;
     let committed_bytes = u64::try_from(prepared.content.len()).unwrap_or(u64::MAX);
     let receipt = commit_markdown(&state, &auth, prepared).await?;
@@ -8490,6 +8502,19 @@ fn require_write_capabilities(auth: &AuthContext, path: &str) -> ApiResult<()> {
     Ok(())
 }
 
+/// A chronicle-style "no durable memory" no-op summary aimed at the
+/// agent-memory tree. These carry no signal and are no longer admitted; any
+/// other agent-memory content passes unchanged.
+pub(crate) fn is_agent_memory_noop_summary(path: &str, content: &str) -> bool {
+    if !path.starts_with("agent-memory/") {
+        return false;
+    }
+    let lower = content.to_lowercase();
+    lower.contains("no durable memory")
+        || lower.contains("no durable memories")
+        || lower.contains("nothing durable could be extracted")
+}
+
 fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
     validate_path(&request.path)?;
     if !request.path.starts_with(".straylight/") {
@@ -9226,6 +9251,23 @@ fn render_seed_checkpoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_memory_noop_summaries_are_not_admitted() {
+        let noop =
+            "# Chronicle summary\n\nNo durable memory could be extracted from this session.\n";
+        assert!(is_agent_memory_noop_summary(
+            "agent-memory/chronicle/2026-08-30.md",
+            noop
+        ));
+        // The path prefix IS the classification: the same content elsewhere
+        // is admitted, and signal-bearing chronicle content is kept.
+        assert!(!is_agent_memory_noop_summary("sources/Notes.md", noop));
+        assert!(!is_agent_memory_noop_summary(
+            "agent-memory/chronicle/2026-08-30.md",
+            "# Chronicle summary\n\nThe owner decided to migrate the vault on Tuesday.\n",
+        ));
+    }
 
     fn test_conversation_header() -> crate::messaging_protocol::ConversationHeader {
         use crate::messaging_protocol::{

@@ -1047,6 +1047,12 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
             ],
         )),
         "ios_tasks" => Ok(("ios_tasks", vec!["task.write", "notification:manage"])),
+        // The dreamer wrapper: vault custody of the codex tokens plus the
+        // run's single operational notification. Codex never holds this.
+        "dreamer_runner" => Ok((
+            "dreamer_runner",
+            vec!["secret:read", "secret:write", "notification:publish"],
+        )),
         "owner" => Ok((
             "owner",
             vec![
@@ -1076,7 +1082,7 @@ fn credential_template(access: Option<&str>) -> ApiResult<(&'static str, Vec<&'s
             ],
         )),
         _ => Err(ApiError::invalid(
-            "credential access must be read_only, read_write, ios_tasks, or owner",
+            "credential access must be read_only, read_write, ios_tasks, dreamer_runner, or owner",
         )),
     }
 }
@@ -1496,7 +1502,15 @@ fn credential_row_value(row: sqlx::postgres::PgRow) -> ApiResult<Value> {
 }
 
 fn credential_access_label(capabilities: &[String]) -> &'static str {
-    if matches!(capabilities.len(), 2 | 3)
+    if capabilities.len() == 3
+        && capabilities.iter().any(|value| value == "secret:read")
+        && capabilities.iter().any(|value| value == "secret:write")
+        && capabilities
+            .iter()
+            .any(|value| value == "notification:publish")
+    {
+        "dreamer_runner"
+    } else if matches!(capabilities.len(), 2 | 3)
         && capabilities.iter().any(|value| value == "task.write")
         && capabilities
             .iter()
@@ -1611,6 +1625,34 @@ mod credential_tests {
             "credential:manage".to_owned(),
         ];
         assert_eq!(credential_access_label(&capabilities), "owner");
+    }
+
+    #[test]
+    fn dreamer_runner_template_is_vault_and_notify_only() {
+        let (access, capabilities) =
+            credential_template(Some("dreamer_runner")).expect("dreamer_runner template");
+        assert_eq!(access, "dreamer_runner");
+        assert_eq!(
+            capabilities,
+            ["secret:read", "secret:write", "notification:publish"]
+        );
+        for forbidden in [
+            "open",
+            "read",
+            "save",
+            "checkpoint",
+            "delete",
+            "admin",
+            "credential:manage",
+            "task.write",
+        ] {
+            assert!(!capabilities.contains(&forbidden), "unexpected {forbidden}");
+        }
+        let stored = capabilities
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(credential_access_label(&stored), "dreamer_runner");
     }
 }
 

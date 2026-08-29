@@ -21,6 +21,8 @@ pub mod dashboard_service;
 pub mod db;
 pub mod document_service;
 pub mod dream_service;
+pub mod dreamer;
+pub mod dreaming_service;
 pub mod dreams;
 pub mod embeddings;
 pub mod error;

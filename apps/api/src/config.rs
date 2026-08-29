@@ -94,6 +94,8 @@ pub struct Config {
     pub dev_user_name: String,
     pub dev_read_write_token: Option<String>,
     pub dev_read_only_token: Option<String>,
+    pub dreamer_internal_url: Option<String>,
+    pub dreamer_internal_token: Option<String>,
 }
 
 impl Config {
@@ -328,6 +330,8 @@ impl Config {
             dev_user_name: env_default("STRAYLIGHT_DEV_USER_NAME", "Local user"),
             dev_read_write_token: first_env_or_file(&["STRAYLIGHT_DEV_READ_WRITE_TOKEN"])?,
             dev_read_only_token: first_env_or_file(&["STRAYLIGHT_DEV_READ_ONLY_TOKEN"])?,
+            dreamer_internal_url: first_env(&["DREAMER_INTERNAL_URL"]),
+            dreamer_internal_token: first_env_or_file(&["DREAMER_INTERNAL_TOKEN"])?,
         };
         if !matches!(
             config.asset_description_image_detail.as_str(),

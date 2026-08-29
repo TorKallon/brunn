@@ -34,6 +34,7 @@ class RailwayContractTests(unittest.TestCase):
                 ("worker", "worker"),
                 ("mcp", "mcp"),
                 ("web", "web"),
+                ("dreamer", "dreamer"),
                 ("datadog", "datadog-agent"),
             },
             set(services),

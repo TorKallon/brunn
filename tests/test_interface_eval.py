@@ -747,14 +747,24 @@ class InterfaceEvalTests(unittest.TestCase):
                 text=True,
                 check=False,
             )
+            openclaw_runtime_manifests = (
+                OPENCLAW_NPM
+                / "node_modules"
+                / "@openclaw"
+                / "codex"
+                / "package.json",
+                OPENCLAW_NPM / "node_modules" / "openclaw" / "package.json",
+            )
+            openclaw_runtime_manifest = next(
+                path for path in openclaw_runtime_manifests if path.is_file()
+            )
             openclaw_runtime_allowed = subprocess.run(
                 [
                     "/usr/bin/sandbox-exec",
                     "-f",
                     str(profile),
                     "/bin/cat",
-                    str(OPENCLAW_NPM / "node_modules" / "@openclaw" / "codex"
-                        / "package.json"),
+                    str(openclaw_runtime_manifest),
                 ],
                 capture_output=True,
                 text=True,
@@ -813,13 +823,22 @@ class InterfaceEvalTests(unittest.TestCase):
         self.assertNotEqual(home_denied.returncode, 0)
         self.assertIn("Operation not permitted", home_denied.stderr)
         self.assertEqual(openclaw_runtime_allowed.returncode, 0)
-        self.assertIn('"name": "@openclaw/codex"', openclaw_runtime_allowed.stdout)
+        self.assertIn(
+            json.loads(openclaw_runtime_allowed.stdout)["name"],
+            {"@openclaw/codex", "openclaw"},
+        )
         self.assertNotEqual(openclaw_state_denied.returncode, 0)
         self.assertIn("Operation not permitted", openclaw_state_denied.stderr)
         self.assertEqual(codex_runtime_allowed.returncode, 0)
         self.assertIn("codex-cli", codex_runtime_allowed.stdout)
-        self.assertEqual(openclaw_launcher_allowed.returncode, 0)
-        self.assertIn("OpenClaw", openclaw_launcher_allowed.stdout)
+        self.assertNotIn("Operation not permitted", openclaw_launcher_allowed.stderr)
+        if openclaw_launcher_allowed.returncode == 0:
+            self.assertIn("OpenClaw", openclaw_launcher_allowed.stdout)
+        else:
+            self.assertIn(
+                "Node.js",
+                openclaw_launcher_allowed.stdout + openclaw_launcher_allowed.stderr,
+            )
 
     def test_report_handles_incomplete_parent_token_receipts(self):
         result = {

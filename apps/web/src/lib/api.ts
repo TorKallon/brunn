@@ -192,6 +192,12 @@ export interface StraylightApi {
   workspaceDream(
     payload: JsonObject,
   ): Promise<ApiEnvelope<WorkspaceDreamReceipt>>;
+  dreamingStatus(): Promise<ApiEnvelope<JsonValue>>;
+  dreamingConnectStart(): Promise<ApiEnvelope<JsonValue>>;
+  dreamingConnectWait(): Promise<ApiEnvelope<JsonValue>>;
+  dreamingDisconnect(): Promise<ApiEnvelope<JsonValue>>;
+  dreamingPause(): Promise<ApiEnvelope<JsonValue>>;
+  dreamingResume(): Promise<ApiEnvelope<JsonValue>>;
   briefingsList(
     limit?: number,
     afterPath?: string,
@@ -596,6 +602,13 @@ export function createApiClient(): StraylightApi {
       post<JsonValue>("/workspace/integrations/todoist/pull", payload),
     workspaceDream: (payload) =>
       post<WorkspaceDreamReceipt>("/workspace/dreams", payload),
+    dreamingStatus: () => get<JsonValue>("/workspace/dreaming/status"),
+    dreamingConnectStart: () =>
+      post<JsonValue>("/workspace/dreaming/connect/start"),
+    dreamingConnectWait: () => get<JsonValue>("/workspace/dreaming/connect/wait"),
+    dreamingDisconnect: () => post<JsonValue>("/workspace/dreaming/disconnect"),
+    dreamingPause: () => post<JsonValue>("/workspace/dreaming/pause"),
+    dreamingResume: () => post<JsonValue>("/workspace/dreaming/resume"),
     briefingsList: (limit = 14, afterPath) => {
       const query = new URLSearchParams({ limit: String(limit) });
       if (afterPath) query.set("after_path", afterPath);
