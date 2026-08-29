@@ -77,7 +77,7 @@ impl ConnectFlow {
         let env = codex::codex_environment(&dreamer.config.host_env, &connect_root, &codex_home);
         let mut command = tokio::process::Command::new(&dreamer.config.codex_path);
         command
-            .args(["login", "--device-code"])
+            .args(["login", "--device-auth"])
             .env_clear()
             .envs(&env)
             .stdin(std::process::Stdio::null())

@@ -34,7 +34,7 @@ pub fn config_from_env() -> Result<DreamerConfig, String> {
             .unwrap_or_else(|_| "codex".to_owned())
             .into(),
         codex_model: std::env::var("DREAMER_CODEX_MODEL")
-            .unwrap_or_else(|_| "gpt-5-codex".to_owned()),
+            .unwrap_or_else(|_| "gpt-5.6-sol".to_owned()),
         mcp_server_entry: require("DREAMER_MCP_ENTRY")?.into(),
         work_root: std::env::var("DREAMER_WORK_ROOT")
             .unwrap_or_else(|_| "/tmp/dreamer".to_owned())
