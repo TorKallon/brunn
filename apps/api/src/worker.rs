@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::{
     account_worker,
     db::AppState,
+    deletion_worker,
     error::{ApiError, ApiResult},
     messaging_service, notification_service, simple_worker, task_guard, telemetry, todoist_sync,
     upload_service,
@@ -72,6 +73,7 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             run_notification_delivery(&state, notification_provider.as_ref(), &mut cycle_failed)
                 .await;
         did_work |= run_simple_workspace_job(&state, &mut cycle_failed).await;
+        did_work |= run_deletion_propagation(&state, &mut cycle_failed).await;
         let now = Instant::now();
 
         if state.config.legacy_api_enabled && next_account_maintenance <= now {
@@ -94,6 +96,18 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(BACKGROUND_WORK_PAUSE).await;
         } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+async fn run_deletion_propagation(state: &AppState, cycle_failed: &mut bool) -> bool {
+    match deletion_worker::process_deletion_job(state).await {
+        Ok(did_work) => did_work,
+        Err(error) => {
+            metrics::counter!("worker.cycle.errors", "stage" => "deletion").increment(1);
+            tracing::warn!(?error, "deletion queue cycle failed");
+            *cycle_failed = true;
+            false
         }
     }
 }

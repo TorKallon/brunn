@@ -19,6 +19,7 @@ pub mod continuation;
 pub mod control_service;
 pub mod dashboard_service;
 pub mod db;
+pub mod deletion_worker;
 pub mod document_service;
 pub mod dream_service;
 pub mod dreamer;
