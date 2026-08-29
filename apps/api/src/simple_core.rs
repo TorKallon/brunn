@@ -7309,6 +7309,26 @@ async fn resolve_checkpoint_sources_in_tx(
         .map(|path| portable_path_key(path))
         .collect::<Vec<_>>();
 
+    // The path lanes cannot use indexes beneath the RLS barrier (LIKE and
+    // normalize() are not leakproof), so a SECURITY DEFINER resolver maps
+    // them to entry ids first and the visible query stays on leakproof
+    // id equality.
+    let mut candidate_ids = entry_ids.clone();
+    if !paths.is_empty() || !normalized_path_keys.is_empty() {
+        let resolved: Vec<Uuid> =
+            sqlx::query_scalar("SELECT straylight_auth.resolve_entry_ids_by_path($1,$2,$3)")
+                .bind(user_id)
+                .bind(&paths)
+                .bind(&normalized_path_keys)
+                .fetch_one(&mut **tx)
+                .await?;
+        candidate_ids.extend(resolved);
+    }
+    candidate_ids.sort();
+    candidate_ids.dedup();
+    if candidate_ids.is_empty() {
+        return Ok((Vec::new(), None));
+    }
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.title,entry.kind,entry.media_type,
@@ -7326,17 +7346,11 @@ async fn resolve_checkpoint_sources_in_tx(
          AND version.version=entry.current_version
         WHERE entry.user_id=$1
           AND entry.deleted_at IS NULL
-          AND (
-            entry.id=ANY($2)
-            OR entry.path=ANY($3)
-            OR lower(normalize(entry.path, NFC))=ANY($4)
-          )
+          AND entry.id=ANY($2)
         "#,
     )
     .bind(user_id)
-    .bind(&entry_ids)
-    .bind(&paths)
-    .bind(&normalized_path_keys)
+    .bind(&candidate_ids)
     .fetch_all(&mut **tx)
     .await?;
     let pinned_workspace_generation = rows
@@ -7902,6 +7916,20 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
         ".straylight/checkpoints/{}.md",
         deterministic_checkpoint_id(request)
     );
+    // LIKE and the metadata hash expression cannot reach their indexes
+    // beneath the RLS barrier, so a SECURITY DEFINER resolver bounds the
+    // candidate set by id first; every original predicate is re-checked on
+    // that bounded set.
+    let adoption_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT straylight_auth.resolve_checkpoint_adoption_ids($1,$2,$3)")
+            .bind(user_id)
+            .bind(idempotency_hash.as_deref())
+            .bind(&implicit_path)
+            .fetch_one(&mut **tx)
+            .await?;
+    if adoption_ids.is_empty() {
+        return Ok(None);
+    }
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.current_version,
@@ -7912,6 +7940,7 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
         WHERE entry.user_id=$1
+          AND entry.id=ANY($4)
           AND entry.deleted_at IS NULL
           AND entry.path LIKE '.straylight/checkpoints/%'
           AND version.metadata->>'kind'='checkpoint'
@@ -7926,6 +7955,7 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
     .bind(user_id)
     .bind(idempotency_hash)
     .bind(implicit_path)
+    .bind(&adoption_ids)
     .fetch_all(&mut **tx)
     .await?;
     if rows.is_empty() {
