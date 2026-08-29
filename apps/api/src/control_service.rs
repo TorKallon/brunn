@@ -1095,6 +1095,9 @@ fn credential_template_for_gate(
     if access == "ios_tasks" && messaging_enabled {
         capabilities.push("message.write");
     }
+    if !messaging_enabled {
+        capabilities.retain(|capability| !capability.starts_with("message."));
+    }
     Ok((access, capabilities))
 }
 
@@ -1615,6 +1618,24 @@ mod credential_tests {
             credential_access_label(&on.into_iter().map(str::to_owned).collect::<Vec<_>>()),
             "ios_tasks"
         );
+    }
+
+    #[test]
+    fn templates_omit_message_capabilities_when_messaging_is_disabled() {
+        for access in ["read_only", "read_write", "owner"] {
+            let (_, off) = credential_template_for_gate(Some(access), false)
+                .expect("gate-off template");
+            assert!(
+                off.iter().all(|capability| !capability.starts_with("message.")),
+                "{access} leaked message capabilities with messaging disabled"
+            );
+            let (_, on) =
+                credential_template_for_gate(Some(access), true).expect("gate-on template");
+            assert!(
+                on.iter().any(|capability| capability.starts_with("message.")),
+                "{access} lost message capabilities with messaging enabled"
+            );
+        }
     }
 
     #[test]
