@@ -262,15 +262,43 @@ async fn read_some(
 /// Find the verification URL and user code in codex login output, leniently:
 /// the first http(s) URL, and the first token that looks like a device code
 /// (letters/digits with a dash, or explicitly labeled "code").
+fn strip_ansi(buffer: &str) -> String {
+    let mut cleaned = String::with_capacity(buffer.len());
+    let mut chars = buffer.chars().peekable();
+    while let Some(current) = chars.next() {
+        if current != '\u{1b}' {
+            cleaned.push(current);
+            continue;
+        }
+        if chars.peek() == Some(&'[') {
+            chars.next();
+            for terminator in chars.by_ref() {
+                if terminator.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        }
+    }
+    cleaned
+}
+
 fn extract_device_prompt(buffer: &str) -> Option<(String, String)> {
-    let url = buffer
+    // Codex colors its login output, so escape sequences glue onto tokens.
+    let cleaned = strip_ansi(buffer);
+    let url = cleaned
         .split_whitespace()
         .find(|token| token.starts_with("https://") || token.starts_with("http://"))
         .map(|token| token.trim_end_matches(['.', ',']).to_owned())?;
+    // The code is on the labeled line or, as codex prints it, the line after.
     let mut labeled_code = None;
-    for line in buffer.lines() {
-        let lower = line.to_lowercase();
-        if lower.contains("code") {
+    let mut lines_since_label = usize::MAX;
+    for line in cleaned.lines() {
+        if line.to_lowercase().contains("code") {
+            lines_since_label = 0;
+        } else {
+            lines_since_label = lines_since_label.saturating_add(1);
+        }
+        if lines_since_label <= 1 {
             labeled_code = line
                 .split_whitespace()
                 .map(|token| token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-'))
@@ -278,6 +306,7 @@ fn extract_device_prompt(buffer: &str) -> Option<(String, String)> {
                     token.len() >= 6
                         && token.contains('-')
                         && token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                        && !url.contains(token)
                 })
                 .max_by_key(|token| token.len())
                 .map(str::to_owned)
@@ -303,6 +332,26 @@ mod tests {
             Some((
                 "https://auth.openai.com/activate".to_owned(),
                 "ABCD-EFGH".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn extracts_url_and_code_from_colored_next_line_output() {
+        let output = concat!(
+            "Welcome to Codex [v\u{1b}[90m0.151.0\u{1b}[0m]\n",
+            "\u{1b}[90mOpenAI's command-line coding agent\u{1b}[0m\n\n",
+            "Follow these steps to sign in with ChatGPT using device code authorization:\n\n",
+            "1. Open this link in your browser and sign in to your account\n",
+            "   \u{1b}[94mhttps://auth.openai.com/codex/device\u{1b}[0m\n\n",
+            "2. Enter this one-time code \u{1b}[90m(expires in 15 minutes)\u{1b}[0m\n",
+            "   \u{1b}[94mJN4E-84S1M\u{1b}[0m\n",
+        );
+        assert_eq!(
+            extract_device_prompt(output),
+            Some((
+                "https://auth.openai.com/codex/device".to_owned(),
+                "JN4E-84S1M".to_owned()
             ))
         );
     }

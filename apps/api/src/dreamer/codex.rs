@@ -82,6 +82,8 @@ pub fn codex_environment(
         .or_insert_with(|| "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin".to_owned());
     env.insert("HOME".to_owned(), home.display().to_string());
     env.insert("CODEX_HOME".to_owned(), codex_home.display().to_string());
+    // Plain output keeps the Connect flow's device-prompt parsing simple.
+    env.insert("NO_COLOR".to_owned(), "1".to_owned());
     strip_reasoning_env(&mut env);
     env
 }
