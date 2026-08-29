@@ -1665,13 +1665,12 @@ pub async fn queue_dream(
     }
     auth.require(Capability::Dream)?;
     let mut tx = state.begin_write(&auth).await?;
-    let current_generation = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
-    )
-    .bind(auth.user_id.0)
-    .fetch_one(&mut *tx)
-    .await?
-    .unwrap_or(0);
+    let current_generation =
+        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?
+            .unwrap_or(0);
     let previous_watermark = match request.since_generation {
         Some(value) => value.max(0),
         None => sqlx::query_scalar::<_, Option<i64>>(
@@ -1996,13 +1995,12 @@ pub async fn manifest(
         statement.push(" OFFSET ").push_bind(offset);
     }
     let mut rows = statement.build().fetch_all(&mut *tx).await?;
-    let generation = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
-    )
-    .bind(auth.user_id.0)
-    .fetch_one(&mut *tx)
-    .await?
-    .unwrap_or(0);
+    let generation =
+        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?
+            .unwrap_or(0);
     tx.commit().await?;
     let truncated = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);
     if truncated {
@@ -3441,9 +3439,7 @@ pub async fn evaluation_status(
         SELECT
           count(*) FILTER (WHERE status IN ('queued','running')) AS pending_jobs,
           count(*) FILTER (WHERE status='failed') AS failed_jobs,
-          (SELECT coalesce(max(generation),0)
-           FROM straylight.workspace_changes
-           WHERE user_id=$1) AS generation
+          straylight_auth.workspace_generation($1) AS generation
         FROM straylight.jobs
         WHERE user_id=$1 AND kind='embed_entry'
         "#,
@@ -3520,13 +3516,12 @@ pub async fn cleanup_evaluation(
 
 async fn current_generation(state: &AppState, auth: &AuthContext) -> ApiResult<i64> {
     let mut tx = state.begin_read(auth).await?;
-    let generation = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
-    )
-    .bind(auth.user_id.0)
-    .fetch_one(&mut *tx)
-    .await?
-    .unwrap_or(0);
+    let generation =
+        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?
+            .unwrap_or(0);
     tx.commit().await?;
     Ok(generation)
 }
@@ -5266,9 +5261,7 @@ async fn hydrate_candidates(
         sqlx::query(
             r#"
             WITH generation AS (
-              SELECT coalesce(max(change.generation),0) AS workspace_generation
-              FROM straylight.workspace_changes AS change
-              WHERE change.user_id=$1
+              SELECT straylight_auth.workspace_generation($1) AS workspace_generation
             ), documents AS MATERIALIZED (
               SELECT entry.id,version.size_bytes,version.content
               FROM straylight.entries AS entry
@@ -5519,9 +5512,7 @@ async fn fetch_entry_lookup(
     if include_generation {
         statement.push(
             r#"
-               (SELECT coalesce(max(change.generation),0)
-                FROM straylight.workspace_changes AS change
-                WHERE change.user_id=entry.user_id) AS workspace_generation
+               straylight_auth.workspace_generation(entry.user_id) AS workspace_generation
             "#,
         );
     } else {
@@ -7336,9 +7327,7 @@ async fn resolve_checkpoint_sources_in_tx(
                version.id AS version_id,version.content_sha256,
                NULL::text AS content,version.object_key,version.object_version_id,
                version.size_bytes,version.metadata,
-               (SELECT coalesce(max(change.generation),0)
-                FROM straylight.workspace_changes AS change
-                WHERE change.user_id=$1) AS pinned_workspace_generation
+               straylight_auth.workspace_generation($1) AS pinned_workspace_generation
         FROM straylight.entries AS entry
         JOIN straylight.entry_versions AS version
           ON version.user_id=entry.user_id

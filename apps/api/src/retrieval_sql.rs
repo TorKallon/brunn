@@ -7,9 +7,7 @@ pub const SIMPLE_LEXICAL_CANDIDATES_SQL: &str =
 
 pub const SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL: &str = r#"
 WITH generation AS (
-  SELECT coalesce(max(change.generation),0) AS workspace_generation
-  FROM straylight.workspace_changes AS change
-  WHERE change.user_id=$1
+  SELECT straylight_auth.workspace_generation($1) AS workspace_generation
 )
 SELECT generation.workspace_generation,candidate.*
 FROM generation
@@ -34,9 +32,7 @@ SELECT entry.id,entry.path,entry.title,entry.kind,entry.media_type,
        version.id AS version_id,version.content_sha256,version.content,
        version.object_key,version.object_version_id,version.size_bytes,
        version.metadata,
-       (SELECT coalesce(max(change.generation),0)
-        FROM straylight.workspace_changes AS change
-        WHERE change.user_id=entry.user_id) AS workspace_generation
+       straylight_auth.workspace_generation(entry.user_id) AS workspace_generation
 FROM candidates AS candidate
 JOIN straylight.entries AS entry ON entry.id=candidate.id
 JOIN straylight.entry_versions AS version
@@ -71,7 +67,10 @@ mod tests {
             SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL
                 .contains("LEFT JOIN LATERAL straylight.workspace_lexical_candidates_v2($2,$3)")
         );
-        assert!(SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL.contains("WHERE change.user_id=$1"));
+        assert!(
+            SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL
+                .contains("straylight_auth.workspace_generation($1)")
+        );
         assert!(!SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL.contains(';'));
         assert!(SIMPLE_ENTRY_LINK_CANDIDATES_SQL.contains("entry.user_id=$1"));
         assert!(SIMPLE_ENTRY_LINK_CANDIDATES_SQL.contains("regexp_replace(entry.path"));

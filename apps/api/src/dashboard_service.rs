@@ -162,11 +162,7 @@ pub async fn dashboard(
           count(*) FILTER (WHERE kind='markdown')::bigint AS text_count,
           coalesce(sum(size_bytes) FILTER (WHERE kind='markdown'),0)::bigint
             AS text_size_bytes,
-          coalesce((
-            SELECT max(generation)
-            FROM straylight.workspace_changes
-            WHERE user_id=$1
-          ),0)::bigint AS workspace_generation,
+          straylight_auth.workspace_generation($1)::bigint AS workspace_generation,
           (
             SELECT min(first_recorded_at)
             FROM straylight.product_activity_minutely
