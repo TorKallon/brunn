@@ -29,7 +29,9 @@ from typing import Any, Iterable, Mapping, Sequence
 DEFAULT_BASE_URL = "http://localhost:18110"
 DEFAULT_TIMEOUT_SECONDS = 60.0
 DEFAULT_POLL_TIMEOUT_SECONDS = 90.0
-READ_CAPABILITIES = {"open", "query", "read", "compute", "verify", "status"}
+READ_CAPABILITIES = {"open", "query", "read", "compute", "verify", "status", "task.read"}
+# Present only when the messaging feature is enabled on the target stack.
+OPTIONAL_READ_CAPABILITIES = {"message.read"}
 WRITE_CAPABILITIES = {
     "checkpoint",
     "save",
@@ -479,7 +481,8 @@ class LiveApiSmoke:
                 sorted(rw_capabilities),
             )
             check(
-                ro_capabilities == READ_CAPABILITIES,
+                READ_CAPABILITIES <= ro_capabilities
+                and ro_capabilities <= READ_CAPABILITIES | OPTIONAL_READ_CAPABILITIES,
                 "RO token must expose exactly the read capability set",
                 sorted(ro_capabilities),
             )

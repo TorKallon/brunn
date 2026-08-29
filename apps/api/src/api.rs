@@ -12,8 +12,8 @@ use tower_http::{
 };
 
 use crate::{
-    auth, briefing_service, dashboard_service, db::AppState, document_service, dreams,
-    eval_service, messaging_service, notification_service, request_context, secret_service,
+    auth, briefing_service, dashboard_service, db::AppState, document_service, dreaming_service,
+    dreams, eval_service, messaging_service, notification_service, request_context, secret_service,
     service, simple_core, task_service, telemetry, web_auth,
 };
 
@@ -265,7 +265,7 @@ pub fn router(state: AppState) -> Router {
             "/admin/eval/imports/{import_id}",
             get(eval_service::get_evaluation_import),
         );
-    let mut ordinary = workspace_ordinary;
+    let mut ordinary = workspace_ordinary.merge(dreaming_service::router());
     if state.config.messaging_enabled {
         ordinary = ordinary.merge(messaging_service::router());
     }

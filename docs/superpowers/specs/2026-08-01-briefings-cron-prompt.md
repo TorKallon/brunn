@@ -30,7 +30,16 @@ local files, never send an undeduped briefing.
    scripts <host-specific paths>, Datadog snapshots for Charlemagne and
    Joyeuse, standing trackers, stock watchlist, candidate news per topic
    instructions.
-3. Dedupe: batch all news candidates into one briefing.dedupe call
+3. Dreaming: read dreams/CONTROL.md and the latest dreams/runs/<date>.md
+   (newest by filename date). The briefing gains a "Dreaming" section:
+   - the run file's 5-line summary, copied verbatim;
+   - every "Needs your call" item, numbered as in the run file, with its age
+     in days ("item 2, 3 days old");
+   - if no run file exists because Connect has not completed, exactly one
+     line: "Dreaming: the first run is waiting on Connect (Settings →
+     Dreaming)."
+   - if CONTROL is missing/paused, one line saying dreaming is paused.
+4. Dedupe: batch all news candidates into one briefing.dedupe call
    ({urls, title, summary, event_at, topic, story_key when known}).
    - verdict_hint "duplicate": drop, or include only with delta
      "corroboration" when corroboration itself is material.
@@ -38,7 +47,7 @@ local files, never send an undeduped briefing.
      what_changed naming the material delta.
    - "unseen": adjudicate the near matches yourself before treating as new.
    Record every drop as an omitted entry {story_key, urls, reason}.
-4. Publish one briefing.publish call:
+5. Publish one briefing.publish call:
    - date, edition "morning", timezone "America/Los_Angeles", generated_at,
      summary_md (5-9 bullets), sections ordered by topic section_order,
      omitted, idempotency_key "briefing-<date>-morning".
@@ -50,10 +59,30 @@ local files, never send an undeduped briefing.
      from dedupe results verbatim; times with published_at/event_at/
      first_seen_at when known.
    - Include "health" only when genuinely fresh early data exists.
-5. Deliver the usual concise iMessage summary linking the briefing.
-6. memory.checkpoint the run: objective, include/omit decisions, publish
+6. Deliver the usual concise iMessage summary linking the briefing.
+7. memory.checkpoint the run: objective, include/omit decisions, publish
    receipt refs.
 ```
+
+## Dreaming adjudication (all agents, any conversation)
+
+The owner reviews dreaming conversationally and never opens or edits a file.
+When the owner gives a dreaming decision — "hold item 2", "link 4 is Radley",
+"42.18 is current", "veto 3 from last night", "hold the advance" — append it
+to `dreams/decisions.md`, owner-sourced, using the exact line grammar (the
+dreamer reads leniently, but write it exactly):
+
+```text
+- <date> veto <run-date>/<item-n> — reason
+- <date> alias "<name>" = [[Target]]
+- <date> adjudicate <topic> — resolution
+- <date> hold-advance
+```
+
+The file is append-only: never rewrite or remove earlier lines. Anything
+recorded there is honored by every later run and never re-raised. Proposed
+items apply the next night unless vetoed — recording a veto before the next
+03:00 run IS the approval window.
 
 ## 10:00 health prompt
 

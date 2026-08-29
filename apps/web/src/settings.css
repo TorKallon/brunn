@@ -90,3 +90,40 @@
     grid-template-columns: 1fr;
   }
 }
+
+.dreaming-status-card p {
+  margin: 0 0 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.dreaming-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 18px;
+}
+
+.dreaming-facts dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dreaming-facts dd {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+}
+
+.dreaming-device-code,
+.dreaming-connect-failed {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+}
+
+.dreaming-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+}

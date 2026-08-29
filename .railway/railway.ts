@@ -127,6 +127,40 @@ const db = service("db", {
   },
 });
 
+const dreamer = service("dreamer", {
+  build: {
+    builder: "DOCKERFILE",
+    dockerfilePath: "apps/api/Dockerfile.dreamer",
+    watchPatterns: ["apps/api/**", "apps/mcp/**"],
+  },
+  start: "/usr/local/bin/straylight dreamer serve",
+  replicas: { "us-west2": 1 },
+  deploy: {
+    restartPolicyType: "ALWAYS",
+    restartPolicyMaxRetries: null,
+    drainingSeconds: 60,
+    limitOverride: {
+      containers: {
+        cpu: 1,
+        memoryBytes: 1024 * 1024 * 1024,
+      },
+    },
+  },
+  env: {
+    STRAYLIGHT_API_URL: "http://api.railway.internal:8080",
+    DREAMER_BIND: "[::]:8090",
+    // Straylight credentials for the runner: `dreamer` (read_write; also
+    // handed to codex through the MCP server) and `dreamer_runner` (vault
+    // custody + run notifications; codex never holds it). Minted via
+    // POST /credentials with an owner token; values managed outside IaC.
+    DREAMER_WORKSPACE_TOKEN: preserve(),
+    DREAMER_RUNNER_TOKEN: preserve(),
+    // Shared secret for the api → dreamer private surface.
+    DREAMER_INTERNAL_TOKEN: preserve(),
+    DREAMER_CODEX_MODEL: preserve(),
+  },
+});
+
 const api = service("api", {
   build: {
     builder: "DOCKERFILE",
@@ -162,6 +196,8 @@ const api = service("api", {
     RESEND_API_KEY: preserve(),
     STRAYLIGHT_SYSLOG_ADDR: "datadog-agent.railway.internal:514",
     OPENAI_API_KEY: preserve(),
+    DREAMER_INTERNAL_URL: "http://dreamer.railway.internal:8090",
+    DREAMER_INTERNAL_TOKEN: dreamer.env.DREAMER_INTERNAL_TOKEN,
   },
 });
 
@@ -318,7 +354,7 @@ const datadog = service("datadog-agent", {
 });
 
 export default defineRailway(() => {
-  const application = group("Application", [web, api, worker, mcp]);
+  const application = group("Application", [web, api, worker, mcp, dreamer]);
   const storage = group("Storage", [db, postgresData]);
   const operations = group("Operations", [datadog]);
 

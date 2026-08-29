@@ -26,6 +26,10 @@ struct Cli {
 enum Command {
     Serve,
     Worker,
+    Dreamer {
+        #[command(subcommand)]
+        command: DreamerCommand,
+    },
     TaskGuardOnce {
         #[arg(long)]
         as_of: Option<String>,
@@ -40,6 +44,18 @@ enum Command {
     Operator {
         #[command(subcommand)]
         command: OperatorCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum DreamerCommand {
+    /// Always-on: private HTTP surface plus the 03:00 America/Los_Angeles
+    /// nightly loop.
+    Serve,
+    /// One run now, then exit (dev/test and the manual first run).
+    Once {
+        #[arg(long)]
+        backfill: bool,
     },
 }
 
@@ -116,6 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let component = match &cli.command {
         Command::Serve => "api",
         Command::Worker => "worker",
+        Command::Dreamer { .. } => "dreamer",
         Command::TaskGuardOnce { .. } => "task-guard",
         Command::Migrate => "migrate",
         Command::Healthcheck => "healthcheck",
@@ -160,6 +177,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", serde_json::to_string(&result)?);
         return Ok(());
     }
+    // The dreamer is a pure HTTP client of the API: it deliberately skips
+    // Config::from_env (no database, no object store) and uses its own env.
+    if let Command::Dreamer { command } = &cli.command {
+        let dreamer =
+            straylight::dreamer::run::Dreamer::new(straylight::dreamer::config_from_env()?);
+        match command {
+            DreamerCommand::Serve => {
+                let internal_token = straylight::dreamer::internal_token_from_env()?;
+                let app = straylight::dreamer::http::DreamerApp::new(dreamer, internal_token);
+                tokio::spawn(app.clone().nightly_loop());
+                let bind = straylight::dreamer::bind_from_env();
+                let listener = TcpListener::bind(&bind).await?;
+                tracing::info!(%bind, "Straylight dreamer listening");
+                axum::serve(listener, app.router()).await?;
+            }
+            DreamerCommand::Once { backfill } => {
+                let kind = if *backfill {
+                    straylight::dreamer::run::RunKind::Backfill
+                } else {
+                    straylight::dreamer::run::RunKind::Nightly
+                };
+                let today = straylight::dreamer::http::DreamerApp::today();
+                let report = dreamer.run_once(today, kind).await;
+                println!("{}", serde_json::to_string_pretty(&report)?);
+                if matches!(
+                    report.outcome,
+                    straylight::dreamer::run::RunOutcome::Failed { .. }
+                ) {
+                    std::process::exit(1);
+                }
+            }
+        }
+        return Ok(());
+    }
     let config = Config::from_env()?;
     match cli.command {
         Command::Migrate => {
@@ -177,6 +228,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!(%bind, "Straylight API listening");
             axum::serve(listener, router(state)).await?;
         }
+        Command::Dreamer { .. } => unreachable!("handled before Config::from_env"),
         Command::Worker => {
             let state = AppState::connect(config).await?;
             if metrics_enabled {

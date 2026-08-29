@@ -1238,6 +1238,18 @@ pub async fn write(
 ) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
     require_write_capabilities(&auth, &request.path)?;
     validate_write_path(&request)?;
+    // Inlet rule: chronicle "no durable memory" no-op summaries under
+    // agent-memory/** are not admitted. The path prefix IS the
+    // classification; the producer receives a clean no-op receipt.
+    if is_agent_memory_noop_summary(&request.path, &request.content) {
+        let mut envelope = WorkspaceEnvelope::complete(json!({
+            "path": request.path,
+            "no_op": true,
+            "reason": "agent_memory_noop_summary",
+        }));
+        envelope.status = ResponseStatus::NoOp;
+        return Ok(Json(envelope));
+    }
     let prepared = prepare_markdown(&state, request).await?;
     let committed_bytes = u64::try_from(prepared.content.len()).unwrap_or(u64::MAX);
     let receipt = commit_markdown(&state, &auth, prepared).await?;
@@ -1346,7 +1358,11 @@ pub async fn checkpoint(
             .await?
     {
         tx.commit().await?;
-        return Ok(Json(checkpoint_envelope(&request.session_id, receipt)?));
+        return Ok(Json(checkpoint_envelope(
+            &request.session_id,
+            receipt,
+            true,
+        )?));
     }
     if let Some(adopted) = adopt_legacy_checkpoint_receipt_in_tx(
         &mut tx,
@@ -1362,6 +1378,7 @@ pub async fn checkpoint(
         return Ok(Json(checkpoint_envelope(
             &request.session_id,
             adopted.receipt,
+            true,
         )?));
     }
     if let Some(parent_checkpoint_ref) = request.parent_checkpoint_id.as_deref() {
@@ -1441,6 +1458,7 @@ pub async fn checkpoint(
     Ok(Json(checkpoint_envelope(
         &request.session_id,
         write.receipt,
+        false,
     )?))
 }
 
@@ -1647,13 +1665,12 @@ pub async fn queue_dream(
     }
     auth.require(Capability::Dream)?;
     let mut tx = state.begin_write(&auth).await?;
-    let current_generation = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
-    )
-    .bind(auth.user_id.0)
-    .fetch_one(&mut *tx)
-    .await?
-    .unwrap_or(0);
+    let current_generation =
+        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?
+            .unwrap_or(0);
     let previous_watermark = match request.since_generation {
         Some(value) => value.max(0),
         None => sqlx::query_scalar::<_, Option<i64>>(
@@ -1978,13 +1995,12 @@ pub async fn manifest(
         statement.push(" OFFSET ").push_bind(offset);
     }
     let mut rows = statement.build().fetch_all(&mut *tx).await?;
-    let generation = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
-    )
-    .bind(auth.user_id.0)
-    .fetch_one(&mut *tx)
-    .await?
-    .unwrap_or(0);
+    let generation =
+        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?
+            .unwrap_or(0);
     tx.commit().await?;
     let truncated = rows.len() > usize::try_from(limit).unwrap_or(usize::MAX);
     if truncated {
@@ -3423,9 +3439,7 @@ pub async fn evaluation_status(
         SELECT
           count(*) FILTER (WHERE status IN ('queued','running')) AS pending_jobs,
           count(*) FILTER (WHERE status='failed') AS failed_jobs,
-          (SELECT coalesce(max(generation),0)
-           FROM straylight.workspace_changes
-           WHERE user_id=$1) AS generation
+          straylight_auth.workspace_generation($1) AS generation
         FROM straylight.jobs
         WHERE user_id=$1 AND kind='embed_entry'
         "#,
@@ -3502,13 +3516,12 @@ pub async fn cleanup_evaluation(
 
 async fn current_generation(state: &AppState, auth: &AuthContext) -> ApiResult<i64> {
     let mut tx = state.begin_read(auth).await?;
-    let generation = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT max(generation) FROM straylight.workspace_changes WHERE user_id=$1",
-    )
-    .bind(auth.user_id.0)
-    .fetch_one(&mut *tx)
-    .await?
-    .unwrap_or(0);
+    let generation =
+        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
+            .bind(auth.user_id.0)
+            .fetch_one(&mut *tx)
+            .await?
+            .unwrap_or(0);
     tx.commit().await?;
     Ok(generation)
 }
@@ -5248,9 +5261,7 @@ async fn hydrate_candidates(
         sqlx::query(
             r#"
             WITH generation AS (
-              SELECT coalesce(max(change.generation),0) AS workspace_generation
-              FROM straylight.workspace_changes AS change
-              WHERE change.user_id=$1
+              SELECT straylight_auth.workspace_generation($1) AS workspace_generation
             ), documents AS MATERIALIZED (
               SELECT entry.id,version.size_bytes,version.content
               FROM straylight.entries AS entry
@@ -5501,9 +5512,7 @@ async fn fetch_entry_lookup(
     if include_generation {
         statement.push(
             r#"
-               (SELECT coalesce(max(change.generation),0)
-                FROM straylight.workspace_changes AS change
-                WHERE change.user_id=entry.user_id) AS workspace_generation
+               straylight_auth.workspace_generation(entry.user_id) AS workspace_generation
             "#,
         );
     } else {
@@ -7291,6 +7300,26 @@ async fn resolve_checkpoint_sources_in_tx(
         .map(|path| portable_path_key(path))
         .collect::<Vec<_>>();
 
+    // The path lanes cannot use indexes beneath the RLS barrier (LIKE and
+    // normalize() are not leakproof), so a SECURITY DEFINER resolver maps
+    // them to entry ids first and the visible query stays on leakproof
+    // id equality.
+    let mut candidate_ids = entry_ids.clone();
+    if !paths.is_empty() || !normalized_path_keys.is_empty() {
+        let resolved: Vec<Uuid> =
+            sqlx::query_scalar("SELECT straylight_auth.resolve_entry_ids_by_path($1,$2,$3)")
+                .bind(user_id)
+                .bind(&paths)
+                .bind(&normalized_path_keys)
+                .fetch_one(&mut **tx)
+                .await?;
+        candidate_ids.extend(resolved);
+    }
+    candidate_ids.sort();
+    candidate_ids.dedup();
+    if candidate_ids.is_empty() {
+        return Ok((Vec::new(), None));
+    }
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.title,entry.kind,entry.media_type,
@@ -7298,9 +7327,7 @@ async fn resolve_checkpoint_sources_in_tx(
                version.id AS version_id,version.content_sha256,
                NULL::text AS content,version.object_key,version.object_version_id,
                version.size_bytes,version.metadata,
-               (SELECT coalesce(max(change.generation),0)
-                FROM straylight.workspace_changes AS change
-                WHERE change.user_id=$1) AS pinned_workspace_generation
+               straylight_auth.workspace_generation($1) AS pinned_workspace_generation
         FROM straylight.entries AS entry
         JOIN straylight.entry_versions AS version
           ON version.user_id=entry.user_id
@@ -7308,17 +7335,11 @@ async fn resolve_checkpoint_sources_in_tx(
          AND version.version=entry.current_version
         WHERE entry.user_id=$1
           AND entry.deleted_at IS NULL
-          AND (
-            entry.id=ANY($2)
-            OR entry.path=ANY($3)
-            OR lower(normalize(entry.path, NFC))=ANY($4)
-          )
+          AND entry.id=ANY($2)
         "#,
     )
     .bind(user_id)
-    .bind(&entry_ids)
-    .bind(&paths)
-    .bind(&normalized_path_keys)
+    .bind(&candidate_ids)
     .fetch_all(&mut **tx)
     .await?;
     let pinned_workspace_generation = rows
@@ -7598,7 +7619,11 @@ fn validate_checkpoint_request(request: &CheckpointRequest) -> ApiResult<(String
     ))
 }
 
-fn checkpoint_envelope(session_id: &str, receipt: Value) -> ApiResult<WorkspaceEnvelope<Value>> {
+fn checkpoint_envelope(
+    session_id: &str,
+    receipt: Value,
+    replayed: bool,
+) -> ApiResult<WorkspaceEnvelope<Value>> {
     let resulting_generation = receipt
         .get("resulting_workspace_generation")
         .or_else(|| receipt.get("workspace_generation"))
@@ -7611,8 +7636,11 @@ fn checkpoint_envelope(session_id: &str, receipt: Value) -> ApiResult<WorkspaceE
     envelope.session_id = Some(session_id.to_owned());
     envelope.corpus_revision = Some(format!("generation:{resulting_generation}"));
     // A replay intentionally returns the same logical response as the first
-    // successful call. Per-request SQL counts are diagnostics, not receipt data.
-    envelope.query_count = None;
+    // successful call. Per-request SQL counts are diagnostics, not receipt
+    // data, so only a fresh checkpoint reports its own count.
+    if replayed {
+        envelope.query_count = None;
+    }
     Ok(envelope)
 }
 
@@ -7877,6 +7905,20 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
         ".straylight/checkpoints/{}.md",
         deterministic_checkpoint_id(request)
     );
+    // LIKE and the metadata hash expression cannot reach their indexes
+    // beneath the RLS barrier, so a SECURITY DEFINER resolver bounds the
+    // candidate set by id first; every original predicate is re-checked on
+    // that bounded set.
+    let adoption_ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT straylight_auth.resolve_checkpoint_adoption_ids($1,$2,$3)")
+            .bind(user_id)
+            .bind(idempotency_hash.as_deref())
+            .bind(&implicit_path)
+            .fetch_one(&mut **tx)
+            .await?;
+    if adoption_ids.is_empty() {
+        return Ok(None);
+    }
     let rows = sqlx::query(
         r#"
         SELECT entry.id,entry.path,entry.current_version,
@@ -7887,6 +7929,7 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
          AND version.entry_id=entry.id
          AND version.version=entry.current_version
         WHERE entry.user_id=$1
+          AND entry.id=ANY($4)
           AND entry.deleted_at IS NULL
           AND entry.path LIKE '.straylight/checkpoints/%'
           AND version.metadata->>'kind'='checkpoint'
@@ -7901,6 +7944,7 @@ async fn adopt_legacy_checkpoint_receipt_in_tx(
     .bind(user_id)
     .bind(idempotency_hash)
     .bind(implicit_path)
+    .bind(&adoption_ids)
     .fetch_all(&mut **tx)
     .await?;
     if rows.is_empty() {
@@ -8488,6 +8532,19 @@ fn require_write_capabilities(auth: &AuthContext, path: &str) -> ApiResult<()> {
         auth.require(Capability::Stage)?;
     }
     Ok(())
+}
+
+/// A chronicle-style "no durable memory" no-op summary aimed at the
+/// agent-memory tree. These carry no signal and are no longer admitted; any
+/// other agent-memory content passes unchanged.
+pub(crate) fn is_agent_memory_noop_summary(path: &str, content: &str) -> bool {
+    if !path.starts_with("agent-memory/") {
+        return false;
+    }
+    let lower = content.to_lowercase();
+    lower.contains("no durable memory")
+        || lower.contains("no durable memories")
+        || lower.contains("nothing durable could be extracted")
 }
 
 fn validate_write_path(request: &WriteRequest) -> ApiResult<()> {
@@ -9226,6 +9283,23 @@ fn render_seed_checkpoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_memory_noop_summaries_are_not_admitted() {
+        let noop =
+            "# Chronicle summary\n\nNo durable memory could be extracted from this session.\n";
+        assert!(is_agent_memory_noop_summary(
+            "agent-memory/chronicle/2026-08-30.md",
+            noop
+        ));
+        // The path prefix IS the classification: the same content elsewhere
+        // is admitted, and signal-bearing chronicle content is kept.
+        assert!(!is_agent_memory_noop_summary("sources/Notes.md", noop));
+        assert!(!is_agent_memory_noop_summary(
+            "agent-memory/chronicle/2026-08-30.md",
+            "# Chronicle summary\n\nThe owner decided to migrate the vault on Tuesday.\n",
+        ));
+    }
 
     fn test_conversation_header() -> crate::messaging_protocol::ConversationHeader {
         use crate::messaging_protocol::{
@@ -10193,10 +10267,14 @@ mod tests {
             "workspace_generation": 7,
             "resulting_workspace_generation": 7
         });
-        let first_envelope = checkpoint_envelope(&request.session_id, receipt.clone()).unwrap();
-        let replay_envelope =
-            checkpoint_envelope(&correlated_from_another_session.session_id, receipt.clone())
-                .unwrap();
+        let first_envelope =
+            checkpoint_envelope(&request.session_id, receipt.clone(), false).unwrap();
+        let replay_envelope = checkpoint_envelope(
+            &correlated_from_another_session.session_id,
+            receipt.clone(),
+            true,
+        )
+        .unwrap();
         assert_eq!(first_envelope.data, replay_envelope.data);
         assert_eq!(replay_envelope.data, receipt);
         assert_eq!(first_envelope.session_id.as_deref(), Some("session:one"));
@@ -11128,9 +11206,10 @@ mod tests {
         .await
         .expect("cross-session checkpoint replay");
         assert_eq!(first, cross_session_replay);
-        let first_envelope = checkpoint_envelope(&request.session_id, first.clone()).unwrap();
+        let first_envelope =
+            checkpoint_envelope(&request.session_id, first.clone(), false).unwrap();
         let replay_envelope =
-            checkpoint_envelope(&replay_request.session_id, cross_session_replay).unwrap();
+            checkpoint_envelope(&replay_request.session_id, cross_session_replay, true).unwrap();
         assert_eq!(first_envelope.data, replay_envelope.data);
         assert_eq!(
             first_envelope.session_id.as_deref(),
@@ -11296,9 +11375,12 @@ mod tests {
         assert!(!adopted.created);
         assert_eq!(adopted.receipt["checkpoint_ref"], legacy_ref);
         assert_eq!(adopted.receipt["path"], legacy_path);
-        let adopted_envelope =
-            checkpoint_envelope(&legacy_replay_request.session_id, adopted.receipt.clone())
-                .unwrap();
+        let adopted_envelope = checkpoint_envelope(
+            &legacy_replay_request.session_id,
+            adopted.receipt.clone(),
+            true,
+        )
+        .unwrap();
         assert_eq!(
             adopted_envelope.session_id.as_deref(),
             Some("session:legacy-replay-after-restart")
