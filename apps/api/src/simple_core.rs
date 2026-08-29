@@ -1358,7 +1358,11 @@ pub async fn checkpoint(
             .await?
     {
         tx.commit().await?;
-        return Ok(Json(checkpoint_envelope(&request.session_id, receipt)?));
+        return Ok(Json(checkpoint_envelope(
+            &request.session_id,
+            receipt,
+            true,
+        )?));
     }
     if let Some(adopted) = adopt_legacy_checkpoint_receipt_in_tx(
         &mut tx,
@@ -1374,6 +1378,7 @@ pub async fn checkpoint(
         return Ok(Json(checkpoint_envelope(
             &request.session_id,
             adopted.receipt,
+            true,
         )?));
     }
     if let Some(parent_checkpoint_ref) = request.parent_checkpoint_id.as_deref() {
@@ -1453,6 +1458,7 @@ pub async fn checkpoint(
     Ok(Json(checkpoint_envelope(
         &request.session_id,
         write.receipt,
+        false,
     )?))
 }
 
@@ -7610,7 +7616,11 @@ fn validate_checkpoint_request(request: &CheckpointRequest) -> ApiResult<(String
     ))
 }
 
-fn checkpoint_envelope(session_id: &str, receipt: Value) -> ApiResult<WorkspaceEnvelope<Value>> {
+fn checkpoint_envelope(
+    session_id: &str,
+    receipt: Value,
+    replayed: bool,
+) -> ApiResult<WorkspaceEnvelope<Value>> {
     let resulting_generation = receipt
         .get("resulting_workspace_generation")
         .or_else(|| receipt.get("workspace_generation"))
@@ -7623,8 +7633,11 @@ fn checkpoint_envelope(session_id: &str, receipt: Value) -> ApiResult<WorkspaceE
     envelope.session_id = Some(session_id.to_owned());
     envelope.corpus_revision = Some(format!("generation:{resulting_generation}"));
     // A replay intentionally returns the same logical response as the first
-    // successful call. Per-request SQL counts are diagnostics, not receipt data.
-    envelope.query_count = None;
+    // successful call. Per-request SQL counts are diagnostics, not receipt
+    // data, so only a fresh checkpoint reports its own count.
+    if replayed {
+        envelope.query_count = None;
+    }
     Ok(envelope)
 }
 
@@ -10235,10 +10248,14 @@ mod tests {
             "workspace_generation": 7,
             "resulting_workspace_generation": 7
         });
-        let first_envelope = checkpoint_envelope(&request.session_id, receipt.clone()).unwrap();
-        let replay_envelope =
-            checkpoint_envelope(&correlated_from_another_session.session_id, receipt.clone())
-                .unwrap();
+        let first_envelope =
+            checkpoint_envelope(&request.session_id, receipt.clone(), false).unwrap();
+        let replay_envelope = checkpoint_envelope(
+            &correlated_from_another_session.session_id,
+            receipt.clone(),
+            true,
+        )
+        .unwrap();
         assert_eq!(first_envelope.data, replay_envelope.data);
         assert_eq!(replay_envelope.data, receipt);
         assert_eq!(first_envelope.session_id.as_deref(), Some("session:one"));
@@ -11170,9 +11187,10 @@ mod tests {
         .await
         .expect("cross-session checkpoint replay");
         assert_eq!(first, cross_session_replay);
-        let first_envelope = checkpoint_envelope(&request.session_id, first.clone()).unwrap();
+        let first_envelope =
+            checkpoint_envelope(&request.session_id, first.clone(), false).unwrap();
         let replay_envelope =
-            checkpoint_envelope(&replay_request.session_id, cross_session_replay).unwrap();
+            checkpoint_envelope(&replay_request.session_id, cross_session_replay, true).unwrap();
         assert_eq!(first_envelope.data, replay_envelope.data);
         assert_eq!(
             first_envelope.session_id.as_deref(),
@@ -11338,9 +11356,12 @@ mod tests {
         assert!(!adopted.created);
         assert_eq!(adopted.receipt["checkpoint_ref"], legacy_ref);
         assert_eq!(adopted.receipt["path"], legacy_path);
-        let adopted_envelope =
-            checkpoint_envelope(&legacy_replay_request.session_id, adopted.receipt.clone())
-                .unwrap();
+        let adopted_envelope = checkpoint_envelope(
+            &legacy_replay_request.session_id,
+            adopted.receipt.clone(),
+            true,
+        )
+        .unwrap();
         assert_eq!(
             adopted_envelope.session_id.as_deref(),
             Some("session:legacy-replay-after-restart")
