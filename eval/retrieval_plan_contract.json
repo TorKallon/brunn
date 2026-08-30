@@ -5,9 +5,9 @@
     "lexical": {
       "function_name": "straylight.workspace_lexical_candidates_v2",
       "regprocedure": "straylight.workspace_lexical_candidates_v2(text,text)",
-      "migration": "apps/api/migrations/0067_search_candidate_updated_at.sql",
+      "migration": "apps/api/migrations/0081_bounded_lexical_rank.sql",
       "invocation_sql": "SELECT * FROM straylight.workspace_lexical_candidates_v2($1,$2)",
-      "body_sha256": "abacc41613cf52a96a7c75f99f833c279e1325147fc129aedf52e4a8de25b2b7",
+      "body_sha256": "c1ef8b6d4d77bc0257572bd6208bafc0109202772cb04db45e780465b70273b9",
       "expected_index": "search_chunks_fts_idx"
     },
     "semantic": {
