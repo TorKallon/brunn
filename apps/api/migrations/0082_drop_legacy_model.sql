@@ -114,7 +114,7 @@ DROP FUNCTION IF EXISTS straylight.read_manifest_stats(uuid) CASCADE;
 DROP FUNCTION IF EXISTS straylight.read_manifest_sample(uuid, integer) CASCADE;
 DROP FUNCTION IF EXISTS straylight_auth.admin_provision_user(text, text, text, text, text);
 
-CREATE OR REPLACE FUNCTION straylight.seed_user_defaults()
+CREATE OR REPLACE FUNCTION straylight_auth.seed_user_defaults()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $seed$
