@@ -21,6 +21,8 @@ const QUERY_CACHE_CAPACITY: usize = 4_096;
 const QUERY_CACHE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const QUERY_CACHE_NEGATIVE_TTL: Duration = Duration::from_secs(60);
 const DEFAULT_ONLINE_QUERY_CONCURRENCY: usize = 8;
+const QUERY_PROVIDER_BATCH_MAX_ITEMS: usize = 16;
+const QUERY_PROVIDER_BATCH_MAX_BYTES: usize = 100_000;
 // Coverage rarely disappears once present, so a ready workspace stays cached
 // for minutes; a not-ready workspace rechecks quickly so first-time indexing
 // becomes visible promptly.
@@ -189,6 +191,8 @@ struct SemanticCounters {
     dedupe_joins: AtomicU64,
     saturation_waits: AtomicU64,
     provider_timeouts: AtomicU64,
+    provider_batches: AtomicU64,
+    provider_items: AtomicU64,
     post_deferral_completions: AtomicU64,
     readiness_cache_hits: AtomicU64,
     successes: AtomicU64,
@@ -210,6 +214,8 @@ pub struct SemanticRuntimeSnapshot {
     pub dedupe_joins: u64,
     pub saturation_waits: u64,
     pub provider_timeouts: u64,
+    pub provider_batches: u64,
+    pub provider_items: u64,
     pub post_deferral_completions: u64,
     pub readiness_cache_hits: u64,
     pub successes: u64,
@@ -220,6 +226,36 @@ pub struct SemanticRuntimeSnapshot {
 
 type InflightReceiver = watch::Receiver<Option<CachedQueryEmbedding>>;
 type InflightMap = Arc<Mutex<HashMap<QueryEmbeddingKey, InflightReceiver>>>;
+
+/// A request-local handle for one cached or in-flight query embedding. Creating
+/// a ticket never waits for the provider; resolving it remains inside the
+/// caller's existing semantic deadline.
+pub(crate) struct PreparedQueryEmbedding {
+    state: PreparedQueryEmbeddingState,
+}
+
+enum PreparedQueryEmbeddingState {
+    Ready(CachedQueryEmbedding),
+    Inflight(InflightReceiver),
+}
+
+impl PreparedQueryEmbedding {
+    pub(crate) async fn resolve(self) -> ApiResult<Vec<f32>> {
+        match self.state {
+            PreparedQueryEmbeddingState::Ready(CachedQueryEmbedding::Vector(vector)) => Ok(vector),
+            PreparedQueryEmbeddingState::Ready(CachedQueryEmbedding::Negative) => {
+                Err(negative_cache_error())
+            }
+            PreparedQueryEmbeddingState::Inflight(receiver) => wait_for_inflight(receiver).await,
+        }
+    }
+}
+
+struct InflightLeader {
+    sender: watch::Sender<Option<CachedQueryEmbedding>>,
+    key: QueryEmbeddingKey,
+    query: String,
+}
 
 #[derive(Clone)]
 pub struct SemanticRuntime {
@@ -336,6 +372,8 @@ impl SemanticRuntime {
             dedupe_joins: load(&self.counters.dedupe_joins),
             saturation_waits: load(&self.counters.saturation_waits),
             provider_timeouts: load(&self.counters.provider_timeouts),
+            provider_batches: load(&self.counters.provider_batches),
+            provider_items: load(&self.counters.provider_items),
             post_deferral_completions: load(&self.counters.post_deferral_completions),
             readiness_cache_hits: load(&self.counters.readiness_cache_hits),
             successes: load(&self.counters.successes),
@@ -415,6 +453,18 @@ impl SemanticRuntime {
         metrics::counter!("simple.semantic.provider_timeout").increment(1);
     }
 
+    fn record_provider_batch(&self, items: usize) {
+        self.counters
+            .provider_batches
+            .fetch_add(1, Ordering::Relaxed);
+        self.counters
+            .provider_items
+            .fetch_add(items as u64, Ordering::Relaxed);
+        metrics::counter!("simple.semantic.query_provider_batch").increment(1);
+        metrics::counter!("simple.semantic.query_provider_items").increment(items as u64);
+        metrics::histogram!("simple.semantic.query_provider_batch_items").record(items as f64);
+    }
+
     fn record_post_deferral_completion(&self) {
         self.counters
             .post_deferral_completions
@@ -443,6 +493,7 @@ impl SemanticRuntime {
             // provider-path time past the configured bound.
             return match tokio::time::timeout(provider_timeout, async {
                 let _permit = self.acquire_online_permit().await;
+                self.record_provider_batch(1);
                 one_query_embedding(embedder.as_ref(), query).await
             })
             .await
@@ -455,104 +506,179 @@ impl SemanticRuntime {
             };
         }
 
-        let key = QueryEmbeddingKey::new(embedder.model(), embedder.dimensions(), query);
-        match self.cache.lookup(&key) {
-            CacheLookup::Hit(vector) => {
-                self.counters.cache_hits.fetch_add(1, Ordering::Relaxed);
-                metrics::counter!("simple.semantic.query_cache", "result" => "hit").increment(1);
-                return Ok(vector);
-            }
-            CacheLookup::NegativeHit => {
-                self.counters
-                    .negative_cache_hits
-                    .fetch_add(1, Ordering::Relaxed);
-                metrics::counter!("simple.semantic.query_cache", "result" => "negative_hit")
-                    .increment(1);
-                return Err(negative_cache_error());
-            }
-            CacheLookup::Miss => {
-                self.counters.cache_misses.fetch_add(1, Ordering::Relaxed);
-                metrics::counter!("simple.semantic.query_cache", "result" => "miss").increment(1);
-            }
-        }
-
-        let receiver = self.join_or_spawn_inflight(key, embedder, query, provider_timeout);
-        wait_for_inflight(receiver).await
+        self.prepare_cached_query_embeddings(embedder, &[query.to_owned()], provider_timeout)
+            .pop()
+            .expect("one query must produce one prepared embedding")
+            .resolve()
+            .await
     }
 
-    /// Per-key single flight: the first miss spawns one leader provider call;
-    /// concurrent equivalent misses subscribe to the same result.
-    fn join_or_spawn_inflight(
+    /// Resolve cache state and register all distinct misses before launching
+    /// provider work. The returned tickets preserve input order and never wait
+    /// for the provider, so callers can keep them inside their existing lane
+    /// deadline and cancellation policy.
+    pub(crate) fn prepare_cached_query_embeddings(
         &self,
-        key: QueryEmbeddingKey,
         embedder: SharedEmbedder,
-        query: &str,
+        queries: &[String],
         provider_timeout: Duration,
-    ) -> InflightReceiver {
-        let receiver = {
+    ) -> Vec<PreparedQueryEmbedding> {
+        let mut leaders = Vec::new();
+        let tickets = {
+            // Keep cache lookup and in-flight registration inside one critical
+            // section. This closes the miss/completion race where a prior
+            // leader could disappear between those two checks.
             let mut inflight = self
                 .inflight
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
-            if let Some(existing) = inflight.get(&key) {
-                self.record_dedupe_join();
-                return existing.clone();
-            }
-            let (sender, receiver) = watch::channel(None);
-            inflight.insert(key.clone(), receiver.clone());
-            self.spawn_inflight_leader(sender, key, embedder, query.to_owned(), provider_timeout);
-            receiver
+            queries
+                .iter()
+                .map(|query| {
+                    let key =
+                        QueryEmbeddingKey::new(embedder.model(), embedder.dimensions(), query);
+                    match self.cache.lookup(&key) {
+                        CacheLookup::Hit(vector) => {
+                            self.counters.cache_hits.fetch_add(1, Ordering::Relaxed);
+                            metrics::counter!(
+                                "simple.semantic.query_cache",
+                                "result" => "hit"
+                            )
+                            .increment(1);
+                            PreparedQueryEmbedding {
+                                state: PreparedQueryEmbeddingState::Ready(
+                                    CachedQueryEmbedding::Vector(vector),
+                                ),
+                            }
+                        }
+                        CacheLookup::NegativeHit => {
+                            self.counters
+                                .negative_cache_hits
+                                .fetch_add(1, Ordering::Relaxed);
+                            metrics::counter!(
+                                "simple.semantic.query_cache",
+                                "result" => "negative_hit"
+                            )
+                            .increment(1);
+                            PreparedQueryEmbedding {
+                                state: PreparedQueryEmbeddingState::Ready(
+                                    CachedQueryEmbedding::Negative,
+                                ),
+                            }
+                        }
+                        CacheLookup::Miss => {
+                            self.counters.cache_misses.fetch_add(1, Ordering::Relaxed);
+                            metrics::counter!(
+                                "simple.semantic.query_cache",
+                                "result" => "miss"
+                            )
+                            .increment(1);
+                            if let Some(existing) = inflight.get(&key) {
+                                self.record_dedupe_join();
+                                return PreparedQueryEmbedding {
+                                    state: PreparedQueryEmbeddingState::Inflight(existing.clone()),
+                                };
+                            }
+                            let (sender, receiver) = watch::channel(None);
+                            inflight.insert(key.clone(), receiver.clone());
+                            leaders.push(InflightLeader {
+                                sender,
+                                key,
+                                query: query.clone(),
+                            });
+                            PreparedQueryEmbedding {
+                                state: PreparedQueryEmbeddingState::Inflight(receiver),
+                            }
+                        }
+                    }
+                })
+                .collect()
         };
-        receiver
+
+        let mut leaders = leaders.into_iter().peekable();
+        while leaders.peek().is_some() {
+            let mut batch = Vec::new();
+            let mut batch_bytes = 0usize;
+            while let Some(next) = leaders.peek() {
+                let next_bytes = next.query.len();
+                let item_limit = batch.len() >= QUERY_PROVIDER_BATCH_MAX_ITEMS;
+                let byte_limit = !batch.is_empty()
+                    && batch_bytes.saturating_add(next_bytes) > QUERY_PROVIDER_BATCH_MAX_BYTES;
+                if item_limit || byte_limit {
+                    break;
+                }
+                let next = leaders.next().expect("peeked leader must remain available");
+                batch_bytes = batch_bytes.saturating_add(next.query.len());
+                batch.push(next);
+            }
+            self.spawn_inflight_batch_leader(batch, embedder.clone(), provider_timeout);
+        }
+        tickets
     }
 
-    // Keeps the provider call alive if the request's semantic deadline
-    // expires — a later equivalent query can use the completed vector — but
-    // bounds it with the query-specific provider timeout so abandoned work
-    // can never run for the shared provider client's full 60-second window.
-    fn spawn_inflight_leader(
+    // Keeps provider work alive if request-local semantic tickets are dropped,
+    // warming the cache for a later equivalent query. One timeout bounds permit
+    // acquisition plus the complete provider batch.
+    fn spawn_inflight_batch_leader(
         &self,
-        sender: watch::Sender<Option<CachedQueryEmbedding>>,
-        key: QueryEmbeddingKey,
+        leaders: Vec<InflightLeader>,
         embedder: SharedEmbedder,
-        query: String,
         provider_timeout: Duration,
     ) {
+        if leaders.is_empty() {
+            return;
+        }
         let runtime = self.clone();
         tokio::spawn(async move {
-            let guard = InflightGuard {
-                inflight: runtime.inflight.clone(),
-                key: key.clone(),
-            };
-            let dimensions = embedder.dimensions();
+            let guards = leaders
+                .iter()
+                .map(|leader| InflightGuard {
+                    inflight: runtime.inflight.clone(),
+                    key: leader.key.clone(),
+                })
+                .collect::<Vec<_>>();
+            let queries = leaders
+                .iter()
+                .map(|leader| leader.query.clone())
+                .collect::<Vec<_>>();
             // The timeout envelope covers semaphore acquisition as well as the
-            // provider call, so queued leaders under unique-miss saturation
+            // provider call, so queued batches under unique-miss saturation
             // expire on schedule instead of waiting indefinitely for a permit.
-            let value = match tokio::time::timeout(provider_timeout, async {
+            let result = match tokio::time::timeout(provider_timeout, async {
                 let _permit = runtime.acquire_online_permit().await;
-                one_query_embedding(embedder.as_ref(), &query).await
+                runtime.record_provider_batch(queries.len());
+                many_query_embeddings(embedder.as_ref(), &queries).await
             })
             .await
             {
-                Ok(Ok(vector)) if vector.len() == dimensions => {
-                    runtime.cache.insert_vector(key.clone(), vector.clone());
-                    CachedQueryEmbedding::Vector(vector)
-                }
-                Ok(_) => {
-                    runtime.cache.insert_negative(key.clone());
-                    CachedQueryEmbedding::Negative
-                }
+                Ok(Ok(vectors)) => vectors
+                    .into_iter()
+                    .map(CachedQueryEmbedding::Vector)
+                    .collect::<Vec<_>>(),
+                Ok(Err(_)) => vec![CachedQueryEmbedding::Negative; leaders.len()],
                 Err(_) => {
                     runtime.record_provider_timeout();
-                    runtime.cache.insert_negative(key.clone());
-                    CachedQueryEmbedding::Negative
+                    vec![CachedQueryEmbedding::Negative; leaders.len()]
                 }
             };
-            // The cache insert above must precede in-flight removal so a
-            // racing lookup either joins this flight or hits the cache.
-            drop(guard);
-            if sender.send(Some(value)).is_err() {
-                runtime.record_post_deferral_completion();
+
+            // Populate every key before removing any in-flight registration.
+            // A racing lookup therefore either joins this batch or hits cache.
+            for (leader, value) in leaders.iter().zip(&result) {
+                match value {
+                    CachedQueryEmbedding::Vector(vector) => runtime
+                        .cache
+                        .insert_vector(leader.key.clone(), vector.clone()),
+                    CachedQueryEmbedding::Negative => {
+                        runtime.cache.insert_negative(leader.key.clone())
+                    }
+                }
+            }
+            drop(guards);
+            for (leader, value) in leaders.into_iter().zip(result) {
+                if leader.sender.send(Some(value)).is_err() {
+                    runtime.record_post_deferral_completion();
+                }
             }
         });
     }
@@ -593,16 +719,28 @@ async fn one_query_embedding(
     embedder: &dyn crate::embeddings::Embedder,
     query: &str,
 ) -> ApiResult<Vec<f32>> {
-    let vectors = embedder.embed(&[query.to_owned()]).await?;
-    let vector = vectors.into_iter().next().ok_or_else(|| {
-        ApiError::Internal("embedding provider returned no query vector".to_owned())
-    })?;
-    if vector.len() != embedder.dimensions() {
+    Ok(many_query_embeddings(embedder, &[query.to_owned()])
+        .await?
+        .into_iter()
+        .next()
+        .expect("one validated query embedding must be returned"))
+}
+
+async fn many_query_embeddings(
+    embedder: &dyn crate::embeddings::Embedder,
+    queries: &[String],
+) -> ApiResult<Vec<Vec<f32>>> {
+    let vectors = embedder.embed(queries).await?;
+    if vectors.len() != queries.len()
+        || vectors
+            .iter()
+            .any(|vector| vector.len() != embedder.dimensions())
+    {
         return Err(ApiError::Internal(
             "embedding provider returned an unexpected result shape".to_owned(),
         ));
     }
-    Ok(vector)
+    Ok(vectors)
 }
 
 fn negative_cache_error() -> ApiError {
@@ -713,7 +851,7 @@ mod tests {
             if self.fail {
                 Err(negative_cache_error())
             } else {
-                Ok(vec![vec![1.0, 0.0, 0.0]])
+                Ok(input.iter().map(|_| vec![1.0, 0.0, 0.0]).collect())
             }
         }
 
@@ -839,6 +977,356 @@ mod tests {
         assert_eq!(runtime.inflight_len(), 0);
     }
 
+    #[derive(Clone, Copy)]
+    enum BatchOutput {
+        Valid,
+        WrongCount,
+    }
+
+    struct RecordingBatchEmbedder {
+        calls: AtomicUsize,
+        batches: Mutex<Vec<Vec<String>>>,
+        delay: Duration,
+        output: BatchOutput,
+    }
+
+    #[async_trait]
+    impl Embedder for RecordingBatchEmbedder {
+        async fn embed(&self, input: &[String]) -> ApiResult<Vec<Vec<f32>>> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            self.batches.lock().unwrap().push(input.to_vec());
+            tokio::time::sleep(self.delay).await;
+            let mut vectors = input
+                .iter()
+                .map(|text| vec![text.len() as f32, 1.0, 0.0])
+                .collect::<Vec<_>>();
+            if matches!(self.output, BatchOutput::WrongCount) {
+                vectors.pop();
+            }
+            Ok(vectors)
+        }
+
+        fn provider(&self) -> &'static str {
+            "mock"
+        }
+
+        fn model(&self) -> &str {
+            "mock-batch-v1"
+        }
+
+        fn dimensions(&self) -> usize {
+            3
+        }
+
+        fn is_degraded(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn prepared_unique_misses_use_one_provider_batch_and_preserve_order() {
+        let embedder = Arc::new(RecordingBatchEmbedder {
+            calls: AtomicUsize::new(0),
+            batches: Mutex::new(Vec::new()),
+            delay: Duration::from_millis(10),
+            output: BatchOutput::Valid,
+        });
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(16, Duration::from_secs(60), Duration::from_secs(1)),
+            8,
+        );
+        let queries = ["a", "bravo", "charlie", "delta", "echo", "foxtrot"].map(str::to_owned);
+        let tickets = runtime.prepare_cached_query_embeddings(
+            embedder.clone(),
+            &queries,
+            Duration::from_secs(5),
+        );
+        assert_eq!(tickets.len(), queries.len());
+
+        let vectors =
+            futures::future::join_all(tickets.into_iter().map(PreparedQueryEmbedding::resolve))
+                .await
+                .into_iter()
+                .collect::<ApiResult<Vec<_>>>()
+                .unwrap();
+
+        assert_eq!(embedder.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            embedder.batches.lock().unwrap().as_slice(),
+            &[queries.to_vec()]
+        );
+        assert_eq!(
+            vectors
+                .iter()
+                .map(|vector| vector[0] as usize)
+                .collect::<Vec<_>>(),
+            queries.iter().map(String::len).collect::<Vec<_>>()
+        );
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.cache_misses, 6);
+        assert_eq!(snapshot.provider_batches, 1);
+        assert_eq!(snapshot.provider_items, 6);
+        assert_eq!(runtime.inflight_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn prepared_batch_deduplicates_normalized_queries() {
+        let embedder = Arc::new(RecordingBatchEmbedder {
+            calls: AtomicUsize::new(0),
+            batches: Mutex::new(Vec::new()),
+            delay: Duration::ZERO,
+            output: BatchOutput::Valid,
+        });
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(8, Duration::from_secs(60), Duration::from_secs(1)),
+            8,
+        );
+        let queries = vec![
+            " current plan ".to_owned(),
+            "other".to_owned(),
+            "current   plan".to_owned(),
+        ];
+        let tickets = runtime.prepare_cached_query_embeddings(
+            embedder.clone(),
+            &queries,
+            Duration::from_secs(5),
+        );
+        let vectors =
+            futures::future::join_all(tickets.into_iter().map(PreparedQueryEmbedding::resolve))
+                .await
+                .into_iter()
+                .collect::<ApiResult<Vec<_>>>()
+                .unwrap();
+
+        assert_eq!(vectors[0], vectors[2]);
+        assert_eq!(
+            embedder.batches.lock().unwrap().as_slice(),
+            &[vec![" current plan ".to_owned(), "other".to_owned()]]
+        );
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.cache_misses, 3);
+        assert_eq!(snapshot.dedupe_joins, 1);
+        assert_eq!(snapshot.provider_batches, 1);
+        assert_eq!(snapshot.provider_items, 2);
+    }
+
+    #[tokio::test]
+    async fn prepared_batches_respect_item_and_byte_limits() {
+        let embedder = Arc::new(RecordingBatchEmbedder {
+            calls: AtomicUsize::new(0),
+            batches: Mutex::new(Vec::new()),
+            delay: Duration::ZERO,
+            output: BatchOutput::Valid,
+        });
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(32, Duration::from_secs(60), Duration::from_secs(1)),
+            8,
+        );
+        let item_queries = (0..17)
+            .map(|index| format!("item-{index}"))
+            .collect::<Vec<_>>();
+        let item_tickets = runtime.prepare_cached_query_embeddings(
+            embedder.clone(),
+            &item_queries,
+            Duration::from_secs(5),
+        );
+        futures::future::join_all(
+            item_tickets
+                .into_iter()
+                .map(PreparedQueryEmbedding::resolve),
+        )
+        .await
+        .into_iter()
+        .collect::<ApiResult<Vec<_>>>()
+        .unwrap();
+
+        let byte_queries = vec!["a".repeat(60_000), "b".repeat(60_000)];
+        let byte_tickets = runtime.prepare_cached_query_embeddings(
+            embedder.clone(),
+            &byte_queries,
+            Duration::from_secs(5),
+        );
+        futures::future::join_all(
+            byte_tickets
+                .into_iter()
+                .map(PreparedQueryEmbedding::resolve),
+        )
+        .await
+        .into_iter()
+        .collect::<ApiResult<Vec<_>>>()
+        .unwrap();
+
+        let batches = embedder.batches.lock().unwrap();
+        assert_eq!(
+            batches.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![16, 1, 1, 1]
+        );
+        assert!(batches.iter().all(|batch| batch.len() <= 16));
+        assert!(
+            batches
+                .iter()
+                .all(|batch| batch.iter().map(String::len).sum::<usize>() <= 100_000)
+        );
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.provider_batches, 4);
+        assert_eq!(snapshot.provider_items, 19);
+    }
+
+    #[tokio::test]
+    async fn prepared_batch_excludes_cache_hits_and_existing_flights() {
+        let embedder = Arc::new(RecordingBatchEmbedder {
+            calls: AtomicUsize::new(0),
+            batches: Mutex::new(Vec::new()),
+            delay: Duration::from_millis(20),
+            output: BatchOutput::Valid,
+        });
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(16, Duration::from_secs(60), Duration::from_secs(1)),
+            8,
+        );
+        runtime.cache.insert_vector(
+            QueryEmbeddingKey::new(embedder.model(), embedder.dimensions(), "warm"),
+            vec![99.0, 1.0, 0.0],
+        );
+        let shared = runtime
+            .prepare_cached_query_embeddings(
+                embedder.clone(),
+                &["shared".to_owned()],
+                Duration::from_secs(5),
+            )
+            .pop()
+            .unwrap();
+        let queries = vec![
+            "warm".to_owned(),
+            "shared".to_owned(),
+            "new-a".to_owned(),
+            "new-b".to_owned(),
+        ];
+        let tickets = runtime.prepare_cached_query_embeddings(
+            embedder.clone(),
+            &queries,
+            Duration::from_secs(5),
+        );
+        let (shared, results) = tokio::join!(
+            shared.resolve(),
+            futures::future::join_all(tickets.into_iter().map(PreparedQueryEmbedding::resolve))
+        );
+        shared.unwrap();
+        let results = results.into_iter().collect::<ApiResult<Vec<_>>>().unwrap();
+
+        assert_eq!(results[0], vec![99.0, 1.0, 0.0]);
+        assert_eq!(embedder.calls.load(Ordering::Relaxed), 2);
+        let mut batches = embedder.batches.lock().unwrap().clone();
+        batches.sort();
+        assert_eq!(
+            batches,
+            vec![
+                vec!["new-a".to_owned(), "new-b".to_owned()],
+                vec!["shared".to_owned()],
+            ]
+        );
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.cache_hits, 1);
+        assert_eq!(snapshot.cache_misses, 4);
+        assert_eq!(snapshot.dedupe_joins, 1);
+        assert_eq!(snapshot.provider_batches, 2);
+        assert_eq!(snapshot.provider_items, 3);
+        assert_eq!(runtime.inflight_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn invalid_batch_shape_negative_caches_every_new_key() {
+        let embedder = Arc::new(RecordingBatchEmbedder {
+            calls: AtomicUsize::new(0),
+            batches: Mutex::new(Vec::new()),
+            delay: Duration::ZERO,
+            output: BatchOutput::WrongCount,
+        });
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(8, Duration::from_secs(60), Duration::from_secs(60)),
+            8,
+        );
+        let queries = vec!["alpha".to_owned(), "bravo".to_owned()];
+        let tickets = runtime.prepare_cached_query_embeddings(
+            embedder.clone(),
+            &queries,
+            Duration::from_secs(5),
+        );
+        let results =
+            futures::future::join_all(tickets.into_iter().map(PreparedQueryEmbedding::resolve))
+                .await;
+        assert!(results.iter().all(Result::is_err));
+        assert_eq!(runtime.inflight_len(), 0);
+        assert!(
+            runtime
+                .query_embedding(embedder.clone(), "alpha", true, Duration::from_secs(5))
+                .await
+                .is_err()
+        );
+        assert_eq!(embedder.calls.load(Ordering::Relaxed), 1);
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.provider_batches, 1);
+        assert_eq!(snapshot.provider_items, 2);
+        assert_eq!(snapshot.negative_cache_hits, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn prepared_batch_timeout_cleans_every_key_and_counts_one_provider_call() {
+        let embedder = Arc::new(RecordingBatchEmbedder {
+            calls: AtomicUsize::new(0),
+            batches: Mutex::new(Vec::new()),
+            delay: Duration::from_secs(3_600),
+            output: BatchOutput::Valid,
+        });
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(8, Duration::from_secs(60), Duration::from_secs(60)),
+            8,
+        );
+        let queries = vec!["alpha".to_owned(), "bravo".to_owned(), "charlie".to_owned()];
+        let tickets =
+            runtime.prepare_cached_query_embeddings(embedder, &queries, Duration::from_millis(50));
+        let results =
+            futures::future::join_all(tickets.into_iter().map(PreparedQueryEmbedding::resolve))
+                .await;
+        assert!(results.iter().all(Result::is_err));
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.provider_timeouts, 1);
+        assert_eq!(snapshot.provider_batches, 1);
+        assert_eq!(snapshot.provider_items, 3);
+        assert_eq!(runtime.inflight_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn dropped_prepared_tickets_still_warm_the_cache() {
+        let embedder = Arc::new(RecordingBatchEmbedder {
+            calls: AtomicUsize::new(0),
+            batches: Mutex::new(Vec::new()),
+            delay: Duration::from_millis(20),
+            output: BatchOutput::Valid,
+        });
+        let runtime = SemanticRuntime::for_tests(
+            QueryEmbeddingCache::new(8, Duration::from_secs(60), Duration::from_secs(1)),
+            8,
+        );
+        let queries = vec!["alpha".to_owned(), "bravo".to_owned()];
+        drop(runtime.prepare_cached_query_embeddings(
+            embedder.clone(),
+            &queries,
+            Duration::from_secs(5),
+        ));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let warm = runtime
+            .query_embedding(embedder.clone(), "alpha", true, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(warm, vec![5.0, 1.0, 0.0]);
+        assert_eq!(embedder.calls.load(Ordering::Relaxed), 1);
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.cache_hits, 1);
+        assert_eq!(snapshot.post_deferral_completions, 2);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn hung_provider_calls_expire_clean_up_and_negative_cache() {
         let embedder = Arc::new(SlowEmbedder {
@@ -882,13 +1370,13 @@ mod tests {
 
     #[async_trait]
     impl Embedder for ConcurrencyProbeEmbedder {
-        async fn embed(&self, _input: &[String]) -> ApiResult<Vec<Vec<f32>>> {
+        async fn embed(&self, input: &[String]) -> ApiResult<Vec<Vec<f32>>> {
             self.calls.fetch_add(1, Ordering::Relaxed);
             let now = self.current.fetch_add(1, Ordering::Relaxed) + 1;
             self.max.fetch_max(now, Ordering::Relaxed);
             tokio::time::sleep(self.delay).await;
             self.current.fetch_sub(1, Ordering::Relaxed);
-            Ok(vec![vec![1.0, 0.0, 0.0]])
+            Ok(input.iter().map(|_| vec![1.0, 0.0, 0.0]).collect())
         }
 
         fn provider(&self) -> &'static str {

@@ -253,6 +253,31 @@ struct EmbeddingItem {
     embedding: Vec<f32>,
 }
 
+fn ordered_embedding_vectors(
+    mut parsed: EmbeddingResponse,
+    expected_items: usize,
+    dimensions: usize,
+) -> ApiResult<Vec<Vec<f32>>> {
+    let _ = parsed.mut_data_placeholder.take();
+    parsed.items.sort_by_key(|item| item.index);
+    if parsed.items.len() != expected_items
+        || parsed
+            .items
+            .iter()
+            .enumerate()
+            .any(|(expected, item)| item.index != expected || item.embedding.len() != dimensions)
+    {
+        return Err(ApiError::Internal(
+            "embedding provider returned an unexpected result shape".to_owned(),
+        ));
+    }
+    Ok(parsed
+        .items
+        .into_iter()
+        .map(|item| item.embedding)
+        .collect())
+}
+
 #[derive(Debug, Deserialize)]
 struct OpenAiErrorEnvelope {
     error: OpenAiError,
@@ -301,24 +326,8 @@ impl Embedder for OpenAiEmbedder {
                     format!("OpenAI embeddings unavailable: {message}"),
                 ));
             }
-            let mut parsed: EmbeddingResponse = serde_json::from_slice(&body)?;
-            let _ = parsed.mut_data_placeholder.take();
-            parsed.items.sort_by_key(|item| item.index);
-            if parsed.items.len() != input.len()
-                || parsed
-                    .items
-                    .iter()
-                    .any(|item| item.embedding.len() != self.dimensions)
-            {
-                return Err(ApiError::Internal(
-                    "embedding provider returned an unexpected result shape".to_owned(),
-                ));
-            }
-            Ok(parsed
-                .items
-                .into_iter()
-                .map(|item| item.embedding)
-                .collect())
+            let parsed: EmbeddingResponse = serde_json::from_slice(&body)?;
+            ordered_embedding_vectors(parsed, input.len(), self.dimensions)
         }
         .await;
         record_embedding_call(
@@ -496,6 +505,67 @@ mod tests {
             }
             other => panic!("unexpected error classification: {other:?}"),
         }
+    }
+
+    #[test]
+    fn provider_response_indices_are_sorted_and_validated() {
+        let vectors = ordered_embedding_vectors(
+            EmbeddingResponse {
+                mut_data_placeholder: None,
+                items: vec![
+                    EmbeddingItem {
+                        index: 1,
+                        embedding: vec![2.0, 0.0, 0.0],
+                    },
+                    EmbeddingItem {
+                        index: 0,
+                        embedding: vec![1.0, 0.0, 0.0],
+                    },
+                ],
+            },
+            2,
+            3,
+        )
+        .unwrap();
+        assert_eq!(vectors, vec![vec![1.0, 0.0, 0.0], vec![2.0, 0.0, 0.0]]);
+
+        let duplicate = ordered_embedding_vectors(
+            EmbeddingResponse {
+                mut_data_placeholder: None,
+                items: vec![
+                    EmbeddingItem {
+                        index: 0,
+                        embedding: vec![1.0, 0.0, 0.0],
+                    },
+                    EmbeddingItem {
+                        index: 0,
+                        embedding: vec![2.0, 0.0, 0.0],
+                    },
+                ],
+            },
+            2,
+            3,
+        );
+        assert!(duplicate.is_err());
+
+        let gap = ordered_embedding_vectors(
+            EmbeddingResponse {
+                mut_data_placeholder: None,
+                items: vec![
+                    EmbeddingItem {
+                        index: 0,
+                        embedding: vec![1.0, 0.0, 0.0],
+                    },
+                    EmbeddingItem {
+                        index: 2,
+                        embedding: vec![2.0, 0.0, 0.0],
+                    },
+                ],
+            },
+            2,
+            3,
+        );
+        assert!(gap.is_err());
     }
 
     struct LengthLimitedEmbedder {

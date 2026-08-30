@@ -85,7 +85,11 @@ hard-bounded by `STRAYLIGHT_SEMANTIC_QUERY_PROVIDER_TIMEOUT_MS` (1–60000)
 independent of the 60-second provider client used by backfill; a timed-out or
 failed call is negative-cached for 60 seconds. A provider task already launched
 by a hybrid request remains bounded and may warm the cache after that response
-returns. Turning
+returns. After semantic index readiness succeeds, one batched search coalesces
+its distinct uncached semantic queries into provider batches of at most 16
+items and 100,000 UTF-8 bytes while retaining per-query tickets, ordering,
+single-flight, and deadlines (an individual query over that byte target remains
+a singleton, preserving the existing query contract). Turning
 `STRAYLIGHT_EMBEDDING_BACKFILL_GUARD=false` stops the worker from claiming
 embedding jobs. With the guard on, each publication is capped at 64 chunks and
 full batches are separated by at least 250ms. In Compose the worker also reads
@@ -109,8 +113,9 @@ deployments.
 configured; embedding degradation remains visible there but cannot remove an
 otherwise healthy database/object-store-backed API replica. Authenticated
 `/v1/status` additionally reports semantic cache, explicit-lane deferral, and
-hybrid opportunistic-miss counters. The E03/E09 harnesses validate these values and the
-immutable build revision before their guarded backfill or reasoning work.
+hybrid opportunistic-miss counters, plus actual query-provider batch and item
+counts. The E03/E09 harnesses validate these values and the immutable build
+revision before their guarded backfill or reasoning work.
 
 ## Agent Secret Vault
 

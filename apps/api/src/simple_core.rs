@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -28,6 +28,7 @@ use uuid::Uuid;
 use crate::{
     auth::{AuthContext, hash_token},
     db::{AppState, set_context},
+    embeddings::SharedEmbedder,
     error::{ApiError, ApiResult},
     foreground_latency::ForegroundOperation,
     ingest::{DocumentChunk, normalize_document},
@@ -36,6 +37,7 @@ use crate::{
         SIMPLE_ENTRY_LINK_CANDIDATES_SQL, SIMPLE_LEXICAL_CANDIDATES_SQL,
         SIMPLE_LEXICAL_CANDIDATES_WITH_GENERATION_SQL, SIMPLE_SEMANTIC_CANDIDATES_SQL,
     },
+    semantic_policy::{PreparedQueryEmbedding, SemanticRuntime},
     usage::{ProductActivityOperation, UsageOperation},
     workspace_features::{
         DerivedFrontmatter, SupersessionAnnotation, WorkspaceFeatureDocument,
@@ -110,6 +112,68 @@ struct SemanticCandidates {
     candidates: Vec<Candidate>,
     embed_ms: f64,
     database_ms: f64,
+}
+
+#[derive(Clone)]
+struct RequestSemanticEmbeddings {
+    inner: Arc<Mutex<RequestSemanticEmbeddingState>>,
+}
+
+struct RequestSemanticEmbeddingState {
+    queries: Vec<Option<String>>,
+    tickets: Option<Vec<Option<PreparedQueryEmbedding>>>,
+}
+
+impl RequestSemanticEmbeddings {
+    fn new(queries: Vec<Option<String>>) -> Option<Self> {
+        queries.iter().any(Option::is_some).then(|| Self {
+            inner: Arc::new(Mutex::new(RequestSemanticEmbeddingState {
+                queries,
+                tickets: None,
+            })),
+        })
+    }
+
+    /// The first semantic lane that passes readiness prepares every semantic
+    /// query in the request. Provider work is detached and batched while each
+    /// ticket remains governed by its own lane deadline.
+    fn take(
+        &self,
+        runtime: &SemanticRuntime,
+        embedder: SharedEmbedder,
+        provider_timeout: Duration,
+        index: usize,
+    ) -> Option<PreparedQueryEmbedding> {
+        let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
+        if inner.tickets.is_none() {
+            let inputs = inner
+                .queries
+                .iter()
+                .filter_map(Clone::clone)
+                .collect::<Vec<_>>();
+            let mut prepared = runtime
+                .prepare_cached_query_embeddings(embedder, &inputs, provider_timeout)
+                .into_iter();
+            let tickets = inner
+                .queries
+                .iter()
+                .map(|query| {
+                    query.as_ref().map(|_| {
+                        prepared
+                            .next()
+                            .expect("each semantic query must have one prepared ticket")
+                    })
+                })
+                .collect();
+            debug_assert!(prepared.next().is_none());
+            inner.tickets = Some(tickets);
+        }
+        inner
+            .tickets
+            .as_mut()
+            .and_then(|tickets| tickets.get_mut(index))
+            .and_then(Option::take)
+    }
 }
 
 fn elapsed_ms(started: Instant) -> f64 {
@@ -628,6 +692,7 @@ pub async fn open(
                 &request.modes,
                 None,
                 features.as_deref(),
+                None,
             ),
             open_hint_candidates(&state, &auth, &request.hints)
         );
@@ -873,12 +938,35 @@ pub async fn search(
     if queries.len() > 16 {
         return Err(ApiError::invalid("at most 16 queries may be batched"));
     }
+    for query in &queries {
+        if query.query.trim().is_empty() {
+            return Err(ApiError::invalid("search query is required"));
+        }
+        retrieval_lane_selection(&query.modes)?;
+        SearchSort::parse(query.sort.as_deref())?;
+    }
+    let request_semantic_embeddings = if state.config.semantic_lane && state.config.embed_cache {
+        RequestSemanticEmbeddings::new(
+            queries
+                .iter()
+                .map(|query| {
+                    retrieval_lane_selection(&query.modes)
+                        .expect("search modes were validated above")
+                        .semantic
+                        .then(|| query.query.clone())
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
     let query_execution_started = Instant::now();
     let mut completed =
         futures::stream::iter(queries.into_iter().enumerate().map(|(index, query)| {
             let state = state.clone();
             let auth = auth.clone();
             let features = features.clone();
+            let request_semantic_embeddings = request_semantic_embeddings.clone();
             async move {
                 let limit = query.limit.unwrap_or(8).clamp(1, MAX_SEARCH_LIMIT);
                 let result = search_one(
@@ -889,6 +977,7 @@ pub async fn search(
                     &query.modes,
                     query.sort.as_deref(),
                     features.as_deref(),
+                    request_semantic_embeddings.map(|batch| (batch, index)),
                 )
                 .await?;
                 Ok::<_, ApiError>((index, query, result))
@@ -3565,6 +3654,7 @@ async fn search_one(
     requested_modes: &[String],
     requested_sort: Option<&str>,
     features: Option<&WorkspaceFeatureSnapshot>,
+    request_semantic_embeddings: Option<(RequestSemanticEmbeddings, usize)>,
 ) -> ApiResult<(
     Vec<Candidate>,
     Vec<&'static str>,
@@ -3615,7 +3705,15 @@ async fn search_one(
             (Ok((vec![], None)), elapsed_ms(started))
         }
     };
-    let semantic_future = semantic_lane(state, auth, query, sort, features, lanes);
+    let semantic_future = semantic_lane(
+        state,
+        auth,
+        query,
+        sort,
+        features,
+        lanes,
+        request_semantic_embeddings,
+    );
     let ((exact, exact_ms), (lexical, lexical_ms), semantic_report) = join_retrieval_lanes(
         exact_future,
         lexical_future,
@@ -3739,6 +3837,7 @@ async fn semantic_lane(
     sort: SearchSort,
     features: Option<&WorkspaceFeatureSnapshot>,
     lanes: RetrievalLaneSelection,
+    request_semantic_embeddings: Option<(RequestSemanticEmbeddings, usize)>,
 ) -> SemanticLaneReport {
     if !lanes.semantic {
         return SemanticLaneReport {
@@ -3814,10 +3913,18 @@ async fn semantic_lane(
         }
         Ok(Ok(true)) => {
             let remaining = deadline.saturating_sub(lane_started.elapsed());
+            let prepared_embedding = request_semantic_embeddings.and_then(|(batch, index)| {
+                batch.take(
+                    &state.semantic_runtime,
+                    state.embedder.clone(),
+                    state.config.semantic_query_provider_timeout,
+                    index,
+                )
+            });
             match bounded_semantic_lane(
                 state,
                 remaining,
-                semantic_candidates(state, auth, query, sort, features),
+                semantic_candidates(state, auth, query, sort, features, prepared_embedding),
             )
             .await
             {
@@ -4410,17 +4517,23 @@ async fn semantic_candidates(
     query: &str,
     sort: SearchSort,
     features: Option<&WorkspaceFeatureSnapshot>,
+    prepared_embedding: Option<PreparedQueryEmbedding>,
 ) -> ApiResult<SemanticCandidates> {
     let embed_started = Instant::now();
-    let vector = state
-        .semantic_runtime
-        .query_embedding(
-            state.embedder.clone(),
-            query,
-            state.config.embed_cache,
-            state.config.semantic_query_provider_timeout,
-        )
-        .await?;
+    let vector = match prepared_embedding {
+        Some(prepared) => prepared.resolve().await?,
+        None => {
+            state
+                .semantic_runtime
+                .query_embedding(
+                    state.embedder.clone(),
+                    query,
+                    state.config.embed_cache,
+                    state.config.semantic_query_provider_timeout,
+                )
+                .await?
+        }
+    };
     let embed_ms = elapsed_ms(embed_started);
     let database_started = Instant::now();
     let mut tx = state.begin_read(auth).await?;
@@ -9214,7 +9327,84 @@ fn render_seed_checkpoint(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+
     use super::*;
+    use crate::embeddings::Embedder;
+
+    struct RequestBatchProbeEmbedder {
+        calls: AtomicUsize,
+        batches: Mutex<Vec<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl Embedder for RequestBatchProbeEmbedder {
+        async fn embed(&self, input: &[String]) -> ApiResult<Vec<Vec<f32>>> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            self.batches.lock().unwrap().push(input.to_vec());
+            Ok(input
+                .iter()
+                .map(|text| vec![text.len() as f32, 1.0, 0.0])
+                .collect())
+        }
+
+        fn provider(&self) -> &'static str {
+            "mock"
+        }
+
+        fn model(&self) -> &str {
+            "request-batch-probe-v1"
+        }
+
+        fn dimensions(&self) -> usize {
+            3
+        }
+
+        fn is_degraded(&self) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn first_ready_semantic_slot_prepares_the_entire_request_batch() {
+        let runtime = SemanticRuntime::new(8);
+        let embedder = Arc::new(RequestBatchProbeEmbedder {
+            calls: AtomicUsize::new(0),
+            batches: Mutex::new(Vec::new()),
+        });
+        let batch = RequestSemanticEmbeddings::new(vec![
+            Some("alpha".to_owned()),
+            None,
+            Some("bravo".to_owned()),
+        ])
+        .unwrap();
+
+        let alpha = batch
+            .take(&runtime, embedder.clone(), Duration::from_secs(5), 0)
+            .unwrap();
+        assert!(
+            batch
+                .take(&runtime, embedder.clone(), Duration::from_secs(5), 1,)
+                .is_none()
+        );
+        let bravo = batch
+            .take(&runtime, embedder.clone(), Duration::from_secs(5), 2)
+            .unwrap();
+        let (alpha, bravo) = tokio::join!(alpha.resolve(), bravo.resolve());
+
+        assert_eq!(alpha.unwrap(), vec![5.0, 1.0, 0.0]);
+        assert_eq!(bravo.unwrap(), vec![5.0, 1.0, 0.0]);
+        assert_eq!(embedder.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            embedder.batches.lock().unwrap().as_slice(),
+            &[vec!["alpha".to_owned(), "bravo".to_owned()]]
+        );
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.provider_batches, 1);
+        assert_eq!(snapshot.provider_items, 2);
+    }
 
     #[test]
     fn agent_memory_noop_summaries_are_not_admitted() {

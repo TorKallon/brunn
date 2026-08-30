@@ -227,8 +227,10 @@ successful lane names are operational diagnostics, not default model input.
 `POST /v1/workspace/search`
 
 Accept one query or up to 16 batched queries. At most four queries execute at
-once, bounding database and embedding-provider pressure while avoiding
-sequential 16-lane latency. Each query has optional ID, goal,
+once, bounding database pressure while avoiding sequential 16-lane latency.
+After semantic readiness succeeds, distinct uncached semantic query embeddings
+from the request are coalesced into bounded multi-input provider calls without
+changing per-query deadlines or result order. Each query has optional ID, goal,
 limit from 1 through 50, and modes selected from:
 
 - `exact`
