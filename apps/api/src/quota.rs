@@ -186,20 +186,6 @@ pub async fn ensure_storage_capacity_for_objects(
             SELECT object_key,size_bytes
             FROM straylight.asset_versions
             WHERE user_id=$1 AND size_bytes > 0
-            UNION ALL
-            SELECT temporary_object_key,expected_size_bytes
-            FROM straylight.asset_uploads
-            WHERE user_id=$1
-              AND temporary_cleaned_at IS NULL
-              AND status IN (
-                'uploading','verifying','completed','failed','aborted','expired'
-              )
-            UNION ALL
-            SELECT canonical_object_key,expected_size_bytes
-            FROM straylight.asset_uploads
-            WHERE user_id=$1
-              AND canonical_object_key IS NOT NULL
-              AND status IN ('completed','consumed')
           ) AS physical_objects
           GROUP BY object_key
         ) AS stored
@@ -222,12 +208,6 @@ pub async fn ensure_storage_capacity_for_objects(
               SELECT object_key
               FROM straylight.asset_versions
               WHERE user_id=$1
-              UNION ALL
-              SELECT canonical_object_key
-              FROM straylight.asset_uploads
-              WHERE user_id=$1
-                AND canonical_object_key IS NOT NULL
-                AND status IN ('completed','consumed')
             ) AS existing
             WHERE existing.object_key=ANY($2::text[])
             "#,

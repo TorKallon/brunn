@@ -80,7 +80,6 @@ pub async fn provision_user(
             .bind(&capabilities)
             .fetch_one(&mut *tx)
             .await?;
-    let corpus_revision_id = db::ensure_initial_manifest(&mut tx, user_id, scope_id).await?;
     sqlx::query(
         r#"
         INSERT INTO straylight.audit_events (
@@ -94,8 +93,7 @@ pub async fn provision_user(
     .bind(json!({
         "credential_id": credential_id,
         "scope_id": scope_id,
-        "policy_id": policy_id,
-        "corpus_revision_id": corpus_revision_id
+        "policy_id": policy_id
     }))
     .execute(&mut *tx)
     .await?;
@@ -116,8 +114,7 @@ pub async fn provision_user(
             "token": token,
             "token_status": "issued_once"
         },
-        "policy_id": format!("policy:{policy_id}"),
-        "corpus_revision": format!("revision:{corpus_revision_id}")
+        "policy_id": format!("policy:{policy_id}")
     }))
 }
 

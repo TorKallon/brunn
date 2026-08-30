@@ -46,19 +46,6 @@ struct AccountDeletionJob {
     backup_erasure_verified: bool,
 }
 
-const ACCOUNT_DELETION_RECORD_KINDS: &[&str] = &[
-    "object",
-    "claim",
-    "relation",
-    "source_episode",
-    "evidence",
-    "document",
-    "chunk",
-    "dream_job",
-    "asset",
-    "checkpoint",
-    "stage",
-];
 const ACCOUNT_EXPORT_PART_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
 pub async fn process_account_export(state: &AppState, worker_id: &str) -> ApiResult<bool> {
@@ -320,106 +307,18 @@ async fn prepare_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> Ap
     .execute(&mut *tx)
     .await?;
 
-    let rows = sqlx::query(
-        r#"
-        SELECT record_id,scope_id
-        FROM straylight.record_keys
-        WHERE user_id=$1
-          AND record_kind=ANY($2::text[])
-          AND record_id <> ALL($3::uuid[])
-        ORDER BY created_at,record_id
-        "#,
-    )
-    .bind(job.user_id)
-    .bind(ACCOUNT_DELETION_RECORD_KINDS)
-    .bind(vec![authorization_source_id, authorization_evidence_id])
-    .fetch_all(&mut *tx)
-    .await?;
-    let record_ids = rows
-        .iter()
-        .map(|row| row.try_get("record_id"))
-        .collect::<Result<Vec<Uuid>, _>>()?;
-    let scope_ids = rows
-        .iter()
-        .map(|row| row.try_get("scope_id"))
-        .collect::<Result<Vec<Uuid>, _>>()?;
-
-    if !record_ids.is_empty() {
-        sqlx::query(
-            r#"
-            INSERT INTO straylight.tombstones (
-              id,user_id,scope_id,target_record_id,source_episode_id,evidence_id,
-              authorized_credential_id,reason
-            )
-            SELECT gen_random_uuid(),$1,target.scope_id,target.record_id,$2,$3,$4,
-                   'account deletion request'
-            FROM unnest($5::uuid[],$6::uuid[]) AS target(record_id,scope_id)
-            ON CONFLICT (user_id,target_record_id) DO NOTHING
-            "#,
-        )
-        .bind(job.user_id)
-        .bind(authorization_source_id)
-        .bind(authorization_evidence_id)
-        .bind(job.requested_by_credential_id)
-        .bind(&record_ids)
-        .bind(&scope_ids)
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            r#"
-            INSERT INTO straylight.deletion_jobs (
-              id,user_id,scope_id,tombstone_id,status
-            )
-            SELECT gen_random_uuid(),tombstone.user_id,tombstone.scope_id,
-                   tombstone.id,'queued'
-            FROM straylight.tombstones AS tombstone
-            WHERE tombstone.user_id=$1
-              AND tombstone.target_record_id=ANY($2::uuid[])
-            ON CONFLICT (user_id,tombstone_id) DO NOTHING
-            "#,
-        )
-        .bind(job.user_id)
-        .bind(&record_ids)
-        .execute(&mut *tx)
-        .await?;
-        sqlx::query(
-            r#"
-            INSERT INTO straylight.account_deletion_targets (
-              user_id,request_id,record_id,deletion_job_id
-            )
-            SELECT $1,$2,tombstone.target_record_id,deletion_job.id
-            FROM straylight.tombstones AS tombstone
-            JOIN straylight.deletion_jobs AS deletion_job
-              ON deletion_job.user_id=tombstone.user_id
-             AND deletion_job.tombstone_id=tombstone.id
-            WHERE tombstone.user_id=$1
-              AND tombstone.target_record_id=ANY($3::uuid[])
-            ON CONFLICT (user_id,request_id,record_id) DO NOTHING
-            "#,
-        )
-        .bind(job.user_id)
-        .bind(job.id)
-        .bind(&record_ids)
-        .execute(&mut *tx)
-        .await?;
-    }
-    let total = sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM straylight.account_deletion_targets WHERE user_id=$1 AND request_id=$2",
-    )
-    .bind(job.user_id)
-    .bind(job.id)
-    .fetch_one(&mut *tx)
-    .await?;
+    // The legacy record model is gone: user data lives in schema-derived
+    // tables that purge_account_user_rows enumerates dynamically, so there is
+    // no per-record deletion phase to stage.
     sqlx::query(
         r#"
         UPDATE straylight.account_deletion_requests
-        SET status='running',records_total=$1,records_completed=0,
+        SET status='running',records_total=0,records_completed=0,
             started_at=coalesce(started_at,clock_timestamp()),
             failure_code=NULL,locked_at=NULL,locked_by=NULL
-        WHERE user_id=$2 AND id=$3 AND status='queued'
+        WHERE user_id=$1 AND id=$2 AND status='queued'
         "#,
     )
-    .bind(total)
     .bind(job.user_id)
     .bind(job.id)
     .execute(&mut *tx)
@@ -430,70 +329,7 @@ async fn prepare_account_deletion(pool: &PgPool, job: &AccountDeletionJob) -> Ap
 
 async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) -> ApiResult<()> {
     let pool = state.admin_pool.as_ref().expect("checked at worker start");
-    let progress = sqlx::query(
-        r#"
-        SELECT count(*)::bigint AS total,
-               count(*) FILTER (WHERE deletion_job.status='completed')::bigint AS completed,
-               count(*) FILTER (WHERE deletion_job.status='failed')::bigint AS failed,
-               count(*) FILTER (WHERE deletion_job.status='blocked')::bigint AS blocked
-        FROM straylight.account_deletion_targets AS target
-        JOIN straylight.deletion_jobs AS deletion_job
-          ON deletion_job.user_id=target.user_id
-         AND deletion_job.id=target.deletion_job_id
-        WHERE target.user_id=$1 AND target.request_id=$2
-        "#,
-    )
-    .bind(job.user_id)
-    .bind(job.id)
-    .fetch_one(pool)
-    .await?;
-    let total: i64 = progress.try_get("total")?;
-    let completed: i64 = progress.try_get("completed")?;
-    let failed: i64 = progress.try_get("failed")?;
-    let blocked: i64 = progress.try_get("blocked")?;
-    if blocked > 0 {
-        sqlx::query(
-            r#"
-            UPDATE straylight.account_deletion_requests
-            SET status='failed',records_total=$1,records_completed=$2,
-                failure_code='record_deletion_blocked',
-                terminal_result=jsonb_build_object(
-                  'reason','record_deletion_blocked',
-                  'blocked_records',$3
-                ),
-                completed_at=clock_timestamp(),locked_at=NULL,locked_by=NULL
-            WHERE user_id=$4 AND id=$5 AND status='running'
-            "#,
-        )
-        .bind(total)
-        .bind(completed)
-        .bind(blocked)
-        .bind(job.user_id)
-        .bind(job.id)
-        .execute(pool)
-        .await?;
-        return Ok(());
-    }
-    if completed < total || failed > 0 {
-        sqlx::query(
-            r#"
-            UPDATE straylight.account_deletion_requests
-            SET records_total=$1,records_completed=$2,
-                failure_code=CASE WHEN $3 > 0 THEN 'record_deletion_retrying' ELSE NULL END,
-                locked_at=NULL,locked_by=NULL
-            WHERE user_id=$4 AND id=$5 AND status='running'
-            "#,
-        )
-        .bind(total)
-        .bind(completed)
-        .bind(failed)
-        .bind(job.user_id)
-        .bind(job.id)
-        .execute(pool)
-        .await?;
-        return Ok(());
-    }
-
+    // No per-record phase remains; proceed directly to the storage purge.
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('storage:' || $1::text,0))")
         .bind(job.user_id)
@@ -519,8 +355,9 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
             "account deletion cannot purge storage without its durable fence".to_owned(),
         ));
     }
-    let abandoned_uploads =
-        upload_service::abort_active_for_user(state, &mut tx, job.user_id).await?;
+    // Asset uploads no longer exist; any in-flight multipart under the user
+    // prefix (account exports included) is aborted below before the purge.
+    let abandoned_uploads = 0_u64;
     let prefix = format!("{}/", job.user_id);
     let first_multipart_abort = upload_service::abort_multipart_prefix(state, &prefix).await?;
     let first_purge = state.object_store.purge_prefix(&prefix).await?;
@@ -548,25 +385,23 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
     sqlx::query(
         r#"
         UPDATE straylight.account_deletion_requests
-        SET status='awaiting_backup_expiry',records_total=$1,records_completed=$2,
+        SET status='awaiting_backup_expiry',records_total=0,records_completed=0,
             failure_code=NULL,
             terminal_result=jsonb_build_object(
               'canonical_redaction','complete',
-              'object_versions_deleted',$3,
-              'delete_markers_deleted',$4,
-              'multipart_uploads_aborted',$7,
-              'asset_upload_sessions_aborted',$8,
+              'object_versions_deleted',$1,
+              'delete_markers_deleted',$2,
+              'multipart_uploads_aborted',$5,
+              'asset_upload_sessions_aborted',$6,
               'storage_reconciliation_passes',2,
               'canonical_purged_at',clock_timestamp(),
               'backup_expiry_due_at',backup_expiry_due_at,
               'backup_status','retained_until_deadline'
             ),
             locked_at=NULL,locked_by=NULL
-        WHERE user_id=$5 AND id=$6 AND status='running'
+        WHERE user_id=$3 AND id=$4 AND status='running'
         "#,
     )
-    .bind(total)
-    .bind(completed)
     .bind(i64::try_from(object_versions_deleted).unwrap_or(i64::MAX))
     .bind(i64::try_from(delete_markers_deleted).unwrap_or(i64::MAX))
     .bind(job.user_id)
@@ -962,20 +797,7 @@ async fn build_export_inner(
 	              AND media_type::text='application/x-straylight-deleted'
 	              AND metadata ? 'redacted_by_deletion_job'
 	            )
-	          UNION ALL
-          SELECT $2::text AS bucket,
-                 canonical_object_key AS object_key,
-                 canonical_object_version_id AS object_version_id,
-                 expected_content_hash::text AS content_hash,
-                 expected_size_bytes AS size_bytes,
-                 'completed_upload'::text AS reference_kind,
-                 id::text AS reference_ref
-          FROM straylight.asset_uploads
-          WHERE user_id=$1
-            AND status IN ('completed','consumed')
-            AND canonical_object_key IS NOT NULL
-            AND canonical_object_version_id IS NOT NULL
-        )
+	        )
         SELECT bucket,object_key,object_version_id,
                min(content_hash) AS content_hash,
                min(size_bytes) AS size_bytes,
@@ -994,7 +816,6 @@ async fn build_export_inner(
         "#,
     )
     .bind(job.user_id)
-    .bind(&state.config.s3_bucket)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1312,14 +1133,6 @@ async fn compensate_export_object(state: &AppState, job: &ExportJob, object_key:
               FROM straylight.account_exports
               WHERE user_id=$1 AND object_key=$2
                 AND status='ready'
-              UNION ALL
-              SELECT 1
-              FROM straylight.asset_uploads
-              WHERE user_id=$1
-                AND (
-                  temporary_object_key=$2
-                  OR canonical_object_key=$2
-                )
             )
             "#,
         )

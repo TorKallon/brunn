@@ -17,13 +17,7 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::Row;
 
-use crate::{
-    db::AppState,
-    models::{Coverage, ResponseStatus},
-    read_service::{
-        ComputeResult, ItemStatus, OpenResult, QueryBatchResult, ReadBatchResult, VerifyResult,
-    },
-};
+use crate::{db::AppState, models::ResponseStatus};
 
 static HTTP_IN_FLIGHT: AtomicI64 = AtomicI64::new(0);
 
@@ -228,137 +222,6 @@ pub fn record_operation(operation: &'static str, status: ResponseStatus, output:
             "status" => status
         )
         .record(bytes.len() as f64);
-    }
-}
-
-pub fn record_open(result: &OpenResult) {
-    record_coverage("open", &result.coverage);
-    histogram!("retrieval.open.results").record(result.initial_evidence.len() as f64);
-    histogram!("retrieval.open.hydrated_sources").record(result.hydrated_sources.len() as f64);
-    histogram!("retrieval.open.hydrated_bytes").record(
-        result
-            .hydrated_sources
-            .iter()
-            .map(|source| source.text.len())
-            .sum::<usize>() as f64,
-    );
-    counter!(
-        "retrieval.open.sufficiency",
-        "status" => bounded_value(
-            result
-                .retrieval_sufficiency
-                .get("status")
-                .and_then(Value::as_str),
-            &["sufficient", "likely_sufficient", "insufficient", "unknown"]
-        )
-    )
-    .increment(1);
-    histogram!("retrieval.open.conflicts").record(result.conflicts.len() as f64);
-    histogram!("retrieval.open.gaps").record(result.gaps.len() as f64);
-    histogram!("retrieval.open.ambiguities").record(result.ambiguities.len() as f64);
-}
-
-pub fn record_query(result: &QueryBatchResult) {
-    record_coverage("query", &result.coverage);
-    histogram!("retrieval.query.batch_items").record(result.items.len() as f64);
-    for item in &result.items {
-        counter!(
-            "retrieval.query.items",
-            "status" => response_status(item.status)
-        )
-        .increment(1);
-        histogram!(
-            "retrieval.query.results",
-            "status" => response_status(item.status)
-        )
-        .record(item.results.len() as f64);
-        histogram!("retrieval.query.conflicts").record(item.conflicts.len() as f64);
-        histogram!("retrieval.query.gaps").record(item.gaps.len() as f64);
-        histogram!("retrieval.query.ambiguities").record(item.ambiguities.len() as f64);
-    }
-}
-
-pub fn record_read(result: &ReadBatchResult) {
-    record_coverage("read", &result.coverage);
-    histogram!("read.batch_items").record(result.items.len() as f64);
-    for item in &result.items {
-        let status = item_status(item.status);
-        counter!(
-            "read.items",
-            "status" => status,
-            "view" => bounded_value(
-                Some(item.view.as_str()),
-                &[
-                    "current_state", "structured", "outline", "full", "range", "neighbors",
-                    "relationships", "history", "diff", "last_known_good", "materialize_scope"
-                ]
-            )
-        )
-        .increment(1);
-        histogram!("read.returned_tokens", "status" => status)
-            .record(item.truncation.returned_tokens as f64);
-        if item.truncation.truncated {
-            counter!("read.truncated", "status" => status).increment(1);
-        }
-    }
-}
-
-pub fn record_compute(result: &ComputeResult) {
-    histogram!("compute.steps").record(result.steps.len() as f64);
-    histogram!("compute.rows_returned").record(result.rows_returned as f64);
-    histogram!("compute.estimated_tokens").record(result.estimated_tokens as f64);
-    for step in &result.steps {
-        counter!(
-            "compute.step.results",
-            "operator" => bounded_value(
-                Some(step.operator.as_str()),
-                &[
-                    "catalog", "query", "search", "read", "batch_read", "neighbors",
-                    "timeline", "history", "diff", "group", "aggregate", "traverse",
-                    "resolve_identity", "expand_recurrence", "state_history", "impact",
-                    "compare_applicability", "proximity", "gate_rollup"
-                ]
-            ),
-            "status" => item_status(step.status)
-        )
-        .increment(1);
-        histogram!(
-            "compute.step.evidence_refs",
-            "operator" => bounded_value(Some(step.operator.as_str()), &[
-                "catalog", "query", "search", "read", "batch_read", "neighbors",
-                "timeline", "history", "diff", "group", "aggregate", "traverse",
-                "resolve_identity", "expand_recurrence", "state_history", "impact",
-                "compare_applicability", "proximity", "gate_rollup"
-            ])
-        )
-        .record(step.evidence_refs.len() as f64);
-    }
-}
-
-pub fn record_verify(result: &VerifyResult) {
-    record_coverage("verify", &result.coverage);
-    histogram!("verify.claims").record(result.claims.len() as f64);
-    for claim in &result.claims {
-        counter!(
-            "verify.classifications",
-            "classification" => serialize_enum(&claim.classification)
-        )
-        .increment(1);
-        histogram!(
-            "verify.evidence",
-            "classification" => serialize_enum(&claim.classification)
-        )
-        .record(claim.evidence.len() as f64);
-        for check in &claim.structural_checks {
-            counter!(
-                "verify.structural_checks",
-                "status" => bounded_value(
-                    Some(check.status.as_str()),
-                    &["passed", "failed", "unknown", "not_applicable"]
-                )
-            )
-            .increment(1);
-        }
     }
 }
 
@@ -697,83 +560,6 @@ pub fn response_status(status: ResponseStatus) -> &'static str {
     }
 }
 
-pub fn item_status(status: ItemStatus) -> &'static str {
-    match status {
-        ItemStatus::Complete => "complete",
-        ItemStatus::Partial => "partial",
-        ItemStatus::Unsupported => "unsupported",
-        ItemStatus::Failed => "failed",
-    }
-}
-
-fn record_coverage(operation: &'static str, coverage: &Coverage) {
-    gauge!(
-        "retrieval.coverage.absence_safe",
-        "operation" => operation
-    )
-    .set(if coverage.absence_safe { 1.0 } else { 0.0 });
-    for (search_state, partitions) in [
-        ("searched", coverage.searched.as_slice()),
-        ("unsearched", coverage.unsearched.as_slice()),
-    ] {
-        for partition in partitions {
-            let lane = bounded_value(
-                Some(partition.lane.as_str()),
-                &[
-                    "exact",
-                    "structured",
-                    "lexical",
-                    "semantic",
-                    "temporal",
-                    "relations",
-                    "query",
-                    "read",
-                    "continuation",
-                    "materialize_scope",
-                    "hard_gated_derived_view",
-                    "structured_verify",
-                    "evidence_verify",
-                    "absence_verify",
-                ],
-            );
-            let completeness = bounded_value(
-                Some(partition.completeness.as_str()),
-                &[
-                    "complete",
-                    "best_effort",
-                    "unsearched",
-                    "not_requested",
-                    "failed",
-                    "bounded",
-                    "partial",
-                    "unavailable",
-                ],
-            );
-            counter!(
-                "retrieval.lane.executions",
-                "operation" => operation,
-                "lane" => lane,
-                "search_state" => search_state,
-                "completeness" => completeness,
-                "failed" => if partition.failure_reason.is_some() { "true" } else { "false" }
-            )
-            .increment(1);
-            histogram!(
-                "retrieval.lane.searched_records",
-                "operation" => operation,
-                "lane" => lane
-            )
-            .record(partition.searched_count as f64);
-            histogram!(
-                "retrieval.lane.candidates",
-                "operation" => operation,
-                "lane" => lane
-            )
-            .record(partition.candidate_count as f64);
-        }
-    }
-}
-
 fn record_pool(name: &'static str, pool: &sqlx::PgPool, max: u32) {
     let size = pool.size();
     let idle = pool.num_idle() as u32;
@@ -789,22 +575,7 @@ fn record_pool(name: &'static str, pool: &sqlx::PgPool, max: u32) {
 }
 
 async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-    const QUEUES: [(&str, &[&str]); 6] = [
-        ("background", &["queued", "retry_wait", "running", "failed"]),
-        (
-            "dream",
-            &[
-                "queued",
-                "selecting",
-                "opening_snapshot",
-                "generating",
-                "gating",
-                "evaluating",
-                "awaiting_review",
-                "failed",
-            ],
-        ),
-        ("deletion", &["queued", "propagating", "failed", "blocked"]),
+    const QUEUES: [(&str, &[&str]); 2] = [
         (
             "account_export",
             &["queued", "running", "deleting", "failed"],
@@ -813,28 +584,12 @@ async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
             "account_deletion",
             &["queued", "running", "awaiting_backup_expiry", "failed"],
         ),
-        ("asset_upload", &["uploading", "verifying", "failed"]),
     ];
     let rows = sqlx::query(
         r#"
         SELECT queue,status,count(*)::bigint AS depth,
                extract(epoch FROM clock_timestamp()-min(created_at))::float8 AS oldest_age_seconds
         FROM (
-          SELECT 'background'::text AS queue,status,created_at
-          FROM straylight.background_jobs
-          WHERE status IN ('queued','retry_wait','running','failed')
-          UNION ALL
-          SELECT 'dream'::text AS queue,status,created_at
-          FROM straylight.dream_jobs
-          WHERE status IN (
-            'queued','selecting','opening_snapshot','generating','gating',
-            'evaluating','awaiting_review','failed'
-          )
-          UNION ALL
-          SELECT 'deletion'::text AS queue,status,created_at
-          FROM straylight.deletion_jobs
-          WHERE status IN ('queued','propagating','failed','blocked')
-          UNION ALL
           SELECT 'account_export'::text AS queue,status,created_at
           FROM straylight.account_exports
           WHERE status IN ('queued','running','deleting','failed')
@@ -842,10 +597,6 @@ async fn record_queue_snapshot(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
           SELECT 'account_deletion'::text AS queue,status,created_at
           FROM straylight.account_deletion_requests
           WHERE status IN ('queued','running','awaiting_backup_expiry','failed')
-          UNION ALL
-          SELECT 'asset_upload'::text AS queue,status,created_at
-          FROM straylight.asset_uploads
-          WHERE status IN ('uploading','verifying','failed')
         ) pending
         GROUP BY queue,status
         "#,
@@ -980,13 +731,6 @@ fn bounded_model(model: &str) -> String {
     } else {
         model.chars().take(80).collect()
     }
-}
-
-fn serialize_enum(value: &impl Serialize) -> String {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|value| value.as_str().map(ToOwned::to_owned))
-        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 fn env_default(name: &str, default: &str) -> String {

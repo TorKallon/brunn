@@ -4516,6 +4516,16 @@ def benchmark_scale(
         batch_size=10_000 if protocol == "simple" else None,
     )
     import_ms = (time.monotonic() - started) * 1000
+    if db_container:
+        # A bulk import leaves stale planner statistics; production settles
+        # via autovacuum within seconds, but sampling immediately races that
+        # window and the first opens pay catastrophic misplans. Analyze the
+        # touched tables so measurement starts from steady-state plans.
+        run_psql(
+            db_container,
+            "ANALYZE straylight.entries, straylight.entry_versions, "
+            "straylight.search_chunks, straylight.workspace_changes;",
+        )
     mode1_pending_evidence: dict[str, Any] | None = None
     if run_e03_mode1_pending:
         if not api_container or not db_container:

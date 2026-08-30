@@ -4,7 +4,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use sha2::Digest;
 use sqlx::{
     PgPool, Postgres, Row, Transaction,
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -291,7 +290,7 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
     };
 
     let write_capabilities = dev_write_capabilities(config.messaging_enabled);
-    let (user_id, _, scope_id, _): (Uuid, Uuid, Uuid, Uuid) =
+    let (_user_id, _, _scope_id, _): (Uuid, Uuid, Uuid, Uuid) =
         sqlx::query_as("SELECT * FROM straylight_auth.bootstrap_user($1, $2, $3, $4, $5)")
             .bind(&config.dev_user_ref)
             .bind(&config.dev_user_name)
@@ -314,7 +313,6 @@ async fn bootstrap_dev_identity(pool: &PgPool, config: &Config) -> ApiResult<()>
                 .await?;
     }
 
-    ensure_initial_manifest_from_pool(pool, user_id, scope_id).await?;
     Ok(())
 }
 
@@ -362,93 +360,6 @@ fn dev_read_capabilities(messaging_enabled: bool) -> Vec<&'static str> {
         capabilities.push("message.read");
     }
     capabilities
-}
-
-async fn ensure_initial_manifest_from_pool(
-    pool: &PgPool,
-    user_id: Uuid,
-    scope_id: Uuid,
-) -> ApiResult<Uuid> {
-    let mut tx = pool.begin().await?;
-    let revision_id = ensure_initial_manifest(&mut tx, user_id, scope_id).await?;
-    tx.commit().await?;
-    Ok(revision_id)
-}
-
-pub async fn ensure_initial_manifest(
-    tx: &mut Transaction<'_, Postgres>,
-    user_id: Uuid,
-    scope_id: Uuid,
-) -> ApiResult<Uuid> {
-    let empty_manifest_hash = hex::encode(sha2::Sha256::digest(b"straylight:empty-corpus@v1"));
-    let initial_revision_id = Uuid::now_v7();
-    sqlx::query(
-        r#"
-        INSERT INTO straylight.corpus_revisions (
-          id, user_id, scope_id, parent_revision_id, revision_number, manifest_hash
-        )
-        SELECT $1, $2, $3, NULL, 1, $4
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM straylight.corpus_revisions
-          WHERE user_id=$2 AND scope_id=$3 AND revision_number=1
-        )
-        ON CONFLICT (user_id, scope_id, revision_number) DO NOTHING
-        "#,
-    )
-    .bind(initial_revision_id)
-    .bind(user_id)
-    .bind(scope_id)
-    .bind(&empty_manifest_hash)
-    .execute(&mut **tx)
-    .await?;
-    let initial_revision_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM straylight.corpus_revisions WHERE user_id = $1 AND scope_id = $2 AND revision_number = 1",
-    )
-    .bind(user_id)
-    .bind(scope_id)
-    .fetch_one(&mut **tx)
-    .await?;
-    sqlx::query(
-        r#"
-        INSERT INTO straylight.active_manifests (
-          id, user_id, scope_id, active_corpus_revision_id, manifest_hash, generation
-        ) VALUES ($1, $2, $3, $4, $5, 1)
-        ON CONFLICT (user_id, scope_id) DO NOTHING
-        "#,
-    )
-    .bind(Uuid::now_v7())
-    .bind(user_id)
-    .bind(scope_id)
-    .bind(initial_revision_id)
-    .bind(&empty_manifest_hash)
-    .execute(&mut **tx)
-    .await?;
-    let manifest_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM straylight.active_manifests WHERE user_id = $1 AND scope_id = $2",
-    )
-    .bind(user_id)
-    .bind(scope_id)
-    .fetch_one(&mut **tx)
-    .await?;
-    sqlx::query(
-        r#"
-        INSERT INTO straylight.active_manifest_history (
-          id, user_id, scope_id, manifest_id, generation, corpus_revision_id,
-          manifest_hash, change_kind
-        ) VALUES ($1, $2, $3, $4, 1, $5, $6, 'initial')
-        ON CONFLICT (user_id, manifest_id, generation) DO NOTHING
-        "#,
-    )
-    .bind(Uuid::now_v7())
-    .bind(user_id)
-    .bind(scope_id)
-    .bind(manifest_id)
-    .bind(initial_revision_id)
-    .bind(empty_manifest_hash)
-    .execute(&mut **tx)
-    .await?;
-    Ok(initial_revision_id)
 }
 
 #[cfg(test)]

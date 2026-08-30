@@ -103,11 +103,7 @@ pub async fn provision_user(
             "token_status": "issued_once"
         },
         "scope_id": "scope:root",
-        "policy_id": format!("policy:{}", row.try_get::<Uuid,_>("policy_id")?),
-        "corpus_revision": format!(
-            "revision:{}",
-            row.try_get::<Uuid,_>("corpus_revision_id")?
-        )
+        "policy_id": format!("policy:{}", row.try_get::<Uuid,_>("policy_id")?)
     }))
 }
 

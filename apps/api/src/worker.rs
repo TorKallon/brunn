@@ -6,16 +6,13 @@ use std::{
 use uuid::Uuid;
 
 use crate::{
-    account_worker, background_worker,
+    account_worker,
     db::AppState,
-    deletion_worker, dream_service,
     error::{ApiError, ApiResult},
     messaging_service, notification_service, simple_worker, task_guard, telemetry, todoist_sync,
-    upload_service,
 };
 
 const ACCOUNT_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
-const UPLOAD_MAINTENANCE_INTERVAL: Duration = Duration::from_secs(60);
 const TODOIST_QUEUE_SCAN_INTERVAL: Duration = Duration::from_secs(5);
 const BACKGROUND_WORK_PAUSE: Duration = Duration::from_millis(250);
 
@@ -44,8 +41,6 @@ pub async fn run(state: AppState) -> ApiResult<()> {
     // can never finalize after a replacement worker reclaims the row.
     let worker_id = boot_unique_worker_id();
     let mut next_account_maintenance = Instant::now();
-    let mut next_dream_scheduler_scan = Instant::now();
-    let mut next_upload_maintenance = Instant::now();
     let mut next_task_guard = Instant::now();
     let mut next_todoist_sync = Instant::now();
 
@@ -74,39 +69,11 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             run_notification_delivery(&state, notification_provider.as_ref(), &mut cycle_failed)
                 .await;
         did_work |= run_simple_workspace_job(&state, &mut cycle_failed).await;
-        did_work |= run_deletion_propagation(&state, &mut cycle_failed).await;
-        did_work |= run_background_job(&state, &worker_id, &mut cycle_failed).await;
-        if next_dream_scheduler_scan <= Instant::now() {
-            next_dream_scheduler_scan = Instant::now() + state.config.dream_scheduler_poll_interval;
-            match dream_service::schedule_next_dirty_job(&state).await {
-                Ok(Some(_)) => did_work = true,
-                Ok(None) => {}
-                Err(error) => {
-                    metrics::counter!("worker.cycle.errors", "stage" => "dream_scheduler")
-                        .increment(1);
-                    tracing::warn!(?error, "dream scheduler scan failed");
-                    cycle_failed = true;
-                }
-            }
-        }
-        match dream_service::process_next_job(&state, &worker_id).await {
-            Ok(Some(_)) => did_work = true,
-            Ok(None) => {}
-            Err(error) => {
-                metrics::counter!("worker.cycle.errors", "stage" => "dream_job").increment(1);
-                tracing::warn!(?error, "dream job processing failed");
-                cycle_failed = true;
-            }
-        }
         let now = Instant::now();
 
-        if state.config.legacy_api_enabled && next_account_maintenance <= now {
+        if next_account_maintenance <= now {
             next_account_maintenance = now + ACCOUNT_MAINTENANCE_INTERVAL;
             did_work |= run_account_maintenance(&state, &worker_id, &mut cycle_failed).await;
-        }
-        if next_upload_maintenance <= now {
-            next_upload_maintenance = now + UPLOAD_MAINTENANCE_INTERVAL;
-            did_work |= run_upload_maintenance(&state, &mut cycle_failed).await;
         }
 
         let cycle_result = if did_work { "busy" } else { "idle" };
@@ -120,30 +87,6 @@ pub async fn run(state: AppState) -> ApiResult<()> {
             tokio::time::sleep(BACKGROUND_WORK_PAUSE).await;
         } else if !did_work {
             tokio::time::sleep(Duration::from_millis(500)).await;
-        }
-    }
-}
-
-async fn run_background_job(state: &AppState, worker_id: &str, cycle_failed: &mut bool) -> bool {
-    match background_worker::process_background_job(state, worker_id).await {
-        Ok(did_work) => did_work,
-        Err(error) => {
-            metrics::counter!("worker.cycle.errors", "stage" => "background_job").increment(1);
-            tracing::warn!(?error, "background job cycle failed");
-            *cycle_failed = true;
-            false
-        }
-    }
-}
-
-async fn run_deletion_propagation(state: &AppState, cycle_failed: &mut bool) -> bool {
-    match deletion_worker::process_deletion_job(state).await {
-        Ok(did_work) => did_work,
-        Err(error) => {
-            metrics::counter!("worker.cycle.errors", "stage" => "deletion").increment(1);
-            tracing::warn!(?error, "deletion queue cycle failed");
-            *cycle_failed = true;
-            false
         }
     }
 }
@@ -244,28 +187,6 @@ async fn run_account_maintenance(
         Err(error) => {
             metrics::counter!("worker.cycle.errors", "stage" => "account_deletion").increment(1);
             tracing::warn!(?error, "account deletion queue cycle failed");
-            *cycle_failed = true;
-            false
-        }
-    };
-    did_work
-}
-
-async fn run_upload_maintenance(state: &AppState, cycle_failed: &mut bool) -> bool {
-    let mut did_work = match upload_service::expire_one(state).await {
-        Ok(value) => value,
-        Err(error) => {
-            metrics::counter!("worker.cycle.errors", "stage" => "asset_upload_expiry").increment(1);
-            tracing::warn!(?error, "asset upload expiry cycle failed");
-            *cycle_failed = true;
-            false
-        }
-    };
-    did_work |= match upload_service::expire_one_stage(state).await {
-        Ok(value) => value,
-        Err(error) => {
-            metrics::counter!("worker.cycle.errors", "stage" => "asset_stage_expiry").increment(1);
-            tracing::warn!(?error, "asset stage expiry cycle failed");
             *cycle_failed = true;
             false
         }

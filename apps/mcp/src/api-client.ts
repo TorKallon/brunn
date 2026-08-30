@@ -48,11 +48,6 @@ const TRANSIENT_NETWORK_CODES = new Set([
 ]);
 const MESSAGING_CLIENT_KEY = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/u;
 const READ_ONLY_POST_PATHS = new Set([
-  "/v1/memory/compute",
-  "/v1/memory/open",
-  "/v1/memory/query",
-  "/v1/memory/read",
-  "/v1/memory/verify",
   "/v1/workspace/briefings/dedupe-check",
   "/v1/workspace/open",
   "/v1/workspace/read",
@@ -60,9 +55,6 @@ const READ_ONLY_POST_PATHS = new Set([
   "/v1/workspace/secrets/get",
 ]);
 const IDEMPOTENCY_KEY_MUTATION_PATHS = new Set([
-  "/v1/memory/capture",
-  "/v1/memory/checkpoint",
-  "/v1/memory/write",
   "/v1/workspace/briefings/publish",
   "/v1/workspace/capture",
   "/v1/workspace/checkpoint",

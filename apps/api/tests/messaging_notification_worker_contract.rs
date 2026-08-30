@@ -109,7 +109,6 @@ async fn connect_state(database_url: &str, messaging_enabled: bool) -> AppState 
     config.database_url_ro = database_url.to_owned();
     config.database_url_admin = Some(database_url.to_owned());
     config.database_max_connections = 4;
-    config.legacy_api_enabled = false;
     config.apns_delivery_enabled = false;
     config.messaging_enabled = messaging_enabled;
     AppState::connect(config)
