@@ -935,11 +935,6 @@ pub async fn pin_legacy_database_references(
                AND metadata ? 'redacted_by_deletion_job'
              )
            UNION
-           SELECT user_id FROM straylight.asset_uploads
-           WHERE status IN ('completed','consumed')
-             AND canonical_object_key IS NOT NULL
-             AND canonical_object_version_id IS NULL
-           UNION
            SELECT user_id FROM straylight.account_exports
            WHERE status='ready' AND object_key IS NOT NULL
              AND object_version_id IS NULL
@@ -977,20 +972,6 @@ pub async fn pin_legacy_database_references(
     .fetch_all(&mut *transaction)
     .await
     .context("could not lock legacy immutable asset rows")?;
-    let upload_rows = sqlx::query(
-        "SELECT user_id,id,canonical_object_key AS object_key,
-                expected_content_hash::text AS content_hash,
-                expected_size_bytes AS size_bytes
-         FROM straylight.asset_uploads
-         WHERE status IN ('completed','consumed')
-           AND canonical_object_key IS NOT NULL
-           AND canonical_object_version_id IS NULL
-         ORDER BY user_id,id
-         FOR UPDATE",
-    )
-    .fetch_all(&mut *transaction)
-    .await
-    .context("could not lock legacy published-upload rows")?;
     let export_rows = sqlx::query(
         "SELECT user_id,id,object_key,content_hash::text AS content_hash,size_bytes
          FROM straylight.account_exports
@@ -1044,48 +1025,7 @@ pub async fn pin_legacy_database_references(
     .await
     .context("could not pin legacy immutable asset object versions")?;
 
-    let mut upload_canonical_versions_pinned = 0_u64;
-    for row in &upload_rows {
-        let object_key: String = row.try_get("object_key")?;
-        let content_hash: String = row.try_get("content_hash")?;
-        let size_bytes: i64 = row.try_get("size_bytes")?;
-        let actual = verified_latest_object_cached(
-            store,
-            &mut verified_objects,
-            &object_key,
-            &content_hash,
-            size_bytes,
-        )
-        .await?;
-        let object_version_id = actual.object_version_id.context(
-            "object store returned no exact version ID while pinning a published upload",
-        )?;
-        let updated = sqlx::query(
-            "UPDATE straylight.asset_uploads
-             SET canonical_object_version_id=$1,updated_at=clock_timestamp()
-             WHERE user_id=$2 AND id=$3
-               AND canonical_object_key=$4
-               AND expected_content_hash=$5
-               AND expected_size_bytes=$6
-               AND canonical_object_version_id IS NULL
-               AND status IN ('completed','consumed')",
-        )
-        .bind(object_version_id)
-        .bind(row.try_get::<uuid::Uuid, _>("user_id")?)
-        .bind(row.try_get::<uuid::Uuid, _>("id")?)
-        .bind(&object_key)
-        .bind(&content_hash)
-        .bind(size_bytes)
-        .execute(&mut *transaction)
-        .await
-        .context("could not pin a published upload object version")?
-        .rows_affected();
-        ensure!(
-            updated == 1,
-            "published upload changed while it was being pinned"
-        );
-        upload_canonical_versions_pinned += updated;
-    }
+    let upload_canonical_versions_pinned = 0_u64;
 
     let mut account_export_versions_pinned = 0_u64;
     for row in &export_rows {
@@ -1172,13 +1112,6 @@ pub async fn verify_database_references(
 	             AND media_type::text='application/x-straylight-deleted'
 	             AND metadata ? 'redacted_by_deletion_job'
 	           )
-           UNION ALL
-           SELECT 'asset_uploads.canonical',$1::text,canonical_object_key,
-                  canonical_object_version_id,expected_content_hash::text,
-                  expected_size_bytes
-           FROM straylight.asset_uploads
-           WHERE status IN ('completed','consumed')
-             AND canonical_object_key IS NOT NULL
            UNION ALL
            SELECT 'account_exports',$1::text,object_key,object_version_id,
                   content_hash::text,size_bytes
@@ -1438,17 +1371,6 @@ pub async fn remap_database(
 	               AND metadata ? 'redacted_by_deletion_job'
 	             )
            UNION ALL
-           SELECT 'asset_uploads.canonical',canonical_object_key,
-                  canonical_object_version_id,false
-           FROM straylight.asset_uploads
-           WHERE canonical_object_key IS NOT NULL
-             AND canonical_object_version_id IS NOT NULL
-           UNION ALL
-           SELECT 'asset_uploads.temporary',temporary_object_key,
-                  temporary_object_version_id,temporary_cleaned_at IS NOT NULL
-           FROM straylight.asset_uploads
-           WHERE temporary_object_version_id IS NOT NULL
-           UNION ALL
            SELECT 'account_exports',object_key,object_version_id,false
            FROM straylight.account_exports
            WHERE object_key IS NOT NULL AND object_version_id IS NOT NULL
@@ -1491,23 +1413,7 @@ pub async fn remap_database(
         bail!("restore map is missing authoritative PostgreSQL object references: {examples}");
     }
 
-    let cleaned_upload_versions_cleared = sqlx::query(
-        "UPDATE straylight.asset_uploads upload
-         SET temporary_object_version_id=NULL
-         WHERE temporary_cleaned_at IS NOT NULL
-           AND temporary_object_version_id IS NOT NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM object_version_restore_map mapping
-             WHERE mapping.object_key=upload.temporary_object_key
-               AND upload.temporary_object_version_id IN (
-                 mapping.source_version_id,
-                 mapping.restored_version_id
-               )
-           )",
-    )
-    .execute(&mut *transaction)
-    .await?
-    .rows_affected();
+    let cleaned_upload_versions_cleared = 0_u64;
     let asset_mapping = object_entries
         .iter()
         .map(|entry| {
@@ -1541,26 +1447,8 @@ pub async fn remap_database(
     .execute(&mut *transaction)
     .await?
     .rows_affected();
-    let upload_temporary_versions_updated = sqlx::query(
-        "UPDATE straylight.asset_uploads upload
-         SET temporary_object_version_id=mapping.restored_version_id
-         FROM object_version_restore_map mapping
-         WHERE mapping.object_key=upload.temporary_object_key
-           AND mapping.source_version_id=upload.temporary_object_version_id",
-    )
-    .execute(&mut *transaction)
-    .await?
-    .rows_affected();
-    let upload_canonical_versions_updated = sqlx::query(
-        "UPDATE straylight.asset_uploads upload
-         SET canonical_object_version_id=mapping.restored_version_id
-         FROM object_version_restore_map mapping
-         WHERE mapping.object_key=upload.canonical_object_key
-           AND mapping.source_version_id=upload.canonical_object_version_id",
-    )
-    .execute(&mut *transaction)
-    .await?
-    .rows_affected();
+    let upload_temporary_versions_updated = 0_u64;
+    let upload_canonical_versions_updated = 0_u64;
     let account_exports_updated = sqlx::query(
         "UPDATE straylight.account_exports export
          SET object_version_id=mapping.restored_version_id
@@ -1591,25 +1479,6 @@ pub async fn remap_database(
 	               AND media_type::text='application/x-straylight-deleted'
 	               AND metadata ? 'redacted_by_deletion_job'
 	             )
-           UNION ALL
-           SELECT 'asset_uploads.canonical',
-                  NULL::text,
-                  canonical_object_key,
-                  canonical_object_version_id,
-                  expected_content_hash::text,
-                  expected_size_bytes
-           FROM straylight.asset_uploads
-           WHERE canonical_object_key IS NOT NULL
-             AND canonical_object_version_id IS NOT NULL
-           UNION ALL
-           SELECT 'asset_uploads.temporary',
-                  NULL::text,
-                  temporary_object_key,
-                  temporary_object_version_id,
-                  expected_content_hash::text,
-                  expected_size_bytes
-           FROM straylight.asset_uploads
-           WHERE temporary_object_version_id IS NOT NULL
            UNION ALL
            SELECT 'account_exports',
                   NULL::text,
@@ -1681,10 +1550,6 @@ pub async fn remap_database(
 	                AND media_type::text='application/x-straylight-deleted'
 	                AND metadata ? 'redacted_by_deletion_job'
 	              ))
-           + (SELECT count(*) FROM straylight.asset_uploads
-              WHERE canonical_object_version_id IS NOT NULL)
-           + (SELECT count(*) FROM straylight.asset_uploads
-              WHERE temporary_object_version_id IS NOT NULL)
            + (SELECT count(*) FROM straylight.account_exports
               WHERE object_version_id IS NOT NULL)
            + (SELECT count(*) FROM straylight.entry_versions
