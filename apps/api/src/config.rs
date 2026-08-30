@@ -10,7 +10,6 @@ use crate::error::{ApiError, ApiResult};
 #[derive(Clone)]
 pub struct Config {
     pub deployment_environment: String,
-    pub legacy_api_enabled: bool,
     pub evaluation_api_enabled: bool,
     pub supersession_demotion: bool,
     pub supersession_demotion_weight: f64,
@@ -37,12 +36,6 @@ pub struct Config {
     pub asset_description_model: String,
     pub asset_description_max_output_tokens: u64,
     pub asset_description_image_detail: String,
-    pub dream_model: String,
-    pub dream_scheduler_enabled: bool,
-    pub dream_scheduler_poll_interval: Duration,
-    pub dream_inactivity_window: Duration,
-    pub dream_cooldown: Duration,
-    pub dream_dirty_threshold: i32,
     pub background_job_lease: Duration,
     pub embedding_model: String,
     pub embedding_dimensions: usize,
@@ -156,7 +149,6 @@ impl Config {
 
         let config = Self {
             deployment_environment,
-            legacy_api_enabled: env_parse("STRAYLIGHT_LEGACY_API_ENABLED", non_production_default)?,
             evaluation_api_enabled: env_parse(
                 "STRAYLIGHT_EVALUATION_API_ENABLED",
                 non_production_default,
@@ -209,21 +201,6 @@ impl Config {
                 "STRAYLIGHT_ASSET_DESCRIPTION_IMAGE_DETAIL",
             ])
             .unwrap_or_else(|| "high".to_owned()),
-            dream_model: env_default("STRAYLIGHT_DREAM_MODEL", "gpt-5.6"),
-            dream_scheduler_enabled: env_parse("STRAYLIGHT_DREAM_SCHEDULER_ENABLED", "false")?,
-            dream_scheduler_poll_interval: Duration::from_secs(env_parse(
-                "STRAYLIGHT_DREAM_SCHEDULER_POLL_SECONDS",
-                "15",
-            )?),
-            dream_inactivity_window: Duration::from_secs(env_parse(
-                "STRAYLIGHT_DREAM_INACTIVITY_SECONDS",
-                "60",
-            )?),
-            dream_cooldown: Duration::from_secs(env_parse(
-                "STRAYLIGHT_DREAM_COOLDOWN_SECONDS",
-                "900",
-            )?),
-            dream_dirty_threshold: env_parse("STRAYLIGHT_DREAM_DIRTY_THRESHOLD", "10")?,
             background_job_lease: Duration::from_secs(env_parse(
                 "STRAYLIGHT_BACKGROUND_JOB_LEASE_SECONDS",
                 "300",
@@ -1072,7 +1049,6 @@ mod tests {
                 assert_eq!(config.s3_secret_key, None);
                 assert!(!config.s3_force_path_style);
                 assert!(!config.s3_create_bucket);
-                assert!(!config.legacy_api_enabled);
                 assert!(!config.evaluation_api_enabled);
                 assert!(!config.verbatim_spans);
                 assert!(!config.supersession_demotion);
@@ -1099,7 +1075,6 @@ mod tests {
                 assert_eq!(config.s3_secret_key.as_deref(), Some("minio-secret"));
                 assert!(config.s3_force_path_style);
                 assert!(config.s3_create_bucket);
-                assert!(config.legacy_api_enabled);
                 assert!(config.evaluation_api_enabled);
                 assert!(!config.verbatim_spans);
                 assert!(!config.supersession_demotion);

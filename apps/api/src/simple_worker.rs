@@ -15,7 +15,7 @@ use crate::{
     foreground_latency::{
         ForegroundGuardDecision, ForegroundLatencySnapshot, SNAPSHOT_SCHEMA, evaluate_guard,
     },
-    simple_core, simple_dream,
+    simple_core,
 };
 
 const MAX_ATTEMPTS: i32 = 5;
@@ -56,16 +56,6 @@ pub async fn process_next(state: &AppState) -> ApiResult<bool> {
         mark_exhausted(pool).await?;
         return Ok(false);
     };
-    if job.kind == "dream_workspace" && !state.config.dream_scheduler_enabled {
-        fail_permanently(pool, &job, "dreaming disabled by the operator").await?;
-        metrics::counter!(
-            "simple.jobs.processed",
-            "kind" => "dream_workspace",
-            "result" => "disabled"
-        )
-        .increment(1);
-        return Ok(true);
-    }
     if job.kind == "embed_entry" {
         let mut jobs = vec![job];
         jobs.extend(claim_more_embeddings(pool, MAX_EMBED_BATCH_JOBS - 1).await?);
@@ -74,7 +64,6 @@ pub async fn process_next(state: &AppState) -> ApiResult<bool> {
     let started = Instant::now();
     let result = match job.kind.as_str() {
         "describe_binary" => describe_binary(state, &job).await,
-        "dream_workspace" => simple_dream::process(state, job.id, job.user_id, &job.payload).await,
         _ => Err(ApiError::Internal(format!(
             "unsupported simple workspace job kind {}",
             job.kind
@@ -329,24 +318,6 @@ async fn mark_exhausted(pool: &PgPool) -> ApiResult<()> {
     .await?;
     sqlx::query(
         r#"
-        UPDATE straylight.jobs
-        SET status='failed',finished_at=clock_timestamp(),
-            last_error=coalesce(last_error,'attempt limit reached')
-        WHERE kind='dream_workspace'
-          AND status IN ('queued','running')
-          AND attempts >= $1
-          AND (
-            status='queued'
-            OR started_at < clock_timestamp() - make_interval(mins => $2)
-          )
-        "#,
-    )
-    .bind(MAX_ATTEMPTS)
-    .bind(LEASE_MINUTES)
-    .execute(pool)
-    .await?;
-    sqlx::query(
-        r#"
         WITH candidates AS (
           SELECT id
           FROM straylight.jobs
@@ -376,7 +347,7 @@ async fn claim_priority(pool: &PgPool) -> ApiResult<Option<Job>> {
         WITH candidate AS (
           SELECT id
           FROM straylight.jobs
-          WHERE kind IN ('describe_binary','dream_workspace')
+          WHERE kind='describe_binary'
             AND attempts < $1
             AND status='queued'
             AND available_at <= CURRENT_TIMESTAMP
@@ -410,7 +381,7 @@ async fn claim_stale_priority(pool: &PgPool) -> ApiResult<Option<Job>> {
         WITH candidate AS (
           SELECT id
           FROM straylight.jobs
-          WHERE kind IN ('describe_binary','dream_workspace')
+          WHERE kind='describe_binary'
             AND status='running'
             AND attempts < $1
             AND started_at < CURRENT_TIMESTAMP - make_interval(mins => $2)
@@ -1137,7 +1108,7 @@ mod tests {
               id,user_id,kind,status,payload,available_at,created_at
             ) VALUES
               (
-                $1,$3,'dream_workspace','queued','{}'::jsonb,
+                $1,$3,'describe_binary','queued','{}'::jsonb,
                 '2020-01-01 00:00:00+00'::timestamptz,
                 '2020-01-01 00:00:00+00'::timestamptz
               ),
@@ -1158,7 +1129,7 @@ mod tests {
 
         let first = claim_priority(&pool).await.unwrap().unwrap();
         let second = claim_priority(&pool).await.unwrap().unwrap();
-        assert_eq!(first.id, dream_id);
+        assert_eq!(first.id, dream_id); // earliest-created priority job
         assert_eq!(second.id, description_id);
 
         tokio::time::sleep(std::time::Duration::from_millis(125)).await;

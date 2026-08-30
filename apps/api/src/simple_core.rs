@@ -29,7 +29,6 @@ use crate::{
     auth::{AuthContext, hash_token},
     db::{AppState, set_context},
     error::{ApiError, ApiResult},
-    eval_service::EvalImportRequest,
     foreground_latency::ForegroundOperation,
     ingest::{DocumentChunk, normalize_document},
     models::{Capability, CheckpointRequest, CredentialId, ResponseStatus, UserId, canonical_json},
@@ -525,6 +524,41 @@ struct BulkMarkdown {
 
 fn markdown_media_type() -> String {
     "text/markdown".to_owned()
+}
+
+// Evaluation import DTOs, shared by the batched simple import surface.
+#[derive(Clone, Deserialize, Serialize)]
+pub struct EvalImportRequest {
+    pub schema: String,
+    pub run_id: String,
+    pub case_id: String,
+    pub authorization_scope: String,
+    pub display_scope: String,
+    pub access_mode: String,
+    pub documents: Vec<EvalDocument>,
+    #[serde(default)]
+    pub delta_documents: Vec<EvalDocument>,
+    pub seed_checkpoint: Option<EvalSeedCheckpoint>,
+    pub idempotency_key: String,
+    #[serde(default)]
+    pub batch_index: Option<usize>,
+    #[serde(default)]
+    pub batch_count: Option<usize>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct EvalDocument {
+    pub path: String,
+    pub content: String,
+    pub content_sha256: String,
+    pub media_type: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct EvalSeedCheckpoint {
+    pub state: Value,
+    #[serde(default)]
+    pub source_refs: Vec<String>,
 }
 
 pub async fn open(
@@ -1648,108 +1682,6 @@ pub async fn delete_entry(
     envelope.status = ResponseStatus::Committed;
     envelope.corpus_revision = Some(format!("generation:{generation}"));
     record_product_activity(&state, &auth, ProductActivityOperation::Delete, 0);
-    Ok(Json(envelope))
-}
-
-pub async fn queue_dream(
-    State(state): State<AppState>,
-    Extension(auth): Extension<AuthContext>,
-    Json(request): Json<DreamRequest>,
-) -> ApiResult<Json<WorkspaceEnvelope<Value>>> {
-    if !state.config.dream_scheduler_enabled {
-        return Err(ApiError::public(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "dreaming_disabled",
-            "dreaming is disabled by the operator",
-        ));
-    }
-    auth.require(Capability::Dream)?;
-    let mut tx = state.begin_write(&auth).await?;
-    let current_generation =
-        sqlx::query_scalar::<_, Option<i64>>("SELECT straylight_auth.workspace_generation($1)")
-            .bind(auth.user_id.0)
-            .fetch_one(&mut *tx)
-            .await?
-            .unwrap_or(0);
-    let previous_watermark = match request.since_generation {
-        Some(value) => value.max(0),
-        None => sqlx::query_scalar::<_, Option<i64>>(
-            r#"
-            SELECT max(watermark)
-            FROM straylight.jobs
-            WHERE user_id=$1 AND kind='dream_workspace' AND status='complete'
-            "#,
-        )
-        .bind(auth.user_id.0)
-        .fetch_one(&mut *tx)
-        .await?
-        .unwrap_or(0),
-    };
-    if current_generation <= previous_watermark {
-        tx.commit().await?;
-        let mut envelope = WorkspaceEnvelope::complete(json!({
-            "workspace_generation": current_generation,
-            "watermark": previous_watermark,
-            "no_op": true,
-            "reason": "no workspace changes after the dream watermark"
-        }));
-        envelope.status = ResponseStatus::NoOp;
-        return Ok(Json(envelope));
-    }
-    if let Some(existing) = sqlx::query(
-        r#"
-        SELECT id,status,created_at
-        FROM straylight.jobs
-        WHERE user_id=$1 AND kind='dream_workspace'
-          AND status IN ('queued','running')
-        ORDER BY created_at
-        LIMIT 1
-        "#,
-    )
-    .bind(auth.user_id.0)
-    .fetch_optional(&mut *tx)
-    .await?
-    {
-        tx.commit().await?;
-        let id: Uuid = existing.get("id");
-        let mut envelope = WorkspaceEnvelope::complete(json!({
-            "job_ref": format!("job:{id}"),
-            "status": existing.get::<String, _>("status"),
-            "workspace_generation": current_generation,
-            "watermark": previous_watermark,
-            "no_op": true,
-            "reason": "a dream job is already queued or running"
-        }));
-        envelope.status = ResponseStatus::NoOp;
-        return Ok(Json(envelope));
-    }
-    let job_id = Uuid::now_v7();
-    sqlx::query(
-        r#"
-        INSERT INTO straylight.jobs (
-          id,user_id,kind,status,payload,watermark
-        ) VALUES ($1,$2,'dream_workspace','queued',$3,$4)
-        "#,
-    )
-    .bind(job_id)
-    .bind(auth.user_id.0)
-    .bind(json!({
-        "from_generation": previous_watermark,
-        "to_generation": current_generation,
-        "focus": request.focus
-    }))
-    .bind(previous_watermark)
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    let mut envelope = WorkspaceEnvelope::complete(json!({
-        "job_ref": format!("job:{job_id}"),
-        "status": "queued",
-        "workspace_generation": current_generation,
-        "watermark": previous_watermark,
-        "no_op": false
-    }));
-    envelope.status = ResponseStatus::Committed;
     Ok(Json(envelope))
 }
 
@@ -8973,7 +8905,7 @@ fn derive_eval_token(secret: &str, external_ref: &str, idempotency_key: &str) ->
 
 async fn prepare_bulk_documents(
     state: &AppState,
-    documents: &[crate::eval_service::EvalDocument],
+    documents: &[EvalDocument],
 ) -> ApiResult<Vec<BulkMarkdown>> {
     let normalized = documents
         .iter()
@@ -9015,7 +8947,7 @@ async fn prepare_one_bulk_document(
     media_type: String,
 ) -> ApiResult<BulkMarkdown> {
     let digest = hex::encode(Sha256::digest(content.as_bytes()));
-    let source = crate::eval_service::EvalDocument {
+    let source = EvalDocument {
         path,
         content,
         content_sha256: digest,
@@ -10867,7 +10799,7 @@ mod tests {
     #[test]
     fn evaluation_batches_are_bounded_and_ordered() {
         let content = "# Fixture";
-        let document = crate::eval_service::EvalDocument {
+        let document = EvalDocument {
             path: "Fixture.md".to_owned(),
             content: content.to_owned(),
             content_sha256: hex::encode(Sha256::digest(content.as_bytes())),

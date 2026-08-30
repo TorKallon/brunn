@@ -13,8 +13,8 @@ use tower_http::{
 
 use crate::{
     auth, briefing_service, dashboard_service, db::AppState, document_service, dreaming_service,
-    dreams, eval_service, messaging_service, notification_service, request_context, secret_service,
-    service, simple_core, task_service, telemetry, web_auth,
+    messaging_service, notification_service, request_context, secret_service, service, simple_core,
+    task_service, telemetry, web_auth,
 };
 
 pub fn router(state: AppState) -> Router {
@@ -177,7 +177,6 @@ pub fn router(state: AppState) -> Router {
         .route("/workspace/manifest", get(simple_core::manifest))
         .route("/workspace/usage", get(simple_core::usage))
         .route("/workspace/jobs", get(simple_core::list_jobs))
-        .route("/workspace/dreams", post(simple_core::queue_dream))
         .route(
             "/workspace/entries/{entry_ref}",
             delete(simple_core::delete_entry),
@@ -199,46 +198,7 @@ pub fn router(state: AppState) -> Router {
             "/credentials/{credential_ref}",
             delete(service::revoke_credential),
         );
-    let legacy_ordinary = Router::new()
-        .route("/memory/open", post(service::open))
-        .route("/memory/query", post(service::query))
-        .route("/memory/read", post(service::read))
-        .route("/memory/compute", post(service::compute))
-        .route("/memory/verify", post(service::verify))
-        .route("/memory/capture", post(service::capture))
-        .route("/memory/checkpoint", post(service::checkpoint))
-        .route("/asset-uploads", post(service::create_asset_upload))
-        .route(
-            "/asset-uploads/{upload_ref}",
-            get(service::get_asset_upload).delete(service::abort_asset_upload),
-        )
-        .route("/sessions", get(service::list_sessions))
-        .route("/sessions/{session_id}", get(service::get_session))
-        .route(
-            "/sessions/{session_id}/refresh",
-            post(service::refresh_session),
-        )
-        .route(
-            "/checkpoints/{checkpoint_ref}",
-            get(service::get_checkpoint),
-        )
-        .route("/objects", get(service::list_objects))
-        .route("/objects/{object_ref}", get(service::get_object))
-        .route("/sources", get(service::list_sources))
-        .route("/sources/{source_ref}", get(service::get_source))
-        .route(
-            "/sources/{source_ref}/content",
-            get(service::get_source_content),
-        )
-        .route("/assets", get(service::list_assets))
-        .route("/assets/{asset_ref}", get(service::get_asset))
-        .route("/vault/manifest", get(service::get_vault_manifest))
-        .route("/stages/{stage_ref}", get(service::get_stage))
-        .route("/audit", get(service::list_audit))
-        .route("/usage", get(service::data_usage))
-        .route("/deletions/{deletion_ref}", get(service::get_deletion))
-        .route("/scopes", get(service::list_scopes))
-        .route("/policies", get(service::list_policies))
+    let account_ordinary = Router::new()
         .route(
             "/account/exports",
             get(service::list_account_exports).post(service::request_account_export),
@@ -254,23 +214,16 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/account/deletions/{request_ref}",
             get(service::get_account_deletion),
-        )
-        .merge(dreams::routes());
-    let evaluation_ordinary = Router::new()
-        .route(
-            "/workspace/admin/eval/imports/{import_id}",
-            get(simple_core::evaluation_status).delete(simple_core::cleanup_evaluation),
-        )
-        .route(
-            "/admin/eval/imports/{import_id}",
-            get(eval_service::get_evaluation_import),
         );
-    let mut ordinary = workspace_ordinary.merge(dreaming_service::router());
+    let evaluation_ordinary = Router::new().route(
+        "/workspace/admin/eval/imports/{import_id}",
+        get(simple_core::evaluation_status).delete(simple_core::cleanup_evaluation),
+    );
+    let mut ordinary = workspace_ordinary
+        .merge(dreaming_service::router())
+        .merge(account_ordinary);
     if state.config.messaging_enabled {
         ordinary = ordinary.merge(messaging_service::router());
-    }
-    if state.config.legacy_api_enabled {
-        ordinary = ordinary.merge(legacy_ordinary);
     }
     if state.config.evaluation_api_enabled {
         ordinary = ordinary.merge(evaluation_ordinary);
@@ -292,45 +245,15 @@ pub fn router(state: AppState) -> Router {
             "/workspace/binaries/{entry_ref}/content",
             get(simple_core::fetch_binary),
         );
-    let legacy_transfers = Router::new()
-        .route("/memory/save", post(service::save))
-        .route(
-            "/memory/stage",
-            post(service::stage).layer(DefaultBodyLimit::max(72 * 1024 * 1024)),
-        )
-        .route(
-            "/asset-uploads/{upload_ref}/parts/{part_number}",
-            put(service::put_asset_upload_part).layer(DefaultBodyLimit::max(9 * 1024 * 1024)),
-        )
-        .route(
-            "/asset-uploads/{upload_ref}/complete",
-            post(service::complete_asset_upload),
-        )
-        .route(
-            "/assets/{asset_ref}/versions/{version}/content",
-            get(service::get_asset_content),
-        )
-        .route(
-            "/vault/assets/{asset_ref}/versions/{version}/content",
-            get(service::get_vault_asset_content),
-        )
-        .route(
-            "/account/exports/{export_ref}/content",
-            get(service::download_account_export),
-        );
-    let evaluation_transfers = Router::new()
-        .route(
-            "/admin/eval/import",
-            post(eval_service::import_evaluation).layer(DefaultBodyLimit::max(192 * 1024 * 1024)),
-        )
-        .route(
-            "/workspace/admin/eval/import",
-            post(simple_core::import_evaluation).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
-        );
-    let mut transfers = workspace_transfers;
-    if state.config.legacy_api_enabled {
-        transfers = transfers.merge(legacy_transfers);
-    }
+    let account_transfers = Router::new().route(
+        "/account/exports/{export_ref}/content",
+        get(service::download_account_export),
+    );
+    let evaluation_transfers = Router::new().route(
+        "/workspace/admin/eval/import",
+        post(simple_core::import_evaluation).layer(DefaultBodyLimit::max(512 * 1024 * 1024)),
+    );
+    let mut transfers = workspace_transfers.merge(account_transfers);
     if state.config.evaluation_api_enabled {
         transfers = transfers.merge(evaluation_transfers);
     }

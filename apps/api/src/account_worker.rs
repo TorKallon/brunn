@@ -519,8 +519,9 @@ async fn advance_account_deletion(state: &AppState, job: &AccountDeletionJob) ->
             "account deletion cannot purge storage without its durable fence".to_owned(),
         ));
     }
-    let abandoned_uploads =
-        upload_service::abort_active_for_user(state, &mut tx, job.user_id).await?;
+    // Asset uploads no longer exist; any in-flight multipart under the user
+    // prefix (account exports included) is aborted below before the purge.
+    let abandoned_uploads = 0_u64;
     let prefix = format!("{}/", job.user_id);
     let first_multipart_abort = upload_service::abort_multipart_prefix(state, &prefix).await?;
     let first_purge = state.object_store.purge_prefix(&prefix).await?;
