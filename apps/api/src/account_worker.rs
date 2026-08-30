@@ -797,20 +797,7 @@ async fn build_export_inner(
 	              AND media_type::text='application/x-straylight-deleted'
 	              AND metadata ? 'redacted_by_deletion_job'
 	            )
-	          UNION ALL
-          SELECT $2::text AS bucket,
-                 canonical_object_key AS object_key,
-                 canonical_object_version_id AS object_version_id,
-                 expected_content_hash::text AS content_hash,
-                 expected_size_bytes AS size_bytes,
-                 'completed_upload'::text AS reference_kind,
-                 id::text AS reference_ref
-          FROM straylight.asset_uploads
-          WHERE user_id=$1
-            AND status IN ('completed','consumed')
-            AND canonical_object_key IS NOT NULL
-            AND canonical_object_version_id IS NOT NULL
-        )
+	        )
         SELECT bucket,object_key,object_version_id,
                min(content_hash) AS content_hash,
                min(size_bytes) AS size_bytes,
@@ -829,7 +816,6 @@ async fn build_export_inner(
         "#,
     )
     .bind(job.user_id)
-    .bind(&state.config.s3_bucket)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1147,14 +1133,6 @@ async fn compensate_export_object(state: &AppState, job: &ExportJob, object_key:
               FROM straylight.account_exports
               WHERE user_id=$1 AND object_key=$2
                 AND status='ready'
-              UNION ALL
-              SELECT 1
-              FROM straylight.asset_uploads
-              WHERE user_id=$1
-                AND (
-                  temporary_object_key=$2
-                  OR canonical_object_key=$2
-                )
             )
             "#,
         )

@@ -130,19 +130,11 @@ pub async fn status(
     Extension(auth): Extension<AuthContext>,
 ) -> ApiResult<Json<Value>> {
     auth.require(Capability::Status)?;
-    let mut tx = state.begin_read(&auth).await?;
-    let revision: Option<(uuid::Uuid, i64)> = sqlx::query_as(
-        "SELECT id, revision_number FROM straylight.corpus_revisions WHERE user_id = $1 ORDER BY revision_number DESC LIMIT 1",
-    )
-    .bind(auth.user_id.0)
-    .fetch_optional(&mut *tx)
-    .await?;
-    tx.commit().await?;
     Ok(Json(json!({
         "status": "ready",
         "build_revision": build_revision(),
-        "corpus_revision": revision.as_ref().map(|value| format!("revision:{}", value.0)),
-        "revision_sequence": revision.map(|value| value.1),
+        "corpus_revision": Option::<String>::None,
+        "revision_sequence": Option::<i64>::None,
         "read_only": auth.read_only,
         "feature_flags": runtime_feature_flags(&state),
         "embeddings": {

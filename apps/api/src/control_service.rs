@@ -23,28 +23,8 @@ pub async fn me(state: &AppState, auth: &AuthContext) -> ApiResult<Value> {
     .await?;
     let scopes = scope_items(&mut tx, auth).await?;
     let active_scope = scopes.first().cloned();
-    let corpus_revision = if let Some(scope_ref) = active_scope
-        .as_ref()
-        .and_then(|scope| scope.get("scope_ref"))
-        .and_then(Value::as_str)
-    {
-        sqlx::query_scalar::<_, Uuid>(
-            r#"
-            SELECT manifest.active_corpus_revision_id
-            FROM straylight.active_manifests AS manifest
-            JOIN straylight.scopes AS scope
-              ON scope.user_id=manifest.user_id AND scope.id=manifest.scope_id
-            WHERE manifest.user_id=$1 AND scope.scope_ref=$2
-            "#,
-        )
-        .bind(auth.user_id.0)
-        .bind(scope_ref)
-        .fetch_optional(&mut *tx)
-        .await?
-        .map(|id| format!("revision:{id}"))
-    } else {
-        None
-    };
+    // The legacy manifest model is gone; identity carries no corpus pin.
+    let corpus_revision: Option<String> = None;
     tx.commit().await?;
     let mut capabilities: Vec<_> = auth.capabilities.iter().cloned().collect();
     capabilities.sort();
@@ -366,12 +346,9 @@ async fn scope_items(
     let rows = sqlx::query(
         r#"
         SELECT scope.id,scope.scope_ref,scope.name,scope.created_at,
-               count(DISTINCT key.record_id) AS object_count
+               0::bigint AS object_count
         FROM straylight.scopes AS scope
-        LEFT JOIN straylight.record_keys AS key
-          ON key.user_id=scope.user_id AND key.scope_id=scope.id
         WHERE scope.user_id=$1
-        GROUP BY scope.id,scope.scope_ref,scope.name,scope.created_at
         ORDER BY scope.name,scope.scope_ref
         "#,
     )
