@@ -74,6 +74,7 @@ pub enum RunOutcome {
     Disabled { reason: String },
     SkippedAuth { detail: String },
     SkippedLimits,
+    SkippedAlreadyRan,
     Completed,
     Partial { detail: String },
     Failed { detail: String },
@@ -85,6 +86,7 @@ impl RunOutcome {
             RunOutcome::Disabled { .. } => "disabled",
             RunOutcome::SkippedAuth { .. } => "skipped(auth)",
             RunOutcome::SkippedLimits => "skipped(limits)",
+            RunOutcome::SkippedAlreadyRan => "skipped(already-ran)",
             RunOutcome::Completed => "completed",
             RunOutcome::Partial { .. } => "partial",
             RunOutcome::Failed { .. } => "failed",
@@ -207,7 +209,33 @@ impl Dreamer {
             ControlState::Enabled(control) => control,
         };
 
-        // 2. Owner decisions.
+        // 2. One run file per date: a nightly never replaces a report that a
+        // manual or backfill run already wrote today (the overwrite clobbered
+        // a backfill's proposals with a no-change stub). Manual runs may
+        // deliberately rewrite today's record.
+        if kind == RunKind::Nightly {
+            match self
+                .workspace
+                .read_markdown(&runfile::run_path(today))
+                .await
+            {
+                Ok(Some(_)) => {
+                    report.outcome = RunOutcome::SkippedAlreadyRan;
+                    self.finish(&mut status, &report).await;
+                    return report;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    report.outcome = RunOutcome::Failed {
+                        detail: format!("could not check today's run file: {error}"),
+                    };
+                    self.finish(&mut status, &report).await;
+                    return report;
+                }
+            }
+        }
+
+        // 3. Owner decisions.
         let decisions_raw = match self.workspace.read_markdown(DECISIONS_PATH).await {
             Ok(file) => file.map(|f| f.content).unwrap_or_default(),
             Err(error) => {
@@ -501,7 +529,9 @@ impl Dreamer {
             RunOutcome::SkippedAuth { detail }
             | RunOutcome::Partial { detail }
             | RunOutcome::Failed { detail } => Some(detail.clone()),
-            RunOutcome::SkippedLimits | RunOutcome::Completed => None,
+            RunOutcome::SkippedLimits | RunOutcome::SkippedAlreadyRan | RunOutcome::Completed => {
+                None
+            }
         };
         self.store_runtime_status(status).await;
     }
