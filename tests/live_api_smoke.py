@@ -513,6 +513,7 @@ class LiveApiSmoke:
                     "content": "denied",
                     "expected_version": 0,
                 },
+                expected={401, 403},
             )
             check(
                 denied.status in {401, 403},
@@ -589,7 +590,7 @@ class LiveApiSmoke:
                 "DELETE", f"/v1/credentials/{urllib.parse.quote(revoke_path)}"
             )
             check(revoked.status in {200, 204}, "credential revoke must succeed", revoked.body)
-            after = minted_client.request("GET", "/v1/me")
+            after = minted_client.request("GET", "/v1/me", expected={401, 403})
             check(after.status in {401, 403}, "revoked credential must stop working", after.body)
 
     def _evaluation_isolation(self) -> None:
@@ -620,7 +621,7 @@ class LiveApiSmoke:
             )
             check(imported.status == 200, "evaluation import must succeed", imported.body)
             body = mapping(mapping(imported.body, "import").get("data") or imported.body, "import data")
-            eval_token = str(body.get("token") or "")
+            eval_token = str(body.get("credential_token") or body.get("token") or "")
             check(eval_token, "evaluation import must mint an isolated token", imported.body)
             self.sanitizer.register(eval_token)
             eval_client = ApiClient(
@@ -636,6 +637,7 @@ class LiveApiSmoke:
                 "POST",
                 "/v1/workspace/read",
                 json_body={"requests": [{"path": self.doc_path}]},
+                expected={200, 207, 404},
             )
             check(
                 self.marker not in json.dumps(cross.body),
