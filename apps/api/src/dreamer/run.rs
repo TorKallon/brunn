@@ -336,7 +336,11 @@ impl Dreamer {
         }
 
         // 7. Last run watermark (via the runtime record; first run has none).
+        // A backfill deliberately ignores it: its whole purpose is a
+        // full-corpus supervised pass, not the incremental changed-neighborhood
+        // scope, and budget alone does not change what the prompt asks for.
         let last_run = match &status.last_run_date {
+            _ if kind == RunKind::Backfill => None,
             Some(date_text) => {
                 let path = NaiveDate::parse_from_str(date_text, "%Y-%m-%d")
                     .ok()
