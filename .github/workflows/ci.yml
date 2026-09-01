@@ -133,7 +133,7 @@ jobs:
 
           values = {
               "POSTGRES_DB": "brunn",
-              "BRUNN_ENV": "test",
+              "BRUNN_ENV": "development",
               "POSTGRES_ADMIN_PASSWORD": value("admin_"),
               "POSTGRES_APP_RW_PASSWORD": value("rw_"),
               "POSTGRES_APP_RO_PASSWORD": value("ro_"),

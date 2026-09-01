@@ -1251,6 +1251,7 @@ fi
     def test_ci_green_requires_live_stack_and_restore_gates(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
         self.assertIn("integration:", workflow)
+        self.assertIn('"BRUNN_ENV": "development"', workflow)
         self.assertIn("tests/live_api_smoke.py", workflow)
         self.assertIn("tests/live_alpha_safety.py", workflow)
         self.assertIn("tests/live_runtime_safety.py", workflow)
