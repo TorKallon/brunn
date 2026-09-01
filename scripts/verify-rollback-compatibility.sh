@@ -91,7 +91,8 @@ while [ "$attempts" -lt 60 ]; do
       >"$temp_dir/ready.json" 2>/dev/null &&
     jq -e '
       .status == "ready"
-      and ((.dependencies // {}) | all(.[]; . == "ready"))
+      and .dependencies.database == "ready"
+      and .dependencies.object_store == "ready"
     ' "$temp_dir/ready.json" >/dev/null; then
     break
   fi
@@ -106,6 +107,10 @@ while [ "$attempts" -lt 60 ]; do
 done
 [ "$attempts" -lt 60 ] || {
   docker logs --tail 100 "$probe_name" >&2
+  if [ -s "$temp_dir/ready.json" ]; then
+    echo "last rollback readiness response:" >&2
+    jq . "$temp_dir/ready.json" >&2 || true
+  fi
   echo "rollback candidate did not become ready against the current schema" >&2
   exit 1
 }

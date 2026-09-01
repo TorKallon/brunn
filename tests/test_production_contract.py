@@ -1077,6 +1077,9 @@ class ProductionContractTests(unittest.TestCase):
         compatibility = scripts["verify-rollback-compatibility.sh"].read_text()
         self.assertIn('if [ -n "$compose_override_file" ]', compatibility)
         self.assertIn("/ready", compatibility)
+        self.assertIn('.dependencies.database == "ready"', compatibility)
+        self.assertIn('.dependencies.object_store == "ready"', compatibility)
+        self.assertNotIn("all(.[]; . == \"ready\")", compatibility)
 
         public_health = scripts["check-public-health.sh"].read_text()
         self.assertIn("BRUNN_PUBLIC_HEALTH_PROBES:-24", public_health)
