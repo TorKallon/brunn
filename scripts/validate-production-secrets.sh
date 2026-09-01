@@ -25,12 +25,12 @@ esac
   echo "production secrets directory must not be a symbolic link: $secrets_dir" >&2
   exit 1
 }
-directory_mode=$(stat -f '%Lp' "$secrets_dir" 2>/dev/null || stat -c '%a' "$secrets_dir")
+directory_mode=$(stat -c '%a' "$secrets_dir" 2>/dev/null || stat -f '%Lp' "$secrets_dir")
 [ "$directory_mode" = "700" ] || {
   echo "production secrets directory must have mode 0700: $secrets_dir (mode $directory_mode)" >&2
   exit 1
 }
-directory_owner=$(stat -f '%u' "$secrets_dir" 2>/dev/null || stat -c '%u' "$secrets_dir")
+directory_owner=$(stat -c '%u' "$secrets_dir" 2>/dev/null || stat -f '%u' "$secrets_dir")
 [ "$directory_owner" = "$(id -u)" ] || {
   echo "production secrets directory must be owned by the current operator: $secrets_dir" >&2
   exit 1
@@ -71,7 +71,7 @@ for name in $required; do
     echo "secret file is empty: $path" >&2
     exit 1
   }
-  mode=$(stat -f '%Lp' "$path" 2>/dev/null || stat -c '%a' "$path")
+  mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path")
   case "$mode" in
     400|600)
       ;;
